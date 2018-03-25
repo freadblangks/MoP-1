@@ -7,7 +7,7 @@ enum eSpells
     SPELL_ELECTROSTATIC_CHARGE        = 143385,
     SPELL_OVERCHARGE                  = 145774,
     SPELL_LAUNCH_SAWBLADE             = 143265,
-    SPELL_PROTECTIVE_FRENZY           = 145365
+    SPELL_PROTECTIVE_FRENZY           = 145365,
     //Automated Shredder
     SPELL_OVERLOAD                    = 145444,
     SPELL_DEATH_FROM_ABOVE            = 144208
