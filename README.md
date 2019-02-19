@@ -2,7 +2,7 @@
 
 5.4.8 
 :------------:
-[![5.4.8 Build Status](https://travis-ci.org/JadeCore/JadeCore.svg?branch=5.4.8)](https://travis-ci.org/JadeCore/JadeCore/builds)
+[![5.4.8 Build Status](https://travis-ci.org/Steveo8679/JadeCore.svg?branch=5.4.8)](https://travis-ci.org/Steveo8679/JadeCore)
 
 
 ## Requirements
