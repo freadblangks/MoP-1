@@ -1,22 +1,38 @@
 ![mistsofpandarialogo](https://cloud.githubusercontent.com/assets/812439/18619016/c10a0e20-7dfa-11e6-92c3-0f0dc1f1be75.png)
 
-
- INSTRUCTIONS:
- 
-1) Client for this source can be fount here: https://mega.nz/#!cZc30S6T!6R9zAlXkKE2ekBf7ZdnN_pQBnOxK5pyG3LNPEXT-0mU
-
-2) If you alredy have the Mists of Pandaria 5.4.X, you can just put this client in the folder and start it
-
-3) If you don't have Mists of Pandaria alredy, then just put this .exe file in empty folder start it and
-   after it is done loading exit game and change your config.wtf to your desired realmlist.
-   
-4) Dbc, Maps, Mmaps and Vmaps can be found here: https://mega.nz/#!WBkllJDA!jInmVMyVg1HfpSRipsjamfsVLbUcg9EamcUcAENDxRI
+5.4.8 
+:------------:
+[![5.4.8 Build Status](https://travis-ci.org/JadeCore/JadeCore.svg?branch=5.4.8)](https://travis-ci.org/JadeCore/JadeCore/builds)
 
 
-If you want to join our team you can just open issue requesting an invite and we will add you.
+## Requirements
 
-This is GPL-based source so do whatever you want with it.
++ Platform: Linux, Windows or Mac
++ Processor supporting SSE2 
++ ACE = 5.8.3 (included for Windows) 
++ MySQL = 5.1.0 (included for Windows)
++ CMake = 2.8.0 
++ OpenSSL = 1.0.0 
++ GCC = 4.7.2 (Linux only) 
++ MS Visual Studio = 14 (2015)(Windows only)
++ Client for this source can be fount here: https://mega.nz/#!cZc30S6T!6R9zAlXkKE2ekBf7ZdnN_pQBnOxK5pyG3LNPEXT-0mU
++ Dbc, Maps, Mmaps and Vmaps can be found here: https://mega.nz/#!WBkllJDA!jInmVMyVg1HfpSRipsjamfsVLbUcg9EamcUcAENDxRI
 
 
-![ach_btpxep9i](https://cloud.githubusercontent.com/assets/812439/18764475/45ac7bd2-811a-11e6-8861-e5d518e5449d.jpg)
+## Copyright
 
+License: GPL 2.0
+
+Read file [COPYING](COPYING)
+
+
+## Authors &amp; Contributors
+
+This project is brought to you thanks to:
+
+![ach_gtpkuqsv](https://cloud.githubusercontent.com/assets/812439/19532995/a1ceed0a-9646-11e6-9b76-e83e15e9493c.jpg)
+
+- [JadeCore developers and contributors](https://github.com/JadeEmu/JadeCore/graphs/contributors)
+- [TrinityCore developers and contributors](https://github.com/TrinityCore/TrinityCore/blob/3.3.5/THANKS)
+- [MaNGOS, ScriptDev2 and UDB developers and contributors](https://github.com/cmangos/mangos-wotlk/blob/master/AUTHORS.md)
+- [SkyFire developers and contributors](https://github.com/ProjectSkyfire/SkyFire.548/blob/master/THANKS.md)
