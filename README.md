@@ -9,13 +9,13 @@
 
 ## Requirements
 
-+ Platform: Linux, Windows or Mac
++ Platform: Linux (Ubuntu 16.04), Windows
 + Processor supporting SSE2 
-+ ACE = 5.8.3 (included for Windows) 
-+ MySQL = 5.1.0 (included for Windows)
-+ CMake = 2.8.0 
-+ OpenSSL = 1.0.0 
-+ GCC = 4.7.2 (Linux only) 
++ ACE = 6.3.3 (5.8.3 included for Windows) 
++ MySQL = 5.7.24
++ CMake = 3.12.4 
++ OpenSSL = 1.0.2g
++ GCC = 5.4.0 (Linux only) 
 + MS Visual Studio = 14 (2015)(Windows only)
 + Client can be found here: https://mega.nz/#!cZc30S6T!6R9zAlXkKE2ekBf7ZdnN_pQBnOxK5pyG3LNPEXT-0mU
 + Dbc, Maps, Mmaps and Vmaps can be found here: https://mega.nz/#!WBkllJDA!jInmVMyVg1HfpSRipsjamfsVLbUcg9EamcUcAENDxRI
