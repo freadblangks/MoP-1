@@ -15,7 +15,7 @@
 + OpenSSL = 1.0.0 
 + GCC = 4.7.2 (Linux only) 
 + MS Visual Studio = 14 (2015)(Windows only)
-+ Client for this source can be fount here: https://mega.nz/#!cZc30S6T!6R9zAlXkKE2ekBf7ZdnN_pQBnOxK5pyG3LNPEXT-0mU
++ Client can be found here: https://mega.nz/#!cZc30S6T!6R9zAlXkKE2ekBf7ZdnN_pQBnOxK5pyG3LNPEXT-0mU
 + Dbc, Maps, Mmaps and Vmaps can be found here: https://mega.nz/#!WBkllJDA!jInmVMyVg1HfpSRipsjamfsVLbUcg9EamcUcAENDxRI
 
 
