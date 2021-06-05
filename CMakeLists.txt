@@ -14,17 +14,17 @@ project(JadeCore)
 
 # CMake policies (can not be handled elsewhere)
 cmake_minimum_required(VERSION 2.6)
-cmake_policy(SET CMP0005 OLD)
+cmake_policy(SET CMP0046 NEW)
 
 # CMake policies (can not be handled elsewhere)
 cmake_policy(SET CMP0005 OLD)
 if(POLICY CMP0043)
-  cmake_policy(SET CMP0043 OLD) # Disable 'Ignore COMPILE_DEFINITIONS_<Config> properties'
+  cmake_policy(SET CMP0043 NEW) #'COMPILE_DEFINITIONS_<Config> properties'
 endif()
 
 # Set RPATH-handing (CMake parameters)
 set(CMAKE_SKIP_BUILD_RPATH 0)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH 0)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH 1)
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH 1)
 
@@ -52,8 +52,8 @@ include(cmake/options.cmake)
 
 # turn off PCH totally if enabled (hidden setting, mainly for devs)
 if( NOPCH )
-  set(USE_COREPCH 0)
-  set(USE_SCRIPTPCH 0)
+  set(USE_COREPCH 1)
+  set(USE_SCRIPTPCH 1)
 endif()
 
 include(CheckPlatform)

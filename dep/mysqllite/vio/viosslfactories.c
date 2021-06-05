@@ -30,25 +30,25 @@ static unsigned char dh512_p[]=
   0x47,0x74,0xE8,0x33,
 };
 
-static unsigned char dh512_g[]={
-  0x02,
-};
+//static unsigned char dh512_g[]={
+  //0x02,
+//};
 
-static DH *get_dh512(void)
-{
-  DH *dh;
-  if ((dh=DH_new()))
-  {
-    dh->p=BN_bin2bn(dh512_p,sizeof(dh512_p),NULL);
-    dh->g=BN_bin2bn(dh512_g,sizeof(dh512_g),NULL);
-    if (! dh->p || ! dh->g)
-    {
-      DH_free(dh);
-      dh=0;
-    }
-  }
-  return(dh);
-}
+//static DH *get_dh512(void)
+//{
+  //DH *dh;
+  //if ((dh=DH_new()))
+  //{
+    //dh->p=BN_bin2bn(dh512_p,sizeof(dh512_p),NULL);
+    //dh->g=BN_bin2bn(dh512_g,sizeof(dh512_g),NULL);
+    //if (! dh->p || ! dh->g)
+    //{
+      //DH_free(dh);
+      //dh=0;
+    //}
+  //}
+  //return(dh);
+//}
 
 
 static void

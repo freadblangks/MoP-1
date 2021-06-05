@@ -152,7 +152,10 @@ if( NOT WIN32 )
   add_definitions(-D_TRINITY_CORE_CONFIG='"${CONF_DIR}/worldserver.conf"')
 endif()
 
-add_dependencies(worldserver revision.h)
+# Add all dynamic projects as dependency to the worldserver
+if (WORLDSERVER_DYNAMIC_SCRIPT_MODULES_DEPENDENCIES)
+  add_dependencies(worldserver ${WORLDSERVER_DYNAMIC_SCRIPT_MODULES_DEPENDENCIES})
+endif()
 
 if( UNIX )
   set(worldserver_LINK_FLAGS "-pthread ${worldserver_LINK_FLAGS}")
