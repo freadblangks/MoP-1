@@ -50,8 +50,8 @@ endif()
 # If everything above fails (means the user has erased the git revision control directory or removed the origin/HEAD tag)
 if(NOT rev_info)
   # No valid ways available to find/set the revision/hash, so let's force some defaults
-  set(rev_id_str "0")
-  set(rev_id "0")
+  set(rev_id_str "1")
+  set(rev_id "1")
 else()
   # Extract revision and hash from git
   string(REGEX REPLACE changeset:\t[^0-9]+: "" rev_id_str ${rev_info})
