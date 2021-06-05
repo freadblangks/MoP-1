@@ -18,20 +18,21 @@
 
 #include "ARC4.h"
 #include <openssl/sha.h>
+#include <openssl/rand.h>
 
-ARC4::ARC4(uint8 len) : m_ctx()
+ARC4::ARC4(uint16 len) : m_ctx
 {
-    EVP_CIPHER_CTX_init(&m_ctx);
-    EVP_EncryptInit_ex(&m_ctx, EVP_rc4(), NULL, NULL, NULL);
-    EVP_CIPHER_CTX_set_key_length(&m_ctx, len);
+    EVP_CIPHER_CTX_init(&m_ctx),
+        EVP_EncryptInit_ex(&m_ctx, EVP_rc4(), NULL, NULL, NULL),
+        EVP_CIPHER_CTX_set_key_length(&m_ctx, len),
 }
 
-ARC4::ARC4(uint8 *seed, uint8 len) : m_ctx()
+ARC4::ARC4(/*seed*/ len);  m_ctx
 {
     EVP_CIPHER_CTX_init(&m_ctx);
     EVP_EncryptInit_ex(&m_ctx, EVP_rc4(), NULL, NULL, NULL);
     EVP_CIPHER_CTX_set_key_length(&m_ctx, len);
-    EVP_EncryptInit_ex(&m_ctx, NULL, NULL, seed, NULL);
+    EVP_EncryptInit_ex(&m_ctx, NULL, NULL, rand_meth_st::seed, NULL);
 }
 
 ARC4::~ARC4()
