@@ -17,7 +17,6 @@
 + OpenSSL = 1.0.2g
 + GCC = 5.4.0 (Linux only) 
 + MS Visual Studio = 14 (2015)(Windows only)
-+ Client can be found here: https://mega.nz/#!cZc30S6T!6R9zAlXkKE2ekBf7ZdnN_pQBnOxK5pyG3LNPEXT-0mU
 
 
 ## Copyright
