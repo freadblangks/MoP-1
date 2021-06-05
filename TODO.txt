@@ -1,48 +1,48 @@
 ﻿Mists of Pandaria Instance Scripts TODO:
 
 1) Mogu'shan Vaults:
-    - Need to rewrite instance script
+    -rewrite instance script
 
 2) Heart of Fear:
-    - Need to rewrite instance script
-    - Need to rewrite Imperial Vizier Zor'lok
-    - Need to rewire Blade Lord Ta'yak
-    - Need to rewrite Garalon
-    - Need to rewrite Wind Lord Mel'jarak
-    - Need to add script for Amber-Shaper Un'sok
-    - Need to rewrite Grand Empress Shek'zeer
+    - rewrite instance script
+    - rewrite Imperial Vizier Zor'lok
+    - rewire Blade Lord Ta'yak
+    - rewrite Garalon
+    - rewrite Wind Lord Mel'jarak
+    - script for Amber-Shaper Un'sok
+    - rewrite Grand Empress Shek'zeer
 
 3) Terrace of Endless Spring:
-    - Need to rewrite instance script
-    - Need to fix some achievements
-    - Need to fix Sha of Fear heroic mode
+    - rewrite instance script
+    - fix some achievements
+    - fix Sha of Fear heroic mode
 
 4) Throne of Thunder:
-    - Need to rewrite instance script
-    - Need to rewrite Council of Elders
-    - Need to rewrite Tortos
-    - Need to rewrite Megaera
-    - Need to rewrite Durumu the Forgotten
-    - Need to rewrite Primordius
-    - Need to rewrite Dark Animus
-    - Need to add script for Iron Qon
-    - Need to add script for Twin Consorts
-    - Need to add script for Lei Shen the Thunder King
-    - Need to add script for Ra-den
+    - rewrite instance script
+    - rewrite Council of Elders
+    - rewrite Tortos
+    - rewrite Megaera
+    - rewrite Durumu the Forgotten
+    - rewrite Primordius
+    - rewrite Dark Animus
+    - add script for Iron Qon
+    - add script for Twin Consorts
+    - add script for Lei Shen the Thunder King
+    - add script for Ra-den
 
 5) Siege of Orgrimmar:
-    - Need to rewrite Immerseus
-    - Need to rewrite Norushen
-    - Need to finish Galakras script
-    - Need to finish Iron Juggernaut script
-    - Need to add script for Malkorok
-    - Need to add script for Spoils of Pandaria
-    - Need to add script for Thok the Bloodthirsty
-    - Need to add script for Siegecrafter Blakcfuse
-    - Need to add script for Paragons of the Klaxxi 
+    - rewrite Immerseus
+    - rewrite Norushen
+    - rewrite Galakras script
+    - rewrite Iron Juggernaut script
+    - rewrite script for Malkorok
+    - rewrite script for Spoils of Pandaria
+    - rewrite script for Thok the Bloodthirsty
+    - rewrite script for Siegecrafter Blakcfuse
+    - rewrite script for Paragons of the Klaxxi 
 
 6) Mists of Pandaria dungeons:
-    - Need to rewrite all of them
+    - rewrite all of them
 
 	
 Mists of Pandaria SmartAI Scripts TODO:
