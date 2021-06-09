@@ -1,4 +1,5 @@
-# Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+# Copyright (C) 2011-2020 Project SkyFire <http://www.projectskyfire.org/
+# Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
 #
 # This file is free software; as a special exception the author gives
 # unlimited permission to copy and/or distribute it, with or without
@@ -20,16 +21,16 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   endif()
 endif()
 
-if(CMAKE_SYSTEM_NAME MATCHES "Windows") 
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+  add_subdirectory(acelite)
   if(TOOLS)
     add_subdirectory(bzip2)
   endif()
-  add_subdirectory(zlib)
 endif()
 
+add_subdirectory(zlib)
 add_subdirectory(g3dlite)
 add_subdirectory(recastnavigation)
-add_subdirectory(fmt)
 
 if(SERVERS)
   add_subdirectory(gsoap)

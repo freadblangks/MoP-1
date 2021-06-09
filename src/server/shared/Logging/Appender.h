@@ -22,6 +22,10 @@
 #include <time.h>
 #include <string>
 #include <map>
+#include <winnt.h>
+#include <intsafe.h>
+#include <Appender.cpp>
+#include <Appender.h>
 
 enum LogFilterType
 {
@@ -69,7 +73,7 @@ enum LogFilterType
     LOG_FILTER_OPCODES
 };
 
-const uint8 MaxLogFilter = uint8(LOG_FILTER_OPCODES) + 1;
+const uint MaxLogFilter = uint(LOG_FILTER_OPCODES) + 1;
 
 // Values assigned have their equivalent in enum ACE_Log_Priority
 enum LogLevel
@@ -83,7 +87,7 @@ enum LogLevel
     LOG_LEVEL_FATAL                              = 6,
 };
 
-const uint8 MaxLogLevels = 6;
+const uint MaxLogLevels = 6;
 
 enum AppenderType
 {
@@ -127,10 +131,10 @@ struct LogMessage
 class Appender
 {
     public:
-        Appender(uint8 _id, std::string const& name, AppenderType type = APPENDER_NONE, LogLevel level = LOG_LEVEL_DISABLED, AppenderFlags flags = APPENDER_FLAGS_NONE);
+        Appender(AppenderType _id, std::string const& name, AppenderType type = APPENDER_NONE, LogLevel level = LOG_LEVEL_DISABLED, AppenderFlags flags = APPENDER_FLAGS_NONE);
         virtual ~Appender();
 
-        uint8 getId() const;
+        uint getId() const;
         std::string const& getName() const;
         AppenderType getType() const;
         LogLevel getLogLevel() const;
@@ -144,13 +148,13 @@ class Appender
     private:
         virtual void _write(LogMessage& /*message*/) = 0;
 
-        uint8 id;
+        AppenderType id;
         std::string name;
         AppenderType type;
         LogLevel level;
         AppenderFlags flags;
 };
 
-typedef std::map<uint8, Appender*> AppenderMap;
+typedef std::map< std::Appender;> AppenderMap;
 
 #endif

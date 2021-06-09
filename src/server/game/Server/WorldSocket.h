@@ -24,31 +24,25 @@
 
 #ifndef _WORLDSOCKET_H
 #define _WORLDSOCKET_H
-
-#include <ace/Basic_Types.h>
-#include <ace/Synch_Traits.h>
-#include <ace/Svc_Handler.h>
-#include <ace/SOCK_Stream.h>
-#include <ace/Thread_Mutex.h>
-#include <ace/Guard_T.h>
-#include <ace/Unbounded_Queue.h>
-#include <ace/Message_Block.h>
-
-#if !defined (ACE_LACKS_PRAGMA_ONCE)
 #pragma once
 #endif /* ACE_LACKS_PRAGMA_ONCE */
 
 #include "Common.h"
 #include "AuthCrypt.h"
+#include <DungeonFinding/LFG.h>
+#include <DungeonFinding/LFGMgr.h>
+#include <World.cpp>
+#include <G3D/g3dmath.h>
+#include <Configuration/Config.cpp>
 
-class ACE_Message_Block;
+
 class WorldPacket;
 class WorldSession;
 
 struct z_stream_s;
 
 /// Handler that can communicate over stream sockets.
-typedef ACE_Svc_Handler<ACE_SOCK_STREAM, ACE_NULL_SYNCH> WorldHandler;
+
 
 /**
  * WorldSocket.
@@ -86,7 +80,7 @@ typedef ACE_Svc_Handler<ACE_SOCK_STREAM, ACE_NULL_SYNCH> WorldHandler;
  * notification.
  *
  */
-class WorldSocket : public WorldHandler
+class WorldSocket : public World
 {
     public:
         WorldSocket (void);
@@ -95,8 +89,6 @@ class WorldSocket : public WorldHandler
         friend class WorldSocketMgr;
 
         /// Mutex type used for various synchronizations.
-        typedef ACE_Thread_Mutex LockType;
-        typedef ACE_Guard<LockType> GuardType;
 
         /// Check if socket is closed.
         bool IsClosed (void) const;
@@ -127,14 +119,13 @@ class WorldSocket : public WorldHandler
         virtual int close (u_long);
 
         /// Called when we can read from the socket.
-        virtual int handle_input (ACE_HANDLE = ACE_INVALID_HANDLE);
 
         /// Called when the socket can write.
-        virtual int handle_output (ACE_HANDLE = ACE_INVALID_HANDLE);
+        //virtual int handle_output (ACE_HANDLE = ACE_INVALID_HANDLE);
 
         /// Called when connection is closed or error happens.
-        virtual int handle_close (ACE_HANDLE = ACE_INVALID_HANDLE,
-            ACE_Reactor_Mask = ACE_Event_Handler::ALL_EVENTS_MASK);
+        //virtual int handle_close (ACE_HANDLE = ACE_INVALID_HANDLE,
+         //   ACE_Reactor_Mask = ACE_Event_Handler::ALL_EVENTS_MASK);
 
         /// Called by WorldSocketMgr/ReactorRunnable.
         int Update (void);
@@ -147,11 +138,11 @@ class WorldSocket : public WorldHandler
 
         /// Help functions to mark/unmark the socket for output.
         /// @param g the guard is for m_OutBufferLock, the function will release it
-        int cancel_wakeup_output (GuardType& g);
-        int schedule_wakeup_output (GuardType& g);
+       // int cancel_wakeup_output (GuardType& g);
+       // int schedule_wakeup_output (GuardType& g);
 
         /// Drain the queue if its not empty.
-        int handle_output_queue (GuardType& g);
+     //   int handle_output_queue (GuardType& g);
 
         /// process one incoming packet.
         /// @param new_pct received packet, note that you need to delete it.
@@ -166,14 +157,14 @@ class WorldSocket : public WorldHandler
         /// Called by CMSG_VERIFY_CONNECTIVITY_RESPONSE
         int HandleSendAuthSession();
 
-        void SendAuthResponse(uint8 code, bool queued, uint32 queuePos);
+       // void SendAuthResponse(uint8 code, bool queued, uint32 queuePos);
 
     private:
         /// Time in which the last ping was received
-        ACE_Time_Value m_LastPingTime;
+    //    ACE_Time_Value m_LastPingTime;
 
         /// Keep track of over-speed pings, to prevent ping flood.
-        uint32 m_OverSpeedPings;
+  //      uint32 m_OverSpeedPings;
 
         /// Address of the remote peer
         std::string m_Address;
@@ -192,18 +183,14 @@ class WorldSocket : public WorldHandler
 
         /// This block actually refers to m_RecvWPct contents,
         /// which allows easy and safe writing to it.
-        /// It wont free memory when its deleted. m_RecvWPct takes care of freeing.
-        ACE_Message_Block m_RecvPct;
+        /// It wont free memory when its deleted. m_RecvWPct takes care of freeing
 
         /// Fragment of the received header.
-        ACE_Message_Block m_Header;
-        ACE_Message_Block m_WorldHeader;
 
         /// Mutex for protecting output related data.
         LockType m_OutBufferLock;
 
         /// Buffer used for writing output.
-        ACE_Message_Block* m_OutBuffer;
 
         /// Size of the m_OutBuffer.
         size_t m_OutBufferSize;
@@ -211,11 +198,11 @@ class WorldSocket : public WorldHandler
         /// True if the socket is registered with the reactor for output
         bool m_OutActive;
 
-        uint32 m_Seed;
+        //uint32 m_Seed;
 
         z_stream_s* m_zstream;
 };
-
-#endif  /* _WORLDSOCKET_H */
+//#endif
+/* _WORLDSOCKET_H */
 
 /// @}

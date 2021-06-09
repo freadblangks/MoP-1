@@ -37,6 +37,10 @@ id(_id), name(_name), type(_type), level(_level), flags(_flags)
 {
 }
 
+Appender::Appender(uint _id, std::string const& name, AppenderType type, LogLevel level, AppenderFlags flags)
+{
+}
+
 Appender::~Appender()
 {
 }

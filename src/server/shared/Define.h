@@ -20,10 +20,6 @@
 #define TRINITY_DEFINE_H
 
 #include "CompilerDefs.h"
-
-#include <ace/Basic_Types.h>
-#include <ace/ACE_export.h>
-
 #include <cstddef>
 
 #define TRINITY_LITTLEENDIAN 0
@@ -70,22 +66,6 @@
 #  define ATTR_DEPRECATED
 #endif //COMPILER == COMPILER_GNU
 
-#define UI64FMTD ACE_UINT64_FORMAT_SPECIFIER
-#define UI64LIT(N) ACE_UINT64_LITERAL(N)
-
-#define SI64FMTD ACE_INT64_FORMAT_SPECIFIER
-#define SI64LIT(N) ACE_INT64_LITERAL(N)
-
-#define SIZEFMTD ACE_SIZE_T_FORMAT_SPECIFIER
-
-typedef ACE_INT64 int64;
-typedef ACE_INT32 int32;
-typedef ACE_INT16 int16;
-typedef ACE_INT8 int8;
-typedef ACE_UINT64 uint64;
-typedef ACE_UINT32 uint32;
-typedef ACE_UINT16 uint16;
-typedef ACE_UINT8 uint8;
 
 enum DBCFormer
 {
