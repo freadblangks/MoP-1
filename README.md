@@ -1,26 +1,33 @@
-![mistsofpandarialogo](https://cloud.githubusercontent.com/assets/812439/18619016/c10a0e20-7dfa-11e6-92c3-0f0dc1f1be75.png)
+# FuzionCore Project based on TrinityCore
 
-## Build Status
+* [Introduction](#introduction)
+* [Requirements](#requirements)
+* [Install](#install)
+ 
 
-5.4.8 (master)
-:------------:
-[![5.4.8 Build Status]
+
+## Discord Server
+ https://discord.gg/wAp3bFTxnP
+
+## Introduction
+
+FuzionCore Project is a *MMORPG* Framework written in C++.
+
+It is fully based on *TrinityCore*
+
+It is completely closed source.
 
 
 ## Requirements
 
-+ Platform: Linux (Ubuntu 16.04), Windows
-+ Processor supporting SSE2 
-+ ACE = 6.3.3 (5.8.3 included for Windows) 
-+ MySQL = 5.7.24
-+ CMake = 3.12.4 
-+ OpenSSL = 1.0.2g our 1.1.1k
-+ GCC = 5.4.0 (Linux only) 
-+ MS Visual Studio = 16 (2019)(Windows only)
+Software requirements are available in the [wiki](https://www.trinitycore.info/display/tc/Requirements) for
+Windows, Linux and macOS.
 
+## Install
 
-## Copyright
+Detailed installation guides are available in the [wiki](https://www.trinitycore.info/display/tc/Installation+Guide) for
+Windows, Linux and macOS.
+ ## Links
 
-License: GPL 2.0 
-
-Made by Frozen
+* [Wiki](https://www.trinitycore.info)
+* [TrinityCore](https://www.trinitycore.org/)
