@@ -1,5 +1,4 @@
-# Copyright (C) 2011-2020 Project SkyFire <http://www.projectskyfire.org/
-# Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
+# Copyright (C) 2020 LatinCoreTeam
 #
 # This file is free software; as a special exception the author gives
 # unlimited permission to copy and/or distribute it, with or without
@@ -43,6 +42,10 @@ else()
   target_include_directories(zlib
     PUBLIC
       ${CMAKE_CURRENT_SOURCE_DIR})
+
+  target_link_libraries(zlib
+    PRIVATE
+      trinity-dependency-interface)
 
   set_target_properties(zlib
       PROPERTIES

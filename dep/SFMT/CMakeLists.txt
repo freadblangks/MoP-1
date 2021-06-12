@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+# Copyright (C) 2020 LatinCoreTeam
 #
 # This file is free software; as a special exception the author gives
 # unlimited permission to copy and/or distribute it, with or without
@@ -8,12 +8,8 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}
-)
-
 add_library(sfmt INTERFACE)
 
-# target_include_directories(sfmt
-  # INTERFACE
-    # ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(sfmt
+  INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR})

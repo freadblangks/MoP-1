@@ -1,5 +1,4 @@
-# Copyright (C) 2011-2020 Project SkyFire <http://www.projectskyfire.org/
-# Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
+# Copyright (C) 2020 LatinCoreTeam
 #
 # This file is free software; as a special exception the author gives
 # unlimited permission to copy and/or distribute it, with or without
@@ -9,33 +8,32 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-if( CMAKE_COMPILER_IS_GNUCXX )
-  add_definitions(--no-warnings)
-elseif( MSVC )
-  add_definitions(/W0)
-endif()
+add_subdirectory(threads)
 
-if(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  if(SERVERS AND NOT NOJEM)
-    add_subdirectory(jemalloc)  
-  endif()
+if(SERVERS OR TOOLS)
+  add_subdirectory(boost)
+  add_subdirectory(process)
+  add_subdirectory(zlib)
+  add_subdirectory(g3dlite)
+  add_subdirectory(recastnavigation)
+  add_subdirectory(fmt)
+  add_subdirectory(SFMT)
+  add_subdirectory(utf8cpp)
+  add_subdirectory(valgrind)
+  add_subdirectory(openssl)
+  add_subdirectory(jemalloc)
 endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-  add_subdirectory(acelite)
-  if(TOOLS)
-    add_subdirectory(bzip2)
-  endif()
-endif()
-
-add_subdirectory(zlib)
-add_subdirectory(g3dlite)
-add_subdirectory(recastnavigation)
 
 if(SERVERS)
+  add_subdirectory(mysql)
+  add_subdirectory(readline)
   add_subdirectory(gsoap)
+  add_subdirectory(rapidjson)
+  add_subdirectory(efsw)
+  add_subdirectory(protobuf)
 endif()
 
 if(TOOLS)
-  add_subdirectory(StormLib)
+  add_subdirectory(bzip2)
+  add_subdirectory(CascLib)
 endif()
