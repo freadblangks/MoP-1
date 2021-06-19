@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -29,19 +28,14 @@
 
 #define DEFAULT_VISIBILITY_NOTIFY_PERIOD      1000
 
-class GridInfo
+class TC_GAME_API GridInfo
 {
 public:
-    GridInfo()
-        : i_timer(0), vis_Update(0, irand(0, DEFAULT_VISIBILITY_NOTIFY_PERIOD)),
-          i_unloadActiveLockCount(0), i_unloadExplicitLock(false), i_unloadReferenceLock(false) {}
-    GridInfo(time_t expiry, bool unload = true )
-        : i_timer(expiry), vis_Update(0, irand(0, DEFAULT_VISIBILITY_NOTIFY_PERIOD)),
-          i_unloadActiveLockCount(0), i_unloadExplicitLock(!unload), i_unloadReferenceLock(false) {}
+    GridInfo();
+    GridInfo(time_t expiry, bool unload = true );
     const TimeTracker& getTimeTracker() const { return i_timer; }
-    bool getUnloadLock() const { return i_unloadActiveLockCount || i_unloadExplicitLock || i_unloadReferenceLock; }
+    bool getUnloadLock() const { return i_unloadActiveLockCount || i_unloadExplicitLock; }
     void setUnloadExplicitLock(bool on) { i_unloadExplicitLock = on; }
-    void setUnloadReferenceLock(bool on) { i_unloadReferenceLock = on; }
     void incUnloadActiveLock() { ++i_unloadActiveLockCount; }
     void decUnloadActiveLock() { if (i_unloadActiveLockCount) --i_unloadActiveLockCount; }
 
@@ -55,7 +49,6 @@ private:
 
     uint16 i_unloadActiveLockCount : 16;                    // lock from active object spawn points (prevent clone loading)
     bool   i_unloadExplicitLock    : 1;                     // explicit manual lock or config setting
-    bool   i_unloadReferenceLock   : 1;                     // lock from instance map copy
 };
 
 typedef enum
@@ -78,18 +71,10 @@ class NGrid
 {
     public:
         typedef Grid<ACTIVE_OBJECT, WORLD_OBJECT_TYPES, GRID_OBJECT_TYPES> GridType;
-        NGrid(uint32 id, int32 x, int32 y, time_t expiry, bool unload = true)
-            : i_gridId(id)
-            , i_GridInfo(GridInfo(expiry, unload))
-            , i_x(x)
-            , i_y(y)
-            , i_cellstate(GRID_STATE_INVALID)
-            , i_GridObjectDataLoaded(false)
-
-
-        {
-
-        }
+        NGrid(uint32 id, int32 x, int32 y, time_t expiry, bool unload = true) :
+            i_gridId(id), i_GridInfo(GridInfo(expiry, unload)), i_x(x), i_y(y),
+            i_cellstate(GRID_STATE_INVALID), i_GridObjectDataLoaded(false)
+        { }
 
         GridType& GetGridType(const uint32 x, const uint32 y)
         {
@@ -121,7 +106,6 @@ class NGrid
         const TimeTracker& getTimeTracker() const { return i_GridInfo.getTimeTracker(); }
         bool getUnloadLock() const { return i_GridInfo.getUnloadLock(); }
         void setUnloadExplicitLock(bool on) { i_GridInfo.setUnloadExplicitLock(on); }
-        void setUnloadReferenceLock(bool on) { i_GridInfo.setUnloadReferenceLock(on); }
         void incUnloadActiveLock() { i_GridInfo.incUnloadActiveLock(); }
         void decUnloadActiveLock() { i_GridInfo.decUnloadActiveLock(); }
         void ResetTimeTracker(time_t interval) { i_GridInfo.ResetTimeTracker(interval); }
@@ -199,4 +183,3 @@ class NGrid
         bool i_GridObjectDataLoaded;
 };
 #endif
-

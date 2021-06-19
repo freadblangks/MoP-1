@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,153 +15,144 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "WorldSession.h"
+#include "BlackMarketMgr.h"
+#include "BlackMarketPackets.h"
+#include "DatabaseEnv.h"
+#include "Item.h"
+#include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
-#include "World.h"
 #include "WorldPacket.h"
-#include "WorldSession.h"
 
-#include "BlackMarket/BlackMarketMgr.h"
-#include "Log.h"
-#include "Language.h"
-#include "Opcodes.h"
-#include "UpdateMask.h"
-#include "Util.h"
-#include "AccountMgr.h"
-
-void WorldSession::HandleBlackMarketHello(WorldPacket& recvData)
+void WorldSession::HandleBlackMarketOpen(WorldPackets::BlackMarket::BlackMarketOpen& blackMarketOpen)
 {
-    ObjectGuid guid;
-
-    uint8 bits[8] = { 6, 4, 2, 7, 5, 3, 0, 1 };
-    recvData.ReadBitInOrder(guid, bits);
-
-    recvData.FlushBits();
-
-    uint8 bytes[8] = { 3, 2, 1, 6, 0, 5, 7, 4 };
-    recvData.ReadBytesSeq(guid, bytes);
-
-    Creature* unit = GetPlayer()->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_BLACK_MARKET);
+    Creature* unit = GetPlayer()->GetNPCIfCanInteractWith(blackMarketOpen.Guid, UNIT_NPC_FLAG_BLACK_MARKET, UNIT_NPC_FLAG_2_BLACK_MARKET_VIEW);
     if (!unit)
     {
-        sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: HandleBlackMarketHello - Unit (GUID: %u) not found or you can't interact with him.", uint32(GUID_LOPART(guid)));
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketHello - Unit (GUID: %s) not found or you can't interact with him.", blackMarketOpen.Guid.ToString().c_str());
         return;
     }
 
-    // Remove fake death
+    // remove fake death
     if (GetPlayer()->HasUnitState(UNIT_STATE_DIED))
         GetPlayer()->RemoveAurasByType(SPELL_AURA_FEIGN_DEATH);
 
-    SendBlackMarketHello(guid);
+    SendBlackMarketOpenResult(blackMarketOpen.Guid, unit);
 }
 
-void WorldSession::SendBlackMarketHello(uint64 npcGuid)
+void WorldSession::SendBlackMarketOpenResult(ObjectGuid guid, Creature* /*auctioneer*/)
 {
-    WorldPacket data(SMSG_BLACKMARKET_OPEN_RESULT, 9);
-    ObjectGuid guid = npcGuid;
-
-    data.WriteBit(guid[2]);
-    data.WriteBit(guid[3]);
-    data.WriteBit(guid[1]);
-    data.WriteBit(guid[4]);
-    data.WriteBit(guid[5]);
-    data.WriteBit(guid[7]);
-    data.WriteBit(guid[0]);
-    data.WriteBit(1);                // unk
-    data.WriteBit(guid[6]);
-
-    uint8 bytes[8] = { 7, 1, 4, 3, 2, 6, 0, 5 };
-    data.WriteBytesSeq(guid, bytes);
-
-    SendPacket(&data);
+    WorldPackets::BlackMarket::BlackMarketOpenResult packet;
+    packet.Guid = guid;
+    packet.Enable = sBlackMarketMgr->IsEnabled();
+    SendPacket(packet.Write());
 }
 
-void WorldSession::HandleBlackMarketRequestItems(WorldPacket& recvData)
+void WorldSession::HandleBlackMarketRequestItems(WorldPackets::BlackMarket::BlackMarketRequestItems& blackMarketRequestItems)
 {
-    ObjectGuid guid;
-    uint32 unk;
+    if (!sBlackMarketMgr->IsEnabled())
+        return;
 
-    recvData >> unk;
-
-    uint8 bits[8] = { 4, 2, 6, 3, 1, 7, 5, 0 };
-    recvData.ReadBitInOrder(guid, bits);
-
-    recvData.FlushBits();
-
-    uint8 bytes[8] = { 6, 4, 0, 7, 5, 2, 1, 3 };
-    recvData.ReadBytesSeq(guid, bytes);
-
-    Creature* unit = GetPlayer()->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_BLACK_MARKET);
+    Creature* unit = GetPlayer()->GetNPCIfCanInteractWith(blackMarketRequestItems.Guid, UNIT_NPC_FLAG_BLACK_MARKET, UNIT_NPC_FLAG_2_BLACK_MARKET_VIEW);
     if (!unit)
     {
-        sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: HandleBlackMarketRequestItems - Unit (GUID: %u) not found or you can't interact with him.", uint32(GUID_LOPART(guid)));
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketRequestItems - Unit (GUID: %s) not found or you can't interact with him.", blackMarketRequestItems.Guid.ToString().c_str());
         return;
     }
 
-    SendBlackMarketRequestItemsResult();
+    WorldPackets::BlackMarket::BlackMarketRequestItemsResult result;
+    sBlackMarketMgr->BuildItemsResponse(result, GetPlayer());
+    SendPacket(result.Write());
 }
 
-void WorldSession::SendBlackMarketRequestItemsResult()
+void WorldSession::HandleBlackMarketBidOnItem(WorldPackets::BlackMarket::BlackMarketBidOnItem& blackMarketBidOnItem)
 {
-    WorldPacket data(SMSG_BLACKMARKET_ITEM_RESULT, 9);
-    sBlackMarketMgr->BuildBlackMarketAuctionsPacket(data, GetPlayer()->GetGUIDLow());
-    SendPacket(&data);
-}
-
-void WorldSession::HandleBlackMarketBid(WorldPacket& recvData)
-{
-    ObjectGuid guid;
-    uint32 itemid, id;
-    uint64 price;
-
-    recvData >> price;
-    recvData >> itemid;
-    recvData >> id;
-
-    uint8 bits[8] = { 4, 2, 1, 0, 6, 7, 3, 5 };
-    recvData.ReadBitInOrder(guid, bits);
-
-    recvData.FlushBits();
-
-    uint8 bytes[8] = { 4, 0, 3, 1, 7, 5, 2, 6 };
-    recvData.ReadBytesSeq(guid, bytes);
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, ">> HandleBid >> id : %u, price : %u, itemid : %u", id, price, itemid);
-
-    if (!price)
+    if (!sBlackMarketMgr->IsEnabled())
         return;
 
-    Creature* creature = GetPlayer()->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_BLACK_MARKET);
-    if (!creature)
+    Player* player = GetPlayer();
+    Creature* unit = player->GetNPCIfCanInteractWith(blackMarketBidOnItem.Guid, UNIT_NPC_FLAG_BLACK_MARKET, UNIT_NPC_FLAG_2_NONE);
+    if (!unit)
     {
-        sLog->outDebug(LOG_FILTER_NETWORKIO, "WORLD: HandleBlackMarketBid - Unit (GUID: %u) not found or you can't interact with him.", uint32(GUID_LOPART(guid)));
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketBidOnItem - Unit (GUID: %s) not found or you can't interact with him.", blackMarketBidOnItem.Guid.ToString().c_str());
         return;
     }
 
-    BMAuctionEntry* auction = sBlackMarketMgr->GetAuction(id);
-    if (!auction)
+    BlackMarketEntry* entry = sBlackMarketMgr->GetAuctionByID(blackMarketBidOnItem.MarketID);
+    if (!entry)
+    {
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketBidOnItem - Player (%s, name: %s) tried to bid on a nonexistent auction (MarketId: %i).", player->GetGUID().ToString().c_str(), player->GetName().c_str(), blackMarketBidOnItem.MarketID);
+        SendBlackMarketBidOnItemResult(ERR_BMAH_ITEM_NOT_FOUND, blackMarketBidOnItem.MarketID, blackMarketBidOnItem.Item);
         return;
+    }
 
-    if (auction->bidder == GetPlayer()->GetGUIDLow()) // Trying to cheat
+    if (entry->GetBidder() == player->GetGUID().GetCounter())
+    {
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketBidOnItem - Player (%s, name: %s) tried to place a bid on an item he already bid on. (MarketId: %i).", player->GetGUID().ToString().c_str(), player->GetName().c_str(), blackMarketBidOnItem.MarketID);
+        SendBlackMarketBidOnItemResult(ERR_BMAH_ALREADY_BID, blackMarketBidOnItem.MarketID, blackMarketBidOnItem.Item);
         return;
+    }
 
-    if (auction->bid >= price && price != auction->bm_template->startBid) // Trying to cheat
+    if (!entry->ValidateBid(blackMarketBidOnItem.BidAmount))
+    {
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketBidOnItem - Player (%s, name: %s) tried to place an invalid bid. Amount: %lu (MarketId: %i).", player->GetGUID().ToString().c_str(), player->GetName().c_str(), blackMarketBidOnItem.BidAmount, blackMarketBidOnItem.MarketID);
+        SendBlackMarketBidOnItemResult(ERR_BMAH_HIGHER_BID, blackMarketBidOnItem.MarketID, blackMarketBidOnItem.Item);
         return;
+    }
 
-    GetPlayer()->ModifyMoney(-int64(price));
+    if (!player->HasEnoughMoney(blackMarketBidOnItem.BidAmount))
+    {
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketBidOnItem - Player (%s, name: %s) does not have enough money to place bid. (MarketId: %i).", player->GetGUID().ToString().c_str(), player->GetName().c_str(), blackMarketBidOnItem.MarketID);
+        SendBlackMarketBidOnItemResult(ERR_BMAH_NOT_ENOUGH_MONEY, blackMarketBidOnItem.MarketID, blackMarketBidOnItem.Item);
+        return;
+    }
 
-    sBlackMarketMgr->UpdateAuction(auction, price, GetPlayer());
+    if (entry->GetSecondsRemaining() <= 0)
+    {
+        TC_LOG_DEBUG("network", "WORLD: HandleBlackMarketBidOnItem - Player (%s, name: %s) tried to bid on a completed auction. (MarketId: %i).", player->GetGUID().ToString().c_str(), player->GetName().c_str(), blackMarketBidOnItem.MarketID);
+        SendBlackMarketBidOnItemResult(ERR_BMAH_DATABASE_ERROR, blackMarketBidOnItem.MarketID, blackMarketBidOnItem.Item);
+        return;
+    }
 
-    SendBlackMarketBidResult(itemid, id);
-    SendBlackMarketRequestItemsResult();
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+
+    sBlackMarketMgr->SendAuctionOutbidMail(entry, trans);
+    entry->PlaceBid(blackMarketBidOnItem.BidAmount, player, trans);
+
+    CharacterDatabase.CommitTransaction(trans);
+
+    SendBlackMarketBidOnItemResult(ERR_BMAH_OK, blackMarketBidOnItem.MarketID, blackMarketBidOnItem.Item);
 }
 
-void WorldSession::SendBlackMarketBidResult(uint32 itemEntry, uint32 auctionId)
+void WorldSession::SendBlackMarketBidOnItemResult(int32 result, int32 marketId, WorldPackets::Item::ItemInstance& item)
 {
-    WorldPacket data(SMSG_BLACKMARKET_BID_ON_ITEM_RESULT, 12);
+    WorldPackets::BlackMarket::BlackMarketBidOnItemResult packet;
 
-    data << uint32(auctionId);
-    data << uint32(0);
-    data << uint32(itemEntry);
-    SendPacket(&data);
+    packet.MarketID = marketId;
+    packet.Item = item;
+    packet.Result = result;
+
+    SendPacket(packet.Write());
+}
+
+void WorldSession::SendBlackMarketWonNotification(BlackMarketEntry const* entry, Item const* item)
+{
+    WorldPackets::BlackMarket::BlackMarketWon packet;
+
+    packet.MarketID = entry->GetMarketId();
+    packet.Item.Initialize(item);
+
+    SendPacket(packet.Write());
+}
+
+void WorldSession::SendBlackMarketOutbidNotification(BlackMarketTemplate const* templ)
+{
+    WorldPackets::BlackMarket::BlackMarketOutbid packet;
+
+    packet.MarketID = templ->MarketID;
+    packet.Item = templ->Item;
+    packet.RandomPropertiesID = 0;
+
+    SendPacket(packet.Write());
 }

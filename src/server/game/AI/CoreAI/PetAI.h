@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -25,24 +24,33 @@
 class Creature;
 class Spell;
 
-class PetAI : public CreatureAI
+typedef std::vector<std::pair<Unit*, Spell*>> TargetSpellList;
+
+class TC_GAME_API PetAI : public CreatureAI
 {
     public:
 
         explicit PetAI(Creature* c);
 
-        void EnterEvadeMode();
-        void JustDied(Unit* /*who*/) { _stopAttack(); }
-
-        void UpdateAI(const uint32);
+        void UpdateAI(uint32) override;
         static int Permissible(const Creature*);
 
-        void KilledUnit(Unit* /*victim*/);
-        void AttackStart(Unit* target);
-        void MovementInform(uint32 moveType, uint32 data);
-        void OwnerDamagedBy(Unit* attacker);
-        void OwnerAttacked(Unit* target);
-        void ReceiveEmote(Player* player, uint32 textEmote);
+        void KilledUnit(Unit* /*victim*/) override;
+        void AttackStart(Unit* target) override;
+        void MovementInform(uint32 moveType, uint32 data) override;
+        void OwnerAttackedBy(Unit* attacker) override;
+        void OwnerAttacked(Unit* target) override;
+        void AttackedBy(Unit* attacker) override;
+        void ReceiveEmote(Player* player, uint32 textEmote) override;
+
+        // The following aren't used by the PetAI but need to be defined to override
+        //  default CreatureAI functions which interfere with the PetAI
+        //
+        void MoveInLineOfSight(Unit* /*who*/) override { } // CreatureAI interferes with returning pets
+        void MoveInLineOfSight_Safe(Unit* /*who*/) { } // CreatureAI interferes with returning pets
+        void EnterEvadeMode(EvadeReason /*why*/) override { } // For fleeing, pets don't use this type of Evade mechanic
+
+        void OnCharmed(bool /*apply*/) override;
 
     private:
         bool _isVisible(Unit*) const;
@@ -52,13 +60,13 @@ class PetAI : public CreatureAI
         void UpdateAllies();
 
         TimeTracker i_tracker;
-        bool inCombat;
-        std::set<uint64> m_AllySet;
+        GuidSet m_AllySet;
         uint32 m_updateAlliesTimer;
 
-        Unit* SelectNextTarget();
+        Unit* SelectNextTarget(bool allowAutoSelect) const;
         void HandleReturnMovement();
         void DoAttack(Unit* target, bool chase);
         bool CanAttack(Unit* target);
+        void ClearCharmInfoFlags();
 };
 #endif

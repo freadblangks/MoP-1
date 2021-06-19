@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -27,9 +26,8 @@ class GameObject;
 
 namespace FactorySelector
 {
-    CreatureAI* selectAI(Creature*);
-    MovementGenerator* selectMovementGenerator(Creature*);
-    GameObjectAI* SelectGameObjectAI(GameObject*);
+    TC_GAME_API CreatureAI* selectAI(Creature*);
+    TC_GAME_API MovementGenerator* selectMovementGenerator(Creature*);
+    TC_GAME_API GameObjectAI* SelectGameObjectAI(GameObject*);
 }
 #endif
-

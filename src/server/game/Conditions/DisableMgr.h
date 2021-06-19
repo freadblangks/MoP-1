@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -29,9 +28,13 @@ enum DisableType
     DISABLE_TYPE_QUEST                  = 1,
     DISABLE_TYPE_MAP                    = 2,
     DISABLE_TYPE_BATTLEGROUND           = 3,
-    DISABLE_TYPE_ACHIEVEMENT_CRITERIA   = 4,
+    DISABLE_TYPE_CRITERIA               = 4,
     DISABLE_TYPE_OUTDOORPVP             = 5,
-    DISABLE_TYPE_VMAP                   = 6
+    DISABLE_TYPE_VMAP                   = 6,
+    DISABLE_TYPE_MMAP                   = 7,
+    DISABLE_TYPE_LFG_MAP                = 8,
+
+    MAX_DISABLE_TYPES
 };
 
 enum SpellDisableTypes
@@ -42,23 +45,24 @@ enum SpellDisableTypes
     SPELL_DISABLE_DEPRECATED_SPELL  = 0x8,
     SPELL_DISABLE_MAP               = 0x10,
     SPELL_DISABLE_AREA              = 0x20,
+    SPELL_DISABLE_LOS               = 0x40,
     MAX_SPELL_DISABLE_TYPE = (  SPELL_DISABLE_PLAYER | SPELL_DISABLE_CREATURE | SPELL_DISABLE_PET |
-                                SPELL_DISABLE_DEPRECATED_SPELL | SPELL_DISABLE_MAP | SPELL_DISABLE_AREA)
+                                SPELL_DISABLE_DEPRECATED_SPELL | SPELL_DISABLE_MAP | SPELL_DISABLE_AREA |
+                                SPELL_DISABLE_LOS)
 };
 
-enum VmapDisableTypes
+enum MMapDisableTypes
 {
-    VMAP_DISABLE_AREAFLAG       = 0x1,
-    VMAP_DISABLE_HEIGHT         = 0x2,
-    VMAP_DISABLE_LOS            = 0x4,
-    VMAP_DISABLE_LIQUIDSTATUS   = 0x8
+    MMAP_DISABLE_PATHFINDING    = 0x0
 };
 
 namespace DisableMgr
 {
-    void LoadDisables();
-    bool IsDisabledFor(DisableType type, uint32 entry, Unit const* unit, uint8 flags = 0);
-    void CheckQuestDisables();
+    TC_GAME_API void LoadDisables();
+    TC_GAME_API bool IsDisabledFor(DisableType type, uint32 entry, Unit const* unit, uint8 flags = 0);
+    TC_GAME_API void CheckQuestDisables();
+    TC_GAME_API bool IsVMAPDisabledFor(uint32 entry, uint8 flags);
+    TC_GAME_API bool IsPathfindingEnabled(uint32 mapId);
 }
 
 #endif //TRINITY_DISABLEMGR_H

@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,91 +16,193 @@
  */
 
 #include "ChannelMgr.h"
-
+#include "Channel.h"
+#include "ChatPackets.h"
+#include "ChannelPackets.h"
+#include "ChatPackets.h"
+#include "DB2Stores.h"
+#include "Player.h"
+#include "Realm.h"
 #include "World.h"
-
-ChannelMgr* channelMgr(uint32 team)
-{
-    if (sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_CHANNEL))
-        return ACE_Singleton<AllianceChannelMgr, ACE_Null_Mutex>::instance();        // cross-faction
-
-    if (team == ALLIANCE)
-        return ACE_Singleton<AllianceChannelMgr, ACE_Null_Mutex>::instance();
-    if (team == HORDE)
-        return ACE_Singleton<HordeChannelMgr, ACE_Null_Mutex>::instance();
-
-    return NULL;
-}
+#include "WorldSession.h"
 
 ChannelMgr::~ChannelMgr()
 {
-    for (ChannelMap::iterator itr = channels.begin(); itr != channels.end(); ++itr)
+    for (auto itr = _channels.begin(); itr != _channels.end(); ++itr)
         delete itr->second;
 
-    channels.clear();
+    for (auto itr = _customChannels.begin(); itr != _customChannels.end(); ++itr)
+        delete itr->second;
 }
 
-Channel* ChannelMgr::GetJoinChannel(std::string name, uint32 channel_id)
+ChannelMgr* ChannelMgr::ForTeam(uint32 team)
 {
-    std::wstring wname;
-    Utf8toWStr(name, wname);
-    wstrToLower(wname);
+    static ChannelMgr allianceChannelMgr(ALLIANCE);
+    static ChannelMgr hordeChannelMgr(HORDE);
 
-    if (channels.find(wname) == channels.end())
+    if (sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_CHANNEL))
+        return &allianceChannelMgr;        // cross-faction
+
+    if (team == ALLIANCE)
+        return &allianceChannelMgr;
+
+    if (team == HORDE)
+        return &hordeChannelMgr;
+
+    return nullptr;
+}
+
+Channel* ChannelMgr::GetChannelForPlayerByNamePart(std::string const& namePart, Player* playerSearcher)
+{
+    std::wstring channelNamePart;
+    if (!Utf8toWStr(namePart, channelNamePart))
+        return nullptr;
+
+    wstrToLower(channelNamePart);
+    for (Channel* channel : playerSearcher->GetJoinedChannels())
     {
-        Channel* nchan = new Channel(name, channel_id, team);
-        channels[wname] = nchan;
-        return nchan;
+        std::string chanName = channel->GetName(playerSearcher->GetSession()->GetSessionDbcLocale());
+
+        std::wstring channelNameW;
+        if (!Utf8toWStr(chanName, channelNameW))
+            continue;
+
+        wstrToLower(channelNameW);
+        if (!channelNameW.compare(0, channelNamePart.size(), channelNamePart))
+            return channel;
     }
 
-    return channels[wname];
+    return nullptr;
 }
 
-Channel* ChannelMgr::GetChannel(std::string name, Player* p, bool pkt)
+Channel* ChannelMgr::GetJoinChannel(uint32 channelId, std::string const& name, AreaTableEntry const* zoneEntry /*= nullptr*/)
 {
-    std::wstring wname;
-    Utf8toWStr(name, wname);
-    wstrToLower(wname);
-
-    ChannelMap::const_iterator i = channels.find(wname);
-
-    if (i == channels.end())
+    if (channelId) // builtin
     {
-        if (pkt)
-        {
-            WorldPacket data;
-            MakeNotOnPacket(&data, name);
-            p->GetSession()->SendPacket(&data);
-        }
+        ObjectGuid channelGuid = CreateBuiltinChannelGuid(channelId, zoneEntry);
+        auto itr = _channels.find(channelGuid);
+        if (itr != _channels.end())
+            return itr->second;
 
-        return NULL;
+        Channel* newChannel = new Channel(channelGuid, channelId, _team, zoneEntry);
+        _channels[channelGuid] = newChannel;
+        return newChannel;
     }
-    else
-        return i->second;
+    else // custom
+    {
+        std::wstring channelName;
+        if (!Utf8toWStr(name, channelName))
+            return nullptr;
+
+        wstrToLower(channelName);
+
+        auto itr = _customChannels.find(channelName);
+        if (itr != _customChannels.end())
+            return itr->second;
+
+        Channel* newChannel = new Channel(CreateCustomChannelGuid(), name, _team);
+        _customChannels[channelName] = newChannel;
+        return newChannel;
+    }
 }
 
-void ChannelMgr::LeftChannel(std::string name)
+Channel* ChannelMgr::GetChannel(uint32 channelId, std::string const& name, Player* player, bool notify /*= true*/, AreaTableEntry const* zoneEntry /*= nullptr*/) const
 {
-    std::wstring wname;
-    Utf8toWStr(name, wname);
-    wstrToLower(wname);
+    Channel* result = nullptr;
+    if (channelId) // builtin
+    {
+        auto itr = _channels.find(CreateBuiltinChannelGuid(channelId, zoneEntry));
+        if (itr != _channels.end())
+            result = itr->second;
+    }
+    else // custom
+    {
+        std::wstring channelName;
+        if (!Utf8toWStr(name, channelName))
+            return nullptr;
 
-    ChannelMap::const_iterator i = channels.find(wname);
+        wstrToLower(channelName);
 
-    if (i == channels.end())
+        auto itr = _customChannels.find(channelName);
+        if (itr != _customChannels.end())
+            result = itr->second;
+    }
+
+    if (!result && notify)
+    {
+        std::string channelName = name;
+        Channel::GetChannelName(channelName, channelId, player->GetSession()->GetSessionDbcLocale(), zoneEntry);
+
+        SendNotOnChannelNotify(player, channelName);
+    }
+
+    return result;
+}
+
+void ChannelMgr::LeftChannel(std::string const& name)
+{
+    std::wstring channelName;
+    if (!Utf8toWStr(name, channelName))
         return;
 
-    Channel* channel = i->second;
+    wstrToLower(channelName);
+    auto itr = _customChannels.find(channelName);
+    if (itr == _customChannels.end())
+        return;
 
-    if (channel->GetNumPlayers() == 0 && !channel->IsConstant())
+    Channel* channel = itr->second;
+    if (!channel->GetNumPlayers())
     {
-        channels.erase(wname);
+        _customChannels.erase(itr);
         delete channel;
     }
 }
 
-void ChannelMgr::MakeNotOnPacket(WorldPacket* data, std::string name)
+void ChannelMgr::LeftChannel(uint32 channelId, AreaTableEntry const* zoneEntry)
 {
-    data->Initialize(SMSG_CHANNEL_NOTIFY, (1+10));  // we guess size
-    (*data) << (uint8)0x05 << name;
+    auto itr = _channels.find(CreateBuiltinChannelGuid(channelId, zoneEntry));
+    if (itr == _channels.end())
+        return;
+
+    Channel* channel = itr->second;
+    if (!channel->GetNumPlayers())
+    {
+        _channels.erase(itr);
+        delete channel;
+    }
 }
+
+void ChannelMgr::SendNotOnChannelNotify(Player const* player, std::string const& name)
+{
+    WorldPackets::Channel::ChannelNotify notify;
+    notify.Type = CHAT_NOT_MEMBER_NOTICE;
+    notify._Channel = name;
+    player->SendDirectMessage(notify.Write());
+}
+
+ObjectGuid ChannelMgr::CreateCustomChannelGuid()
+{
+    return ObjectGuid::Create<HighGuid::ChatChannel>(false, false, 0, _team == ALLIANCE ? 3 : 5, _guidGenerator.Generate());
+}
+
+ObjectGuid ChannelMgr::CreateBuiltinChannelGuid(uint32 channelId, AreaTableEntry const* zoneEntry /*= nullptr*/) const
+{
+    ChatChannelsEntry const* channelEntry = sChatChannelsStore.AssertEntry(channelId);
+    uint32 zoneId = zoneEntry ? zoneEntry->ID : 0;
+    if (channelEntry->Flags & (CHANNEL_DBC_FLAG_GLOBAL | CHANNEL_DBC_FLAG_CITY_ONLY))
+        zoneId = 0;
+
+    return ObjectGuid::Create<HighGuid::ChatChannel>(true, (channelEntry->Flags & CHANNEL_DBC_FLAG_CITY_ONLY2) != 0, zoneId, _team == ALLIANCE ? 3 : 5, channelId);
+}
+
+bool ChannelMgr::SendToAllInChannel(std::string senderName, std::string channelName, std::string message, bool showGMLogo)
+{
+    Channel* channel = GetChannel(0, channelName, nullptr, false);
+
+    if (!channel)
+        return false;
+
+    channel->SendToAllInChannel(senderName, message, showGMLogo);
+    return true;
+}
+

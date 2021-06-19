@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -27,18 +26,12 @@
 
 class Weather;
 class Player;
+struct WeatherData;
 
 namespace WeatherMgr
 {
-    void LoadWeatherData();
-
-    Weather* FindWeather(uint32 id);
-    Weather* AddWeather(uint32 zone_id);
-    void RemoveWeather(uint32 zone_id);
-
-    void SendFineWeatherUpdateToPlayer(Player* player);
-
-    void Update(uint32 diff);
+    TC_GAME_API void LoadWeatherData();
+    TC_GAME_API WeatherData const* GetWeatherData(uint32 zone_id);
 }
 
 #endif

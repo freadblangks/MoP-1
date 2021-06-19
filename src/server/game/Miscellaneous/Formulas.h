@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,40 +18,115 @@
 #ifndef TRINITY_FORMULAS_H
 #define TRINITY_FORMULAS_H
 
-#include "World.h"
-#include "SharedDefines.h"
+#include "Creature.h"
+#include "GameTables.h"
+#include "Map.h"
+#include "Player.h"
 #include "ScriptMgr.h"
+#include "SharedDefines.h"
+#include "World.h"
 
-namespace JadeCore
+namespace Trinity
 {
+    inline uint32 GetExpansionForLevel(uint32 level)
+    {
+        if (level < 60)
+            return EXPANSION_CLASSIC;
+        else if (level < 70)
+            return EXPANSION_THE_BURNING_CRUSADE;
+        else if (level < 80)
+            return EXPANSION_WRATH_OF_THE_LICH_KING;
+        else if (level < 85)
+            return EXPANSION_CATACLYSM;
+        else if (level < 90)
+            return EXPANSION_MISTS_OF_PANDARIA;
+        else if (level < 100)
+            return EXPANSION_WARLORDS_OF_DRAENOR;
+        else if (level < 110)
+            return EXPANSION_LEGION;
+        else
+            return CURRENT_EXPANSION;
+    }
+
+    inline float GetDamageMultiplierForExpansion(uint32 playerLevel, uint32 creatureLevel)
+    {
+        uint32 expansion = GetExpansionForLevel(creatureLevel);
+        if (playerLevel > GetMaxLevelForExpansion(expansion))
+        {
+            switch (expansion)
+            {
+                case EXPANSION_CLASSIC:
+                case EXPANSION_THE_BURNING_CRUSADE:
+                    return 40.f;
+                case EXPANSION_WRATH_OF_THE_LICH_KING:
+                    return 50.f;
+                case EXPANSION_CATACLYSM:
+                    return 27.f;
+                case EXPANSION_MISTS_OF_PANDARIA:
+                    return 13.5f;
+                case EXPANSION_WARLORDS_OF_DRAENOR:
+                    return 7.f;
+                case EXPANSION_LEGION:
+                    return 3.5f;
+                default:
+                    break;
+            }
+        }
+
+        return 1.0f;
+    }
+
+    inline uint32 GetNumberMultipleOfFive(uint32 averageItemLevel)
+    {
+        uint8 difference = averageItemLevel % 5;
+        uint32 average_new = averageItemLevel - difference;
+        if (difference >= 3)
+        {
+            for (uint8 i = 1; i < 4; ++i)
+            {
+                if (((averageItemLevel + i) % 5) == 0)
+                {
+                    average_new = averageItemLevel + i;
+                    break;
+                }
+            }
+        }
+        return average_new;
+    }
+
     namespace Honor
     {
         inline float hk_honor_at_level_f(uint8 level, float multiplier = 1.0f)
         {
             float honor = multiplier * level * 1.55f;
             sScriptMgr->OnHonorCalculation(honor, level, multiplier);
-            return honor * 2.4; // http://www.wowwiki.com/Honorable_kill#Honorable_kills 1 old points = 0.024 new points
+            return honor;
         }
 
         inline uint32 hk_honor_at_level(uint8 level, float multiplier = 1.0f)
         {
             return uint32(ceil(hk_honor_at_level_f(level, multiplier)));
         }
-    }
+    } // namespace Trinity::Honor
+
     namespace XP
     {
         inline uint8 GetGrayLevel(uint8 pl_level)
         {
             uint8 level;
 
-            if (pl_level <= 5)
+            if (pl_level < 7)
                 level = 0;
-            else if (pl_level <= 39)
-                level = pl_level - 5 - pl_level / 10;
-            else if (pl_level <= 59)
-                level = pl_level - 1 - pl_level / 5;
+            else if (pl_level < 35)
+            {
+                uint8 count = 0;
+                for (int i = 15; i <= pl_level; ++i)
+                    if (i % 5 == 0) ++count;
+
+                level = (pl_level - 7) - (count - 1);
+            }
             else
-                level = pl_level - 9;
+                level = pl_level - 10;
 
             sScriptMgr->OnGrayLevelCalculation(level, pl_level);
             return level;
@@ -81,7 +155,7 @@ namespace JadeCore
         {
             uint8 diff;
 
-            if (pl_level < 8)
+            if (pl_level < 4)
                 diff = 5;
             else if (pl_level < 10)
                 diff = 6;
@@ -110,33 +184,12 @@ namespace JadeCore
             return diff;
         }
 
-        inline uint32 BaseGain(uint8 pl_level, uint8 mob_level, ContentLevels content)
+        inline uint32 BaseGain(uint8 pl_level, uint8 mob_level)
         {
             uint32 baseGain;
-            uint32 nBaseExp;
 
-            switch (content)
-            {
-                case CONTENT_1_60:
-                    nBaseExp = 45;
-                    break;
-                case CONTENT_61_70:
-                    nBaseExp = 235;
-                    break;
-                case CONTENT_71_80:
-                    nBaseExp = 580;
-                    break;
-                case CONTENT_81_85:
-                    nBaseExp = 1878;
-                    break;
-                case CONTENT_86_90:
-                    nBaseExp = 7512;
-                    break;
-                default:
-                    sLog->outError(LOG_FILTER_GENERAL, "BaseGain: Unsupported content level %u", content);
-                    nBaseExp = 45;
-                    break;
-            }
+            GtXpEntry const* xpPlayer = sXpGameTable.GetRow(pl_level);
+            GtXpEntry const* xpMob = sXpGameTable.GetRow(mob_level);
 
             if (mob_level >= pl_level)
             {
@@ -144,7 +197,7 @@ namespace JadeCore
                 if (nLevelDiff > 4)
                     nLevelDiff = 4;
 
-                baseGain = ((pl_level * 5 + nBaseExp) * (20 + nLevelDiff) / 10 + 1) / 2;
+                baseGain = uint32(round(xpPlayer->PerKill * (1 + 0.05f * nLevelDiff)));
             }
             else
             {
@@ -152,67 +205,51 @@ namespace JadeCore
                 if (mob_level > gray_level)
                 {
                     uint8 ZD = GetZeroDifference(pl_level);
-                    baseGain = (pl_level * 5 + nBaseExp) * (ZD + mob_level - pl_level) / ZD;
+                    baseGain = uint32(round(xpMob->PerKill * ((1 - ((pl_level - mob_level) / float(ZD))) * (xpMob->Divisor / xpPlayer->Divisor))));
                 }
                 else
                     baseGain = 0;
             }
 
-            sScriptMgr->OnBaseGainCalculation(baseGain, pl_level, mob_level, content);
+            sScriptMgr->OnBaseGainCalculation(baseGain, pl_level, mob_level);
             return baseGain;
         }
 
-        inline uint32 Gain(Player* player, Unit* u)
+        inline uint32 Gain(Player* player, Unit* u, bool isBattleGround = false)
         {
-            uint32 gain;
+            Creature* creature = u->ToCreature();
+            uint32 gain = 0;
 
-            if (u->GetTypeId() == TYPEID_UNIT &&
-                (((Creature*)u)->isTotem() || ((Creature*)u)->isPet() ||
-                (((Creature*)u)->GetCreatureTemplate()->flags_extra & CREATURE_FLAG_EXTRA_NO_XP_AT_KILL) ||
-                ((Creature*)u)->GetCreatureTemplate()->type == CREATURE_TYPE_CRITTER))
-                gain = 0;
-            else
+            if (!creature || creature->CanGiveExperience())
             {
-                gain = BaseGain(player->getLevel(), u->getLevel(), GetContentLevelsForMapAndZone(u->GetMapId(), u->GetZoneId()));
+                float xpMod = 1.0f;
 
-                if (gain != 0 && u->GetTypeId() == TYPEID_UNIT && ((Creature*)u)->isElite())
+                gain = BaseGain(player->getLevel(), u->GetLevelForTarget(player));
+
+                if (gain && creature)
                 {
-                    // Elites in instances have a 2.75x XP bonus instead of the regular 2x world bonus.
-                    if (u->GetMap() && u->GetMap()->IsDungeon())
-                       gain = uint32(gain * 2.75);
-                    else
-                        gain *= 2;
-                }
+                    // Players get only 10% xp for killing creatures of lower expansion levels than himself
+                    if ((uint32(creature->GetCreatureTemplate()->GetHealthScalingExpansion()) < GetExpansionForLevel(player->getLevel())))
+                        gain = uint32(round(gain / 10.0f));
 
-                float KillXpRate = 1;
-
-                if (player->GetPersonnalXpRate())
-                    KillXpRate = player->GetPersonnalXpRate();
-                else
-                {
-                    // Create new values if there's no previous ones.
-                    PreparedStatement* stmt = NULL;
-                    stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_RATE_TEMPLATE);
-                    stmt->setUInt32(0, player->GetGUIDLow());
-                    PreparedQueryResult result = WorldDatabase.Query(stmt);
-                    if (result)
+                    if (creature->isElite())
                     {
-                        Field* field = result->Fetch();
-
-                        uint32 l_Guid = field[0].GetInt32();
-                        uint32 l_Xp = field[1].GetInt32();
-
-                        KillXpRate = float(l_Xp);
+                        // Elites in instances have a 2.75x XP bonus instead of the regular 2x world bonus.
+                        if (u->GetMap()->IsDungeon())
+                            xpMod *= 2.75f;
+                        else
+                            xpMod *= 2.0f;
                     }
-                    else
-                        KillXpRate = sWorld->getRate(RATE_XP_KILL);
+
+                    xpMod *= creature->GetCreatureTemplate()->ModExperience;
                 }
-            
 
-                gain = uint32(gain * KillXpRate);
+                float killXpRate = player->GetPersonnalXpRate() ? player->GetPersonnalXpRate() : sWorld->getRate(RATE_XP_QUEST);
+                xpMod *= isBattleGround ? sWorld->getRate(RATE_XP_BG_KILL) : killXpRate;
+                if (creature && creature->m_PlayerDamageReq) // if players dealt less than 50% of the damage and were credited anyway (due to CREATURE_FLAG_EXTRA_NO_PLAYER_DAMAGE_REQ), scale XP gained appropriately (linear scaling)
+                    xpMod *= 1.0f - 2.0f*creature->m_PlayerDamageReq / creature->GetMaxHealth();
 
-                float premium_rate = player->GetSession()->IsPremium() ? sWorld->getRate(RATE_XP_KILL_PREMIUM) : 1.0f;
-                gain *= premium_rate;
+                gain = uint32(gain * xpMod);
             }
 
             sScriptMgr->OnGainCalculation(gain, player, u);
@@ -226,7 +263,8 @@ namespace JadeCore
             if (isRaid)
             {
                 // FIXME: Must apply decrease modifiers depending on raid size.
-                rate = 1.0f;
+                // set to < 1 to, so client will display raid related strings
+                rate = 0.99f;
             }
             else
             {
@@ -252,19 +290,19 @@ namespace JadeCore
             sScriptMgr->OnGroupRateCalculation(rate, count, isRaid);
             return rate;
         }
-    }
+    } // namespace Trinity::XP
 
     namespace Currency
     {
         inline uint32 ConquestRatingCalculator(uint32 rate)
         {
             if (rate <= 1500)
-                return 1800; // Default conquest points
+                return 1350; // Default conquest points
             else if (rate > 3000)
-                rate = 3600;
+                rate = 3000;
 
             // http://www.arenajunkies.com/topic/179536-conquest-point-cap-vs-personal-rating-chart/page__st__60#entry3085246
-            return uint32(1.4326 * ((1511.26 / (1 + 1639.28 / exp(0.00412 * rate))) + 1050.15));
+            return uint32(1.4326 * ((1511.26 / (1 + 1639.28 / exp(0.00412 * rate))) + 850.15));
         }
 
         inline uint32 BgConquestRatingCalculator(uint32 rate)
@@ -272,7 +310,7 @@ namespace JadeCore
             // WowWiki: Battleground ratings receive a bonus of 22.2% to the cap they generate
             return uint32((ConquestRatingCalculator(rate) * 1.222f) + 0.5f);
         }
-    }
-}
+    } // namespace Trinity::Currency
+} // namespace Trinity
 
 #endif

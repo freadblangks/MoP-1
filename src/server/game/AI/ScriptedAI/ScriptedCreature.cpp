@@ -1,49 +1,76 @@
-/* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+/*
+ * Copyright (C) 2020 FuzionCore Project
  *
- * Thanks to the original authors: ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  *
- * This program is free software licensed under GPL version 2
- * Please see the included DOCS/LICENSE.TXT for more information */
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "ScriptedCreature.h"
-#include "Item.h"
-#include "Spell.h"
-#include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
+#include "AreaBoundary.h"
+#include "DB2Stores.h"
 #include "Cell.h"
 #include "CellImpl.h"
-#include "ObjectMgr.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "InstanceScript.h"
+#include "Log.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
+#include "Spell.h"
+#include "SpellMgr.h"
 #include "TemporarySummon.h"
 
-// Spell summary for ScriptedAI::SelectSpell
+ // Spell summary for ScriptedAI::SelectSpell
 struct TSpellSummary
 {
     uint8 Targets;                                          // set of enum SelectTarget
     uint8 Effects;                                          // set of enum SelectEffect
 } extern* SpellSummary;
 
-void SummonList::DoZoneInCombat(uint32 entry)
+void SummonList::Summon(Creature const* summon)
 {
-    for (iterator i = begin(); i != end();)
+    storage_.push_back(summon->GetGUID());
+}
+
+void SummonList::Despawn(Creature const* summon)
+{
+    storage_.remove(summon->GetGUID());
+}
+
+void SummonList::DoZoneInCombat(uint32 entry, float maxRangeToNearestTarget)
+{
+    for (StorageType::iterator i = storage_.begin(); i != storage_.end();)
     {
-        Creature* summon = Unit::GetCreature(*me, *i);
+        Creature* summon = ObjectAccessor::GetCreature(*me, *i);
         ++i;
         if (summon && summon->IsAIEnabled
-            && (!entry || summon->GetEntry() == entry))
-            summon->AI()->DoZoneInCombat();
+                && (!entry || summon->GetEntry() == entry))
+        {
+            summon->AI()->DoZoneInCombat(nullptr, maxRangeToNearestTarget);
+        }
     }
 }
 
 void SummonList::DespawnEntry(uint32 entry)
 {
-    for (iterator i = begin(); i != end();)
+    for (StorageType::iterator i = storage_.begin(); i != storage_.end();)
     {
-        Creature* summon = Unit::GetCreature(*me, *i);
+        Creature* summon = ObjectAccessor::GetCreature(*me, *i);
         if (!summon)
-            erase(i++);
+            i = storage_.erase(i);
         else if (summon->GetEntry() == entry)
         {
-            erase(i++);
+            i = storage_.erase(i);
             summon->DespawnOrUnsummon();
         }
         else
@@ -53,55 +80,60 @@ void SummonList::DespawnEntry(uint32 entry)
 
 void SummonList::DespawnAll()
 {
-    while (!empty())
+    while (!storage_.empty())
     {
-        Creature* summon = Unit::GetCreature(*me, *begin());
-        if (!summon)
-            erase(begin());
-        else
-        {
-            erase(begin());
+        Creature* summon = ObjectAccessor::GetCreature(*me, storage_.front());
+        storage_.pop_front();
+        if (summon)
             summon->DespawnOrUnsummon();
-        }
     }
 }
 
 void SummonList::RemoveNotExisting()
 {
-    for (iterator i = begin(); i != end();)
+    for (StorageType::iterator i = storage_.begin(); i != storage_.end();)
     {
-        if (Unit::GetCreature(*me, *i))
+        if (ObjectAccessor::GetCreature(*me, *i))
             ++i;
         else
-            erase(i++);
+            i = storage_.erase(i);
     }
 }
 
-bool SummonList::HasEntry(uint32 entry)
+bool SummonList::HasEntry(uint32 entry) const
 {
-    for (iterator i = begin(); i != end();)
+    for (StorageType::const_iterator i = storage_.begin(); i != storage_.end(); ++i)
     {
-        Creature* summon = Unit::GetCreature(*me, *i);
-        if (!summon)
-            erase(i++);
-        else if (summon->GetEntry() == entry)
+        Creature* summon = ObjectAccessor::GetCreature(*me, *i);
+        if (summon && summon->GetEntry() == entry)
             return true;
-        else
-            ++i;
     }
 
     return false;
 }
 
+void SummonList::DoActionImpl(int32 action, StorageType const& summons)
+{
+    for (auto const& guid : summons)
+    {
+        Creature* summon = ObjectAccessor::GetCreature(*me, guid);
+        if (summon && summon->IsAIEnabled)
+            summon->AI()->DoAction(action);
+    }
+}
+
 ScriptedAI::ScriptedAI(Creature* creature) : CreatureAI(creature),
-    me(creature),
     IsFleeing(false),
-    _evadeCheckCooldown(2500),
+    summons(creature),
+    damageEvents(creature),
+    instance(creature->GetInstanceScript()),
     _isCombatMovementAllowed(true),
-    summons(creature)
+    IsLock(false),
+    haseventdata(false),
+    hastalkdata(false)
 {
     _isHeroic = me->GetMap()->IsHeroic();
-    _difficulty = Difficulty(me->GetMap()->GetSpawnMode());
+    _difficulty = me->GetMap()->GetDifficultyID();
 }
 
 void ScriptedAI::AttackStartNoMove(Unit* who)
@@ -109,17 +141,46 @@ void ScriptedAI::AttackStartNoMove(Unit* who)
     if (!who)
         return;
 
-    if (me->Attack(who, false))
+    if (me->Attack(who, true))
         DoStartNoMovement(who);
 }
 
-void ScriptedAI::UpdateAI(uint32 const /*diff*/)
+void ScriptedAI::AttackStart(Unit* who)
 {
+    if (IsCombatMovementAllowed())
+        CreatureAI::AttackStart(who);
+    else
+        AttackStartNoMove(who);
+}
+
+void ScriptedAI::UpdateAI(uint32 diff)
+{
+    controls.Update(diff);
     //Check if we have a current target
     if (!UpdateVictim())
         return;
 
+    events.Update(diff);
+
+    if (me->HasUnitState(UNIT_STATE_CASTING))
+        return;
+
+    while (uint32 eventId = events.ExecuteEvent())
+    {
+        ExecuteEvent(eventId);
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+    }
+
     DoMeleeAttackIfReady();
+}
+
+void ScriptedAI::SetUnlock(uint32 time)
+{
+    me->GetScheduler().Schedule(Milliseconds(time), [this](TaskContext /*context*/)
+    {
+        IsLock = false;
+    });
 }
 
 void ScriptedAI::DoStartMovement(Unit* victim, float distance, float angle)
@@ -138,13 +199,13 @@ void ScriptedAI::DoStartNoMovement(Unit* victim)
 
 void ScriptedAI::DoStopAttack()
 {
-    if (me->getVictim())
+    if (me->GetVictim())
         me->AttackStop();
 }
 
 void ScriptedAI::DoCastSpell(Unit* target, SpellInfo const* spellInfo, bool triggered)
 {
-    if (!target || me->IsNonMeleeSpellCasted(false))
+    if (!target || me->IsNonMeleeSpellCast(false))
         return;
 
     me->StopMoving();
@@ -156,9 +217,9 @@ void ScriptedAI::DoPlaySoundToSet(WorldObject* source, uint32 soundId)
     if (!source)
         return;
 
-    if (!sSoundEntriesStore.LookupEntry(soundId))
+    if (!sSoundKitStore.LookupEntry(soundId))
     {
-        sLog->outError(LOG_FILTER_TSCR, "Invalid soundId %u used in DoPlaySoundToSet (Source: TypeId %u, GUID %u)", soundId, source->GetTypeId(), source->GetGUIDLow());
+        TC_LOG_ERROR("scripts", "Invalid soundId %u used in DoPlaySoundToSet (Source: %s)", soundId, source->GetGUID().ToString().c_str());
         return;
     }
 
@@ -170,26 +231,36 @@ Creature* ScriptedAI::DoSpawnCreature(uint32 entry, float offsetX, float offsetY
     return me->SummonCreature(entry, me->GetPositionX() + offsetX, me->GetPositionY() + offsetY, me->GetPositionZ() + offsetZ, angle, TempSummonType(type), despawntime);
 }
 
-SpellInfo const* ScriptedAI::SelectSpell(Unit* target, uint32 school, uint32 mechanic, SelectTargetType targets, uint32 powerCostMin, uint32 powerCostMax, float rangeMin, float rangeMax, SelectEffect effects)
+bool ScriptedAI::HealthBelowPct(uint32 pct) const
+{
+    return me->HealthBelowPct(pct);
+}
+
+bool ScriptedAI::HealthAbovePct(uint32 pct) const
+{
+    return me->HealthAbovePct(pct);
+}
+
+SpellInfo const* ScriptedAI::SelectSpell(Unit* target, uint32 school, uint32 mechanic, SelectTargetType targets, float rangeMin, float rangeMax, SelectEffect effect)
 {
     //No target so we can't cast
     if (!target)
-        return NULL;
+        return nullptr;
 
     //Silenced so we can't cast
-    if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SILENCED))
-        return NULL;
+    if (me->HasUnitFlag(UNIT_FLAG_SILENCED))
+        return nullptr;
 
     //Using the extended script system we first create a list of viable spells
-    SpellInfo const* apSpell[CREATURE_MAX_SPELLS];
-    memset(apSpell, 0, CREATURE_MAX_SPELLS * sizeof(SpellInfo*));
+    SpellInfo const* apSpell[MAX_CREATURE_SPELLS];
+    memset(apSpell, 0, MAX_CREATURE_SPELLS * sizeof(SpellInfo*));
 
     uint32 spellCount = 0;
 
-    SpellInfo const* tempSpell = NULL;
+    SpellInfo const* tempSpell = nullptr;
 
     //Check if each spell is viable(set it to null if not)
-    for (uint32 i = 0; i < CREATURE_MAX_SPELLS; i++)
+    for (uint32 i = 0; i < MAX_CREATURE_SPELLS; i++)
     {
         tempSpell = sSpellMgr->GetSpellInfo(me->m_spells[i]);
 
@@ -203,7 +274,7 @@ SpellInfo const* ScriptedAI::SelectSpell(Unit* target, uint32 school, uint32 mec
             continue;
 
         //Check the type of spell if we are looking for a specific spell type
-        if (effects && !(SpellSummary[me->m_spells[i]].Effects & (1 << (effects-1))))
+        if (effect && !(SpellSummary[me->m_spells[i]].Effects & (1 << (effect-1))))
             continue;
 
         //Check for school if specified
@@ -212,17 +283,6 @@ SpellInfo const* ScriptedAI::SelectSpell(Unit* target, uint32 school, uint32 mec
 
         //Check for spell mechanic if specified
         if (mechanic && tempSpell->Mechanic != mechanic)
-            continue;
-
-        //Make sure that the spell uses the requested amount of power
-        if (powerCostMin && tempSpell->ManaCost < powerCostMin)
-            continue;
-
-        if (powerCostMax && tempSpell->ManaCost > powerCostMax)
-            continue;
-
-        //Continue if we don't have the mana to actually cast this spell
-        if (tempSpell->ManaCost > (uint32)me->GetPower(Powers(tempSpell->PowerType)))
             continue;
 
         //Check if the spell meets our range requirements
@@ -242,7 +302,7 @@ SpellInfo const* ScriptedAI::SelectSpell(Unit* target, uint32 school, uint32 mec
 
     //We got our usable spells so now lets randomly pick one
     if (!spellCount)
-        return NULL;
+        return nullptr;
 
     return apSpell[urand(0, spellCount - 1)];
 }
@@ -251,16 +311,15 @@ void ScriptedAI::DoResetThreat()
 {
     if (!me->CanHaveThreatList() || me->getThreatManager().isThreatListEmpty())
     {
-        sLog->outError(LOG_FILTER_TSCR, "DoResetThreat called for creature that either cannot have threat list or has empty threat list (me entry = %d)", me->GetEntry());
+        TC_LOG_ERROR("scripts", "DoResetThreat called for creature that either cannot have threat list or has empty threat list (me entry = %d)", me->GetEntry());
         return;
     }
 
-    std::list<HostileReference*>& threatlist = me->getThreatManager().getThreatList();
+    ThreatContainer::StorageType threatlist = me->getThreatManager().getThreatList();
 
-    for (std::list<HostileReference*>::iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
+    for (ThreatContainer::StorageType::const_iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
     {
-        Unit* unit = Unit::GetUnit(*me, (*itr)->getUnitGuid());
-
+        Unit* unit = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid());
         if (unit && DoGetThreat(unit))
             DoModifyThreatPercent(unit, -100);
     }
@@ -300,7 +359,8 @@ void ScriptedAI::DoTeleportPlayer(Unit* unit, float x, float y, float z, float o
     if (Player* player = unit->ToPlayer())
         player->TeleportTo(unit->GetMapId(), x, y, z, o, TELE_TO_NOT_LEAVE_COMBAT);
     else
-        sLog->outError(LOG_FILTER_TSCR, "Creature " UI64FMTD " (Entry: %u) Tried to teleport non-player unit (Type: %u GUID: " UI64FMTD ") to x: %f y:%f z: %f o: %f. Aborted.", me->GetGUID(), me->GetEntry(), unit->GetTypeId(), unit->GetGUID(), x, y, z, o);
+        TC_LOG_ERROR("scripts", "Creature %s Tried to teleport non-player unit (%s) to x: %f y:%f z: %f o: %f. Aborted.",
+            me->GetGUID().ToString().c_str(), unit->GetGUID().ToString().c_str(), x, y, z, o);
 }
 
 void ScriptedAI::DoTeleportAll(float x, float y, float z, float o)
@@ -311,17 +371,27 @@ void ScriptedAI::DoTeleportAll(float x, float y, float z, float o)
 
     Map::PlayerList const& PlayerList = map->GetPlayers();
     for (Map::PlayerList::const_iterator itr = PlayerList.begin(); itr != PlayerList.end(); ++itr)
-        if (Player* player = itr->getSource())
-            if (player->isAlive() && player->InSamePhase(me))
+        if (Player* player = itr->GetSource())
+            if (player->IsAlive())
                 player->TeleportTo(me->GetMapId(), x, y, z, o, TELE_TO_NOT_LEAVE_COMBAT);
 }
 
 Unit* ScriptedAI::DoSelectLowestHpFriendly(float range, uint32 minHPDiff)
 {
-    Unit* unit = NULL;
-    JadeCore::MostHPMissingInRange u_check(me, range, minHPDiff);
-    JadeCore::UnitLastSearcher<JadeCore::MostHPMissingInRange> searcher(me, unit, u_check);
-    me->VisitNearbyObject(range, searcher);
+    Unit* unit = nullptr;
+    Trinity::MostHPMissingInRange u_check(me, range, minHPDiff);
+    Trinity::UnitLastSearcher<Trinity::MostHPMissingInRange> searcher(me, unit, u_check);
+    Cell::VisitAllObjects(me, searcher, range);
+
+    return unit;
+}
+
+Unit* ScriptedAI::DoSelectBelowHpPctFriendlyWithEntry(uint32 entry, float range, uint8 minHPDiff, bool excludeSelf)
+{
+    Unit* unit = nullptr;
+    Trinity::FriendlyBelowHpPctEntryInRange u_check(me, entry, range, minHPDiff, excludeSelf);
+    Trinity::UnitLastSearcher<Trinity::FriendlyBelowHpPctEntryInRange> searcher(me, unit, u_check);
+    Cell::VisitAllObjects(me, searcher, range);
 
     return unit;
 }
@@ -329,34 +399,30 @@ Unit* ScriptedAI::DoSelectLowestHpFriendly(float range, uint32 minHPDiff)
 std::list<Creature*> ScriptedAI::DoFindFriendlyCC(float range)
 {
     std::list<Creature*> list;
-    JadeCore::FriendlyCCedInRange u_check(me, range);
-    JadeCore::CreatureListSearcher<JadeCore::FriendlyCCedInRange> searcher(me, list, u_check);
-    me->VisitNearbyObject(range, searcher);
+    Trinity::FriendlyCCedInRange u_check(me, range);
+    Trinity::CreatureListSearcher<Trinity::FriendlyCCedInRange> searcher(me, list, u_check);
+    Cell::VisitAllObjects(me, searcher, range);
+
     return list;
 }
 
 std::list<Creature*> ScriptedAI::DoFindFriendlyMissingBuff(float range, uint32 uiSpellid)
 {
     std::list<Creature*> list;
-    JadeCore::FriendlyMissingBuffInRange u_check(me, range, uiSpellid);
-    JadeCore::CreatureListSearcher<JadeCore::FriendlyMissingBuffInRange> searcher(me, list, u_check);
-    me->VisitNearbyObject(range, searcher);
+    Trinity::FriendlyMissingBuffInRange u_check(me, range, uiSpellid);
+    Trinity::CreatureListSearcher<Trinity::FriendlyMissingBuffInRange> searcher(me, list, u_check);
+    Cell::VisitAllObjects(me, searcher, range);
+
     return list;
 }
 
 Player* ScriptedAI::GetPlayerAtMinimumRange(float minimumRange)
 {
-    Player* player = NULL;
+    Player* player = nullptr;
 
-    CellCoord pair(JadeCore::ComputeCellCoord(me->GetPositionX(), me->GetPositionY()));
-    Cell cell(pair);
-    cell.SetNoCreate();
-
-    JadeCore::PlayerAtMinimumRangeAway check(me, minimumRange);
-    JadeCore::PlayerSearcher<JadeCore::PlayerAtMinimumRangeAway> searcher(me, player, check);
-    TypeContainerVisitor<JadeCore::PlayerSearcher<JadeCore::PlayerAtMinimumRangeAway>, GridTypeMapContainer> visitor(searcher);
-
-    cell.Visit(pair, visitor, *me->GetMap(), *me, minimumRange);
+    Trinity::PlayerAtMinimumRangeAway check(me, minimumRange);
+    Trinity::PlayerSearcher<Trinity::PlayerAtMinimumRangeAway> searcher(me, player, check);
+    Cell::VisitWorldObjects(me, searcher, minimumRange);
 
     return player;
 }
@@ -365,20 +431,18 @@ void ScriptedAI::SetEquipmentSlots(bool loadDefault, int32 mainHand /*= EQUIP_NO
 {
     if (loadDefault)
     {
-        if (CreatureTemplate const* creatureInfo = sObjectMgr->GetCreatureTemplate(me->GetEntry()))
-            me->LoadEquipment(creatureInfo->equipmentId, true);
-
+        me->LoadEquipment(me->GetOriginalEquipmentId(), true);
         return;
     }
 
     if (mainHand >= 0)
-        me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, uint32(mainHand));
+        me->SetVirtualItem(0, uint32(mainHand));
 
     if (offHand >= 0)
-        me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, uint32(offHand));
+        me->SetVirtualItem(1, uint32(offHand));
 
     if (ranged >= 0)
-        me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 2, uint32(ranged));
+        me->SetVirtualItem(2, uint32(ranged));
 }
 
 void ScriptedAI::SetCombatMovement(bool allowMovement)
@@ -386,71 +450,131 @@ void ScriptedAI::SetCombatMovement(bool allowMovement)
     _isCombatMovementAllowed = allowMovement;
 }
 
-enum eNPCs
+void ScriptedAI::LoadEventData(std::vector<EventData> const* data)
+{
+    eventList = data;
+    haseventdata = true;
+}
+
+void ScriptedAI::GetEventData(uint16 group)
+{
+    if (!eventList)
+        return;
+
+    if (!haseventdata)
+        return;
+
+    for (EventData data : *eventList)
+        if (data.group == group)
+            events.ScheduleEvent(data.eventId, data.time, data.group, data.phase);
+}
+
+void ScriptedAI::LoadTalkData(std::vector<TalkData> const* data)
+{
+    if (data)
+    {
+        talkList = data;
+        hastalkdata = true;
+    }
+
+}
+
+void ScriptedAI::GetTalkData(uint32 eventId)
+{
+    if (!talkList)
+        return;
+
+    if (!hastalkdata)
+        return;
+
+    for (TalkData data : *talkList)
+    {
+        if (data.eventId == eventId)
+        {
+            switch (data.eventType)
+            {
+            case EVENT_TYPE_TALK:
+                me->AI()->Talk(data.eventData);
+                break;
+            case EVENT_TYPE_CONVERSATION:
+                if (data.eventData > 0)
+                    if (instance)
+                        instance->DoPlayConversation(data.eventData);
+                break;
+            case EVENT_TYPE_ACHIEVEMENT:
+                if (data.eventData > 0)
+                    if (instance)
+                        instance->DoCompleteAchievement(data.eventData);
+                break;
+            case EVENT_TYPE_SPELL:
+                if (data.eventData > 0)
+                    if (instance)
+                        instance->DoCastSpellOnPlayers(data.eventData);
+                break;
+            case EVENT_TYPE_YELL:
+                if (data.eventData > 0)
+                    me->Yell(data.eventData);
+                break;
+            case EVENT_TYPE_SAY:
+                if (data.eventData > 0)
+                    me->Say(data.eventData);
+                break;
+            }
+        }
+    }
+}
+
+void ScriptedAI::ApplyAllImmunities(bool apply)
+{
+    me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, apply);
+    me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK_DEST, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, apply);
+    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_INTERRUPT, apply);
+    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, apply);
+}
+
+void ScriptedAI::DespawnCreaturesInArea(uint32 entry, WorldObject* object)
+{
+    std::list<Creature*> creatures;
+    GetCreatureListWithEntryInGrid(creatures, object, entry, 300.0f);
+    if (creatures.empty())
+        return;
+
+    for (std::list<Creature*>::iterator itr = creatures.begin(); itr != creatures.end(); ++itr)
+        (*itr)->DespawnOrUnsummon();
+}
+
+void ScriptedAI::DespawnGameObjectsInArea(uint32 entry, WorldObject* object)
+{
+    std::list<GameObject*> gameobjects;
+    GetGameObjectListWithEntryInGrid(gameobjects, object, entry, 300.0f);
+    if (gameobjects.empty())
+        return;
+
+    for (std::list<GameObject*>::iterator itr = gameobjects.begin(); itr != gameobjects.end();)
+    {
+        (*itr)->SetRespawnTime(0);
+        (*itr)->Delete();
+        itr = gameobjects.erase(itr);
+    }
+}
+
+enum NPCs
 {
     NPC_BROODLORD   = 12017,
     NPC_VOID_REAVER = 19516,
     NPC_JAN_ALAI    = 23578,
-    NPC_SARTHARION  = 28860,
-    NPC_BLOOD_QUEEN = 37955,
-    NPC_GARFROST    = 36494
+    NPC_SARTHARION  = 28860
 };
-
-// Hacklike storage used for misc creatures that are expected to evade of outside of a certain area.
-// It is assumed the information is found elswehere and can be handled by the core. So far no luck finding such information/way to extract it.
-bool ScriptedAI::EnterEvadeIfOutOfCombatArea(uint32 const diff)
-{
-    if (_evadeCheckCooldown <= diff)
-        _evadeCheckCooldown = 2500;
-    else
-    {
-        _evadeCheckCooldown -= diff;
-        return false;
-    }
-
-    if (me->IsInEvadeMode() || !me->getVictim())
-        return false;
-
-    float x = me->GetPositionX();
-    float y = me->GetPositionY();
-    float z = me->GetPositionZ();
-
-    switch (me->GetEntry())
-    {
-        case NPC_BLOOD_QUEEN:
-            if (z > 390.0f)
-                return false;
-            break;
-        case NPC_GARFROST:
-            if (me->GetDistance2d(688.93f, -197.52f) < 66.0f)
-                return false;
-            break;
-        case NPC_BROODLORD:                                         // broodlord (not move down stairs)
-            if (z > 448.60f)
-                return false;
-            break;
-        case NPC_VOID_REAVER:                                         // void reaver (calculate from center of room)
-            if (me->GetDistance2d(432.59f, 371.93f) < 105.0f)
-                return false;
-            break;
-        case NPC_JAN_ALAI:                                         // jan'alai (calculate by Z)
-            if (z > 12.0f)
-                return false;
-            break;
-        case NPC_SARTHARION:                                         // sartharion (calculate box)
-            if (x > 3218.86f && x < 3275.69f && y < 572.40f && y > 484.68f)
-                return false;
-            break;
-        default: // For most of creatures that certain area is their home area.
-            sLog->outInfo(LOG_FILTER_GENERAL, "TSCR: EnterEvadeIfOutOfCombatArea used for creature entry %u, but does not have any definition. Using the default one.", me->GetEntry());
-            uint32 homeAreaId = me->GetMap()->GetAreaId(me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ());
-            if (me->GetAreaId() == homeAreaId)
-                return false;
-    }
-
-    EnterEvadeMode();
-    return true;
-}
 
 void Scripted_NoMovementAI::AttackStart(Unit* target)
 {
@@ -462,118 +586,107 @@ void Scripted_NoMovementAI::AttackStart(Unit* target)
 }
 
 // BossAI - for instanced bosses
-
 BossAI::BossAI(Creature* creature, uint32 bossId) : ScriptedAI(creature),
-    instance(creature->GetInstanceScript()),
-    summons(creature),
-    _boundary(instance ? instance->GetBossBoundary(bossId) : NULL),
     _bossId(bossId)
 {
+    if (instance)
+        SetBoundary(instance->GetBossBoundary(bossId));
+    _dungeonEncounterId = sObjectMgr->GetDungeonEncounterID(creature->GetEntry());
 }
 
 void BossAI::_Reset()
 {
-    if (!me->isAlive())
+    if (!me->IsAlive())
         return;
 
+    me->SetCombatPulseDelay(0);
     me->ResetLootMode();
+    controls.Reset();
     events.Reset();
     summons.DespawnAll();
+    me->RemoveAllAreaTriggers();
+    me->GetScheduler().CancelAll();
     if (instance)
         instance->SetBossState(_bossId, NOT_STARTED);
 }
 
 void BossAI::_JustDied()
 {
+    controls.Reset();
     events.Reset();
     summons.DespawnAll();
+    me->GetScheduler().CancelAll();
     if (instance)
     {
         instance->SetBossState(_bossId, DONE);
-        instance->SaveToDB();
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+        if (_dungeonEncounterId > 0)
+            instance->SendBossKillCredit(_dungeonEncounterId);
+           instance->SetCheckPointPos(me->GetHomePosition());
     }
+    Talk(BOSS_TALK_JUST_DIED);
+    GetTalkData(EVENT_ON_JUSTDIED);
 }
 
-void BossAI::_EnterCombat()
+void BossAI::_JustReachedHome()
 {
-    me->setActive(true);
-    DoZoneInCombat();
+    me->setActive(false);
+
+    if (instance)
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+}
+
+void BossAI::_KilledUnit(Unit* victim)
+{
+    if (victim->IsPlayer() && urand(0, 1))
+        Talk(BOSS_TALK_KILL_PLAYER);
+}
+
+void BossAI::_DamageTaken(Unit* /*attacker*/, uint32& damage)
+{
+    while (uint32 eventId = damageEvents.OnDamageTaken(damage))
+        ExecuteEvent(eventId);
+}
+
+void BossAI::_EnterCombat(bool showFrameEngage /*= true*/)
+{
     if (instance)
     {
         // bosses do not respawn, check only on enter combat
         if (!instance->CheckRequiredBosses(_bossId))
         {
-            EnterEvadeMode();
+            EnterEvadeMode(EVADE_REASON_SEQUENCE_BREAK);
             return;
         }
         instance->SetBossState(_bossId, IN_PROGRESS);
+
+        if (showFrameEngage)
+            instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me, 1);
     }
+
+    me->SetCombatPulseDelay(5);
+    me->setActive(true);
+    DoZoneInCombat();
+    ScheduleTasks();
+    Talk(BOSS_TALK_ENTER_COMBAT);
 }
 
 void BossAI::TeleportCheaters()
 {
     float x, y, z;
     me->GetPosition(x, y, z);
-    std::list<HostileReference*>& threatList = me->getThreatManager().getThreatList();
-    for (std::list<HostileReference*>::iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
+
+    ThreatContainer::StorageType threatList = me->getThreatManager().getThreatList();
+    for (ThreatContainer::StorageType::const_iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
         if (Unit* target = (*itr)->getTarget())
             if (target->GetTypeId() == TYPEID_PLAYER && !CheckBoundary(target))
                 target->NearTeleportTo(x, y, z, 0);
 }
 
-bool BossAI::CheckBoundary(Unit* who)
-{
-    if (!GetBoundary() || !who)
-        return true;
-
-    for (BossBoundaryMap::const_iterator itr = GetBoundary()->begin(); itr != GetBoundary()->end(); ++itr)
-    {
-        switch (itr->first)
-        {
-            case BOUNDARY_N:
-                if (me->GetPositionX() > itr->second)
-                    return false;
-                break;
-            case BOUNDARY_S:
-                if (me->GetPositionX() < itr->second)
-                    return false;
-                break;
-            case BOUNDARY_E:
-                if (me->GetPositionY() < itr->second)
-                    return false;
-                break;
-            case BOUNDARY_W:
-                if (me->GetPositionY() > itr->second)
-                    return false;
-                break;
-            case BOUNDARY_NW:
-                if (me->GetPositionX() + me->GetPositionY() > itr->second)
-                    return false;
-                break;
-            case BOUNDARY_SE:
-                if (me->GetPositionX() + me->GetPositionY() < itr->second)
-                    return false;
-                break;
-            case BOUNDARY_NE:
-                if (me->GetPositionX() - me->GetPositionY() > itr->second)
-                    return false;
-                break;
-            case BOUNDARY_SW:
-                if (me->GetPositionX() - me->GetPositionY() < itr->second)
-                    return false;
-                break;
-            default:
-                break;
-        }
-    }
-
-    return true;
-}
-
 void BossAI::JustSummoned(Creature* summon)
 {
     summons.Summon(summon);
-    if (me->isInCombat())
+    if (me->IsInCombat())
         DoZoneInCombat(summon);
 }
 
@@ -582,8 +695,12 @@ void BossAI::SummonedCreatureDespawn(Creature* summon)
     summons.Despawn(summon);
 }
 
-void BossAI::UpdateAI(uint32 const diff)
+void BossAI::UpdateAI(uint32 diff)
 {
+    controls.Update(diff);
+    while (uint32 eventId = controls.ExecuteEvent())
+        ExecuteEvent(eventId);
+
     if (!UpdateVictim())
         return;
 
@@ -593,36 +710,120 @@ void BossAI::UpdateAI(uint32 const diff)
         return;
 
     while (uint32 eventId = events.ExecuteEvent())
+    {
         ExecuteEvent(eventId);
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+    }
 
     DoMeleeAttackIfReady();
+}
+
+bool BossAI::CanAIAttack(Unit const* target) const
+{
+    return CheckBoundary(target);
+}
+
+void BossAI::_DespawnAtEvade(uint32 delayToRespawn, Creature* who)
+{
+    if (delayToRespawn < 2)
+    {
+        TC_LOG_ERROR("scripts", "_DespawnAtEvade called with delay of %u seconds, defaulting to 2.", delayToRespawn);
+        delayToRespawn = 2;
+    }
+
+    if (!who)
+        who = me;
+
+    if (TempSummon* whoSummon = who->ToTempSummon())
+    {
+        TC_LOG_WARN("scripts", "_DespawnAtEvade called on a temporary summon.");
+        whoSummon->UnSummon();
+        return;
+    }
+
+    who->DespawnOrUnsummon(0, Seconds(delayToRespawn));
+
+    if (instance && who == me)
+        instance->SetBossState(_bossId, FAIL);
+}
+
+// StaticBossAI - for bosses that shouldn't move, and cast a spell when player are too far away
+
+void StaticBossAI::_Reset()
+{
+    BossAI::_Reset();
+    SetCombatMovement(false);
+    _InitStaticSpellCast();
+}
+
+void StaticBossAI::_InitStaticSpellCast()
+{
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(_staticSpell);
+    if (!spellInfo)
+        return;
+
+    bool isAura = spellInfo->HasAura(me->GetMap()->GetDifficultyID());
+    bool isArea = spellInfo->IsAffectingArea(me->GetMap()->GetDifficultyID());
+
+    me->GetScheduler().Schedule(2s, [this, isAura, isArea](TaskContext context)
+    {
+        // Check if any player in range
+        for (auto threat : me->getThreatManager().getThreatList())
+        {
+            if (me->IsWithinCombatRange(threat->getTarget(), me->GetCombatReach()))
+            {
+                me->RemoveAurasDueToSpell(_staticSpell);
+                context.Repeat();
+                return;
+            }
+        }
+
+        // Else, cast spell depending of its effects
+        if (isAura)
+        {
+            if (!me->HasAura(_staticSpell))
+                me->CastSpell(me, _staticSpell, false);
+        }
+        else if (isArea)
+        {
+            me->CastSpell(nullptr, _staticSpell, false);
+        }
+        else
+        {
+            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                me->CastSpell(target, _staticSpell, false);
+        }
+
+        context.Repeat();
+    });
 }
 
 // WorldBossAI - for non-instanced bosses
 
 WorldBossAI::WorldBossAI(Creature* creature) :
-    ScriptedAI(creature),
-    summons(creature)
-{
-}
+    ScriptedAI(creature) { }
 
 void WorldBossAI::_Reset()
 {
-    if (!me->isAlive())
+    if (!me->IsAlive())
         return;
 
+    controls.Reset();
     events.Reset();
     summons.DespawnAll();
 }
 
 void WorldBossAI::_JustDied()
 {
+    controls.Reset();
     events.Reset();
     summons.DespawnAll();
 }
 
 void WorldBossAI::_EnterCombat()
 {
+    ScheduleTasks();
     Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true);
     if (target)
         AttackStart(target);
@@ -641,58 +842,38 @@ void WorldBossAI::SummonedCreatureDespawn(Creature* summon)
     summons.Despawn(summon);
 }
 
-void WorldBossAI::UpdateAI(uint32 const diff)
-{
-    if (!UpdateVictim())
-        return;
-
-    events.Update(diff);
-
-    if (me->HasUnitState(UNIT_STATE_CASTING))
-        return;
-
-    while (uint32 eventId = events.ExecuteEvent())
-        ExecuteEvent(eventId);
-
-    DoMeleeAttackIfReady();
-}
-
-// SD2 grid searchers.
-Creature* GetClosestCreatureWithEntry(WorldObject* source, uint32 entry, float maxSearchRange, bool alive /*= true*/)
-{
-    return source->FindNearestCreature(entry, maxSearchRange, alive);
-}
-
-GameObject* GetClosestGameObjectWithEntry(WorldObject* source, uint32 entry, float maxSearchRange)
-{
-    return source->FindNearestGameObject(entry, maxSearchRange);
-}
-
-void GetCreatureListWithEntryInGrid(std::list<Creature*>& list, WorldObject* source, uint32 entry, float maxSearchRange)
-{
-    source->GetCreatureListWithEntryInGrid(list, entry, maxSearchRange);
-}
-
-void GetGameObjectListWithEntryInGrid(std::list<GameObject*>& list, WorldObject* source, uint32 entry, float maxSearchRange)
-{
-    source->GetGameObjectListWithEntryInGrid(list, entry, maxSearchRange);
-}
-
-void GetPlayerListInGrid(std::list<Player*>& list, WorldObject* source, float maxSearchRange)
-{
-    source->GetPlayerListInGrid(list, maxSearchRange);
-}
-
-void GetPositionWithDistInOrientation(Unit* pUnit, float dist, float orientation, float& x, float& y)
+void GetPositionWithDistInOrientation(Position* pUnit, float dist, float orientation, float& x, float& y)
 {
     x = pUnit->GetPositionX() + (dist * cos(orientation));
     y = pUnit->GetPositionY() + (dist * sin(orientation));
 }
 
+void GetPositionWithDistInOrientation(Position* fromPos, float dist, float orientation, Position& movePosition)
+{
+    float x = 0.0f;
+    float y = 0.0f;
+
+    GetPositionWithDistInOrientation(fromPos, dist, orientation, x, y);
+
+    movePosition.m_positionX = x;
+    movePosition.m_positionY = y;
+    movePosition.m_positionZ = fromPos->GetPositionZ();
+}
+
 void GetRandPosFromCenterInDist(float centerX, float centerY, float dist, float& x, float& y)
 {
-    float randOrientation = frand(0, 2*M_PI);
+    float randOrientation = frand(0.0f, 2.0f * (float)M_PI);
 
     x = centerX + (dist * cos(randOrientation));
     y = centerY + (dist * sin(randOrientation));
+}
+
+void GetRandPosFromCenterInDist(Position* centerPos, float dist, Position& movePosition)
+{
+    GetPositionWithDistInOrientation(centerPos, dist, frand(0, 2 * float(M_PI)), movePosition);
+}
+
+void GetPositionWithDistInFront(Position* centerPos, float dist, Position& movePosition)
+{
+    GetPositionWithDistInOrientation(centerPos, dist, centerPos->GetOrientation(), movePosition);
 }

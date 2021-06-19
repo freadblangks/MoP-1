@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -18,10 +18,13 @@
 #ifndef __TRINITY_GUILDFINDER_H
 #define __TRINITY_GUILDFINDER_H
 
-#include <ace/Singleton.h>
 #include "Common.h"
-#include "World.h"
-#include "GuildMgr.h"
+#include "ObjectGuid.h"
+#include "SharedDefines.h"
+#include <unordered_map>
+
+class Guild;
+class Player;
 
 enum GuildFinderOptionsInterest
 {
@@ -37,7 +40,7 @@ enum GuildFinderOptionsAvailability
 {
     AVAILABILITY_WEEKDAYS     = 0x1,
     AVAILABILITY_WEEKENDS     = 0x2,
-    ALL_WEEK                  = AVAILABILITY_WEEKDAYS | AVAILABILITY_WEEKENDS
+    AVAILABILITY_ALWAYS       = AVAILABILITY_WEEKDAYS | AVAILABILITY_WEEKENDS
 };
 
 enum GuildFinderOptionsRoles
@@ -50,8 +53,8 @@ enum GuildFinderOptionsRoles
 
 enum GuildFinderOptionsLevel
 {
-    ANY_FINDER_LEVEL   = 0x1,
-    MAX_FINDER_LEVEL   = 0x2,
+    ANY_FINDER_LEVEL       = 0x1,
+    MAX_FINDER_LEVEL       = 0x2,
     ALL_GUILDFINDER_LEVELS = ANY_FINDER_LEVEL | MAX_FINDER_LEVEL
 };
 
@@ -59,56 +62,24 @@ enum GuildFinderOptionsLevel
 struct MembershipRequest
 {
     public:
-        MembershipRequest(MembershipRequest const& settings) : _comment(settings.GetComment())
-        {
-            _availability = settings.GetAvailability();
-            _classRoles = settings.GetClassRoles();
-            _interests = settings.GetInterests();
-            _guildId = settings.GetGuildId();
-            _playerGUID = settings.GetPlayerGUID();
-            _time = settings.GetSubmitTime();
-        }
+        MembershipRequest();
 
-        MembershipRequest(uint32 playerGUID, uint32 guildId, uint32 availability, uint32 classRoles, uint32 interests, std::string& comment, time_t submitTime) :
-            _playerGUID(playerGUID), _guildId(guildId), _availability(availability), _classRoles(classRoles),
-            _interests(interests), _time(submitTime), _comment(comment) {}
-        
-        MembershipRequest() : _playerGUID(0), _guildId(0), _availability(0), _classRoles(0),
-            _interests(0), _time(time(NULL)) {}
+        MembershipRequest(ObjectGuid const& playerGUID, ObjectGuid const& guildId, uint32 availability, uint32 classRoles, uint32 interests, std::string comment, time_t submitTime);
 
-        uint32 GetGuildId() const      { return _guildId; }
-        uint32 GetPlayerGUID() const   { return _playerGUID; }
+        ObjectGuid const& GetGuildGuid() const      { return _guildId; }
+        ObjectGuid const& GetPlayerGUID() const   { return _playerGUID; }
         uint8 GetAvailability() const  { return _availability; }
         uint8 GetClassRoles() const    { return _classRoles; }
         uint8 GetInterests() const     { return _interests; }
-
-        uint8 GetClass() const
-        {
-            const CharacterNameData *nameData = sWorld->GetCharacterNameData(GetPlayerGUID());
-            return nameData ? nameData->m_class : 0;
-        }
-
-        uint8 GetLevel() const
-        {
-            const CharacterNameData *nameData = sWorld->GetCharacterNameData(GetPlayerGUID());
-            return nameData ? nameData->m_level : 1;
-        }
-
         time_t GetSubmitTime() const   { return _time; }
         time_t GetExpiryTime() const   { return time_t(_time + 30 * 24 * 3600); } // Adding 30 days
         std::string const& GetComment() const { return _comment; }
-        std::string const& GetName() const
-        {
-            const CharacterNameData *nameData = sWorld->GetCharacterNameData(GetPlayerGUID());
-            std::string name = "";
-            return nameData ? nameData->m_name : name;
-        }
 
     private:
         std::string _comment;
 
-        uint32 _guildId;
-        uint32 _playerGUID;
+        ObjectGuid _guildId;
+        ObjectGuid _playerGUID;
 
         uint8 _availability;
         uint8 _classRoles;
@@ -123,14 +94,13 @@ struct LFGuildPlayer
     public:
         LFGuildPlayer()
         {
-            _guid = 0;
             _roles = 0;
             _availability = 0;
             _interests = 0;
             _level = 0;
         }
 
-        LFGuildPlayer(uint32 guid, uint8 role, uint8 availability, uint8 interests, uint8 level)
+        LFGuildPlayer(ObjectGuid const& guid, uint8 role, uint8 availability, uint8 interests, uint8 level)
         {
             _guid = guid;
             _roles = role;
@@ -139,7 +109,7 @@ struct LFGuildPlayer
             _level = level;
         }
 
-        LFGuildPlayer(uint32 guid, uint8 role, uint8 availability, uint8 interests, uint8 level, std::string& comment) : _comment(comment)
+        LFGuildPlayer(ObjectGuid const& guid, uint8 role, uint8 availability, uint8 interests, uint8 level, std::string& comment) : _comment(comment)
         {
             _guid = guid;
             _roles = role;
@@ -157,7 +127,7 @@ struct LFGuildPlayer
             _level = settings.GetLevel();
         }
 
-        uint32 GetGUID() const         { return _guid; }
+        ObjectGuid const& GetGUID() const         { return _guid; }
         uint8 GetClassRoles() const    { return _roles; }
         uint8 GetAvailability() const  { return _availability; }
         uint8 GetInterests() const     { return _interests; }
@@ -166,7 +136,7 @@ struct LFGuildPlayer
 
     private:
         std::string _comment;
-        uint32 _guid;
+        ObjectGuid _guid;
         uint8 _roles;
         uint8 _availability;
         uint8 _interests;
@@ -181,39 +151,36 @@ struct LFGuildSettings : public LFGuildPlayer
 
         LFGuildSettings(bool listed, TeamId team) : LFGuildPlayer(), _listed(listed), _team(team) {}
 
-        LFGuildSettings(bool listed, TeamId team, uint32 guid, uint8 role, uint8 availability, uint8 interests, uint8 level) : _listed(listed),
-            LFGuildPlayer(guid, role, availability, interests, level), _team(team) {}
+        LFGuildSettings(bool listed, TeamId team, ObjectGuid const& guid, uint8 role, uint8 availability, uint8 interests, uint8 level) :
+            LFGuildPlayer(guid, role, availability, interests, level), _listed(listed), _team(team) {}
 
-        LFGuildSettings(bool listed, TeamId team, uint32 guid, uint8 role, uint8 availability, uint8 interests, uint8 level, std::string& comment) : _listed(listed),
-            LFGuildPlayer(guid, role, availability, interests, level, comment), _team(team) {}
+        LFGuildSettings(bool listed, TeamId team, ObjectGuid const& guid, uint8 role, uint8 availability, uint8 interests, uint8 level, std::string& comment) :
+            LFGuildPlayer(guid, role, availability, interests, level, comment), _listed(listed), _team(team) {}
 
-        LFGuildSettings(LFGuildSettings const& settings) : _listed(settings.IsListed()), _team(settings.GetTeam()),
-            LFGuildPlayer(settings) {}
-
+        LFGuildSettings(LFGuildSettings const& settings) :
+            LFGuildPlayer(settings), _listed(settings.IsListed()), _team(settings.GetTeam()) {}
 
         bool IsListed() const      { return _listed; }
         void SetListed(bool state) { _listed = state; }
 
         TeamId GetTeam() const     { return _team; }
     private:
-        TeamId _team;
         bool _listed;
+        TeamId _team;
 };
 
-typedef std::map<uint32 /* guildGuid */, LFGuildSettings> LFGuildStore;
-typedef std::map<uint32 /* guildGuid */, std::vector<MembershipRequest> > MembershipRequestStore;
+typedef std::unordered_map<ObjectGuid /* guildGuid */, LFGuildSettings> LFGuildStore;
 
 class GuildFinderMgr
 {
-    friend class ACE_Singleton<GuildFinderMgr, ACE_Null_Mutex>;
-
     private:
         GuildFinderMgr();
         ~GuildFinderMgr();
 
         LFGuildStore  _guildSettings;
 
-        MembershipRequestStore _membershipRequests;
+        std::unordered_map<ObjectGuid /*guildGUID*/, std::unordered_map<ObjectGuid /*playerGUID*/, MembershipRequest>> _membershipRequestsByGuild;
+        std::unordered_map<ObjectGuid /*playerGUID*/, std::unordered_map<ObjectGuid /*guildGUID*/, MembershipRequest>> _membershipRequestsByPlayer;
 
         void LoadGuildSettings();
         void LoadMembershipRequests();
@@ -226,72 +193,72 @@ class GuildFinderMgr
          * @param guildGuid The guild's database guid.
          * @param LFGuildSettings The guild's settings storage.
          */
-        void SetGuildSettings(uint32 guildGuid, LFGuildSettings const& settings);
+        void SetGuildSettings(ObjectGuid const& guildGuid, LFGuildSettings const& settings);
 
         /**
          * @brief Returns settings for a guild.
          * @param guildGuid The guild's database guid.
          */
-        LFGuildSettings GetGuildSettings(uint32 guildGuid)
-        {
-            return _guildSettings.find(guildGuid) != _guildSettings.end() ? _guildSettings[guildGuid] : LFGuildSettings();
-        }
+        LFGuildSettings const& GetGuildSettings(ObjectGuid const& guildGuid) { return _guildSettings[guildGuid]; }
 
         /**
          * @brief Files a membership request to a guild
          * @param guildGuid The guild's database GUID.
          * @param MembershipRequest An object storing all data related to the request.
          */
-        void AddMembershipRequest(uint32 guildGuid, MembershipRequest const& request);
+        void AddMembershipRequest(ObjectGuid const& guildGuid, MembershipRequest const& request);
 
         /**
          * @brief Removes all membership request from a player.
          * @param playerId The player's database guid whose application shall be deleted.
          */
-        void RemoveAllMembershipRequestsFromPlayer(uint32 playerId);
+        void RemoveAllMembershipRequestsFromPlayer(ObjectGuid const& playerId);
 
         /**
          * @brief Removes a membership request to a guild.
          * @param playerId The player's database guid whose application shall be deleted.
          * @param guildId  The guild's database guid
          */
-        void RemoveMembershipRequest(uint32 playerId, uint32 guildId);
+        void RemoveMembershipRequest(ObjectGuid const& playerId, ObjectGuid const& guildId);
 
-        /// wipes everything related to a guild. Used when that guild is disbanded
-        void DeleteGuild(uint32 guildId);
-        
+        /// Wipes everything related to a guild. Used when that guild is disbanded
+        void DeleteGuild(ObjectGuid const& guildId);
+
         /**
          * @brief Returns a set of membership requests for a guild
          * @param guildGuid The guild's database guid.
          */
-        std::vector<MembershipRequest> GetAllMembershipRequestsForGuild(uint32 guildGuid)
+        std::unordered_map<ObjectGuid, MembershipRequest> const* GetAllMembershipRequestsForGuild(ObjectGuid const& guildGuid)
         {
-            return _membershipRequests.find(guildGuid) != _membershipRequests.end() ?  _membershipRequests[guildGuid] : std::vector<MembershipRequest>();
+            auto itr = _membershipRequestsByGuild.find(guildGuid);
+            return itr != _membershipRequestsByGuild.end() ? &itr->second : nullptr;
         }
 
         /**
          * @brief Returns a list of membership requests for a player.
          * @param playerGuid The player's database guid.
          */
-        std::list<MembershipRequest> GetAllMembershipRequestsForPlayer(uint32 playerGuid);
+        std::vector<MembershipRequest const*> GetAllMembershipRequestsForPlayer(ObjectGuid const& playerGuid);
 
         /**
          * @brief Returns a store of guilds matching the settings provided, using bitmask operators.
          * @param settings The player's finder settings
          * @param teamId   The player's faction (TEAM_ALLIANCE or TEAM_HORDE)
          */
-        LFGuildStore GetGuildsMatchingSetting(LFGuildPlayer& settings, TeamId faction);
+        std::vector<LFGuildSettings const*> GetGuildsMatchingSetting(LFGuildPlayer& settings, TeamId faction);
 
-        /// Provided a player DB guid and a guild DB guid, determines if a pending request is filed with these keys.
-        bool HasRequest(uint32 playerId, uint32 guildId);
+        /// Provided a player guid and a guild guid, determines if a pending request is filed with these keys.
+        bool HasRequest(ObjectGuid const& playerId, ObjectGuid const& guildId);
 
         /// Counts the amount of pending membership requests, given the player's db guid.
-        uint8 CountRequestsFromPlayer(uint32 playerId);
- 
-        void SendApplicantListUpdate(Guild& guild);
-        void SendMembershipRequestListUpdate(Player& player);
+        uint8 CountRequestsFromPlayer(ObjectGuid const& playerId);
+
+        static void SendApplicantListUpdate(Guild* guild);
+        static void SendMembershipRequestListUpdate(Player* player);
+
+        static GuildFinderMgr* instance();
 };
 
-#define sGuildFinderMgr ACE_Singleton<GuildFinderMgr, ACE_Null_Mutex>::instance()
+#define sGuildFinderMgr GuildFinderMgr::instance()
 
 #endif // __TRINITY_GUILDFINDER_H

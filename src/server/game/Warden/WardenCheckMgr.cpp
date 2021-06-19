@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,11 +20,13 @@
 #include "WorldSession.h"
 #include "Log.h"
 #include "Database/DatabaseEnv.h"
-#include "Util.h"
 #include "WardenCheckMgr.h"
 #include "Warden.h"
+#include "World.h"
+#include <boost/thread/locks.hpp>
+#include <boost/thread/shared_mutex.hpp>
 
-WardenCheckMgr::WardenCheckMgr()
+WardenCheckMgr::WardenCheckMgr() : _checkStoreLock(new boost::shared_mutex())
 {
 }
 
@@ -36,6 +37,8 @@ WardenCheckMgr::~WardenCheckMgr()
 
     for (CheckResultContainer::iterator itr = CheckResultStore.begin(); itr != CheckResultStore.end(); ++itr)
         delete itr->second;
+
+    delete _checkStoreLock;
 }
 
 void WardenCheckMgr::LoadWardenChecks()
@@ -43,8 +46,7 @@ void WardenCheckMgr::LoadWardenChecks()
     // Check if Warden is enabled by config before loading anything
     if (!sWorld->getBoolConfig(CONFIG_WARDEN_ENABLED))
     {
-        sLog->outInfo(LOG_FILTER_WARDEN, ">> Warden disabled, loading checks skipped.");
-
+        TC_LOG_INFO("warden", ">> Warden disabled, loading checks skipped.");
         return;
     }
 
@@ -52,8 +54,7 @@ void WardenCheckMgr::LoadWardenChecks()
 
     if (!result)
     {
-        sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded 0 Warden checks. DB table `warden_checks` is empty!");
-
+        TC_LOG_INFO("server.loading", ">> Loaded 0 Warden checks. DB table `warden_checks` is empty!");
         return;
     }
 
@@ -88,19 +89,7 @@ void WardenCheckMgr::LoadWardenChecks()
         wardenCheck->Action = WardenActions(sWorld->getIntConfig(CONFIG_WARDEN_CLIENT_FAIL_ACTION));
 
         if (checkType == PAGE_CHECK_A || checkType == PAGE_CHECK_B || checkType == DRIVER_CHECK)
-        {
             wardenCheck->Data.SetHexStr(data.c_str());
-            int len = data.size() / 2;
-
-            if (wardenCheck->Data.GetNumBytes() < len)
-            {
-                uint8 temp[24];
-                memset(temp, 0, len);
-                memcpy(temp, wardenCheck->Data.AsByteArray(), wardenCheck->Data.GetNumBytes());
-                std::reverse(temp, temp + len);
-                wardenCheck->Data.SetBinary((uint8*)temp, len);
-            }
-        }
 
         if (checkType == MEM_CHECK || checkType == MODULE_CHECK)
             MemChecksIdPool.push_back(id);
@@ -123,16 +112,6 @@ void WardenCheckMgr::LoadWardenChecks()
         {
             WardenCheckResult* wr = new WardenCheckResult();
             wr->Result.SetHexStr(checkResult.c_str());
-            int len = checkResult.size() / 2;
-            if (wr->Result.GetNumBytes() < len)
-            {
-                uint8 *temp = new uint8[len];
-                memset(temp, 0, len);
-                memcpy(temp, wr->Result.AsByteArray(), wr->Result.GetNumBytes());
-                std::reverse(temp, temp + len);
-                wr->Result.SetBinary((uint8*)temp, len);
-                delete [] temp;
-            }
             CheckResultStore[id] = wr;
         }
 
@@ -145,8 +124,7 @@ void WardenCheckMgr::LoadWardenChecks()
     }
     while (result->NextRow());
 
-    sLog->outInfo(LOG_FILTER_WARDEN, ">> Loaded %u warden checks.", count);
-
+    TC_LOG_INFO("server.loading", ">> Loaded %u warden checks.", count);
 }
 
 void WardenCheckMgr::LoadWardenOverrides()
@@ -154,8 +132,7 @@ void WardenCheckMgr::LoadWardenOverrides()
     // Check if Warden is enabled by config before loading anything
     if (!sWorld->getBoolConfig(CONFIG_WARDEN_ENABLED))
     {
-        sLog->outInfo(LOG_FILTER_WARDEN, ">> Warden disabled, loading check overrides skipped.");
-
+        TC_LOG_INFO("warden", ">> Warden disabled, loading check overrides skipped.");
         return;
     }
 
@@ -164,14 +141,13 @@ void WardenCheckMgr::LoadWardenOverrides()
 
     if (!result)
     {
-        sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded 0 Warden action overrides. DB table `warden_action` is empty!");
-
+        TC_LOG_INFO("server.loading", ">> Loaded 0 Warden action overrides. DB table `warden_action` is empty!");
         return;
     }
 
     uint32 count = 0;
 
-    ACE_WRITE_GUARD(ACE_RW_Mutex, g, _checkStoreLock);
+    boost::unique_lock<boost::shared_mutex> lock(*sWardenCheckMgr->_checkStoreLock);
 
     do
     {
@@ -182,10 +158,10 @@ void WardenCheckMgr::LoadWardenOverrides()
 
         // Check if action value is in range (0-2, see WardenActions enum)
         if (action > WARDEN_ACTION_BAN)
-            sLog->outError(LOG_FILTER_WARDEN, "Warden check override action out of range (ID: %u, action: %u)", checkId, action);
+            TC_LOG_ERROR("warden", "Warden check override action out of range (ID: %u, action: %u)", checkId, action);
         // Check if check actually exists before accessing the CheckStore vector
         else if (checkId > CheckStore.size())
-            sLog->outError(LOG_FILTER_WARDEN, "Warden check action override for non-existing check (ID: %u, action: %u), skipped", checkId, action);
+            TC_LOG_ERROR("warden", "Warden check action override for non-existing check (ID: %u, action: %u), skipped", checkId, action);
         else
         {
             CheckStore[checkId]->Action = WardenActions(action);
@@ -194,8 +170,13 @@ void WardenCheckMgr::LoadWardenOverrides()
     }
     while (result->NextRow());
 
-    sLog->outInfo(LOG_FILTER_WARDEN, ">> Loaded %u warden action overrides.", count);
+    TC_LOG_INFO("server.loading", ">> Loaded %u warden action overrides.", count);
+}
 
+WardenCheckMgr* WardenCheckMgr::instance()
+{
+    static WardenCheckMgr instance;
+    return &instance;
 }
 
 WardenCheck* WardenCheckMgr::GetWardenDataById(uint16 Id)

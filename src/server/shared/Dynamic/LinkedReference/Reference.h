@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,6 +19,7 @@
 #define _REFERENCE_H
 
 #include "Dynamic/LinkedList.h"
+#include "Errors.h" // for ASSERT
 
 //=====================================================
 
@@ -28,6 +28,7 @@ template <class TO, class FROM> class Reference : public LinkedListElement
     private:
         TO* iRefTo;
         FROM* iRefFrom;
+
     protected:
         // Tell our refTo (target) object that we have a link
         virtual void targetObjectBuildLink() = 0;
@@ -39,12 +40,12 @@ template <class TO, class FROM> class Reference : public LinkedListElement
         virtual void sourceObjectDestroyLink() = 0;
     public:
         Reference() { iRefTo = NULL; iRefFrom = NULL; }
-        virtual ~Reference() {}
+        virtual ~Reference() { }
 
         // Create new link
         void link(TO* toObj, FROM* fromObj)
         {
-            assert(fromObj);                                // fromObj MUST not be NULL
+            ASSERT(fromObj);                                // fromObj MUST not be NULL
             if (isValid())
                 unlink();
             if (toObj != NULL)
@@ -58,7 +59,7 @@ template <class TO, class FROM> class Reference : public LinkedListElement
         // We don't need the reference anymore. Call comes from the refFrom object
         // Tell our refTo object, that the link is cut
         void unlink()
-        { 
+        {
             targetObjectDestroyLink();
             delink();
             iRefTo = NULL;
@@ -89,10 +90,14 @@ template <class TO, class FROM> class Reference : public LinkedListElement
         Reference<TO, FROM>       * nocheck_prev()       { return((Reference<TO, FROM>       *) LinkedListElement::nocheck_prev()); }
         Reference<TO, FROM> const* nocheck_prev() const { return((Reference<TO, FROM> const*) LinkedListElement::nocheck_prev()); }
 
-        TO* operator ->() const { return iRefTo; }
+        TO* operator->() const { return iRefTo; }
         TO* getTarget() const { return iRefTo; }
 
-        FROM* getSource() const { return iRefFrom; }
+        FROM* GetSource() const { return iRefFrom; }
+
+    private:
+        Reference(Reference const&) = delete;
+        Reference& operator=(Reference const&) = delete;
 };
 
 //=====================================================

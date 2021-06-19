@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 TrintiyCore <http://www.trinitycore.org/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -18,124 +18,115 @@
 #ifndef DB2STORE_H
 #define DB2STORE_H
 
-#include "DB2FileLoader.h"
-#include "DB2fmt.h"
-#include "Log.h"
-#include "Field.h"
-#include "DatabaseWorkerPool.h"
-#include "Implementation/WorldDatabase.h"
-#include "DatabaseEnv.h"
-
+#include "Common.h"
+#include "Errors.h"
+#include "DBStorageIterator.h"
 #include <vector>
 
-template<class T>
-class DB2Storage
+class ByteBuffer;
+struct DB2LoadInfo;
+
+/// Interface class for common access
+class TC_SHARED_API DB2StorageBase
 {
-    typedef std::list<char*> StringPoolList;
-    typedef std::vector<T*> DataTableEx;
 public:
-    explicit DB2Storage(const char *f) : nCount(0), fieldCount(0), fmt(f), indexTable(NULL), m_dataTable(NULL) { }
-    ~DB2Storage() { Clear(); }
+    DB2StorageBase(char const* fileName, DB2LoadInfo const* loadInfo);
+    virtual ~DB2StorageBase();
 
-    T const* LookupEntry(uint32 id) const { return (id>=nCount)?NULL:indexTable[id]; }
-    uint32  GetNumRows() const { return nCount; }
-    char const* GetFormat() const { return fmt; }
-    uint32 GetFieldCount() const { return fieldCount; }
+    uint32 GetTableHash() const { return _tableHash; }
+    uint32 GetLayoutHash() const { return _layoutHash; }
 
-        /// Copies the provided entry and stores it.
-        void AddEntry(uint32 id, const T* entry)
-        {
-            if (LookupEntry(id))
-                return;
+    virtual bool HasRecord(uint32 id) const = 0;
+    virtual void WriteRecord(uint32 id, uint32 locale, ByteBuffer& buffer) const = 0;
+    virtual void EraseRecord(uint32 id) = 0;
 
-            if (id >= nCount)
-            {
-                // reallocate index table
-                char** tmpIdxTable = new char*[id+1];
-                memset(tmpIdxTable, 0, (id+1) * sizeof(char*));
-                memcpy(tmpIdxTable, (char*)indexTable, nCount * sizeof(char*));
-                delete[] ((char*)indexTable);
-                nCount = id + 1;
-                indexTable = (T**)tmpIdxTable;
-            }
+    std::string const& GetFileName() const { return _fileName; }
+    uint32 GetFieldCount() const { return _fieldCount; }
+    DB2LoadInfo const* GetLoadInfo() const { return _loadInfo; }
 
-            T* entryDst = new T;
-            memcpy((char*)entryDst, (char*)entry, sizeof(T));
-            m_dataTableEx.push_back(entryDst);
-            indexTable[id] = entryDst;
-        }
+    virtual bool Load(std::string const& path, uint32 locale) = 0;
+    virtual bool LoadStringsFrom(std::string const& path, uint32 locale) = 0;
+    virtual void LoadFromDB() = 0;
+    virtual void LoadStringsFromDB(uint32 locale) = 0;
 
-    bool Load(char const* fn)
+protected:
+    void WriteRecordData(char const* entry, uint32 locale, ByteBuffer& buffer) const;
+    bool Load(std::string const& path, uint32 locale, char**& indexTable);
+    bool LoadStringsFrom(std::string const& path, uint32 locale, char** indexTable);
+    void LoadFromDB(char**& indexTable);
+    void LoadStringsFromDB(uint32 locale, char** indexTable);
+
+    uint32 _tableHash;
+    uint32 _layoutHash;
+    std::string _fileName;
+    uint32 _fieldCount;
+    DB2LoadInfo const* _loadInfo;
+    char* _dataTable;
+    char* _dataTableEx[2];
+    std::vector<char*> _stringPool;
+    uint32 _indexTableSize;
+};
+
+template<class T>
+class DB2Storage : public DB2StorageBase
+{
+    static_assert(std::is_standard_layout<T>::value, "T in DB2Storage must have standard layout.");
+
+public:
+    typedef DBStorageIterator<T> iterator;
+
+    DB2Storage(char const* fileName, DB2LoadInfo const* loadInfo) : DB2StorageBase(fileName, loadInfo)
     {
-        DB2FileLoader db2;
-        // Check if load was sucessful, only then continue
-        if (!db2.Load(fn, fmt))
-            return false;
-
-        fieldCount = db2.GetCols();
-
-        // load raw non-string data
-        m_dataTable = (T*)db2.AutoProduceData(fmt, nCount, (char**&)indexTable);
-
-        // create string holders for loaded string fields
-        m_stringPoolList.push_back(db2.AutoProduceStringsArrayHolders(fmt, (char*)m_dataTable));
-
-        // load strings from dbc data
-        m_stringPoolList.push_back(db2.AutoProduceStrings(fmt, (char*)m_dataTable));
-
-        // error in dbc file at loading if NULL
-        return indexTable!=NULL;
+        _indexTable.AsT = nullptr;
     }
 
-    bool LoadStringsFrom(char const* fn)
+    ~DB2Storage()
     {
-        // DBC must be already loaded using Load
-        if (!indexTable)
-            return false;
-
-        DB2FileLoader db2;
-        // Check if load was successful, only then continue
-        if (!db2.Load(fn, fmt))
-            return false;
-
-        // load strings from another locale dbc data
-        m_stringPoolList.push_back(db2.AutoProduceStrings(fmt, (char*)m_dataTable));
-
-        return true;
+        delete[] reinterpret_cast<char*>(_indexTable.AsT);
     }
 
-    void Clear()
+    bool HasRecord(uint32 id) const override { return id < _indexTableSize && _indexTable.AsT[id] != nullptr; }
+    void WriteRecord(uint32 id, uint32 locale, ByteBuffer& buffer) const override
     {
-        if (!indexTable)
-            return;
-
-        delete[] ((char*)indexTable);
-        indexTable = NULL;
-        delete[] ((char*)m_dataTable);
-        m_dataTable = NULL;
-            for (typename DataTableEx::const_iterator itr = m_dataTableEx.begin(); itr != m_dataTableEx.end(); ++itr)
-                delete *itr;
-            m_dataTableEx.clear();
-
-        while (!m_stringPoolList.empty())
-        {
-            delete[] m_stringPoolList.front();
-            m_stringPoolList.pop_front();
-        }
-        nCount = 0;
+        WriteRecordData(reinterpret_cast<char const*>(AssertEntry(id)), locale, buffer);
     }
 
-    void EraseEntry(uint32 id) { indexTable[id] = NULL; }
+    void EraseRecord(uint32 id) override { if (id < _indexTableSize) _indexTable.AsT[id] = nullptr; }
+
+    T const* LookupEntry(uint32 id) const { return (id >= _indexTableSize) ? nullptr : _indexTable.AsT[id]; }
+    T const* AssertEntry(uint32 id) const { return ASSERT_NOTNULL(LookupEntry(id)); }
+    T const* operator[](uint32 id) const { return LookupEntry(id); }
+
+    uint32 GetNumRows() const { return _indexTableSize; }
+    bool Load(std::string const& path, uint32 locale) override
+    {
+        return DB2StorageBase::Load(path, locale, _indexTable.AsChar);
+    }
+
+    bool LoadStringsFrom(std::string const& path, uint32 locale) override
+    {
+        return DB2StorageBase::LoadStringsFrom(path, locale, _indexTable.AsChar);
+    }
+
+    void LoadFromDB() override
+    {
+        DB2StorageBase::LoadFromDB(_indexTable.AsChar);
+    }
+
+    void LoadStringsFromDB(uint32 locale) override
+    {
+        DB2StorageBase::LoadStringsFromDB(locale, _indexTable.AsChar);
+    }
+
+    iterator begin() { return iterator(_indexTable.AsT, _indexTableSize); }
+    iterator end() { return iterator(_indexTable.AsT, _indexTableSize, _indexTableSize); }
 
 private:
-    uint32 nCount;
-    uint32 fieldCount;
-    uint32 recordSize;
-    char const* fmt;
-    T** indexTable;
-    T* m_dataTable;
-    DataTableEx m_dataTableEx;
-    StringPoolList m_stringPoolList;
+    union
+    {
+        T** AsT;
+        char** AsChar;
+    } _indexTable;
 };
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -15,117 +15,96 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "Opcodes.h"
 #include "WorldSession.h"
-#include "WorldPacket.h"
+#include "AuthenticationPackets.h"
+#include "BattlenetRpcErrorCodes.h"
+#include "BattlePayMgr.h"
+#include "CharacterTemplateDataStore.h"
+#include "ClientConfigPackets.h"
+#include "GameTime.h"
+#include "ObjectMgr.h"
+#include "RBAC.h"
+#include "Realm.h"
+#include "SystemPackets.h"
+#include "World.h"
 
-void WorldSession::SendAuthResponse(uint8 code, bool queued, uint32 queuePos)
+void WorldSession::SendAuthResponse(uint32 code, bool queued, uint32 queuePos)
 {
-    const static uint8 ClassExpensions[MAX_CLASSES] = 
+    WorldPackets::Auth::AuthResponse response;
+    response.Result = code;
+
+    if (code == ERROR_OK)
     {
-        0, // CLASS_NONE
-        0, // CLASS_WARRIOR
-        0, // CLASS_PALADIN
-        0, // CLASS_HUNTER
-        0, // CLASS_ROGUE
-        0, // CLASS_PRIEST
-        0, // CLASS_DEATH_KNIGHT
-        0, // CLASS_SHAMAN
-        0, // CLASS_MAGE
-        0, // CLASS_WARLOCK
-        4, // CLASS_MONK
-        0  // CLASS_DRUID
-    };
+        response.SuccessInfo = boost::in_place();
 
-    WorldPacket packet(SMSG_AUTH_RESPONSE, 80);
+        response.SuccessInfo->ActiveExpansionLevel = GetExpansion();
+        response.SuccessInfo->AccountExpansionLevel = GetAccountExpansion();
+        response.SuccessInfo->VirtualRealmAddress = realm.Id.GetAddress();
+        response.SuccessInfo->CurrencyID = GetBattlePayMgr()->GetShopCurrency();
+        response.SuccessInfo->Time = int32(GameTime::GetGameTime());
 
-    bool hasAccountData = code == AUTH_OK;
-    const uint32 realmRaceCount = 15;
+        // Send current home realm. Also there is no need to send it later in realm queries.
+        response.SuccessInfo->VirtualRealms.emplace_back(realm.Id.GetAddress(), true, false, realm.Name, realm.NormalizedName);
 
-    packet.WriteBit(hasAccountData);
+        if (HasPermission(rbac::RBAC_PERM_USE_CHARACTER_TEMPLATES))
+            for (auto&& templ : sCharacterTemplateDataStore->GetCharacterTemplates())
+                response.SuccessInfo->Templates.push_back(&templ.second);
 
-    if (hasAccountData)
-    {
-        packet.WriteBits(0, 21);
-        packet.WriteBit(0);
-        packet.WriteBits(realmRaceCount, 23);
-        packet.WriteBits(0, 21);
-        packet.WriteBit(0);
-        packet.WriteBits(MAX_CLASSES - 1, 23);
-        packet.WriteBit(0);
-        packet.WriteBit(0);
-        packet.WriteBit(0);
+        response.SuccessInfo->AvailableClasses = &sObjectMgr->GetClassExpansionRequirements();
     }
 
-    packet.WriteBit(queued);
     if (queued)
-        packet.WriteBit(false);
-
-    packet.FlushBits();
-    
-    if (queued)
-        packet << uint32(queuePos);                            // Unknown
-
-    if (hasAccountData)
     {
-        for (uint32 i = 1; i < MAX_CLASSES; ++i)
-        {
-            packet << uint8(ClassExpensions[i]); // expension
-            packet << uint8(i);                  // class
-        }
-
-        packet << uint8(Expansion());
-
-        packet << uint8(0);
-        packet << uint8(RACE_HUMAN);
-        packet << uint8(0);
-        packet << uint8(RACE_ORC);
-        packet << uint8(0);
-        packet << uint8(RACE_DWARF);
-        packet << uint8(0);
-        packet << uint8(RACE_NIGHTELF);
-        packet << uint8(0);
-        packet << uint8(RACE_UNDEAD_PLAYER);
-        packet << uint8(0);
-        packet << uint8(RACE_TAUREN);
-        packet << uint8(0);
-        packet << uint8(RACE_GNOME);
-        packet << uint8(0);
-        packet << uint8(RACE_TROLL);
-        packet << uint8(1);
-        packet << uint8(RACE_GOBLIN);
-        packet << uint8(1);
-        packet << uint8(RACE_BLOODELF);
-        packet << uint8(1);
-        packet << uint8(RACE_DRAENEI);
-        packet << uint8(1);
-        packet << uint8(RACE_WORGEN);
-        packet << uint8(1);
-        packet << uint8(RACE_PANDAREN_NEUTRAL);
-        packet << uint8(1);
-        packet << uint8(RACE_PANDAREN_ALLI);
-        packet << uint8(1);
-        packet << uint8(RACE_PANDAREN_HORDE);
-
-        packet << uint32(Expansion());
-        
-        packet << uint32(0);
-        packet << uint32(0);
-        packet << uint32(0);
-        packet << uint32(0);
-
-        packet << uint8(Expansion());
-        packet << uint32(0);
+        response.WaitInfo = boost::in_place();
+        response.WaitInfo->WaitCount = queuePos;
     }
 
-    packet << uint8(code);
+    SendPacket(response.Write());
+}
 
-    SendPacket(&packet);
+void WorldSession::SendAuthWaitQue(uint32 position)
+{
+    if (position)
+    {
+        WorldPackets::Auth::WaitQueueUpdate waitQueueUpdate;
+        waitQueueUpdate.WaitInfo.WaitCount = position;
+        waitQueueUpdate.WaitInfo.WaitTime = 0;
+        waitQueueUpdate.WaitInfo.HasFCM = false;
+        SendPacket(waitQueueUpdate.Write());
+    }
+    else
+        SendPacket(WorldPackets::Auth::WaitQueueFinish().Write());
 }
 
 void WorldSession::SendClientCacheVersion(uint32 version)
 {
-    WorldPacket data(SMSG_CLIENT_CACHE_VERSION, 4);
-    data << uint32(version);
-    SendPacket(&data);
+    WorldPackets::ClientConfig::ClientCacheVersion cache;
+    cache.CacheVersion = version;
+
+    SendPacket(cache.Write());
+}
+
+void WorldSession::SendSetTimeZoneInformation()
+{
+    /// @todo: replace dummy values
+    WorldPackets::System::SetTimeZoneInformation packet;
+    packet.ServerTimeTZ = "Europe/Paris";
+    packet.GameTimeTZ = "Europe/Paris";
+
+    SendPacket(packet.Write());
+}
+
+void WorldSession::SendFeatureSystemStatusGlueScreen()
+{
+    WorldPackets::System::FeatureSystemStatusGlueScreen features;
+    features.BpayStoreEnabled = sWorld->getBoolConfig(CONFIG_FEATURE_SYSTEM_BPAY_STORE_ENABLED);
+    features.BpayStoreAvailable = sWorld->getBoolConfig(CONFIG_FEATURE_SYSTEM_BPAY_STORE_ENABLED);
+    features.CommerceSystemEnabled = true;
+    features.BpayStoreDisabledByParentalControls = false;
+    features.CharUndeleteEnabled = sWorld->getBoolConfig(CONFIG_FEATURE_SYSTEM_CHARACTER_UNDELETE_ENABLED);
+    features.MaxCharactersPerRealm = sWorld->getIntConfig(CONFIG_CHARACTERS_PER_REALM);
+    features.MinimumExpansionLevel = EXPANSION_CLASSIC;
+    features.MaximumExpansionLevel = sWorld->getIntConfig(CONFIG_EXPANSION);
+
+    SendPacket(features.Write());
 }

@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 LatinCoreTeam
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,16 +15,22 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "DynamicObject.h"
 #include "Common.h"
-#include "UpdateMask.h"
-#include "Opcodes.h"
-#include "World.h"
+#include "GameTime.h"
+#include "Log.h"
+#include "Map.h"
 #include "ObjectAccessor.h"
-#include "DatabaseEnv.h"
-#include "GridNotifiers.h"
-#include "CellImpl.h"
-#include "GridNotifiersImpl.h"
+#include "PhasingHandler.h"
+#include "Player.h"
 #include "ScriptMgr.h"
+#include "SpellAuras.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+#include "Transport.h"
+#include "Unit.h"
+#include "UpdateData.h"
+#include "World.h"
 
 DynamicObject::DynamicObject(bool isWorldObject) : WorldObject(isWorldObject),
     _aura(NULL), _removedAura(NULL), _caster(NULL), _duration(0), _isViewpoint(false)
@@ -33,9 +38,7 @@ DynamicObject::DynamicObject(bool isWorldObject) : WorldObject(isWorldObject),
     m_objectType |= TYPEMASK_DYNAMICOBJECT;
     m_objectTypeId = TYPEID_DYNAMICOBJECT;
 
-    m_updateFlag = UPDATEFLAG_STATIONARY_POSITION;
-
-    m_valuesCount = DYNAMICOBJECT_END;
+    m_updateFlag.Stationary = true;
 }
 
 DynamicObject::~DynamicObject()
@@ -44,6 +47,7 @@ DynamicObject::~DynamicObject()
     ASSERT(!_aura);
     ASSERT(!_caster);
     ASSERT(!_isViewpoint);
+    delete _removedAura;
 }
 
 void DynamicObject::AddToWorld()
@@ -51,7 +55,7 @@ void DynamicObject::AddToWorld()
     ///- Register the dynamicObject for guid lookup and for caster
     if (!IsInWorld())
     {
-        sObjectAccessor->AddObject(this);
+        GetMap()->GetObjectsStore().Insert<DynamicObject>(GetGUID(), this);
         WorldObject::AddToWorld();
         BindToCaster();
     }
@@ -74,52 +78,55 @@ void DynamicObject::RemoveFromWorld()
 
         UnbindFromCaster();
         WorldObject::RemoveFromWorld();
-        sObjectAccessor->RemoveObject(this);
+        GetMap()->GetObjectsStore().Remove<DynamicObject>(GetGUID());
     }
 }
 
-bool DynamicObject::CreateDynamicObject(uint32 guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type)
+bool DynamicObject::CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type, uint32 spellXSpellVisualId)
 {
-    _spell = spell;
-    _type = type;
-
     SetMap(caster->GetMap());
     Relocate(pos);
     if (!IsPositionValid())
     {
-        sLog->outError(LOG_FILTER_GENERAL, "DynamicObject (spell %u) not created. Suggested coordinates isn't valid (X: %f Y: %f)", spell->Id, GetPositionX(), GetPositionY());
+        TC_LOG_ERROR("misc", "DynamicObject (spell %u) not created. Suggested coordinates isn't valid (X: %f Y: %f)", spell->Id, GetPositionX(), GetPositionY());
         return false;
     }
 
-    WorldObject::_Create(guidlow, HIGHGUID_DYNAMICOBJECT, caster->GetPhaseMask());
+    WorldObject::_Create(ObjectGuid::Create<HighGuid::DynamicObject>(GetMapId(), spell->Id, guidlow));
+    PhasingHandler::InheritPhaseShift(this, caster);
 
     SetEntry(spell->Id);
     SetObjectScale(1.0f);
-    SetUInt64Value(DYNAMICOBJECT_CASTER, caster->GetGUID());
-
-    // The lower word of DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID must be 0x0001. This value means that the visual radius will be overriden
-    // by client for most of the "ground patch" visual effect spells and a few "skyfall" ones like Hurricane.
-    // If any other value is used, the client will _always_ use the radius provided in DYNAMICOBJECT_RADIUS, but
-    // precompensation is necessary (eg radius *= 2) for many spells. Anyway, blizz sends 0x0001 for all the spells
-    // I saw sniffed...
-
-    // Blizz set visual spell Id in 3 first byte of DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID after 5.X
-    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell->Id);
-    if (spellInfo)
-    {
-        uint32 visual = spellInfo->SpellVisual[0] ? spellInfo->SpellVisual[0] : spellInfo->SpellVisual[1];
-        SetUInt32Value(DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID, 0x10000000 | visual);
-    }
-
-    SetUInt32Value(DYNAMICOBJECT_SPELLID, spell->Id);
-    SetFloatValue(DYNAMICOBJECT_RADIUS, radius);
-    SetUInt32Value(DYNAMICOBJECT_CASTTIME, getMSTime());
+    auto dynamicObjectData = m_values.ModifyValue(&DynamicObject::m_dynamicObjectData);
+    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::Caster), caster->GetGUID());
+    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::Type), type);
+    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::SpellXSpellVisualID), spellXSpellVisualId);
+    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::SpellID), spell->Id);
+    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::Radius), radius);
+    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::CastTime), GameTime::GetGameTimeMS());
 
     if (IsWorldObject())
         setActive(true);    //must before add to map to be put in world container
 
+    Transport* transport = caster->GetTransport();
+    if (transport)
+    {
+        float x, y, z, o;
+        pos.GetPosition(x, y, z, o);
+        transport->CalculatePassengerOffset(x, y, z, &o);
+        m_movementInfo.transport.pos.Relocate(x, y, z, o);
+
+        // This object must be added to transport before adding to map for the client to properly display it
+        transport->AddPassenger(this);
+    }
+
     if (!GetMap()->AddToMap(this))
+    {
+        // Returning false will cause the object to be deleted - remove from transport
+        if (transport)
+            transport->RemovePassenger(this);
         return false;
+    }
 
     return true;
 }
@@ -159,7 +166,6 @@ void DynamicObject::Remove()
 {
     if (IsInWorld())
     {
-        SendObjectDeSpawnAnim(GetGUID());
         RemoveFromWorld();
         AddObjectToRemoveList();
     }
@@ -186,7 +192,7 @@ void DynamicObject::Delay(int32 delaytime)
     SetDuration(GetDuration() - delaytime);
 }
 
-void DynamicObject::SetAura(AuraPtr aura)
+void DynamicObject::SetAura(Aura* aura)
 {
     ASSERT(!_aura && aura);
     _aura = aura;
@@ -196,7 +202,7 @@ void DynamicObject::RemoveAura()
 {
     ASSERT(_aura && !_removedAura);
     _removedAura = _aura;
-    _aura = NULLAURA;
+    _aura = NULL;
     if (!_removedAura->IsRemoved())
         _removedAura->_Remove(AURA_REMOVE_BY_DEFAULT);
 }
@@ -221,17 +227,80 @@ void DynamicObject::RemoveCasterViewpoint()
 
 void DynamicObject::BindToCaster()
 {
-    //ASSERT(!_caster);
+    ASSERT(!_caster);
     _caster = ObjectAccessor::GetUnit(*this, GetCasterGUID());
-    //ASSERT(_caster);
-    //ASSERT(_caster->GetMap() == GetMap());
-    if (_caster)
-        _caster->_RegisterDynObject(this);
+    ASSERT(_caster);
+    ASSERT(_caster->GetMap() == GetMap());
+    _caster->_RegisterDynObject(this);
 }
 
 void DynamicObject::UnbindFromCaster()
 {
-    //ASSERT(_caster);
+    ASSERT(_caster);
     _caster->_UnregisterDynObject(this);
     _caster = NULL;
+}
+
+SpellInfo const* DynamicObject::GetSpellInfo() const
+{
+    return sSpellMgr->GetSpellInfo(GetSpellId());
+}
+
+void DynamicObject::BuildValuesCreate(ByteBuffer* data, Player const* target) const
+{
+    UF::UpdateFieldFlag flags = GetUpdateFieldFlagsFor(target);
+    std::size_t sizePos = data->wpos();
+    *data << uint32(0);
+    *data << uint8(flags);
+    m_objectData->WriteCreate(*data, flags, this, target);
+    m_dynamicObjectData->WriteCreate(*data, flags, this, target);
+    data->put<uint32>(sizePos, data->wpos() - sizePos - 4);
+}
+
+void DynamicObject::BuildValuesUpdate(ByteBuffer* data, Player const* target) const
+{
+    UF::UpdateFieldFlag flags = GetUpdateFieldFlagsFor(target);
+    std::size_t sizePos = data->wpos();
+    *data << uint32(0);
+    *data << uint32(m_values.GetChangedObjectTypeMask());
+
+    if (m_values.HasChanged(TYPEID_OBJECT))
+        m_objectData->WriteUpdate(*data, flags, this, target);
+
+    if (m_values.HasChanged(TYPEID_DYNAMICOBJECT))
+        m_dynamicObjectData->WriteUpdate(*data, flags, this, target);
+
+    data->put<uint32>(sizePos, data->wpos() - sizePos - 4);
+}
+
+void DynamicObject::BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
+    UF::DynamicObjectData::Mask const& requestedDynamicObjectMask, Player const* target) const
+{
+    UpdateMask<NUM_CLIENT_OBJECT_TYPES> valuesMask;
+    if (requestedObjectMask.IsAnySet())
+        valuesMask.Set(TYPEID_OBJECT);
+
+    if (requestedDynamicObjectMask.IsAnySet())
+        valuesMask.Set(TYPEID_DYNAMICOBJECT);
+
+    ByteBuffer buffer = PrepareValuesUpdateBuffer();
+    std::size_t sizePos = buffer.wpos();
+    buffer << uint32(0);
+    buffer << uint32(valuesMask.GetBlock(0));
+
+    if (valuesMask[TYPEID_OBJECT])
+        m_objectData->WriteUpdate(buffer, requestedObjectMask, true, this, target);
+
+    if (valuesMask[TYPEID_DYNAMICOBJECT])
+        m_dynamicObjectData->WriteUpdate(buffer, requestedDynamicObjectMask, true, this, target);
+
+    buffer.put<uint32>(sizePos, buffer.wpos() - sizePos - 4);
+
+    data->AddUpdateBlock(buffer);
+}
+
+void DynamicObject::ClearUpdateMask(bool remove)
+{
+    m_values.ClearChangesMask(&DynamicObject::m_dynamicObjectData);
+    Object::ClearUpdateMask(remove);
 }

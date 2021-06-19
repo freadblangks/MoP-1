@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 LatinCoreTeam
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,12 +15,11 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DYNAMICOBJECT_H
-#define DYNAMICOBJECT_H
+#ifndef TRINITYCORE_DYNAMICOBJECT_H
+#define TRINITYCORE_DYNAMICOBJECT_H
 
 #include "Object.h"
-#include "../SharedPtrs/SharedPtrs.h"
-
+#include "MapObject.h"
 
 class Unit;
 class Aura;
@@ -31,52 +29,52 @@ enum DynamicObjectType
 {
     DYNAMIC_OBJECT_PORTAL           = 0x0,      // unused
     DYNAMIC_OBJECT_AREA_SPELL       = 0x1,
-    DYNAMIC_OBJECT_FARSIGHT_FOCUS   = 0x2,
-    DYNAMIC_OBJECT_RAID_MARKER      = 0x3,
-    DYNAMIC_OBJECT_UNK              = 0x8
+    DYNAMIC_OBJECT_FARSIGHT_FOCUS   = 0x2
 };
 
-class DynamicObject : public WorldObject, public GridObject<DynamicObject>
+class TC_GAME_API DynamicObject : public WorldObject, public GridObject<DynamicObject>, public MapObject
 {
     public:
         DynamicObject(bool isWorldObject);
         ~DynamicObject();
+protected:
 
-        void AddToWorld();
-        void RemoveFromWorld();
+        void BuildValuesCreate(ByteBuffer* data, Player const* target) const override;
+        void BuildValuesUpdate(ByteBuffer* data, Player const* target) const override;
+        void ClearUpdateMask(bool remove) override;
+public:
+    void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
+        UF::DynamicObjectData::Mask const& requestedDynamicObjectMask, Player const* target) const;
 
-        bool CreateDynamicObject(uint32 guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type);
-        void Update(uint32 p_time);
+        void AddToWorld() override;
+        void RemoveFromWorld() override;
+
+        bool CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type, uint32 spellXSpellVisualId);
+        void Update(uint32 p_time) override;
         void Remove();
         void SetDuration(int32 newDuration);
         int32 GetDuration() const;
         void Delay(int32 delaytime);
-        void SetAura(AuraPtr aura);
+        void SetAura(Aura* aura);
+        Aura* GetAura() const { return _aura; }
         void RemoveAura();
         void SetCasterViewpoint();
         void RemoveCasterViewpoint();
         Unit* GetCaster() const { return _caster; }
-        SpellInfo const* GetSpellInfo() const { return _spell; }
-        DynamicObjectType GetType() const { return _type; }
         void BindToCaster();
         void UnbindFromCaster();
-        uint32 GetSpellId() const {  return GetUInt32Value(DYNAMICOBJECT_SPELLID); }
-        uint64 GetCasterGUID() const { return GetUInt64Value(DYNAMICOBJECT_CASTER); }
-        float GetRadius() const { return GetFloatValue(DYNAMICOBJECT_RADIUS); }
+        uint32 GetSpellId() const {  return m_dynamicObjectData->SpellID; }
+        SpellInfo const* GetSpellInfo() const;
+        ObjectGuid GetCasterGUID() const { return m_dynamicObjectData->Caster; }
+        float GetRadius() const { return m_dynamicObjectData->Radius; }
 
-        void Say(int32 textId, uint32 language, uint64 targetGuid) { MonsterSay(textId, language, targetGuid); }
-        void Yell(int32 textId, uint32 language, uint64 targetGuid) { MonsterYell(textId, language, targetGuid); }
-        void TextEmote(int32 textId, uint64 targetGuid) { MonsterTextEmote(textId, targetGuid); }
-        void Whisper(int32 textId, uint64 receiver) { MonsterWhisper(textId, receiver); }
-        void YellToZone(int32 textId, uint32 language, uint64 targetGuid) { MonsterYellToZone(textId, language, targetGuid); }
+        UF::UpdateField<UF::DynamicObjectData, 0, TYPEID_DYNAMICOBJECT> m_dynamicObjectData;
 
     protected:
-        AuraPtr _aura;
-        AuraPtr _removedAura;
+        Aura* _aura;
+        Aura* _removedAura;
         Unit* _caster;
         int32 _duration; // for non-aura dynobjects
-        SpellInfo const* _spell;
-        DynamicObjectType _type;
         bool _isViewpoint;
 };
 #endif

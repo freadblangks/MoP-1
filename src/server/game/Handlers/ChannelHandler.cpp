@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,422 +15,169 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ObjectMgr.h"                                      // for normalizePlayerName
+#include "WorldSession.h"
+#include "Channel.h"
 #include "ChannelMgr.h"
-#include "Chat.h"
+#include "ChannelPackets.h"
+#include "DB2Stores.h"
+#include "Log.h"
+#include "ObjectMgr.h"                                      // for normalizePlayerName
+#include "Player.h"
+#include <cctype>
 
-void WorldSession::HandleJoinChannel(WorldPacket& recvPacket)
+static size_t const MAX_CHANNEL_NAME_STR = 0x31;
+static size_t const MAX_CHANNEL_PASS_STR = 31;
+
+void WorldSession::HandleJoinChannel(WorldPackets::Channel::JoinChannel& packet)
 {
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
+    TC_LOG_DEBUG("chat.system", "CMSG_JOIN_CHANNEL %s ChatChannelId: %u, CreateVoiceSession: %u, Internal: %u, ChannelName: %s, Password: %s",
+        GetPlayerInfo().c_str(), packet.ChatChannelId, packet.CreateVoiceSession, packet.Internal, packet.ChannelName.c_str(), packet.Password.c_str());
 
-    uint32 channelId;
-    uint32 channelLength = 0;
-    uint32 passLength = 0;
-    std::string channelName, pass;
-
-    recvPacket >> channelId;
-    passLength = recvPacket.ReadBits(7);
-    uint8 unknown1 = recvPacket.ReadBit();                  // unknown bit
-    channelLength = recvPacket.ReadBits(7);
-    uint8 unknown2 = recvPacket.ReadBit();                  // unknown bit
-    pass = recvPacket.ReadString(passLength);
-    channelName = recvPacket.ReadString(channelLength);
-
-    if (channelId)
+    AreaTableEntry const* zone = sAreaTableStore.LookupEntry(GetPlayer()->GetZoneId());
+    if (packet.ChatChannelId)
     {
-        ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(channelId);
+        ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(packet.ChatChannelId);
         if (!channel)
             return;
 
-        AreaTableEntry const* current_zone = GetAreaEntryByAreaID(_player->GetZoneId());
-        if (!current_zone)
-            return;
-
-        if (!_player->CanJoinConstantChannelInZone(channel, current_zone))
+        if (!zone || !GetPlayer()->CanJoinConstantChannelInZone(channel, zone))
             return;
     }
 
-    if (channelName.empty())
+    if (packet.ChannelName.empty())
         return;
 
-    if (!ChatHandler(this).isValidChatMessage(channelName.c_str()))
+    if (isdigit(packet.ChannelName[0]))
         return;
 
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
+    if (ChannelMgr* cMgr = ChannelMgr::ForTeam(GetPlayer()->GetTeam()))
+        if (Channel* channel = cMgr->GetJoinChannel(packet.ChatChannelId, packet.ChannelName, zone))
+            channel->JoinChannel(GetPlayer(), packet.Password);
+}
+
+void WorldSession::HandleLeaveChannel(WorldPackets::Channel::LeaveChannel& packet)
+{
+    TC_LOG_DEBUG("chat.system", "CMSG_LEAVE_CHANNEL %s ChannelName: %s, ZoneChannelID: %u",
+        GetPlayerInfo().c_str(), packet.ChannelName.c_str(), packet.ZoneChannelID);
+
+    if (packet.ChannelName.empty() && !packet.ZoneChannelID)
+        return;
+
+    AreaTableEntry const* zone = sAreaTableStore.LookupEntry(GetPlayer()->GetZoneId());
+    if (packet.ZoneChannelID)
     {
-        cMgr->team = _player->GetTeam();
-        if (Channel* chn = cMgr->GetJoinChannel(channelName, channelId))
-            chn->Join(_player->GetGUID(), pass.c_str());
+        ChatChannelsEntry const* channel = sChatChannelsStore.LookupEntry(packet.ZoneChannelID);
+        if (!channel)
+            return;
+
+        if (!zone || !GetPlayer()->CanJoinConstantChannelInZone(channel, zone))
+            return;
+    }
+
+    if (ChannelMgr* cMgr = ChannelMgr::ForTeam(GetPlayer()->GetTeam()))
+    {
+        if (Channel* channel = cMgr->GetChannel(packet.ZoneChannelID, packet.ChannelName, GetPlayer(), true, zone))
+            channel->LeaveChannel(GetPlayer(), true);
+
+        if (packet.ZoneChannelID)
+            cMgr->LeftChannel(packet.ZoneChannelID, zone);
+        else
+            cMgr->LeftChannel(packet.ChannelName);
     }
 }
 
-void WorldSession::HandleLeaveChannel(WorldPacket& recvPacket)
+void WorldSession::HandleChannelCommand(WorldPackets::Channel::ChannelCommand& packet)
 {
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
+    TC_LOG_DEBUG("chat.system", "%s %s ChannelName: %s",
+        GetOpcodeNameForLogging(packet.GetOpcode()).c_str(), GetPlayerInfo().c_str(), packet.ChannelName.c_str());
 
-    uint32 unk;
-    std::string channelname;
-    recvPacket >> unk;                                      // channel id?
-    uint32 length = recvPacket.ReadBits(7);
-    recvPacket.FlushBits();
-    channelname = recvPacket.ReadString(length);
-
-    if (channelname.empty())
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
+    if (Channel* channel = ChannelMgr::GetChannelForPlayerByNamePart(packet.ChannelName, GetPlayer()))
     {
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->Leave(_player->GetGUID(), true);
-        cMgr->LeftChannel(channelname);
-    }
-}
-
-void WorldSession::HandleChannelList(WorldPacket& recvPacket)
-{
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 length = recvPacket.ReadBits(7);
-    recvPacket.FlushBits();
-    std::string channelname = recvPacket.ReadString(length);
-
-    if (!ChatHandler(this).isValidChatMessage(channelname.c_str()))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->List(_player);
-}
-
-void WorldSession::HandleChannelPassword(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelPassCommand < 5)
-        return;
-    else
-        timeLastChannelPassCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-    uint32 passLength = recvPacket.ReadBits(6);
-    uint32 nameLength = recvPacket.ReadBits(7);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(nameLength);
-    std::string pass = recvPacket.ReadString(passLength);
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->Password(_player->GetGUID(), pass.c_str());
-}
-
-void WorldSession::HandleChannelSetOwner(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelSetownerCommand < 5)
-        return;
-    else
-       timeLastChannelSetownerCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 channelLength = recvPacket.ReadBits(7);
-    uint32 nameLength = recvPacket.ReadBits(6);
-
-    recvPacket.FlushBits();
-
-    std::string newp = recvPacket.ReadString(nameLength);
-    std::string channelname = recvPacket.ReadString(channelLength);
-
-    if (!normalizePlayerName(newp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->SetOwner(_player->GetGUID(), newp.c_str());
-}
-
-void WorldSession::HandleChannelOwner(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelOwnerCommand < 5)
-        return;
-    else
-       timeLastChannelOwnerCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 length = recvPacket.ReadBits(7);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(length);
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->SendWhoOwner(_player->GetGUID());
-}
-
-void WorldSession::HandleChannelModerator(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelModerCommand < 5)
-        return;
-    else
-       timeLastChannelModerCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 nameLength = recvPacket.ReadBits(7);
-    uint32 channelLength = recvPacket.ReadBits(9);
-
-    recvPacket.FlushBits();
-
-    std::string otp = recvPacket.ReadString(nameLength);
-    std::string channelname = recvPacket.ReadString(channelLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->SetModerator(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelUnmoderator(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelUnmoderCommand < 5)
-        return;
-    else
-       timeLastChannelUnmoderCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 nameLength = recvPacket.ReadBits(6);
-    uint32 channelLength = recvPacket.ReadBits(7);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(channelLength);
-    std::string otp = recvPacket.ReadString(nameLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->UnsetModerator(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelMute(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelMuteCommand < 5)
-        return;
-    else
-        timeLastChannelMuteCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 channelLength = recvPacket.ReadBits(9);
-    uint32 nameLength = recvPacket.ReadBits(7);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(channelLength);
-    std::string otp = recvPacket.ReadString(nameLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->SetMute(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelUnmute(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelUnmuteCommand < 5)
-        return;
-    else
-       timeLastChannelUnmuteCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 channelLength = recvPacket.ReadBits(7);
-    uint32 nameLength = recvPacket.ReadBits(6);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(channelLength);
-    std::string otp = recvPacket.ReadString(nameLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->UnsetMute(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelInvite(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelInviteCommand < 5)
-        return;
-    else
-       timeLastChannelInviteCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-    uint32 channelLength = recvPacket.ReadBits(7);
-    uint32 nameLength = recvPacket.ReadBits(6);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(channelLength);
-    std::string otp = recvPacket.ReadString(nameLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (!ChatHandler(this).isValidChatMessage(channelname.c_str()))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->Invite(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelKick(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelKickCommand < 5)
-        return;
-    else
-       timeLastChannelKickCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-    uint32 nameLength = recvPacket.ReadBits(6);
-    uint32 channelLength = recvPacket.ReadBits(7);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(channelLength);
-    std::string otp = recvPacket.ReadString(nameLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->Kick(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelBan(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelBanCommand < 5)
-        return;
-    else
-       timeLastChannelBanCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-    uint32 channelLength, nameLength;
-    std::string channelname, otp;
-
-    channelLength = recvPacket.ReadBits(7);
-    nameLength = recvPacket.ReadBits(6);
-
-    recvPacket.FlushBits();
-
-    otp = recvPacket.ReadString(nameLength);
-    channelname = recvPacket.ReadString(channelLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->Ban(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelUnban(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelUnbanCommand < 5)
-        return;
-    else
-       timeLastChannelUnbanCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 channelLength = recvPacket.ReadBits(7);
-    uint32 nameLength = recvPacket.ReadBits(6);
-
-    recvPacket.FlushBits();
-
-    std::string channelname = recvPacket.ReadString(channelLength);
-    std::string otp = recvPacket.ReadString(nameLength);
-
-    if (!normalizePlayerName(otp))
-        return;
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->UnBan(_player->GetGUID(), otp.c_str());
-}
-
-void WorldSession::HandleChannelAnnouncements(WorldPacket& recvPacket)
-{
-    time_t now = time(NULL);
-    if (now - timeLastChannelAnnounceCommand < 5)
-        return;
-    else
-       timeLastChannelAnnounceCommand = now;
-
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-
-    uint32 length = recvPacket.ReadBits(7);
-    recvPacket.FlushBits();
-    std::string channelname = recvPacket.ReadString(length);
-
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
-            chn->Announce(_player->GetGUID());
-}
-
-void WorldSession::HandleChannelDisplayListQuery(WorldPacket &recvPacket)
-{
-    // this should be OK because the 2 function _were_ the same
-    HandleChannelList(recvPacket);
-}
-
-void WorldSession::HandleGetChannelMemberCount(WorldPacket &recvPacket)
-{
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-    std::string channelname;
-    recvPacket >> channelname;
-    if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-    {
-        if (Channel* chn = cMgr->GetChannel(channelname, _player))
+        switch (packet.GetOpcode())
         {
-            WorldPacket data(SMSG_CHANNEL_MEMBER_COUNT, chn->GetName().size()+1+1+4);
-            data << chn->GetName();
-            data << uint8(chn->GetFlags());
-            data << uint32(chn->GetNumPlayers());
-            SendPacket(&data);
+            case CMSG_CHAT_CHANNEL_ANNOUNCEMENTS:
+                channel->Announce(GetPlayer());
+                break;
+            case CMSG_CHAT_CHANNEL_DECLINE_INVITE:
+                channel->DeclineInvite(GetPlayer());
+                break;
+            case CMSG_CHAT_CHANNEL_DISPLAY_LIST:
+            case CMSG_CHAT_CHANNEL_LIST:
+                channel->List(GetPlayer());
+                break;
+            case CMSG_CHAT_CHANNEL_OWNER:
+                channel->SendWhoOwner(GetPlayer());
+                break;
+            default:
+                break;
         }
     }
 }
 
-void WorldSession::HandleSetChannelWatch(WorldPacket& recvPacket)
+void WorldSession::HandleChannelPlayerCommand(WorldPackets::Channel::ChannelPlayerCommand& packet)
 {
-    sLog->outDebug(LOG_FILTER_NETWORKIO, "Opcode %u", recvPacket.GetOpcode());
-    std::string channelname;
-    recvPacket >> channelname;
-    /*if (ChannelMgr* cMgr = channelMgr(_player->GetTeam()))
-        if (Channel* chn = cMgr->GetChannel(channelName, _player))
-            chn->JoinNotify(_player->GetGUID());*/
+    if (packet.Name.length() >= MAX_CHANNEL_NAME_STR)
+    {
+        TC_LOG_DEBUG("chat.system", "%s %s ChannelName: %s, Name: %s, Name too long.",
+            GetOpcodeNameForLogging(packet.GetOpcode()).c_str(), GetPlayerInfo().c_str(), packet.ChannelName.c_str(), packet.Name.c_str());
+        return;
+    }
+
+    TC_LOG_DEBUG("chat.system", "%s %s ChannelName: %s, Name: %s",
+        GetOpcodeNameForLogging(packet.GetOpcode()).c_str(), GetPlayerInfo().c_str(), packet.ChannelName.c_str(), packet.Name.c_str());
+
+    if (!normalizePlayerName(packet.Name))
+        return;
+
+    if (Channel* channel = ChannelMgr::GetChannelForPlayerByNamePart(packet.ChannelName, GetPlayer()))
+    {
+        switch (packet.GetOpcode())
+        {
+            case CMSG_CHAT_CHANNEL_BAN:
+                channel->Ban(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_INVITE:
+                channel->Invite(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_KICK:
+                channel->Kick(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_MODERATOR:
+                channel->SetModerator(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_SET_OWNER:
+                channel->SetOwner(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_SILENCE_ALL:
+                channel->SilenceAll(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_UNBAN:
+                channel->UnBan(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_UNMODERATOR:
+                channel->UnsetModerator(GetPlayer(), packet.Name);
+                break;
+            case CMSG_CHAT_CHANNEL_UNSILENCE_ALL:
+                channel->UnsilenceAll(GetPlayer(), packet.Name);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void WorldSession::HandleChannelPassword(WorldPackets::Channel::ChannelPassword& packet)
+{
+    if (packet.Password.length() > MAX_CHANNEL_PASS_STR)
+    {
+        TC_LOG_DEBUG("chat.system", "%s %s ChannelName: %s, Password: %s, Password too long.",
+            GetOpcodeNameForLogging(packet.GetOpcode()).c_str(), GetPlayerInfo().c_str(), packet.ChannelName.c_str(), packet.Password.c_str());
+        return;
+    }
+
+    TC_LOG_DEBUG("chat.system", "%s %s ChannelName: %s, Password: %s",
+        GetOpcodeNameForLogging(packet.GetOpcode()).c_str(), GetPlayerInfo().c_str(), packet.ChannelName.c_str(), packet.Password.c_str());
+
+    if (Channel* channel = ChannelMgr::GetChannelForPlayerByNamePart(packet.ChannelName, GetPlayer()))
+        channel->Password(GetPlayer(), packet.Password);
 }

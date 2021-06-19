@@ -1,7 +1,24 @@
+/*
+ * Copyright (C) 2020 FuzionCore Project
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #ifndef __BATTLEGROUNDTTP_H
 #define __BATTLEGROUNDTTP_H
 
-class Battleground;
+#include "Arena.h"
 
 enum BattlegroundTTPObjectTypes
 {
@@ -20,30 +37,18 @@ enum BattlegroundTTPObjects
     BG_TTP_OBJECT_TYPE_BUFF_2    = 184664
 };
 
-class BattlegroundTTPScore : public BattlegroundScore
-{
-    public:
-        BattlegroundTTPScore() {};
-        virtual ~BattlegroundTTPScore() {};
-};
-
-class BattlegroundTTP : public Battleground
+class BattlegroundTTP : public Arena
 {
     public:
         BattlegroundTTP();
-        ~BattlegroundTTP();
 
         /* inherited from BattlegroundClass */
-        virtual void AddPlayer(Player* player);
-        virtual void StartingEventCloseDoors();
-        virtual void StartingEventOpenDoors();
+        void StartingEventCloseDoors() override;
+        void StartingEventOpenDoors() override;
 
-        void RemovePlayer(Player* player, uint64 guid, uint32 team);
-        void HandleAreaTrigger(Player* Source, uint32 Trigger);
-        bool SetupBattleground();
-        virtual void Reset();
-        virtual void FillInitialWorldStates(WorldPacket &d);
-        void HandleKillPlayer(Player* player, Player* killer);
-        bool HandlePlayerUnderMap(Player* player);
+        void HandleAreaTrigger(Player* source, uint32 trigger, bool entered) override;
+        bool SetupBattleground() override;
+        void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
 };
+
 #endif

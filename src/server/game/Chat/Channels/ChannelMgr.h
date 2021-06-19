@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -18,34 +17,44 @@
 #ifndef __TRINITY_CHANNELMGR_H
 #define __TRINITY_CHANNELMGR_H
 
-#include "Common.h"
-#include "Channel.h"
-#include <ace/Singleton.h>
-
-#include <map>
+#include "Define.h"
+#include "ObjectGuid.h"
 #include <string>
+#include <unordered_map>
 
-#include "World.h"
+class Channel;
+class Player;
+struct AreaTableEntry;
 
-class ChannelMgr
+class TC_GAME_API ChannelMgr
 {
-    public:
-        uint32 team;
-        typedef ACE_Based::LockedMap<std::wstring, Channel*> ChannelMap;
-        ChannelMgr() {team = 0;}
+    typedef std::unordered_map<std::wstring, Channel*> CustomChannelContainer; // custom channels only differ in name
+    typedef std::unordered_map<ObjectGuid, Channel*> BuiltinChannelContainer;
+
+    protected:
+        explicit ChannelMgr(uint32 team) : _team(team) { }
         ~ChannelMgr();
 
-        Channel* GetJoinChannel(std::string name, uint32 channel_id);
-        Channel* GetChannel(std::string name, Player* p, bool pkt = true);
-        void LeftChannel(std::string name);
+    public:
+        static ChannelMgr* ForTeam(uint32 team);
+        static Channel* GetChannelForPlayerByNamePart(std::string const& namePart, Player* playerSearcher);
+
+        Channel* GetJoinChannel(uint32 channelId, std::string const& name, AreaTableEntry const* zoneEntry = nullptr);
+        Channel* GetChannel(uint32 channelId, std::string const& name, Player* player, bool notify = true, AreaTableEntry const* zoneEntry = nullptr) const;
+        void LeftChannel(std::string const& name);
+        void LeftChannel(uint32 channelId, AreaTableEntry const* zoneEntry);
+
+        bool SendToAllInChannel(std::string senderName, std::string channelName, std::string message, bool showGMLogo);
+
     private:
-        ChannelMap channels;
-        void MakeNotOnPacket(WorldPacket* data, std::string name);
+        CustomChannelContainer _customChannels;
+        BuiltinChannelContainer _channels;
+        uint32 const _team;
+        ObjectGuidGenerator<HighGuid::ChatChannel> _guidGenerator;
+
+        static void SendNotOnChannelNotify(Player const* player, std::string const& name);
+        ObjectGuid CreateCustomChannelGuid();
+        ObjectGuid CreateBuiltinChannelGuid(uint32 channelId, AreaTableEntry const* zoneEntry = nullptr) const;
 };
-
-class AllianceChannelMgr : public ChannelMgr {};
-class HordeChannelMgr    : public ChannelMgr {};
-
-ChannelMgr* channelMgr(uint32 team);
 
 #endif

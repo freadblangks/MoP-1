@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,46 +15,79 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef WORLDPACKET_H
-#define WORLDPACKET_H
+#ifndef TRINITYCORE_WORLDPACKET_H
+#define TRINITYCORE_WORLDPACKET_H
 
-#include "Common.h"
-#include "Opcodes.h"
 #include "ByteBuffer.h"
-
-struct z_stream_s;
+#include "Opcodes.h"
 
 class WorldPacket : public ByteBuffer
 {
     public:
                                                             // just container for later use
-        WorldPacket() : ByteBuffer(0), m_opcode(UNKNOWN_OPCODE)
+        WorldPacket() : ByteBuffer(0, Reserve{}), m_opcode(UNKNOWN_OPCODE), _connection(CONNECTION_TYPE_DEFAULT)
         {
         }
 
-        WorldPacket(Opcodes opcode, size_t res = 200) : ByteBuffer(res), m_opcode(opcode)
-        {
-        }
-                                                            // copy constructor
-        WorldPacket(WorldPacket const& packet) : ByteBuffer(packet), m_opcode(packet.m_opcode)
+        WorldPacket(uint32 opcode, ConnectionType connection = CONNECTION_TYPE_DEFAULT) : ByteBuffer(0, Reserve{}),
+            m_opcode(opcode), _connection(connection) { }
+
+        WorldPacket(uint32 opcode, size_t res, Reserve, ConnectionType connection = CONNECTION_TYPE_DEFAULT) : ByteBuffer(res, Reserve{}),
+            m_opcode(opcode), _connection(connection) { }
+
+        WorldPacket(uint32 opcode, size_t res, Resize, ConnectionType connection = CONNECTION_TYPE_DEFAULT) : ByteBuffer(res, Resize{}),
+            m_opcode(opcode), _connection(connection) { }
+
+        WorldPacket(uint32 opcode, size_t res, ConnectionType connection = CONNECTION_TYPE_DEFAULT) : WorldPacket(opcode, res, Reserve{}, connection) { }
+
+        WorldPacket(WorldPacket&& packet) noexcept : ByteBuffer(std::move(packet)), m_opcode(packet.m_opcode), _connection(packet._connection)
         {
         }
 
-        void Initialize(Opcodes opcode, size_t newres = 200)
+        WorldPacket(WorldPacket const& right) = default;
+
+        WorldPacket& operator=(WorldPacket const& right)
+        {
+            if (this != &right)
+            {
+                m_opcode = right.m_opcode;
+                _connection = right._connection;
+                ByteBuffer::operator =(right);
+            }
+
+            return *this;
+        }
+
+        WorldPacket& operator=(WorldPacket&& right) noexcept
+        {
+            if (this != &right)
+            {
+                m_opcode = right.m_opcode;
+                _connection = right._connection;
+                ByteBuffer::operator=(std::move(right));
+            }
+
+            return *this;
+        }
+
+        WorldPacket(MessageBuffer&& buffer, ConnectionType connection) : ByteBuffer(std::move(buffer)), m_opcode(UNKNOWN_OPCODE), _connection(connection) { }
+
+        void Initialize(uint32 opcode, size_t newres = 200, ConnectionType connection = CONNECTION_TYPE_DEFAULT)
         {
             clear();
             _storage.reserve(newres);
             m_opcode = opcode;
+            _connection = connection;
         }
 
-        Opcodes GetOpcode() const { return m_opcode; }
-        void SetOpcode(Opcodes opcode) { m_opcode = opcode; }
-        void Compress(z_stream_s* compressionStream);
-        void Compress(z_stream_s* compressionStream, WorldPacket const* source);
+        uint32 GetOpcode() const { return m_opcode; }
+        void SetOpcode(uint32 opcode) { m_opcode = opcode; }
+
+        ConnectionType GetConnection() const { return _connection; }
 
     protected:
-        Opcodes m_opcode;
-        void Compress(void* dst, uint32 *dst_size, const void* src, int src_size);
-        z_stream_s* _compressionStream;
+        uint32 m_opcode;
+        ConnectionType _connection;
 };
+
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -81,7 +81,7 @@ template<typename length_type> void Spline<length_type>::initLengths()
     index_type i = index_lo;
     length_type length = 0;
     lengths.resize(index_hi+1);
-    while(i < index_hi )
+    while (i < index_hi)
     {
         length += SegLength(i);
         lengths[++i] = length;

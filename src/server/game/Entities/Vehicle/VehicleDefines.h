@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 LatinCoreTeam
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -62,35 +61,12 @@ enum VehicleFlags
     VEHICLE_FLAG_NO_STRAFE                       = 0x00000001,           // Sets MOVEFLAG2_NO_STRAFE
     VEHICLE_FLAG_NO_JUMPING                      = 0x00000002,           // Sets MOVEFLAG2_NO_JUMPING
     VEHICLE_FLAG_FULLSPEEDTURNING                = 0x00000004,           // Sets MOVEFLAG2_FULLSPEEDTURNING
-    VEHICLE_FLAG_UNK1                            = 0x00000008,
     VEHICLE_FLAG_ALLOW_PITCHING                  = 0x00000010,           // Sets MOVEFLAG2_ALLOW_PITCHING
     VEHICLE_FLAG_FULLSPEEDPITCHING               = 0x00000020,           // Sets MOVEFLAG2_FULLSPEEDPITCHING
     VEHICLE_FLAG_CUSTOM_PITCH                    = 0x00000040,           // If set use pitchMin and pitchMax from DBC, otherwise pitchMin = -pi/2, pitchMax = pi/2
-    VEHICLE_FLAG_UNK2                            = 0x00000080,
-    VEHICLE_FLAG_UNK3                            = 0x00000100,
-    VEHICLE_FLAG_UNK4                            = 0x00000200,           // Vehicle is accessory?
     VEHICLE_FLAG_ADJUST_AIM_ANGLE                = 0x00000400,           // Lua_IsVehicleAimAngleAdjustable
     VEHICLE_FLAG_ADJUST_AIM_POWER                = 0x00000800,           // Lua_IsVehicleAimPowerAdjustable
-    VEHICLE_FLAG_UNK5                            = 0x00001000,
-    VEHICLE_FLAG_UNK6                            = 0x00002000,
-    VEHICLE_FLAG_UNK7                            = 0x00004000,
-    VEHICLE_FLAG_UNK8                            = 0x00008000,
-    VEHICLE_FLAG_UNK9                            = 0x00010000,
-    VEHICLE_FLAG_UNK10                           = 0x00020000,
-    VEHICLE_FLAG_UNK11                           = 0x00040000,
-    VEHICLE_FLAG_UNK12                           = 0x00080000,
-    VEHICLE_FLAG_UNK13                           = 0x00100000,
-    VEHICLE_FLAG_UNK14                           = 0x00200000,
-    VEHICLE_FLAG_DISABLE_SWITCH                  = 0x00400000,            // Can't change seats, VEHICLE_ID = 335 chopper https://github.com/mangosthree/server/commit/f890eef81a7d66826dba41864e17ed287f7084ac
-    VEHICLE_FLAG_UNK15                           = 0x00800000,
-    VEHICLE_FLAG_UNK16                           = 0x01000000,
-    VEHICLE_FLAG_UNK17                           = 0x02000000,
-    VEHICLE_FLAG_UNK18                           = 0x04000000,
-    VEHICLE_FLAG_UNK19                           = 0x08000000,
-    VEHICLE_FLAG_UNK20                           = 0x10000000,            // Vehicle not dismissed after eject passenger?
-    VEHICLE_FLAG_UNK21                           = 0x20000000,
-    VEHICLE_FLAG_UNK22                           = 0x40000000,
-    VEHICLE_FLAG_UNK23                           = 0x80000000,
+    VEHICLE_FLAG_FIXED_POSITION                  = 0x00200000            // Used for cannons, when they should be rooted
 };
 
 enum VehicleSpells
@@ -99,35 +75,85 @@ enum VehicleSpells
     VEHICLE_SPELL_PARACHUTE                      = 45472
 };
 
+struct PassengerInfo
+{
+    ObjectGuid Guid;
+    bool IsUnselectable;
+    bool IsGravityDisabled;
+
+    void Reset()
+    {
+        Guid.Clear();
+        IsUnselectable = false;
+        IsGravityDisabled = false;
+    }
+};
+
 struct VehicleSeat
 {
-    explicit VehicleSeat(VehicleSeatEntry const* seatInfo) : SeatInfo(seatInfo), Passenger(0) {}
+    explicit VehicleSeat(VehicleSeatEntry const* seatInfo) : SeatInfo(seatInfo)
+    {
+        Passenger.Reset();
+    }
+
+    bool IsEmpty() const { return Passenger.Guid.IsEmpty(); }
+
     VehicleSeatEntry const* SeatInfo;
-    uint64 Passenger;
+    PassengerInfo Passenger;
 };
 
 struct VehicleAccessory
 {
     VehicleAccessory(uint32 entry, int8 seatId, bool isMinion, uint8 summonType, uint32 summonTime) :
-        AccessoryEntry(entry), IsMinion(isMinion), SummonTime(summonTime), SeatId(seatId), SummonedType(summonType) {}
+        AccessoryEntry(entry), IsMinion(isMinion), SummonTime(summonTime), SeatId(seatId), SummonedType(summonType) { }
     uint32 AccessoryEntry;
-    uint32 IsMinion;
+    bool IsMinion;
     uint32 SummonTime;
     int8 SeatId;
     uint8 SummonedType;
 };
 
 typedef std::vector<VehicleAccessory> VehicleAccessoryList;
-typedef std::map<uint32, VehicleAccessoryList> VehicleAccessoryContainer;
+typedef std::map<ObjectGuid::LowType, VehicleAccessoryList> VehicleAccessoryContainer;
+typedef std::map<uint32, VehicleAccessoryList> VehicleAccessoryTemplateContainer;
 typedef std::map<int8, VehicleSeat> SeatMap;
 
 class TransportBase
 {
-    public:
-        /// This method transforms supplied transport offsets into global coordinates
-        virtual void CalculatePassengerPosition(float& x, float& y, float& z, float& o) = 0;
+protected:
+    TransportBase() { }
+    virtual ~TransportBase() { }
 
-        /// This method transforms supplied global coordinates into local offsets
-        virtual void CalculatePassengerOffset(float& x, float& y, float& z, float& o) = 0;
+public:
+    /// This method transforms supplied transport offsets into global coordinates
+    virtual void CalculatePassengerPosition(float& x, float& y, float& z, float* o = NULL) const = 0;
+
+    /// This method transforms supplied global coordinates into local offsets
+    virtual void CalculatePassengerOffset(float& x, float& y, float& z, float* o = NULL) const = 0;
+
+    static void CalculatePassengerPosition(float& x, float& y, float& z, float* o, float transX, float transY, float transZ, float transO)
+    {
+        float inx = x, iny = y, inz = z;
+        if (o)
+            *o = Position::NormalizeOrientation(transO + *o);
+
+        x = transX + inx * std::cos(transO) - iny * std::sin(transO);
+        y = transY + iny * std::cos(transO) + inx * std::sin(transO);
+        z = transZ + inz;
+    }
+
+    static void CalculatePassengerOffset(float& x, float& y, float& z, float* o, float transX, float transY, float transZ, float transO)
+    {
+        if (o)
+            *o = Position::NormalizeOrientation(*o - transO);
+
+        z -= transZ;
+        y -= transY;    // y = searchedY * std::cos(o) + searchedX * std::sin(o)
+        x -= transX;    // x = searchedX * std::cos(o) + searchedY * std::sin(o + pi)
+        float inx = x, iny = y;
+        y = (iny - inx * std::tan(transO)) / (std::cos(transO) + std::sin(transO) * std::tan(transO));
+        x = (inx + iny * std::tan(transO)) / (std::cos(transO) + std::sin(transO) * std::tan(transO));
+    }
 };
+
 #endif

@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,11 +18,11 @@
 #ifndef _GROUPREFMANAGER
 #define _GROUPREFMANAGER
 
+#include "GroupReference.h"
 #include "RefManager.h"
 
 class Group;
 class Player;
-class GroupReference;
 
 class GroupRefManager : public RefManager<Group, Player>
 {
@@ -32,4 +31,3 @@ class GroupRefManager : public RefManager<Group, Player>
         GroupReference const* getFirst() const { return ((GroupReference const*)RefManager<Group, Player>::getFirst()); }
 };
 #endif
-

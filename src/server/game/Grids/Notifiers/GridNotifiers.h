@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,33 +18,30 @@
 #ifndef TRINITY_GRIDNOTIFIERS_H
 #define TRINITY_GRIDNOTIFIERS_H
 
-#include "ObjectGridLoader.h"
-#include "UpdateData.h"
-#include <iostream>
-
-#include "Corpse.h"
-#include "Object.h"
 #include "AreaTrigger.h"
+#include "Creature.h"
+#include "Corpse.h"
+#include "Conversation.h"
 #include "DynamicObject.h"
 #include "GameObject.h"
+#include "Packet.h"
 #include "Player.h"
-#include "Unit.h"
-#include "CreatureAI.h"
+#include "SceneObject.h"
 #include "Spell.h"
+#include "SpellInfo.h"
+#include "UnitAI.h"
+#include "UpdateData.h"
 
-class Player;
-//class Map;
-
-namespace JadeCore
+namespace Trinity
 {
-    struct VisibleNotifier
+    struct TC_GAME_API VisibleNotifier
     {
         Player &i_player;
         UpdateData i_data;
         std::set<Unit*> i_visibleNow;
-        Player::ClientGUIDs vis_guids;
+        GuidUnorderedSet vis_guids;
 
-        VisibleNotifier(Player &player) : i_player(player), i_data(player.GetMapId()), vis_guids(player.m_clientGUIDs) {}
+        VisibleNotifier(Player &player) : i_player(player), i_data(player.GetMapId()), vis_guids(player.m_clientGUIDs) { }
         template<class T> void Visit(GridRefManager<T> &m);
         void SendToSelf(void);
     };
@@ -54,50 +50,50 @@ namespace JadeCore
     {
         WorldObject &i_object;
 
-        explicit VisibleChangesNotifier(WorldObject &object) : i_object(object) {}
-        template<class T> void Visit(GridRefManager<T> &) {}
+        explicit VisibleChangesNotifier(WorldObject &object) : i_object(object) { }
+        template<class T> void Visit(GridRefManager<T> &) { }
         void Visit(PlayerMapType &);
         void Visit(CreatureMapType &);
         void Visit(DynamicObjectMapType &);
     };
 
-    struct PlayerRelocationNotifier : public VisibleNotifier
+    struct TC_GAME_API PlayerRelocationNotifier : public VisibleNotifier
     {
-        PlayerRelocationNotifier(Player &player) : VisibleNotifier(player) {}
+        PlayerRelocationNotifier(Player &player) : VisibleNotifier(player) { }
 
         template<class T> void Visit(GridRefManager<T> &m) { VisibleNotifier::Visit(m); }
         void Visit(CreatureMapType &);
         void Visit(PlayerMapType &);
     };
 
-    struct CreatureRelocationNotifier
+    struct TC_GAME_API CreatureRelocationNotifier
     {
         Creature &i_creature;
-        CreatureRelocationNotifier(Creature &c) : i_creature(c) {}
-        template<class T> void Visit(GridRefManager<T> &) {}
+        CreatureRelocationNotifier(Creature &c) : i_creature(c) { }
+        template<class T> void Visit(GridRefManager<T> &) { }
         void Visit(CreatureMapType &);
         void Visit(PlayerMapType &);
     };
 
-    struct DelayedUnitRelocation
+    struct TC_GAME_API DelayedUnitRelocation
     {
         Map &i_map;
         Cell &cell;
         CellCoord &p;
         const float i_radius;
         DelayedUnitRelocation(Cell &c, CellCoord &pair, Map &map, float radius) :
-            i_map(map), cell(c), p(pair), i_radius(radius) {}
-        template<class T> void Visit(GridRefManager<T> &) {}
+            i_map(map), cell(c), p(pair), i_radius(radius) { }
+        template<class T> void Visit(GridRefManager<T> &) { }
         void Visit(CreatureMapType &);
         void Visit(PlayerMapType   &);
     };
 
-    struct AIRelocationNotifier
+    struct TC_GAME_API AIRelocationNotifier
     {
         Unit &i_unit;
         bool isCreature;
-        explicit AIRelocationNotifier(Unit &unit) : i_unit(unit), isCreature(unit.GetTypeId() == TYPEID_UNIT)  {}
-        template<class T> void Visit(GridRefManager<T> &) {}
+        explicit AIRelocationNotifier(Unit &unit) : i_unit(unit), isCreature(unit.GetTypeId() == TYPEID_UNIT)  { }
+        template<class T> void Visit(GridRefManager<T> &) { }
         void Visit(CreatureMapType &);
     };
 
@@ -105,12 +101,12 @@ namespace JadeCore
     {
         GridType &i_grid;
         uint32 i_timeDiff;
-        GridUpdater(GridType &grid, uint32 diff) : i_grid(grid), i_timeDiff(diff) {}
+        GridUpdater(GridType &grid, uint32 diff) : i_grid(grid), i_timeDiff(diff) { }
 
         template<class T> void updateObjects(GridRefManager<T> &m)
         {
             for (typename GridRefManager<T>::iterator iter = m.begin(); iter != m.end(); ++iter)
-                iter->getSource()->Update(i_timeDiff);
+                iter->GetSource()->Update(i_timeDiff);
         }
 
         void Visit(PlayerMapType &m) { updateObjects<Player>(m); }
@@ -119,26 +115,31 @@ namespace JadeCore
         void Visit(DynamicObjectMapType &m) { updateObjects<DynamicObject>(m); }
         void Visit(CorpseMapType &m) { updateObjects<Corpse>(m); }
         void Visit(AreaTriggerMapType &m) { updateObjects<AreaTrigger>(m); }
+        void Visit(SceneObjectMapType &m) { updateObjects<SceneObject>(m); }
+        void Visit(ConversationMapType &m) { updateObjects<Conversation>(m); }
     };
 
-    struct MessageDistDeliverer
+    struct TC_GAME_API MessageDistDeliverer
     {
-        WorldObject* i_source;
-        WorldPacket* i_message;
-        uint32 i_phaseMask;
+        WorldObject const* i_source;
+        WorldPacket const* i_message;
         float i_distSq;
         uint32 team;
         Player const* skipped_receiver;
-        MessageDistDeliverer(WorldObject* src, WorldPacket* msg, float dist, bool own_team_only = false, Player const* skipped = NULL)
-            : i_source(src), i_message(msg), i_phaseMask(src->GetPhaseMask()), i_distSq(dist * dist)
-            , team((own_team_only && src->GetTypeId() == TYPEID_PLAYER) ? ((Player*)src)->GetTeam() : 0)
+        MessageDistDeliverer(WorldObject const* src, WorldPacket const* msg, float dist, bool own_team_only = false, Player const* skipped = nullptr)
+            : i_source(src), i_message(msg), i_distSq(dist * dist)
+            , team(0)
             , skipped_receiver(skipped)
         {
+            if (own_team_only)
+                if (Player const* player = src->ToPlayer())
+                    team = player->GetTeam();
         }
+
         void Visit(PlayerMapType &m);
         void Visit(CreatureMapType &m);
         void Visit(DynamicObjectMapType &m);
-        template<class SKIP> void Visit(GridRefManager<SKIP> &) {}
+        template<class SKIP> void Visit(GridRefManager<SKIP> &) { }
 
         void SendPacket(Player* player)
         {
@@ -149,72 +150,84 @@ namespace JadeCore
             if (!player->HaveAtClient(i_source))
                 return;
 
-            if (WorldSession* session = player->GetSession())
-                session->SendPacket(i_message);
+            player->SendDirectMessage(i_message);
         }
     };
 
-    struct UnfriendlyMessageDistDeliverer
+    struct TC_GAME_API MessageDistDelivererToHostile
     {
         Unit* i_source;
-        WorldPacket* i_message;
-        uint32 i_phaseMask;
+        WorldPacket const* i_message;
         float i_distSq;
-        UnfriendlyMessageDistDeliverer(Unit* src, WorldPacket* msg, float dist)
-            : i_source(src), i_message(msg), i_phaseMask(src->GetPhaseMask()), i_distSq(dist * dist)
+
+        MessageDistDelivererToHostile(Unit* src, WorldPacket const* msg, float dist)
+            : i_source(src), i_message(msg), i_distSq(dist * dist)
         {
         }
+
         void Visit(PlayerMapType &m);
-        template<class SKIP> void Visit(GridRefManager<SKIP> &) {}
+        void Visit(CreatureMapType &m);
+        void Visit(DynamicObjectMapType &m);
+        template<class SKIP> void Visit(GridRefManager<SKIP> &) { }
 
         void SendPacket(Player* player)
         {
             // never send packet to self
-            if (player == i_source || (player->IsFriendlyTo(i_source)))
+            if (player == i_source || !player->HaveAtClient(i_source) || player->IsFriendlyTo(i_source))
                 return;
 
-            if (!player->HaveAtClient(i_source))
-                return;
-
-            if (WorldSession* session = player->GetSession())
-                session->SendPacket(i_message);
-            
-            if (i_message->GetOpcode() == SMSG_CLEAR_TARGET)
-            {
-                for (uint32 i = CURRENT_MELEE_SPELL; i < CURRENT_AUTOREPEAT_SPELL; ++i)
-                {
-                    Spell * spell = player->GetCurrentSpell(i);
-                    if (spell && spell->GetUnitTarget() == ((Unit*)i_source) && spell->getState() == SPELL_STATE_CASTING)
-                        spell->cancel();
-                }
-            }
+            player->SendDirectMessage(i_message);
         }
     };
 
     struct ObjectUpdater
     {
         uint32 i_timeDiff;
-        explicit ObjectUpdater(const uint32 diff) : i_timeDiff(diff) {}
+        explicit ObjectUpdater(const uint32 diff) : i_timeDiff(diff) { }
         template<class T> void Visit(GridRefManager<T> &m);
-        void Visit(PlayerMapType &) {}
-        void Visit(CorpseMapType &) {}
-        void Visit(CreatureMapType &);
+        void Visit(PlayerMapType &) { }
+        void Visit(CorpseMapType &) { }
     };
 
     // SEARCHERS & LIST SEARCHERS & WORKERS
 
     // WorldObject searchers & workers
 
+    // Generic base class to insert elements into arbitrary containers using push_back
+    template<typename Type>
+    class ContainerInserter {
+        using InserterType = void(*)(void*, Type&&);
+
+        void* ref;
+        InserterType inserter;
+
+        // MSVC workaround
+        template<typename T>
+        static void InserterOf(void* ref, Type&& type)
+        {
+            static_cast<T*>(ref)->push_back(std::move(type));
+        }
+
+    protected:
+        template<typename T>
+        ContainerInserter(T& ref_) : ref(&ref_), inserter(&InserterOf<T>) { }
+
+        void Insert(Type type)
+        {
+            inserter(ref, std::move(type));
+        }
+    };
+
     template<class Check>
     struct WorldObjectSearcher
     {
-        uint32 i_mapTypeMask;
-        uint32 i_phaseMask;
-        WorldObject* &i_object;
+        WorldObject const* _searcher;
+        WorldObject*& i_object;
         Check &i_check;
+        uint32 i_mapTypeMask;
 
         WorldObjectSearcher(WorldObject const* searcher, WorldObject* & result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : i_mapTypeMask(mapTypeMask), i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check), i_mapTypeMask(mapTypeMask) { }
 
         void Visit(GameObjectMapType &m);
         void Visit(PlayerMapType &m);
@@ -222,20 +235,22 @@ namespace JadeCore
         void Visit(CorpseMapType &m);
         void Visit(DynamicObjectMapType &m);
         void Visit(AreaTriggerMapType &m);
+        void Visit(SceneObjectMapType &m);
+        void Visit(ConversationMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Check>
     struct WorldObjectLastSearcher
     {
-        uint32 i_mapTypeMask;
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         WorldObject* &i_object;
         Check &i_check;
+        uint32 i_mapTypeMask;
 
         WorldObjectLastSearcher(WorldObject const* searcher, WorldObject* & result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            :  i_mapTypeMask(mapTypeMask), i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check), i_mapTypeMask(mapTypeMask) { }
 
         void Visit(GameObjectMapType &m);
         void Visit(PlayerMapType &m);
@@ -243,20 +258,23 @@ namespace JadeCore
         void Visit(CorpseMapType &m);
         void Visit(DynamicObjectMapType &m);
         void Visit(AreaTriggerMapType &m);
+        void Visit(SceneObjectMapType &m);
+        void Visit(ConversationMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Check>
-    struct WorldObjectListSearcher
+    struct WorldObjectListSearcher : ContainerInserter<WorldObject*>
     {
         uint32 i_mapTypeMask;
-        uint32 i_phaseMask;
-        std::list<WorldObject*> &i_objects;
+        WorldObject const* _searcher;
         Check& i_check;
 
-        WorldObjectListSearcher(WorldObject const* searcher, std::list<WorldObject*> &objects, Check & check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : i_mapTypeMask(mapTypeMask), i_phaseMask(searcher->GetPhaseMask()), i_objects(objects), i_check(check) {}
+        template<typename Container>
+        WorldObjectListSearcher(WorldObject const* searcher, Container& container, Check & check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
+            : ContainerInserter<WorldObject*>(container),
+              i_mapTypeMask(mapTypeMask), _searcher(searcher), i_check(check) { }
 
         void Visit(PlayerMapType &m);
         void Visit(CreatureMapType &m);
@@ -264,27 +282,29 @@ namespace JadeCore
         void Visit(GameObjectMapType &m);
         void Visit(DynamicObjectMapType &m);
         void Visit(AreaTriggerMapType &m);
+        void Visit(SceneObjectMapType &m);
+        void Visit(ConversationMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Do>
     struct WorldObjectWorker
     {
         uint32 i_mapTypeMask;
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Do const& i_do;
 
         WorldObjectWorker(WorldObject const* searcher, Do const& _do, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : i_mapTypeMask(mapTypeMask), i_phaseMask(searcher->GetPhaseMask()), i_do(_do) {}
+            : i_mapTypeMask(mapTypeMask), _searcher(searcher), i_do(_do) { }
 
         void Visit(GameObjectMapType &m)
         {
             if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_GAMEOBJECT))
                 return;
             for (GameObjectMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
         void Visit(PlayerMapType &m)
@@ -292,16 +312,16 @@ namespace JadeCore
             if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_PLAYER))
                 return;
             for (PlayerMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
         void Visit(CreatureMapType &m)
         {
             if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_CREATURE))
                 return;
             for (CreatureMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
         void Visit(CorpseMapType &m)
@@ -309,8 +329,8 @@ namespace JadeCore
             if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_CORPSE))
                 return;
             for (CorpseMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
         void Visit(DynamicObjectMapType &m)
@@ -318,20 +338,38 @@ namespace JadeCore
             if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_DYNAMICOBJECT))
                 return;
             for (DynamicObjectMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
         void Visit(AreaTriggerMapType &m)
         {
             if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_AREATRIGGER))
                 return;
-            for (AreaTriggerMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+            for (AreaTriggerMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        void Visit(SceneObjectMapType &m)
+        {
+            if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_SCENEOBJECT))
+                return;
+            for (SceneObjectMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
+        }
+
+        void Visit(ConversationMapType &m)
+        {
+            if (!(i_mapTypeMask & GRID_MAP_TYPE_MASK_CONVERSATION))
+                return;
+            for (ConversationMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
+        }
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // Gameobject searchers
@@ -339,67 +377,68 @@ namespace JadeCore
     template<class Check>
     struct GameObjectSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         GameObject* &i_object;
         Check &i_check;
 
         GameObjectSearcher(WorldObject const* searcher, GameObject* & result, Check& check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(GameObjectMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // Last accepted by Check GO if any (Check can change requirements at each call)
     template<class Check>
     struct GameObjectLastSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         GameObject* &i_object;
         Check& i_check;
 
         GameObjectLastSearcher(WorldObject const* searcher, GameObject* & result, Check& check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(GameObjectMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Check>
-    struct GameObjectListSearcher
+    struct GameObjectListSearcher : ContainerInserter<GameObject*>
     {
-        uint32 i_phaseMask;
-        std::list<GameObject*> &i_objects;
+        WorldObject const* _searcher;
         Check& i_check;
 
-        GameObjectListSearcher(WorldObject const* searcher, std::list<GameObject*> &objects, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_objects(objects), i_check(check) {}
+        template<typename Container>
+        GameObjectListSearcher(WorldObject const* searcher, Container& container, Check & check)
+            : ContainerInserter<GameObject*>(container),
+              _searcher(searcher), i_check(check) { }
 
         void Visit(GameObjectMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Functor>
     struct GameObjectWorker
     {
         GameObjectWorker(WorldObject const* searcher, Functor& func)
-            : _func(func), _phaseMask(searcher->GetPhaseMask()) {}
+            : _func(func), _searcher(searcher) { }
 
         void Visit(GameObjectMapType& m)
         {
             for (GameObjectMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(_phaseMask))
-                    _func(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    _func(itr->GetSource());
         }
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
 
     private:
         Functor& _func;
-        uint32 _phaseMask;
+        WorldObject const* _searcher;
     };
 
     // Unit searchers
@@ -408,51 +447,52 @@ namespace JadeCore
     template<class Check>
     struct UnitSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Unit* &i_object;
         Check & i_check;
 
         UnitSearcher(WorldObject const* searcher, Unit* & result, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(CreatureMapType &m);
         void Visit(PlayerMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // Last accepted by Check Unit if any (Check can change requirements at each call)
     template<class Check>
     struct UnitLastSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Unit* &i_object;
         Check & i_check;
 
         UnitLastSearcher(WorldObject const* searcher, Unit* & result, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(CreatureMapType &m);
         void Visit(PlayerMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // All accepted by Check units if any
     template<class Check>
-    struct UnitListSearcher
+    struct UnitListSearcher : ContainerInserter<Unit*>
     {
-        uint32 i_phaseMask;
-        std::list<Unit*> &i_objects;
+        WorldObject const* _searcher;
         Check& i_check;
 
-        UnitListSearcher(WorldObject const* searcher, std::list<Unit*> &objects, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_objects(objects), i_check(check) {}
+        template<typename Container>
+        UnitListSearcher(WorldObject const* searcher, Container& container, Check& check)
+            : ContainerInserter<Unit*>(container),
+              _searcher(searcher), i_check(check) { }
 
         void Visit(PlayerMapType &m);
         void Visit(CreatureMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // Creature searchers
@@ -460,66 +500,67 @@ namespace JadeCore
     template<class Check>
     struct CreatureSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Creature* &i_object;
         Check & i_check;
 
         CreatureSearcher(WorldObject const* searcher, Creature* & result, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(CreatureMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // Last accepted by Check Creature if any (Check can change requirements at each call)
     template<class Check>
     struct CreatureLastSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Creature* &i_object;
         Check & i_check;
 
         CreatureLastSearcher(WorldObject const* searcher, Creature* & result, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(CreatureMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Check>
-    struct CreatureListSearcher
+    struct CreatureListSearcher : ContainerInserter<Creature*>
     {
-        uint32 i_phaseMask;
-        std::list<Creature*> &i_objects;
+        WorldObject const* _searcher;
         Check& i_check;
 
-        CreatureListSearcher(WorldObject const* searcher, std::list<Creature*> &objects, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_objects(objects), i_check(check) {}
+        template<typename Container>
+        CreatureListSearcher(WorldObject const* searcher, Container& container, Check & check)
+            : ContainerInserter<Creature*>(container),
+              _searcher(searcher), i_check(check) { }
 
         void Visit(CreatureMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Do>
     struct CreatureWorker
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Do& i_do;
 
         CreatureWorker(WorldObject const* searcher, Do& _do)
-            : i_phaseMask(searcher->GetPhaseMask()), i_do(_do) {}
+            : _searcher(searcher), i_do(_do) { }
 
         void Visit(CreatureMapType &m)
         {
             for (CreatureMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // Player searchers
@@ -527,66 +568,67 @@ namespace JadeCore
     template<class Check>
     struct PlayerSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Player* &i_object;
         Check & i_check;
 
         PlayerSearcher(WorldObject const* searcher, Player* & result, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check) {}
+            : _searcher(searcher), i_object(result), i_check(check) { }
 
         void Visit(PlayerMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Check>
-    struct PlayerListSearcher
+    struct PlayerListSearcher : ContainerInserter<Player*>
     {
-        uint32 i_phaseMask;
-        std::list<Player*> &i_objects;
+        WorldObject const* _searcher;
         Check& i_check;
 
-        PlayerListSearcher(WorldObject const* searcher, std::list<Player*> &objects, Check & check)
-            : i_phaseMask(searcher->GetPhaseMask()), i_objects(objects), i_check(check) {}
+        template<typename Container>
+        PlayerListSearcher(WorldObject const* searcher, Container& container, Check & check)
+            : ContainerInserter<Player*>(container),
+              _searcher(searcher), i_check(check) { }
 
         void Visit(PlayerMapType &m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Check>
     struct PlayerLastSearcher
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Player* &i_object;
         Check& i_check;
 
-        PlayerLastSearcher(WorldObject const* searcher, Player*& result, Check& check) : i_phaseMask(searcher->GetPhaseMask()), i_object(result), i_check(check)
+        PlayerLastSearcher(WorldObject const* searcher, Player*& result, Check& check) : _searcher(searcher), i_object(result), i_check(check)
         {
         }
 
         void Visit(PlayerMapType& m);
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Do>
     struct PlayerWorker
     {
-        uint32 i_phaseMask;
+        WorldObject const* _searcher;
         Do& i_do;
 
         PlayerWorker(WorldObject const* searcher, Do& _do)
-            : i_phaseMask(searcher->GetPhaseMask()), i_do(_do) {}
+            : _searcher(searcher), i_do(_do) { }
 
         void Visit(PlayerMapType &m)
         {
             for (PlayerMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_phaseMask))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(_searcher))
+                    i_do(itr->GetSource());
         }
 
-        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     template<class Do>
@@ -597,26 +639,119 @@ namespace JadeCore
         Do& i_do;
 
         PlayerDistWorker(WorldObject const* searcher, float _dist, Do& _do)
-            : i_searcher(searcher), i_dist(_dist), i_do(_do) {}
+            : i_searcher(searcher), i_dist(_dist), i_do(_do) { }
 
         void Visit(PlayerMapType &m)
         {
             for (PlayerMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
-                if (itr->getSource()->InSamePhase(i_searcher) && itr->getSource()->IsWithinDist(i_searcher, i_dist))
-                    i_do(itr->getSource());
+                if (itr->GetSource()->IsInPhase(i_searcher) && itr->GetSource()->IsWithinDist(i_searcher, i_dist))
+                    i_do(itr->GetSource());
         }
 
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
+    };
+
+    /// AreaTriggers searchers
+    template<class Check>
+    struct AreaTriggerListSearcher
+    {
+        WorldObject const* i_searcher;
+        std::list<AreaTrigger*> &m_AreaTriggers;
+        Check& i_check;
+
+        AreaTriggerListSearcher(WorldObject const* searcher, std::list<AreaTrigger*>& areaTriggers, Check& check)
+            : i_searcher(searcher), m_AreaTriggers(areaTriggers), i_check(check) {}
+
+        void Visit(AreaTriggerMapType& p_AreaTriggerMap);
+
         template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+    };
+
+    template<class Check>
+    struct AreaTriggerSearcher
+    {
+        WorldObject const* i_searcher;
+        AreaTrigger* &i_object;
+        Check & i_check;
+
+        AreaTriggerSearcher(WorldObject const* searcher, AreaTrigger* & result, Check & check)
+            : i_searcher(searcher), i_object(result), i_check(check) {}
+
+        void Visit(AreaTriggerMapType &m);
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+    };
+
+    /// Conversation searchers
+    template<class Check>
+    struct SceneObjectVectorSearcher
+    {
+        WorldObject const* i_searcher;
+        std::list<SceneObject*>& m_SceneObjects;
+        Check& i_check;
+
+        SceneObjectVectorSearcher(WorldObject const* searcher, std::list<SceneObject*>& sceneObject, Check& check)
+            : i_searcher(searcher), m_SceneObjects(sceneObject), i_check(check) { }
+
+        void Visit(SceneObjectMapType& p_SceneObjectMap);
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
+    };
+
+    template<class Check>
+    struct SceneObjectSearcher
+    {
+        WorldObject const* i_searcher;
+        SceneObject* &i_object;
+        Check & i_check;
+
+        SceneObjectSearcher(WorldObject const* searcher, SceneObject* & result, Check & check)
+            : i_searcher(searcher), i_object(result), i_check(check) { }
+
+        void Visit(SceneObjectMapType& p_ConversationMap);
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
+    };
+
+    /// Conversation searchers
+    template<class Check>
+    struct ConversationVectorSearcher
+    {
+        WorldObject const* i_searcher;
+        std::list<Conversation*>& m_Conversations;
+        Check& i_check;
+
+        ConversationVectorSearcher(WorldObject const* searcher, std::list<Conversation*>& conversation, Check& check)
+            : i_searcher(searcher), m_Conversations(conversation), i_check(check) { }
+
+        void Visit(ConversationMapType& p_ConversationMap);
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
+    };
+
+    template<class Check>
+    struct ConversationSearcher
+    {
+        WorldObject const* i_searcher;
+        Conversation* &i_object;
+        Check & i_check;
+
+        ConversationSearcher(WorldObject const* searcher, Conversation* & result, Check & check)
+            : i_searcher(searcher), i_object(result), i_check(check) { }
+
+        void Visit(ConversationMapType& p_ConversationMap);
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) { }
     };
 
     // CHECKS && DO classes
 
     // WorldObject check classes
 
-    class AnyDeadUnitObjectInRangeCheck
+    class TC_GAME_API AnyDeadUnitObjectInRangeCheck
     {
         public:
-            AnyDeadUnitObjectInRangeCheck(Unit* searchObj, float range) : i_searchObj(searchObj), i_range(range) {}
+            AnyDeadUnitObjectInRangeCheck(Unit* searchObj, float range) : i_searchObj(searchObj), i_range(range) { }
             bool operator()(Player* u);
             bool operator()(Corpse* u);
             bool operator()(Creature* u);
@@ -626,12 +761,12 @@ namespace JadeCore
             float i_range;
     };
 
-    class AnyDeadUnitSpellTargetInRangeCheck : public AnyDeadUnitObjectInRangeCheck
+    class TC_GAME_API AnyDeadUnitSpellTargetInRangeCheck : public AnyDeadUnitObjectInRangeCheck
     {
         public:
             AnyDeadUnitSpellTargetInRangeCheck(Unit* searchObj, float range, SpellInfo const* spellInfo, SpellTargetCheckTypes check)
                 : AnyDeadUnitObjectInRangeCheck(searchObj, range), i_spellInfo(spellInfo), i_check(searchObj, searchObj, spellInfo, check, NULL)
-            {}
+            { }
             bool operator()(Player* u);
             bool operator()(Corpse* u);
             bool operator()(Creature* u);
@@ -646,11 +781,11 @@ namespace JadeCore
     class RespawnDo
     {
         public:
-            RespawnDo() {}
+            RespawnDo() { }
             void operator()(Creature* u) const { u->Respawn(); }
             void operator()(GameObject* u) const { u->Respawn(); }
-            void operator()(WorldObject*) const {}
-            void operator()(Corpse*) const {}
+            void operator()(WorldObject*) const { }
+            void operator()(Corpse*) const { }
     };
 
     // GameObject checks
@@ -658,51 +793,87 @@ namespace JadeCore
     class GameObjectFocusCheck
     {
         public:
-            GameObjectFocusCheck(Unit const* unit, uint32 focusId) : i_unit(unit), i_focusId(focusId) {}
+            GameObjectFocusCheck(Unit const* unit, uint32 focusId) : i_unit(unit), i_focusId(focusId) { }
+
             bool operator()(GameObject* go) const
             {
-                if (go->GetGOInfo()->type != GAMEOBJECT_TYPE_SPELL_FOCUS)
+                if (go->GetGOInfo()->GetSpellFocusType() != i_focusId)
                     return false;
 
-                if (go->GetGOInfo()->spellFocus.focusId != i_focusId)
+                if (!go->isSpawned())
                     return false;
 
-                float dist = (float)((go->GetGOInfo()->spellFocus.dist)/2);
+                float dist = go->GetGOInfo()->GetSpellFocusRadius() / 2.f;
 
                 return go->IsWithinDistInMap(i_unit, dist);
             }
+
         private:
             Unit const* i_unit;
             uint32 i_focusId;
+    };
+
+    class AnySceneObjectInObjectRangeCheck
+    {
+    public:
+        AnySceneObjectInObjectRangeCheck(WorldObject const* p_Object, float range) : m_Object(p_Object), m_Range(range) { }
+        bool operator()(SceneObject* p_SceneObject)
+        {
+            if (m_Object->IsWithinDistInMap(p_SceneObject, m_Range))
+                return true;
+
+            return false;
+        }
+    private:
+        WorldObject const* m_Object;
+        float m_Range;
+    };
+
+    class AnyConversationInObjectRangeCheck
+    {
+    public:
+        AnyConversationInObjectRangeCheck(WorldObject const* p_Object, float range) : m_Object(p_Object), m_Range(range) { }
+        bool operator()(Conversation* p_Conversation)
+        {
+            if (m_Object->IsWithinDistInMap(p_Conversation, m_Range))
+                return true;
+
+            return false;
+        }
+    private:
+        WorldObject const* m_Object;
+        float m_Range;
     };
 
     // Find the nearest Fishing hole and return true only if source object is in range of hole
     class NearestGameObjectFishingHole
     {
         public:
-            NearestGameObjectFishingHole(WorldObject const& obj, float range) : i_obj(obj), i_range(range) {}
+            NearestGameObjectFishingHole(WorldObject const& obj, float range) : i_obj(obj), i_range(range) { }
+
             bool operator()(GameObject* go)
             {
-                if (go->GetGOInfo()->type == GAMEOBJECT_TYPE_FISHINGHOLE && go->isSpawned() && i_obj.IsWithinDistInMap(go, i_range) && i_obj.IsWithinDistInMap(go, (float)go->GetGOInfo()->fishinghole.radius))
+                if (go->GetGOInfo()->type == GAMEOBJECT_TYPE_FISHINGHOLE && go->isSpawned() && i_obj.IsWithinDistInMap(go, i_range) && i_obj.IsWithinDistInMap(go, (float)go->GetGOInfo()->fishingHole.radius))
                 {
                     i_range = i_obj.GetDistance(go);
                     return true;
                 }
                 return false;
             }
-            float GetLastRange() const { return i_range; }
+
         private:
             WorldObject const& i_obj;
-            float  i_range;
+            float i_range;
 
             // prevent clone
-            NearestGameObjectFishingHole(NearestGameObjectFishingHole const&);
+            NearestGameObjectFishingHole(NearestGameObjectFishingHole const&) = delete;
     };
 
     class NearestGameObjectCheck
     {
         public:
-            NearestGameObjectCheck(WorldObject const& obj) : i_obj(obj), i_range(999) {}
+            NearestGameObjectCheck(WorldObject const& obj) : i_obj(obj), i_range(999.f) { }
+
             bool operator()(GameObject* go)
             {
                 if (i_obj.IsWithinDistInMap(go, i_range))
@@ -712,20 +883,21 @@ namespace JadeCore
                 }
                 return false;
             }
-            float GetLastRange() const { return i_range; }
+
         private:
             WorldObject const& i_obj;
             float i_range;
 
             // prevent clone this object
-            NearestGameObjectCheck(NearestGameObjectCheck const&);
+            NearestGameObjectCheck(NearestGameObjectCheck const&) = delete;
     };
 
     // Success at unit in range, range update for next check (this can be use with GameobjectLastSearcher to find nearest GO)
     class NearestGameObjectEntryInObjectRangeCheck
     {
         public:
-            NearestGameObjectEntryInObjectRangeCheck(WorldObject const& obj, uint32 entry, float range) : i_obj(obj), i_entry(entry), i_range(range) {}
+            NearestGameObjectEntryInObjectRangeCheck(WorldObject const& obj, uint32 entry, float range) : i_obj(obj), i_entry(entry), i_range(range) { }
+
             bool operator()(GameObject* go)
             {
                 if (go->GetEntry() == i_entry && i_obj.IsWithinDistInMap(go, i_range))
@@ -735,52 +907,39 @@ namespace JadeCore
                 }
                 return false;
             }
-            float GetLastRange() const { return i_range; }
+
         private:
             WorldObject const& i_obj;
             uint32 i_entry;
             float  i_range;
 
             // prevent clone this object
-            NearestGameObjectEntryInObjectRangeCheck(NearestGameObjectEntryInObjectRangeCheck const&);
+            NearestGameObjectEntryInObjectRangeCheck(NearestGameObjectEntryInObjectRangeCheck const&) = delete;
     };
 
     // Success at unit in range, range update for next check (this can be use with GameobjectLastSearcher to find nearest GO with a certain type)
     class NearestGameObjectTypeInObjectRangeCheck
     {
-    public:
-        NearestGameObjectTypeInObjectRangeCheck(WorldObject const& obj, GameobjectTypes type, float range) : i_obj(obj), i_type(type), i_range(range) {}
-        bool operator()(GameObject* go)
-        {
-            if (go->GetGoType() == i_type && i_obj.IsWithinDistInMap(go, i_range))
-            {
-                i_range = i_obj.GetDistance(go);        // use found GO range as new range limit for next check
-                return true;
-            }
-            return false;
-        }
-        float GetLastRange() const { return i_range; }
-    private:
-        WorldObject const& i_obj;
-        GameobjectTypes i_type;
-        float  i_range;
-
-        // prevent clone this object
-        NearestGameObjectTypeInObjectRangeCheck(NearestGameObjectTypeInObjectRangeCheck const&);
-
-    };
-
-    class GameObjectWithDbGUIDCheck
-    {
         public:
-            GameObjectWithDbGUIDCheck(WorldObject const& obj, uint32 db_guid) : i_obj(obj), i_db_guid(db_guid) {}
-            bool operator()(GameObject const* go) const
+            NearestGameObjectTypeInObjectRangeCheck(WorldObject const& obj, GameobjectTypes type, float range) : i_obj(obj), i_type(type), i_range(range) { }
+
+            bool operator()(GameObject* go)
             {
-                return go->GetDBTableGUIDLow() == i_db_guid;
+                if (go->GetGoType() == i_type && i_obj.IsWithinDistInMap(go, i_range))
+                {
+                    i_range = i_obj.GetDistance(go);        // use found GO range as new range limit for next check
+                    return true;
+                }
+                return false;
             }
+
         private:
             WorldObject const& i_obj;
-            uint32 i_db_guid;
+            GameobjectTypes i_type;
+            float  i_range;
+
+            // prevent clone this object
+            NearestGameObjectTypeInObjectRangeCheck(NearestGameObjectTypeInObjectRangeCheck const&) = delete;
     };
 
     // Unit checks
@@ -788,35 +947,61 @@ namespace JadeCore
     class MostHPMissingInRange
     {
         public:
-            MostHPMissingInRange(Unit const* obj, float range, uint32 hp) : i_obj(obj), i_range(range), i_hp(hp) {}
+            MostHPMissingInRange(Unit const* obj, float range, uint32 hp) : i_obj(obj), i_range(range), i_hp(hp) { }
+
             bool operator()(Unit* u)
             {
-                if (u->isAlive() && u->isInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) && u->GetMaxHealth() - u->GetHealth() > i_hp)
+                if (u->IsAlive() && u->IsInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) && u->GetMaxHealth() - u->GetHealth() > i_hp)
                 {
                     i_hp = u->GetMaxHealth() - u->GetHealth();
                     return true;
                 }
                 return false;
             }
+
         private:
             Unit const* i_obj;
             float i_range;
-            uint32 i_hp;
+            uint64 i_hp;
+    };
+
+    class FriendlyBelowHpPctEntryInRange
+    {
+        public:
+            FriendlyBelowHpPctEntryInRange(Unit const* obj, uint32 entry, float range, uint8 pct, bool excludeSelf) : i_obj(obj), i_entry(entry), i_range(range), i_pct(pct), i_excludeSelf(excludeSelf) { }
+
+            bool operator()(Unit* u)
+            {
+                if (i_excludeSelf && i_obj->GetGUID() == u->GetGUID())
+                    return false;
+                if (u->GetEntry() == i_entry && u->IsAlive() && u->IsInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) && u->HealthBelowPct(i_pct))
+                    return true;
+                return false;
+            }
+
+        private:
+            Unit const* i_obj;
+            uint32 i_entry;
+            float i_range;
+            uint8 i_pct;
+            bool i_excludeSelf;
     };
 
     class FriendlyCCedInRange
     {
         public:
-            FriendlyCCedInRange(Unit const* obj, float range) : i_obj(obj), i_range(range) {}
-            bool operator()(Unit* u)
+            FriendlyCCedInRange(Unit const* obj, float range) : i_obj(obj), i_range(range) { }
+
+            bool operator()(Unit* u) const
             {
-                if (u->isAlive() && u->isInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) &&
-                    (u->isFeared() || u->isCharmed() || u->isFrozen() || u->HasUnitState(UNIT_STATE_STUNNED) || u->HasUnitState(UNIT_STATE_CONFUSED)))
+                if (u->IsAlive() && u->IsInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) &&
+                    (u->isFeared() || u->IsCharmed() || u->isFrozen() || u->HasUnitState(UNIT_STATE_STUNNED) || u->HasUnitState(UNIT_STATE_CONFUSED)))
                 {
                     return true;
                 }
                 return false;
             }
+
         private:
             Unit const* i_obj;
             float i_range;
@@ -825,16 +1010,16 @@ namespace JadeCore
     class FriendlyMissingBuffInRange
     {
         public:
-            FriendlyMissingBuffInRange(Unit const* obj, float range, uint32 spellid) : i_obj(obj), i_range(range), i_spell(spellid) {}
-            bool operator()(Unit* u)
+            FriendlyMissingBuffInRange(Unit const* obj, float range, uint32 spellid) : i_obj(obj), i_range(range), i_spell(spellid) { }
+
+            bool operator()(Unit* u) const
             {
-                if (u->isAlive() && u->isInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) &&
-                    !(u->HasAura(i_spell)))
-                {
+                if (u->IsAlive() && u->IsInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) && !u->HasAura(i_spell))
                     return true;
-                }
+
                 return false;
             }
+
         private:
             Unit const* i_obj;
             float i_range;
@@ -844,145 +1029,80 @@ namespace JadeCore
     class AnyUnfriendlyUnitInObjectRangeCheck
     {
         public:
-            AnyUnfriendlyUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) {}
-            bool operator()(Unit* u)
+            AnyUnfriendlyUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) { }
+
+            bool operator()(Unit* u) const
             {
-                if (u->isAlive() && i_obj->IsWithinDistInMap(u, i_range) && !i_funit->IsFriendlyTo(u))
+                if (u->IsAlive() && i_obj->IsWithinDistInMap(u, i_range) && !i_funit->IsFriendlyTo(u))
                     return true;
-                else
-                    return false;
+
+                return false;
             }
+
         private:
             WorldObject const* i_obj;
             Unit const* i_funit;
             float i_range;
     };
 
-    class AnyUnfriendlyNoTotemUnitInObjectRangeCheck
+    class NearestAttackableNoTotemUnitInObjectRangeCheck
     {
         public:
-            AnyUnfriendlyNoTotemUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) {}
+            NearestAttackableNoTotemUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) { }
+
             bool operator()(Unit* u)
             {
-                if (!u->isAlive())
+                if (!u->IsAlive())
                     return false;
 
                 if (u->GetCreatureType() == CREATURE_TYPE_NON_COMBAT_PET)
                     return false;
 
-                if (u->GetTypeId() == TYPEID_UNIT && ((Creature*)u)->isTotem())
+                if (u->GetTypeId() == TYPEID_UNIT && u->ToCreature()->IsTotem())
                     return false;
 
                 if (!u->isTargetableForAttack(false))
                     return false;
 
-                return i_obj->IsWithinDistInMap(u, i_range) && i_funit->IsValidAttackTarget(u);
+                if (!i_obj->IsWithinDistInMap(u, i_range) || !i_funit->_IsValidAttackTarget(u, nullptr, i_obj))
+                    return false;
+
+                i_range = i_obj->GetDistance(*u);
+                return true;
             }
+
         private:
             WorldObject const* i_obj;
             Unit const* i_funit;
             float i_range;
-    };
-
-    class AnyUnfriendlyAttackableVisibleUnitInObjectRangeCheck
-    {
-        public:
-            AnyUnfriendlyAttackableVisibleUnitInObjectRangeCheck(Unit const* funit, float range)
-                : i_funit(funit), i_range(range) {}
-
-            bool operator()(const Unit* u)
-            {
-                return u->isAlive()
-                    && i_funit->IsWithinDistInMap(u, i_range)
-                    && !i_funit->IsFriendlyTo(u)
-                    && i_funit->IsValidAttackTarget(u)
-                    && u->GetCreatureType() != CREATURE_TYPE_CRITTER
-                    && i_funit->canSeeOrDetect(u);
-            }
-        private:
-            Unit const* i_funit;
-            float i_range;
-    };
-
-    class CreatureWithDbGUIDCheck
-    {
-        public:
-            CreatureWithDbGUIDCheck(WorldObject const* obj, uint32 lowguid) : i_obj(obj), i_lowguid(lowguid) {}
-            bool operator()(Creature* u)
-            {
-                return u->GetDBTableGUIDLow() == i_lowguid;
-            }
-        private:
-            WorldObject const* i_obj;
-            uint32 i_lowguid;
     };
 
     class AnyFriendlyUnitInObjectRangeCheck
     {
         public:
-            AnyFriendlyUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) {}
-            bool operator()(Unit* u)
+            AnyFriendlyUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, bool playerOnly = false, bool exceptSelf = false) : i_obj(obj), i_funit(funit), i_range(range), i_playerOnly(playerOnly), i_exceptSelf(exceptSelf) { }
+
+            bool operator()(Unit* u) const
             {
-                if (u->isAlive() && i_obj->IsWithinDistInMap(u, i_range) && i_funit->IsFriendlyTo(u))
-                    return true;
-                else
-                    return false;
+                return u->IsAlive() && i_obj->IsWithinDistInMap(u, i_range) && i_funit->IsFriendlyTo(u) && (!i_playerOnly || u->IsPlayer()) && (!i_exceptSelf || u != i_funit);
             }
+
         private:
             WorldObject const* i_obj;
             Unit const* i_funit;
             float i_range;
-    };
-
-
-    class AnyPlayerHavingBuffInObjectRangeCheck
-    {
-    public:
-        AnyPlayerHavingBuffInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, uint32 spellid, bool isfriendly)
-            : i_obj(obj), i_funit(funit), i_range(range), i_spellid(spellid), i_friendly(isfriendly) {}
-        bool operator()(Unit* u)
-        {
-            if (u->isAlive() && u->GetTypeId() == TYPEID_PLAYER && i_obj->IsWithinDistInMap(u, i_range) && i_funit->IsFriendlyTo(u) == i_friendly && u->HasAura(i_spellid, i_obj->GetGUID()))
-                return true;
-            else
-                return false;
-        }
-    private:
-        WorldObject const* i_obj;
-        Unit const* i_funit;
-        float i_range;
-        bool i_friendly;
-        uint32 i_spellid;
-    };
-
-
-    class AnyUnitHavingBuffInObjectRangeCheck
-    {
-        public:
-            AnyUnitHavingBuffInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, uint32 spellid, bool isfriendly)
-                : i_obj(obj), i_funit(funit), i_range(range), i_spellid(spellid), i_friendly(isfriendly) {}
-            bool operator()(Unit* u)
-            {
-                if (u->isAlive() && i_obj->IsWithinDistInMap(u, i_range) && i_funit->IsFriendlyTo(u) == i_friendly && u->HasAura(i_spellid, i_obj->GetGUID()))
-                    return true;
-                else
-                    return false;
-            }
-        private:
-            WorldObject const* i_obj;
-            Unit const* i_funit;
-            float i_range;
-            bool i_friendly;
-            uint32 i_spellid;
+            bool i_playerOnly;
+            bool i_exceptSelf;
     };
 
     class AnyGroupedUnitInObjectRangeCheck
     {
         public:
-            AnyGroupedUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, bool raid) : _source(obj), _refUnit(funit), _range(range), _raid(raid) {}
-            bool operator()(Unit* u)
+            AnyGroupedUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, bool raid, bool playerOnly = false) : _source(obj), _refUnit(funit), _range(range), _raid(raid), _playerOnly(playerOnly) { }
+
+            bool operator()(Unit* u) const
             {
-                if (G3D::fuzzyEq(_range, 0))
+                if (_playerOnly && u->GetTypeId() != TYPEID_PLAYER)
                     return false;
 
                 if (_raid)
@@ -993,7 +1113,7 @@ namespace JadeCore
                 else if (!_refUnit->IsInPartyWith(u))
                     return false;
 
-                return !_refUnit->IsHostileTo(u) && u->isAlive() && _source->IsWithinDistInMap(u, _range);
+                return !_refUnit->IsHostileTo(u) && u->IsAlive() && _source->IsWithinDistInMap(u, _range);
             }
 
         private:
@@ -1001,33 +1121,97 @@ namespace JadeCore
             Unit const* _refUnit;
             float _range;
             bool _raid;
+            bool _playerOnly;
     };
 
     class AnyUnitInObjectRangeCheck
     {
         public:
-            AnyUnitInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) {}
-            bool operator()(Unit* u)
+            AnyUnitInObjectRangeCheck(WorldObject const* obj, float range, bool check3D = true) : i_obj(obj), i_range(range), i_check3D(check3D) { }
+
+            bool operator()(Unit* u) const
             {
-                if (u->isAlive() && i_obj->IsWithinDistInMap(u, i_range))
+                if (u->IsAlive() && i_obj->IsWithinDistInMap(u, i_range, i_check3D))
                     return true;
 
                 return false;
             }
+
         private:
             WorldObject const* i_obj;
             float i_range;
+            bool i_check3D;
+    };
+
+    class AttackableUnitInObjectRangeCheck
+    {
+    public:
+        AttackableUnitInObjectRangeCheck(WorldObject const* obj, float range, bool check3D = true) : i_obj(obj), i_range(range), i_check3D(check3D) { }
+
+        bool operator()(Unit* u) const
+        {
+            if (i_obj->IsUnit())
+                if (u->IsAlive() && i_obj->IsWithinDistInMap(u, i_range, i_check3D) && i_obj->ToUnit()->IsValidAttackTarget(u))
+                    return true;
+
+            return false;
+        }
+
+    private:
+        WorldObject const* i_obj;
+        float i_range;
+        bool i_check3D;
+    };
+
+    class AnyAreatriggerInObjectRangeCheck
+    {
+    public:
+        AnyAreatriggerInObjectRangeCheck(WorldObject const* p_Object, float range) : m_Object(p_Object), m_Range(range) {}
+        bool operator()(AreaTrigger* p_AreaTrigger)
+        {
+            if (m_Object->IsWithinDistInMap(p_AreaTrigger, m_Range))
+                return true;
+
+            return false;
+        }
+    private:
+        WorldObject const* m_Object;
+        float m_Range;
+    };
+
+    class NearestAreaTriggerWithIdInObjectRangeCheck
+    {
+    public:
+        NearestAreaTriggerWithIdInObjectRangeCheck(WorldObject const* obj, uint32 spellId, float range) : i_obj(obj), i_spellId(spellId), i_range(range) {}
+        bool operator()(AreaTrigger* a)
+        {
+            if (i_obj->IsWithinDistInMap(a, i_range) && a->GetSpellId() == i_spellId)
+            {
+                i_range = i_obj->GetDistance(a);        // use found unit range as new range limit for next check
+                return true;
+            }
+
+            return false;
+        }
+    private:
+        WorldObject const* i_obj;
+        uint32 i_spellId;
+        float i_range;
+
+        // prevent clone this object
+        NearestAreaTriggerWithIdInObjectRangeCheck(NearestAreaTriggerWithIdInObjectRangeCheck const&);
     };
 
     // Success at unit in range, range update for next check (this can be use with UnitLastSearcher to find nearest unit)
     class NearestAttackableUnitInObjectRangeCheck
     {
         public:
-            NearestAttackableUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) {}
+            NearestAttackableUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) { }
+
             bool operator()(Unit* u)
             {
                 if (u->isTargetableForAttack() && i_obj->IsWithinDistInMap(u, i_range) &&
-                    !i_funit->IsFriendlyTo(u))
+                    (i_funit->IsInCombatWith(u) || i_funit->IsHostileTo(u)) && i_obj->CanSeeOrDetect(u))
                 {
                     i_range = i_obj->GetDistance(u);        // use found unit range as new range limit for next check
                     return true;
@@ -1035,67 +1219,40 @@ namespace JadeCore
 
                 return false;
             }
+
         private:
             WorldObject const* i_obj;
             Unit const* i_funit;
             float i_range;
 
             // prevent clone this object
-            NearestAttackableUnitInObjectRangeCheck(NearestAttackableUnitInObjectRangeCheck const&);
-    };
-
-    // Success at unit in range, range update for next check (this can be use with UnitLastSearcher to find nearest unit)
-    class NearestAttackableNoCCUnitInObjectRangeCheck
-    {
-        public:
-            NearestAttackableNoCCUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range) : i_obj(obj), i_funit(funit), i_range(range) {}
-            bool operator()(Unit* u)
-            {
-                if (u->isTargetableForAttack() && i_obj->IsWithinDistInMap(u, i_range) &&
-                    !i_funit->IsFriendlyTo(u) && !u->HasCrowdControlAura() && !u->HasAuraType(SPELL_AURA_MOD_CONFUSE))
-                {
-                    i_range = i_obj->GetDistance(u);        // use found unit range as new range limit for next check
-                    return true;
-                }
-
-                return false;
-            }
-        private:
-            WorldObject const* i_obj;
-            Unit const* i_funit;
-            float i_range;
-
-            // prevent clone this object
-            NearestAttackableNoCCUnitInObjectRangeCheck(NearestAttackableNoCCUnitInObjectRangeCheck const&);
+            NearestAttackableUnitInObjectRangeCheck(NearestAttackableUnitInObjectRangeCheck const&) = delete;
     };
 
     class AnyAoETargetUnitInObjectRangeCheck
     {
         public:
-            AnyAoETargetUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range)
-                : i_obj(obj), i_funit(funit), _spellInfo(NULL), i_range(range)
+            AnyAoETargetUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, SpellInfo const* spellInfo = nullptr)
+                : i_obj(obj), i_funit(funit), _spellInfo(spellInfo), i_range(range)
             {
-                Unit const* check = i_funit;
-                Unit const* owner = i_funit->GetOwner();
-                if (owner)
-                    check = owner;
-                i_targetForPlayer = (check->GetTypeId() == TYPEID_PLAYER);
-                if (i_obj->GetTypeId() == TYPEID_DYNAMICOBJECT)
-                    _spellInfo = sSpellMgr->GetSpellInfo(((DynamicObject*)i_obj)->GetSpellId());
+                if (!_spellInfo)
+                    if (DynamicObject const* dynObj = i_obj->ToDynObject())
+                        _spellInfo = dynObj->GetSpellInfo();
             }
-            bool operator()(Unit* u)
+
+            bool operator()(Unit* u) const
             {
                 // Check contains checks for: live, non-selectable, non-attackable flags, flight check and GM check, ignore totems
-                if (u->GetTypeId() == TYPEID_UNIT && ((Creature*)u)->isTotem())
+                if (u->GetTypeId() == TYPEID_UNIT && u->IsTotem())
                     return false;
 
-                if (i_funit->_IsValidAttackTarget(u, _spellInfo,i_obj->GetTypeId() == TYPEID_DYNAMICOBJECT ? i_obj : NULL) && i_obj->IsWithinDistInMap(u, i_range))
-                    return true;
+                if (_spellInfo && _spellInfo->HasAttribute(SPELL_ATTR3_ONLY_TARGET_PLAYERS) && u->GetTypeId() != TYPEID_PLAYER)
+                    return false;
 
-                return false;
+                return i_funit->_IsValidAttackTarget(u, _spellInfo, i_obj->GetTypeId() == TYPEID_DYNAMICOBJECT ? i_obj : nullptr) && i_obj->IsWithinDistInMap(u, i_range);
             }
+
         private:
-            bool i_targetForPlayer;
             WorldObject const* i_obj;
             Unit const* i_funit;
             SpellInfo const* _spellInfo;
@@ -1107,9 +1264,9 @@ namespace JadeCore
     {
         public:
             CallOfHelpCreatureInRangeDo(Unit* funit, Unit* enemy, float range)
-                : i_funit(funit), i_enemy(enemy), i_range(range)
-            {}
-            void operator()(Creature* u)
+                : i_funit(funit), i_enemy(enemy), i_range(range) { }
+
+            void operator()(Creature* u) const
             {
                 if (u == i_funit)
                     return;
@@ -1125,8 +1282,8 @@ namespace JadeCore
                 if (!u->IsWithinLOSInMap(i_enemy))
                     return;
 
-                if (u->AI())
-                    u->AI()->AttackStart(i_enemy);
+                if (u->GetAI() && u->IsAIEnabled)
+                    u->GetAI()->AttackStart(i_enemy);
             }
         private:
             Unit* const i_funit;
@@ -1136,25 +1293,22 @@ namespace JadeCore
 
     struct AnyDeadUnitCheck
     {
-        bool operator()(Unit* u) { return !u->isAlive(); }
+        bool operator()(Unit* u) const
+        {
+            return !u->IsAlive();
+        }
     };
-
-    /*
-    struct AnyStealthedCheck
-    {
-        bool operator()(Unit* u) { return u->GetVisibility() == VISIBILITY_GROUP_STEALTH; }
-    };
-    */
 
     // Creature checks
 
     class NearestHostileUnitCheck
     {
         public:
-            explicit NearestHostileUnitCheck(Creature const* creature, float dist = 0) : me(creature)
+            explicit NearestHostileUnitCheck(Creature const* creature, float dist = 0.f, bool playerOnly = false) : me(creature), i_playerOnly(playerOnly)
             {
-                m_range = (dist == 0 ? 9999 : dist);
+                m_range = (dist == 0.f ? 9999.f : dist);
             }
+
             bool operator()(Unit* u)
             {
                 if (!me->IsWithinDistInMap(u, m_range))
@@ -1163,61 +1317,35 @@ namespace JadeCore
                 if (!me->IsValidAttackTarget(u))
                     return false;
 
+                if (i_playerOnly && u->GetTypeId() != TYPEID_PLAYER)
+                    return false;
+
                 m_range = me->GetDistance(u);   // use found unit range as new range limit for next check
                 return true;
             }
 
-    private:
+        private:
             Creature const* me;
             float m_range;
-            NearestHostileUnitCheck(NearestHostileUnitCheck const&);
-    };
-
-    class NearestHostileNoCCUnitCheck
-    {
-    public:
-        explicit NearestHostileNoCCUnitCheck(Creature const* creature, float dist = 0) : me(creature)
-        {
-            m_range = (dist == 0 ? 9999 : dist);
-        }
-        bool operator()(Unit* u)
-        {
-            if (!me->IsWithinDistInMap(u, m_range))
-                return false;
-
-            if (!me->IsValidAttackTarget(u))
-                return false;
-
-            if (u->HasCrowdControlAura())
-                return false;
-
-            if (u->HasAuraType(SPELL_AURA_MOD_CONFUSE))
-                return false;
-
-            m_range = me->GetDistance(u);   // use found unit range as new range limit for next check
-            return true;
-        }
-
-    private:
-        Creature const *me;
-        float m_range;
-        NearestHostileNoCCUnitCheck(NearestHostileNoCCUnitCheck const&);
+            bool i_playerOnly;
+            NearestHostileUnitCheck(NearestHostileUnitCheck const&) = delete;
     };
 
     class NearestHostileUnitInAttackDistanceCheck
     {
         public:
-            explicit NearestHostileUnitInAttackDistanceCheck(Creature const* creature, float dist = 0) : me(creature)
+            explicit NearestHostileUnitInAttackDistanceCheck(Creature const* creature, float dist = 0.f) : me(creature)
             {
-                m_range = (dist == 0 ? 9999 : dist);
-                m_force = (dist == 0 ? false : true);
+                m_range = (dist == 0.f ? 9999.f : dist);
+                m_force = (dist == 0.f ? false : true);
             }
+
             bool operator()(Unit* u)
             {
                 if (!me->IsWithinDistInMap(u, m_range))
                     return false;
 
-                if (!me->canSeeOrDetect(u))
+                if (!me->CanSeeOrDetect(u))
                     return false;
 
                 if (m_force)
@@ -1225,27 +1353,26 @@ namespace JadeCore
                     if (!me->IsValidAttackTarget(u))
                         return false;
                 }
-                else if (!me->canStartAttack(u, false))
+                else if (!me->CanStartAttack(u, false))
                     return false;
 
                 m_range = me->GetDistance(u);   // use found unit range as new range limit for next check
                 return true;
             }
-            float GetLastRange() const { return m_range; }
+
         private:
             Creature const* me;
             float m_range;
             bool m_force;
-            NearestHostileUnitInAttackDistanceCheck(NearestHostileUnitInAttackDistanceCheck const&);
+            NearestHostileUnitInAttackDistanceCheck(NearestHostileUnitInAttackDistanceCheck const&) = delete;
     };
 
     class NearestHostileUnitInAggroRangeCheck
     {
         public:
-            explicit NearestHostileUnitInAggroRangeCheck(Creature const* creature, bool useLOS = false) : _me(creature), _useLOS(useLOS)
-            {
-            }
-            bool operator()(Unit* u)
+            explicit NearestHostileUnitInAggroRangeCheck(Creature const* creature, bool useLOS = false) : _me(creature), _useLOS(useLOS) { }
+
+            bool operator()(Unit* u) const
             {
                 if (!u->IsHostileTo(_me))
                     return false;
@@ -1262,20 +1389,19 @@ namespace JadeCore
                 return true;
             }
 
-    private:
+        private:
             Creature const* _me;
             bool _useLOS;
-            NearestHostileUnitInAggroRangeCheck(NearestHostileUnitInAggroRangeCheck const&);
+            NearestHostileUnitInAggroRangeCheck(NearestHostileUnitInAggroRangeCheck const&) = delete;
     };
 
     class AnyAssistCreatureInRangeCheck
     {
         public:
             AnyAssistCreatureInRangeCheck(Unit* funit, Unit* enemy, float range)
-                : i_funit(funit), i_enemy(enemy), i_range(range)
-            {
-            }
-            bool operator()(Creature* u)
+                : i_funit(funit), i_enemy(enemy), i_range(range) { }
+
+            bool operator()(Creature* u) const
             {
                 if (u == i_funit)
                     return false;
@@ -1293,6 +1419,7 @@ namespace JadeCore
 
                 return true;
             }
+
         private:
             Unit* const i_funit;
             Unit* const i_enemy;
@@ -1303,7 +1430,7 @@ namespace JadeCore
     {
         public:
             NearestAssistCreatureInCreatureRangeCheck(Creature* obj, Unit* enemy, float range)
-                : i_obj(obj), i_enemy(enemy), i_range(range) {}
+                : i_obj(obj), i_enemy(enemy), i_range(range) { }
 
             bool operator()(Creature* u)
             {
@@ -1321,14 +1448,14 @@ namespace JadeCore
                 i_range = i_obj->GetDistance(u);            // use found unit range as new range limit for next check
                 return true;
             }
-            float GetLastRange() const { return i_range; }
+
         private:
             Creature* const i_obj;
             Unit* const i_enemy;
             float  i_range;
 
             // prevent clone this object
-            NearestAssistCreatureInCreatureRangeCheck(NearestAssistCreatureInCreatureRangeCheck const&);
+            NearestAssistCreatureInCreatureRangeCheck(NearestAssistCreatureInCreatureRangeCheck const&) = delete;
     };
 
     // Success at unit in range, range update for next check (this can be use with CreatureLastSearcher to find nearest creature)
@@ -1336,18 +1463,18 @@ namespace JadeCore
     {
         public:
             NearestCreatureEntryWithLiveStateInObjectRangeCheck(WorldObject const& obj, uint32 entry, bool alive, float range)
-                : i_obj(obj), i_entry(entry), i_alive(alive), i_range(range) {}
+                : i_obj(obj), i_entry(entry), i_alive(alive), i_range(range) { }
 
             bool operator()(Creature* u)
             {
-                if (u->GetEntry() == i_entry && u->isAlive() == i_alive && i_obj.IsWithinDistInMap(u, i_range))
+                if (u->getDeathState() != DEAD && u->GetEntry() == i_entry && u->IsAlive() == i_alive && i_obj.IsWithinDistInMap(u, i_range))
                 {
                     i_range = i_obj.GetDistance(u);         // use found unit range as new range limit for next check
                     return true;
                 }
                 return false;
             }
-            float GetLastRange() const { return i_range; }
+
         private:
             WorldObject const& i_obj;
             uint32 i_entry;
@@ -1355,16 +1482,17 @@ namespace JadeCore
             float  i_range;
 
             // prevent clone this object
-            NearestCreatureEntryWithLiveStateInObjectRangeCheck(NearestCreatureEntryWithLiveStateInObjectRangeCheck const&);
+            NearestCreatureEntryWithLiveStateInObjectRangeCheck(NearestCreatureEntryWithLiveStateInObjectRangeCheck const&) = delete;
     };
 
     class AnyPlayerInObjectRangeCheck
     {
         public:
-            AnyPlayerInObjectRangeCheck(WorldObject const* obj, float range, bool reqAlive = true) : _obj(obj), _range(range), _reqAlive(reqAlive) {}
-            bool operator()(Player* u)
+            AnyPlayerInObjectRangeCheck(WorldObject const* obj, float range, bool reqAlive = true) : _obj(obj), _range(range), _reqAlive(reqAlive) { }
+
+            bool operator()(Player* u) const
             {
-                if (_reqAlive && !u->isAlive())
+                if (_reqAlive && !u->IsAlive())
                     return false;
 
                 if (!_obj->IsWithinDistInMap(u, _range))
@@ -1382,13 +1510,11 @@ namespace JadeCore
     class NearestPlayerInObjectRangeCheck
     {
         public:
-            NearestPlayerInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range)
-            {
-            }
+            NearestPlayerInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) { }
 
             bool operator()(Player* u)
             {
-                if (u->isAlive() && i_obj->IsWithinDistInMap(u, i_range))
+                if (u->IsAlive() && i_obj->IsWithinDistInMap(u, i_range))
                 {
                     i_range = i_obj->GetDistance(u);
                     return true;
@@ -1400,170 +1526,139 @@ namespace JadeCore
             WorldObject const* i_obj;
             float i_range;
 
-            NearestPlayerInObjectRangeCheck(NearestPlayerInObjectRangeCheck const&);
-    };
-
-    class NearestPlayerNotGMInObjectRangeCheck
-    {
-        public:
-            NearestPlayerNotGMInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range)
-            {
-            }
-
-            bool operator()(Player* u)
-            {
-                if (!u->isGameMaster() && u->isAlive() && i_obj->IsWithinDistInMap(u, i_range))
-                {
-                    i_range = i_obj->GetDistance(u);
-                    return true;
-                }
-
-                return false;
-            }
-        private:
-            WorldObject const* i_obj;
-            float i_range;
-
-            NearestPlayerNotGMInObjectRangeCheck(NearestPlayerNotGMInObjectRangeCheck const&);
+            NearestPlayerInObjectRangeCheck(NearestPlayerInObjectRangeCheck const&) = delete;
     };
 
     class AllFriendlyCreaturesInGrid
     {
-    public:
-        AllFriendlyCreaturesInGrid(Unit const* obj) : unit(obj) {}
-        bool operator() (Unit* u)
-        {
-            if (u->isAlive() && u->IsVisible() && u->IsFriendlyTo(unit))
-                return true;
+        public:
+            AllFriendlyCreaturesInGrid(Unit const* obj) : unit(obj) { }
 
-            return false;
-        }
-    private:
-        Unit const* unit;
+            bool operator()(Unit* u) const
+            {
+                if (u->IsAlive() && u->IsVisible() && u->IsFriendlyTo(unit))
+                    return true;
+
+                return false;
+            }
+
+        private:
+            Unit const* unit;
     };
 
     class AllGameObjectsWithEntryInRange
     {
-    public:
-        AllGameObjectsWithEntryInRange(const WorldObject* object, uint32 entry, float maxRange) : m_pObject(object), m_uiEntry(entry), m_fRange(maxRange) {}
-        bool operator() (GameObject* go)
-        {
-            if (go->GetEntry() == m_uiEntry && m_pObject->IsWithinDist(go, m_fRange, false))
-                return true;
+        public:
+            AllGameObjectsWithEntryInRange(const WorldObject* object, uint32 entry, float maxRange) : m_pObject(object), m_uiEntry(entry), m_fRange(maxRange) { }
 
-            return false;
-        }
-    private:
-        const WorldObject* m_pObject;
-        uint32 m_uiEntry;
-        float m_fRange;
+            bool operator()(GameObject* go) const
+            {
+                if ((!m_uiEntry || go->GetEntry() == m_uiEntry) && m_pObject->IsWithinDist(go, m_fRange, false))
+                    return true;
+
+                return false;
+            }
+
+        private:
+            WorldObject const* m_pObject;
+            uint32 m_uiEntry;
+            float m_fRange;
     };
 
     class AllCreaturesOfEntryInRange
     {
         public:
-            AllCreaturesOfEntryInRange(const WorldObject* object, uint32 entry, float maxRange) : m_pObject(object), m_uiEntry(entry), m_fRange(maxRange) {}
-            bool operator() (Unit* unit)
+            AllCreaturesOfEntryInRange(const WorldObject* object, uint32 entry, float maxRange) : m_pObject(object), m_uiEntry(entry), m_fRange(maxRange) { }
+
+            bool operator()(Unit* unit) const
             {
-                if (unit->GetEntry() == m_uiEntry && m_pObject->IsWithinDist(unit, m_fRange, false))
+                if ((!m_uiEntry || unit->GetEntry() == m_uiEntry) && m_pObject->IsWithinDist(unit, m_fRange, false))
                     return true;
 
                 return false;
             }
 
         private:
-            const WorldObject* m_pObject;
+            WorldObject const* m_pObject;
             uint32 m_uiEntry;
             float m_fRange;
     };
 
-    class AnyCreatureInObjectRangeCheck
+    class AllCreaturesInRange
     {
     public:
-        AnyCreatureInObjectRangeCheck(WorldObject const* obj, float range) : i_obj(obj), i_range(range) {}
-        bool operator()(Unit* c)
+        AllCreaturesInRange(const WorldObject* object, float maxRange) : m_pObject(object), m_fRange(maxRange) {}
+        bool operator() (Unit* unit)
         {
-            if (c->isAlive() && i_obj->IsWithinDistInMap(c, i_range) && c->GetTypeId() != TYPEID_PLAYER)
-                return true;
-
-            return false;
-        }
-    private:
-        WorldObject const* i_obj;
-        float i_range;
-    };
-
-
-    class AllDeadCreaturesInRange
-    {
-        public:
-            AllDeadCreaturesInRange(const WorldObject* object, float maxRange, uint64 excludeGUID) : m_pObject(object), m_fRange(maxRange), m_excludeGUID(excludeGUID) {}
-            bool operator() (Unit* unit)
-            {
-                if (unit->GetTypeId() == TYPEID_UNIT && unit->GetGUID() != m_excludeGUID && !unit->isAlive() && m_pObject->IsWithinDist(unit, m_fRange, false))
-                    return true;
-
-                return false;
-            }
-
-        private:
-            const WorldObject* m_pObject;
-            uint64 m_excludeGUID;
-            float m_fRange;
-    };
-
-    class PlayerAtMinimumRangeAway
-    {
-    public:
-        PlayerAtMinimumRangeAway(Unit const* unit, float fMinRange) : unit(unit), fRange(fMinRange) {}
-        bool operator() (Player* player)
-        {
-            //No threat list check, must be done explicit if expected to be in combat with creature
-            if (!player->isGameMaster() && player->isAlive() && !unit->IsWithinDist(player, fRange, false))
+            if (m_pObject->IsWithinDist(unit, m_fRange, false))
                 return true;
 
             return false;
         }
 
-    private:
-        Unit const* unit;
-        float fRange;
-    };
-
-    class GameObjectInRangeCheck
-    {
-    public:
-        GameObjectInRangeCheck(float _x, float _y, float _z, float _range, uint32 _entry = 0) :
-          x(_x), y(_y), z(_z), range(_range), entry(_entry) {}
-        bool operator() (GameObject* go)
-        {
-            if (!entry || (go->GetGOInfo() && go->GetGOInfo()->entry == entry))
-                return go->IsInRange(x, y, z, range);
-            else return false;
-        }
-    private:
-        float x, y, z, range;
-        uint32 entry;
-    };
-
-    class AllWorldObjectsInRange
-    {
-    public:
-        AllWorldObjectsInRange(const WorldObject* object, float maxRange) : m_pObject(object), m_fRange(maxRange) {}
-        bool operator() (WorldObject* go)
-        {
-            return m_pObject->IsWithinDist(go, m_fRange, false) && m_pObject->InSamePhase(go);
-        }
     private:
         const WorldObject* m_pObject;
         float m_fRange;
     };
 
+    class PlayerAtMinimumRangeAway
+    {
+        public:
+            PlayerAtMinimumRangeAway(Unit const* unit, float fMinRange) : unit(unit), fRange(fMinRange) { }
+
+            bool operator()(Player* player) const
+            {
+                //No threat list check, must be done explicit if expected to be in combat with creature
+                if (!player->IsGameMaster() && player->IsAlive() && !unit->IsWithinDist(player, fRange, false))
+                    return true;
+
+                return false;
+            }
+
+        private:
+            Unit const* unit;
+            float fRange;
+    };
+
+    class GameObjectInRangeCheck
+    {
+        public:
+            GameObjectInRangeCheck(float _x, float _y, float _z, float _range, uint32 _entry = 0) :
+              x(_x), y(_y), z(_z), range(_range), entry(_entry) { }
+
+            bool operator()(GameObject* go) const
+            {
+                if (!entry || (go->GetGOInfo() && go->GetGOInfo()->entry == entry))
+                    return go->IsInRange(x, y, z, range);
+                else return false;
+            }
+
+        private:
+            float x, y, z, range;
+            uint32 entry;
+    };
+
+    class AllWorldObjectsInRange
+    {
+        public:
+            AllWorldObjectsInRange(const WorldObject* object, float maxRange) : m_pObject(object), m_fRange(maxRange) { }
+
+            bool operator()(WorldObject* go) const
+            {
+                return m_pObject->IsWithinDist(go, m_fRange, false) && m_pObject->IsInPhase(go);
+            }
+
+        private:
+            WorldObject const* m_pObject;
+            float m_fRange;
+    };
+
     class ObjectTypeIdCheck
     {
         public:
-            ObjectTypeIdCheck(TypeID typeId, bool equals) : _typeId(typeId), _equals(equals) {}
-            bool operator()(WorldObject* object)
+            ObjectTypeIdCheck(TypeID typeId, bool equals) : _typeId(typeId), _equals(equals) { }
+
+            bool operator()(WorldObject* object) const
             {
                 return (object->GetTypeId() == _typeId) == _equals;
             }
@@ -1576,20 +1671,41 @@ namespace JadeCore
     class ObjectGUIDCheck
     {
         public:
-            ObjectGUIDCheck(uint64 GUID) : _GUID(GUID) {}
-            bool operator()(WorldObject* object)
+            ObjectGUIDCheck(ObjectGuid GUID) : _GUID(GUID) { }
+
+            bool operator()(WorldObject* object) const
             {
                 return object->GetGUID() == _GUID;
             }
 
         private:
-            uint64 _GUID;
+            ObjectGuid _GUID;
+    };
+
+    class HeightDifferenceCheck
+    {
+    public:
+        HeightDifferenceCheck(WorldObject* go, float diff, bool reverse)
+            : _baseObject(go), _difference(diff), _reverse(reverse)
+        {
+        }
+
+        bool operator()(WorldObject* unit) const
+        {
+            return (unit->GetPositionZ() - _baseObject->GetPositionZ() > _difference) != _reverse;
+        }
+
+    private:
+        WorldObject* _baseObject;
+        float _difference;
+        bool _reverse;
     };
 
     class UnitAuraCheck
     {
         public:
-            UnitAuraCheck(bool present, uint32 spellId, uint64 casterGUID = 0) : _present(present), _spellId(spellId), _casterGUID(casterGUID) {}
+            UnitAuraCheck(bool present, uint32 spellId, ObjectGuid casterGUID = ObjectGuid::Empty) : _present(present), _spellId(spellId), _casterGUID(casterGUID) { }
+
             bool operator()(Unit* unit) const
             {
                 return unit->HasAura(_spellId, _casterGUID) == _present;
@@ -1603,26 +1719,7 @@ namespace JadeCore
         private:
             bool _present;
             uint32 _spellId;
-            uint64 _casterGUID;
-    };
-
-    class UnitAuraTypeCheck
-    {
-        public:
-            UnitAuraTypeCheck(bool present, AuraType type) : _present(present), _type(type) {}
-            bool operator()(Unit* unit) const
-            {
-                return unit->HasAuraType(_type) == _present;
-            }
-
-            bool operator()(WorldObject* object) const
-            {
-                return object->ToUnit() && object->ToUnit()->HasAuraType(_type) == _present;
-            }
-
-        private:
-            bool _present;
-            AuraType _type;
+            ObjectGuid _casterGUID;
     };
 
     // Player checks and do
@@ -1632,18 +1729,19 @@ namespace JadeCore
     class LocalizedPacketDo
     {
         public:
-            explicit LocalizedPacketDo(Builder& builder) : i_builder(builder) {}
+            explicit LocalizedPacketDo(Builder& builder) : i_builder(builder) { }
 
             ~LocalizedPacketDo()
             {
                 for (size_t i = 0; i < i_data_cache.size(); ++i)
                     delete i_data_cache[i];
             }
+
             void operator()(Player* p);
 
         private:
             Builder& i_builder;
-            std::vector<WorldPacket*> i_data_cache;         // 0 = default, i => i-1 locale index
+            std::vector<WorldPackets::Packet*> i_data_cache;         // 0 = default, i => i-1 locale index
     };
 
     // Prepare using Builder localized packets with caching and send to player
@@ -1651,8 +1749,8 @@ namespace JadeCore
     class LocalizedPacketListDo
     {
         public:
-            typedef std::vector<WorldPacket*> WorldPacketList;
-            explicit LocalizedPacketListDo(Builder& builder) : i_builder(builder) {}
+            typedef std::vector<WorldPackets::Packet*> WorldPacketList;
+            explicit LocalizedPacketListDo(Builder& builder) : i_builder(builder) { }
 
             ~LocalizedPacketListDo()
             {
@@ -1666,23 +1764,6 @@ namespace JadeCore
             Builder& i_builder;
             std::vector<WorldPacketList> i_data_cache;
                                                             // 0 = default, i => i-1 locale index
-    };
-
-    class SummonTimerOrderPred
-    {
-        public:
-            SummonTimerOrderPred(bool ascending = true) : m_ascending(ascending) {}
-            bool operator() (const Unit* a, const Unit* b) const
-            {
-                if (!a->IsSummon() || !b->IsSummon())
-                    return (urand(0, 1) ? false : true);
-
-                uint32 rA = ((TempSummon*)a)->GetTimer();
-                uint32 rB = ((TempSummon*)b)->GetTimer();
-                return m_ascending ? rA < rB : rA > rB;
-            }
-        private:
-            const bool m_ascending;
     };
 }
 #endif

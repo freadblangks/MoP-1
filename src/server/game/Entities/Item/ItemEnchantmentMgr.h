@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 LatinCoreTeam
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,13 +20,10 @@
 
 #include "Common.h"
 
-enum enchantmentRandomType
-{
-    ENCHANTMENT_RANDOM_SUFFIX,
-    ENCHANTMENT_RANDOM_PROPERTY,
-};
+using ItemRandomBonusListId = uint32;
 
-void LoadRandomEnchantmentsTable();
-uint32 GetItemEnchantMod(int32 entry, uint32 type);
-uint32 GenerateEnchSuffixFactor(uint32 item_id);
+TC_GAME_API void LoadItemRandomBonusListTemplates();
+TC_GAME_API ItemRandomBonusListId GenerateItemRandomBonusListId(uint32 item_id);
+TC_GAME_API uint32 GetRandomPropertyPoints(uint32 itemLevel, uint32 quality, uint32 inventoryType, uint32 subclass);
+
 #endif

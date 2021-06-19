@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2020 FuzionCore Project
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -25,20 +24,18 @@ template<class T>
 class RandomMovementGenerator : public MovementGeneratorMedium< T, RandomMovementGenerator<T> >
 {
     public:
-        RandomMovementGenerator(float spawn_dist = 0.0f) : i_nextMoveTime(0), wander_distance(spawn_dist) {}
+        RandomMovementGenerator(float spawn_dist = 0.0f) : i_nextMoveTime(0), wander_distance(spawn_dist) { }
 
-        void _setRandomLocation(T &);
-        void Initialize(T &);
-        void Finalize(T &);
-        void Reset(T &);
-        bool Update(T &, const uint32);
-        bool GetResetPosition(T&, float& x, float& y, float& z);
-        MovementGeneratorType GetMovementGeneratorType() { return RANDOM_MOTION_TYPE; }
+        void _setRandomLocation(T*);
+        void DoInitialize(T*);
+        void DoFinalize(T*);
+        void DoReset(T*);
+        bool DoUpdate(T*, const uint32);
+        bool GetResetPos(T*, float& x, float& y, float& z);
+        MovementGeneratorType GetMovementGeneratorType() const override { return RANDOM_MOTION_TYPE; }
     private:
         TimeTrackerSmall i_nextMoveTime;
 
-        uint32 i_nextMove;
         float wander_distance;
 };
 #endif
-
