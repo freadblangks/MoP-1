@@ -1,623 +1,304 @@
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
 #include "halls_of_origination.h"
 
-enum ScriptTexts
-{
-    SAY_DEATH       = 0,
-    SAY_AGGRO       = 1,
-    SAY_SUPERNOVA   = 2,
-    SAY_KILL        = 3, 
-};
-
-enum Spells
-{
-    SPELL_SUPERNOVA             = 74136,
-    SPELL_ASTRAL_RAIN1          = 74134,
-    SPELL_ASTRAL_RAIN2          = 74365,
-    SPELL_ASTRAL_RAIN3          = 74371,
-    SPELL_CELESTIAL_CALL1       = 74362,
-    SPELL_CELESTIAL_CALL2       = 74355,
-    SPELL_CELESTIAL_CALL3       = 74364,
-    SPELL_VEIL_OF_SKY1          = 74133,
-    SPELL_VEIL_OF_SKY2          = 74372,
-    SPELL_VEIL_OF_SKY3          = 74373,
-    SPELL_ARCANE_BARRAGE        = 74374,
-    SPELL_ARCANE_BARRAGE_H      = 89886,
-    SPELL_MIRROR_IMAGE_VS       = 74261, // summon veil of sky
-    SPELL_MIRROR_IMAGE_AR       = 74262, // summon astral rain
-    SPELL_MIRROR_IMAGE_CC       = 74263, // summon celestial call
-};
+// Different ids for 3 stages
+static const uint32 SPELL_CELESTIAL_CALL[3] = {74362, 74355, 74364};
+static const uint32 SPELL_ASTRAL_RAIN[3] = {74134, 74365, 74371};
+static const uint32 SPELL_VEIL_OF_SKY[3] = {74133, 74372, 74373};
+static const uint32 NPC_AVATAR[3] = {39720, 39721, 39722};
 
 enum Events
 {
-    EVENT_SUPERNOVA         = 1,
-    EVENT_ASTRAL_RAIN       = 2,
-    EVENT_CELESTIAL_CALL    = 3,
-    EVENT_VEIL_OF_SKY       = 4,
-    EVENT_ENTER_COMBAT      = 5, // for images
-    EVENT_ARCANE_BARRAGE    = 7,
+    EVENT_CELESTIAL_CALL                = 1,
+    EVENT_ASTRAL_RAIN,
+    EVENT_VEIL_OF_SKY,
+    EVENT_SUPERNOVA
 };
 
-enum Adds
+enum Entities
 {
-    NPC_ASTRAL_RAIN             = 39720, // 74265
-    NPC_CELESTIAL_CALL          = 39721, // 74289
-    NPC_VEIL_OF_SKY             = 39722,
-    NPC_ASTRAL_FAMILIAR         = 39795,
-    NPC_SPATIAL_FLUX            = 48707, // spawnmask=0
-    NPC_ISISET_ADD_CONTROLLER   = 42382,
+    NPC_ASTRAL_RAIN                 = 39720,
+    NPC_CELESTIAL_CALL              = 39721,
+    NPC_VEIL_OF_SKY                 = 39722,
+    NPC_SPATIAL_FLUX                = 39612
+};
+
+enum Misc
+{
+    DATA_RAIN,
+    DATA_CALL,
+    DATA_VEIL,
+
+    // Isiset
+    SPELL_SUPERNOVA                     = 74136,
+    DISPLAYID_INVISIBLE                 = 11686,
+
+    // Trash
+    SPELL_ENERGY_FLUX_SUMMON            = 74041,
+    SPELL_ENERGY_FLUX_BEAM              = 74043,
+    SPELL_ENERGY_FLUX_SUMMON_2          = 74042
+};
+
+enum Quotes
+{
+    SAY_AGGRO,
+    SAY_DEATH,
+    SAY_SLAY,
+    SAY_SUPERNOVA,
+    EMOTE_SUPERNOVA
 };
 
 class boss_isiset : public CreatureScript
 {
-    public:
-        boss_isiset() : CreatureScript("boss_isiset") { }
+    struct boss_isisetAI : public BossAI
+    {
+        boss_isisetAI(Creature * creature) : BossAI(creature, DATA_ISISET) {}
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        void Reset() override
         {
-            return new boss_isisetAI(pCreature);
+            stage = 0;
+            split = false;
+            memset(&abilities, true, sizeof(abilities));
+            me->RestoreDisplayId();
+            me->SetReactState(REACT_AGGRESSIVE);
+            me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+            _Reset();
         }
 
-        struct boss_isisetAI : public BossAI
+        void DamageTaken(Unit* /*done_by*/, uint32&damage) override
         {
-            boss_isisetAI(Creature* pCreature) : BossAI(pCreature, DATA_ISISET)
+            if(split)
+                damage = 0;
+            else if(stage < 2)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-            }
-
-            uint8 phase;
-            bool Phased;
-
-            bool AstralRain, VeilOfSky, CelestialCall;
-
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HOScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                _Reset();
-
-                phase = 0;
-                AstralRain = true;
-                VeilOfSky = true;
-                CelestialCall = true;
-
-                me->SetVisible(true);
-                me->SetReactState(REACT_AGGRESSIVE);
-            }
-
-            void EnterCombat(Unit *who)
-            {
-                Talk(SAY_AGGRO);
-
-                events.ScheduleEvent(EVENT_SUPERNOVA, urand(7000, 10000));
-                events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(9000, 15000));
-                events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(10000, 17000));
-                events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(6000, 10000));
-
-                instance->SetBossState(DATA_ISISET, IN_PROGRESS);
-            }
-
-            void KilledUnit(Unit* victim)
-            {
-                Talk(SAY_KILL);
-            }
-
-            void JustDied(Unit* Killer)
-            {
-                _JustDied();
-                Talk(SAY_DEATH);
-            }
-
-            void SummonedCreatureDespawn(Creature* summon)
-            {
-                BossAI::SummonedCreatureDespawn(summon);
-
-                if (phase == 1 || phase == 3)
+                if(me->HealthBelowPctDamaged(stage ? 33 : 66, damage))
                 {
-                    switch (summon->GetEntry())
-                    {
-                        case NPC_ASTRAL_RAIN:
-                            AstralRain = false;
-                            phase++;
-                            summons.DespawnEntry(NPC_CELESTIAL_CALL);
-                            summons.DespawnEntry(NPC_VEIL_OF_SKY);
-                            me->SetVisible(true);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            events.ScheduleEvent(EVENT_SUPERNOVA, urand(7000, 10000));
-                            events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(9000, 15000));
-                            events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(10000, 17000));
-                            events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(6000, 10000));
-                            break;
-                        case NPC_CELESTIAL_CALL:
-                            CelestialCall = false;
-                            phase++;
-                            summons.DespawnEntry(NPC_ASTRAL_RAIN);
-                            summons.DespawnEntry(NPC_VEIL_OF_SKY);
-                            me->SetVisible(true);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            events.ScheduleEvent(EVENT_SUPERNOVA, urand(7000, 10000));
-                            events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(9000, 15000));
-                            events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(10000, 17000));
-                            events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(6000, 10000));
-                            break;
-                        case NPC_VEIL_OF_SKY:
-                            VeilOfSky = false;
-                            phase++;
-                            summons.DespawnEntry(NPC_CELESTIAL_CALL);
-                            summons.DespawnEntry(NPC_ASTRAL_RAIN);
-                            me->SetVisible(true);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            events.ScheduleEvent(EVENT_SUPERNOVA, urand(7000, 10000));
-                            events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(9000, 15000));
-                            events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(10000, 17000));
-                            events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(6000, 10000));
-                            break;
-                    }
-                }
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if ((me->HealthBelowPct(67) && phase == 0) ||
-                    (me->HealthBelowPct(34) && phase == 2))
-                {
-                    phase++;
-                    events.Reset();
-                    me->AttackStop();
+                    ++stage;
+                    split = true;
+                    damage = 0;
                     me->SetReactState(REACT_PASSIVE);
-                    if (CelestialCall)
-                         DoCast(me, SPELL_MIRROR_IMAGE_CC);
-                    if (AstralRain)    
-                        DoCast(me, SPELL_MIRROR_IMAGE_AR);
-                    if (VeilOfSky)
-                        DoCast(me, SPELL_MIRROR_IMAGE_VS);
-                    me->SetVisible(false);
-                    return;
-                }
+                    me->RemoveAllAuras();
+                    me->StopMoving();
+                    me->SetDisplayId(DISPLAYID_INVISIBLE);
+                    me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
 
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
-
-			    while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
+                    // summon avatars
+                    Position pos;
+                    for (int i=0; i<3; ++i)
                     {
-                        case EVENT_SUPERNOVA:
-                            Talk(SAY_SUPERNOVA);
-                            DoCastAOE(SPELL_SUPERNOVA);
-                            events.ScheduleEvent(EVENT_SUPERNOVA, urand(20000, 25000));
-                            break;
-                        case EVENT_ASTRAL_RAIN:
-                            if (AstralRain)
-                            {
-                                if (phase == 0) DoCastAOE(SPELL_ASTRAL_RAIN1);
-                                else if (phase == 2) DoCastAOE(SPELL_ASTRAL_RAIN2);
-                                else if (phase == 4) DoCastAOE(SPELL_ASTRAL_RAIN3);
-                                events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(15000, 22000));
-                            }
-                            break;
-                        case EVENT_CELESTIAL_CALL:
-                            if (CelestialCall)
-                            {
-                                if (phase == 0) DoCast(me, SPELL_CELESTIAL_CALL1);
-                                else if (phase == 2) DoCast(me, SPELL_CELESTIAL_CALL2);
-                                else if (phase == 4) DoCast(me, SPELL_CELESTIAL_CALL3);
-                                events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(19000, 24000));
-                            }
-                            break;
-                        case EVENT_VEIL_OF_SKY:
-                            if (VeilOfSky)
-                            {
-                                if (phase == 0) DoCast(me, SPELL_VEIL_OF_SKY1);
-                                else if (phase == 2) DoCast(me, SPELL_VEIL_OF_SKY2);
-                                else if (phase == 4) DoCast(me, SPELL_VEIL_OF_SKY3);
-                                events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(25000, 27000));
-                            }
-                            break;
+                        if(abilities[i])
+                        {
+                            pos = me->GetNearPosition(10.0f, float((2*M_PI)/3)*i);
+                            me->SummonCreature(NPC_AVATAR[i], pos, TEMPSUMMON_DEAD_DESPAWN);
+                        }
                     }
+
                 }
-
-                DoMeleeAttackIfReady();
             }
-        };
-};
-
-class npc_isiset_astral_rain : public CreatureScript
-{
-    public:
-        npc_isiset_astral_rain() : CreatureScript("npc_isiset_astral_rain") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_astral_rainAI(creature);
         }
 
-        struct npc_isiset_astral_rainAI : public ScriptedAI
+        void JustDied(Unit* ) override
         {
-            npc_isiset_astral_rainAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
-            }
-
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(5000, 15000));
-                events.ScheduleEvent(EVENT_ENTER_COMBAT, 2000);
-            }
-
-            void JustDied(Unit* killer)
-            {
-                me->DespawnOrUnsummon();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
-
-			    while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_ENTER_COMBAT:
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
-                            break;
-                        case EVENT_ASTRAL_RAIN:
-                            DoCast(me, SPELL_ASTRAL_RAIN1);
-                            break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-};
-
-class npc_isiset_celestial_call : public CreatureScript
-{
-    public:
-        npc_isiset_celestial_call() : CreatureScript("npc_isiset_celestial_call") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_celestial_callAI(creature);
+            Talk(SAY_DEATH);
+            _JustDied();
         }
 
-        struct npc_isiset_celestial_callAI : public ScriptedAI
+        void KillerUnit(Unit * )
         {
-            npc_isiset_celestial_callAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
-            }
-
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(5000, 15000));
-                events.ScheduleEvent(EVENT_ENTER_COMBAT, 2000);
-            }
-
-            void JustDied(Unit* killer)
-            {
-                me->DespawnOrUnsummon();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
-
-			    while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_ENTER_COMBAT:
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
-                            break;
-                        case EVENT_CELESTIAL_CALL:
-                            DoCast(me, SPELL_CELESTIAL_CALL1);
-                            break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-};
-
-class npc_isiset_veil_of_sky : public CreatureScript
-{
-    public:
-        npc_isiset_veil_of_sky() : CreatureScript("npc_isiset_veil_of_sky") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_veil_of_skyAI(creature);
+            Talk(SAY_SLAY);
         }
 
-        struct npc_isiset_veil_of_skyAI : public ScriptedAI
+        void EnterCombat(Unit* /*who*/) override
         {
-            npc_isiset_veil_of_skyAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
-            }
-
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(5000, 15000));
-                events.ScheduleEvent(EVENT_ENTER_COMBAT, 2000);
-            }
-
-            void JustDied(Unit* killer)
-            {
-                me->DespawnOrUnsummon();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
-
-			    while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_ENTER_COMBAT:
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
-                            break;
-                        case EVENT_VEIL_OF_SKY:
-                            DoCast(me, SPELL_VEIL_OF_SKY1);
-                            break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-};
-
-class npc_isiset_astral_familiar : public CreatureScript
-{
-    public:
-        npc_isiset_astral_familiar() : CreatureScript("npc_isiset_astral_familiar") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_astral_familiarAI(creature);
+            Talk(SAY_AGGRO);
+            events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(5000, 8000));
+            events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(10000, 12000));
+            events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(8000, 10000));
+            events.ScheduleEvent(EVENT_SUPERNOVA, urand(15000, 20000));
+            me->SummonCreature(NPC_SPATIAL_FLUX, -482.35f, 414.21f, 343.94f, 4.27f);
         }
 
-        struct npc_isiset_astral_familiarAI : public ScriptedAI
+        void SummonedCreatureDies(Creature* creature, Unit* /*killer*/) override
         {
-            npc_isiset_astral_familiarAI(Creature* pCreature) : ScriptedAI(pCreature)
+            if(split)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-            }
-
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(3000, 7000));
-            }
-
-            void JustDied(Unit* killer)
-            {
-                me->DespawnOrUnsummon();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
-
-			    while (uint32 eventId = events.ExecuteEvent())
+                switch(creature->GetEntry())
                 {
-                    switch (eventId)
-                    {
-                        case EVENT_ARCANE_BARRAGE:
-                            DoCastAOE(SPELL_ARCANE_BARRAGE);
-                            events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(8000, 15000));
-                            break;
-                    }
+                case NPC_ASTRAL_RAIN:
+                    abilities[DATA_RAIN] = false;
+                    events.CancelEvent(EVENT_ASTRAL_RAIN);
+                    break;
+                case NPC_CELESTIAL_CALL:
+                    abilities[DATA_CALL] = false;
+                    events.CancelEvent(EVENT_CELESTIAL_CALL);
+                    break;
+                case NPC_VEIL_OF_SKY:
+                    abilities[DATA_VEIL] = false;
+                    events.CancelEvent(EVENT_VEIL_OF_SKY);
+                    break;
+                default:
+                    return;
+                }
+
+                for(int i=0; i<3; ++i)
+                    if(Creature * avatar = me->FindNearestCreature(NPC_AVATAR[i], 200.0f))
+                        avatar->DespawnOrUnsummon();
+
+                split = false;
+                creature->DespawnOrUnsummon();
+                me->RestoreDisplayId();
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+                if(Unit * victim = me->GetVictim())
+                    DoStartMovement(victim);
+            }
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if(!UpdateVictim() || split)
+                return;
+
+            events.Update(diff);
+
+            if(me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if(uint32 eventId = events.ExecuteEvent())
+            {
+                switch(eventId)
+                {
+                case EVENT_CELESTIAL_CALL:
+                    DoCast(SPELL_CELESTIAL_CALL[stage]);
+                    events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(10000, 20000));
+                    break;
+                case EVENT_VEIL_OF_SKY:
+                    DoCast(me, SPELL_VEIL_OF_SKY[stage], true);
+                    events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(50000, 65000));
+                    break;
+                case EVENT_ASTRAL_RAIN:
+                    DoCast(SPELL_ASTRAL_RAIN[stage]);
+                    events.ScheduleEvent(EVENT_ASTRAL_RAIN, stage == 2 ? 50000 : urand(15000, 20000));
+                    break;
+                case EVENT_SUPERNOVA:
+                    Talk(SAY_SUPERNOVA);
+                    Talk(EMOTE_SUPERNOVA);
+                    DoCast(SPELL_SUPERNOVA);
+                    events.ScheduleEvent(EVENT_SUPERNOVA, urand(20000, 25000));
+                    break;
                 }
             }
-        };
+
+            DoMeleeAttackIfReady();
+        }
+    private:
+        uint8 stage;
+        bool split;
+        bool abilities[3];
+    };
+
+public:
+    boss_isiset() : CreatureScript("boss_isiset") {}
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new boss_isisetAI(creature);
+    }
 };
 
-class OrientationCheck
+class FacingCheck
 {
-    public:
-        explicit OrientationCheck(WorldObject* _caster) : caster(_caster) { }
-        bool operator() (WorldObject* unit)
+public:
+    FacingCheck(WorldObject* caster) : _caster(caster) { }
+
+    bool operator() (WorldObject* unit)
+    {
+        Position pos = _caster->GetPosition();
+        return !unit->HasInArc(static_cast<float>(M_PI), &pos);
+    }
+
+private:
+    WorldObject* _caster;
+};
+
+class spell_isiset_supernova : public SpellScriptLoader
+{
+public:
+    spell_isiset_supernova() : SpellScriptLoader("spell_isiset_supernova") { }
+
+    class spell_isiset_supernova_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_isiset_supernova_SpellScript);
+
+        void FilterTargets(std::list<WorldObject*>& unitList)
         {
-            return !unit->isInFront(caster, 2.5f);
+            unitList.remove_if(FacingCheck(GetCaster()));
+        }
+
+        void Register() override
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_isiset_supernova_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_isiset_supernova_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_isiset_supernova_SpellScript();
+    }
+};
+
+class npc_spatial_flux : public CreatureScript
+{
+    struct npc_spatial_fluxAI : public ScriptedAI
+    {
+        npc_spatial_fluxAI(Creature * creature) : ScriptedAI(creature)
+        {
+            me->SetReactState(REACT_PASSIVE);
+        }
+
+        void Reset() override
+        {
+            summonTimer = 10000;
+        }
+
+        void JustSummoned(Creature* summon) override
+        {
+            //if(Unit * victim = ObjectAccessor::GetUnit(*me, targetGUID))
+            if(Unit * victim = summon->SelectNearestPlayer(20.0f))
+            {
+                summon->GetMotionMaster()->Clear();
+                summon->GetMotionMaster()->MoveFollow(victim, 0.0f, 0.0f);
+                summon->SetReactState(REACT_PASSIVE);
+            }
+            DoCast(SPELL_ENERGY_FLUX_BEAM);
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if(summonTimer <= diff)
+            {
+                DoCast(SPELL_ENERGY_FLUX_SUMMON);
+                summonTimer = 10000;
+            }else summonTimer -= diff;
         }
 
     private:
-        WorldObject* caster;
-};
+        uint32 summonTimer;
+    };
 
-class spell_isiset_supernova_dis : public SpellScriptLoader
-{
-    public:
-        spell_isiset_supernova_dis() : SpellScriptLoader("spell_isiset_supernova_dis") { }
-        class spell_isiset_supernova_dis_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_isiset_supernova_dis_SpellScript);
-            
-            void FilterTargets(std::list<WorldObject*>& unitList)
-            {
-                unitList.remove_if(OrientationCheck(GetCaster()));
-            }
+public:
+    npc_spatial_flux() : CreatureScript("npc_spatial_flux") {}
 
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_isiset_supernova_dis_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
-            }
-        };
-
-        SpellScript *GetSpellScript() const
-        {
-            return new spell_isiset_supernova_dis_SpellScript();
-        }
-};
-
-class spell_isiset_supernova_dmg : public SpellScriptLoader
-{
-    public:
-        spell_isiset_supernova_dmg() : SpellScriptLoader("spell_isiset_supernova_dmg") { }
-        class spell_isiset_supernova_dmg_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_isiset_supernova_dmg_SpellScript);
-            
-            void FilterTargets(std::list<WorldObject*>& unitList)
-            {
-                unitList.remove_if(OrientationCheck(GetCaster()));
-            }
-
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_isiset_supernova_dmg_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            }
-        };
-
-        SpellScript *GetSpellScript() const
-        {
-            return new spell_isiset_supernova_dmg_SpellScript();
-        }
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_spatial_fluxAI(creature);
+    }
 };
 
 void AddSC_boss_isiset()
 {
     new boss_isiset();
-    new npc_isiset_astral_rain();
-    new npc_isiset_celestial_call();
-    new npc_isiset_veil_of_sky();
-    new npc_isiset_astral_familiar();
-    new spell_isiset_supernova_dis();
-    new spell_isiset_supernova_dmg();
+    new spell_isiset_supernova();
+    new npc_spatial_flux();
 }

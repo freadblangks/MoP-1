@@ -1,9 +1,28 @@
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "GameObject.h"
+#include "MapInstanced.h"
 #include "lost_city_of_the_tolvir.h"
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
 
 enum eScriptText
 {
-    YELL_FREE                    = -1877010,
+    YELL_FREE = 0,
 };
 
 class instance_lost_city_of_the_tolvir : public InstanceMapScript
@@ -11,7 +30,7 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
     public:
         instance_lost_city_of_the_tolvir() : InstanceMapScript("instance_lost_city_of_the_tolvir", 755) { }
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
             return new instance_lost_city_of_the_tolvir_InstanceMapScript(map);
         }
@@ -21,32 +40,23 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
             instance_lost_city_of_the_tolvir_InstanceMapScript(InstanceMap* map) : InstanceScript(map) { Initialize(); }
 
             uint32 Encounter[MAX_ENCOUNTER];
-            uint64 uiTunnelGUID[6];
+            ObjectGuid uiTunnelGUID[6];
             uint8 uiTunnelFlag;
-            uint64 uiHusamGUID;
-            uint64 uiLockmawGUID;
-            uint64 uiAughGUID;
-            uint64 uiBarimGUID;
-            uint64 uiBlazeGUID;
-            uint64 uiHarbingerGUID;
-            uint64 uiSiamatGUID;
-            uint64 uiSiamatPlatformGUID;
+            ObjectGuid uiHusamGUID;
+            ObjectGuid uiLockmawGUID;
+            ObjectGuid uiAughGUID;
+            ObjectGuid uiBarimGUID;
+            ObjectGuid uiBlazeGUID;
+            ObjectGuid uiHarbingerGUID;
+            ObjectGuid uiSiamatGUID;
+            ObjectGuid uiSiamatPlatformGUID;
             uint32 uiUpdateTimer;
             bool BarimIsDone;
 
-            void Initialize()
+            void Initialize() override
             {
                 memset(&Encounter, 0, sizeof(Encounter));
-                memset(&uiTunnelGUID, 0, sizeof(uiTunnelGUID));
                 uiTunnelFlag = 0;
-                uiHusamGUID = 0;
-                uiLockmawGUID = 0;
-                uiAughGUID = 0;
-                uiBarimGUID = 0;
-                uiBlazeGUID = 0;
-                uiSiamatGUID = 0;
-                uiHarbingerGUID = 0;
-                uiSiamatPlatformGUID = 0;
                 uiUpdateTimer = 7000;
                 BarimIsDone = false;
             }
@@ -55,8 +65,8 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
             {
                 if (GameObject* platform = instance->GetGameObject(uiSiamatPlatformGUID))
                 {
-                    platform->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_DAMAGED);
-                    platform->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_DESTROYED);
+                    platform->RemoveFlag(GO_FLAG_DAMAGED);
+                    platform->AddFlag(GO_FLAG_DESTROYED);
                 }
 
                 for (int i = 0; i < 6; ++i)
@@ -64,8 +74,10 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                         tunnel->SetVisible(true);
             }
 
-            void Update(uint32 diff)
+            void Update(uint32 diff) override
             {
+                UpdateOperations(diff);
+
                 if (BarimIsDone)
                 {
                     if (uiUpdateTimer <= diff)
@@ -74,14 +86,14 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                         SiamatFree();
 
                         if (Creature* siamat = instance->GetCreature(uiSiamatGUID))
-                            DoScriptText(YELL_FREE, siamat);
+                            siamat->AI()->Talk(YELL_FREE);
                     }
                     else
                         uiUpdateTimer -= diff;
                     }
             }
 
-            bool IsEncounterInProgress() const
+            bool IsEncounterInProgress() const override
             {
                 for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
                     if (Encounter[i] == IN_PROGRESS) return true;
@@ -89,7 +101,7 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 return false;
             }
 
-            void OnGameObjectCreate(GameObject* go)
+            void OnGameObjectCreate(GameObject* go) override
             {
                 if (go->GetEntry() == SIAMAT_PLATFORM)
                 {
@@ -98,7 +110,7 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 }
             }
 
-            void OnCreatureCreate(Creature* creature)
+            void OnCreatureCreate(Creature* creature) override
             {
                 switch (creature->GetEntry())
                 {
@@ -118,20 +130,20 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                         uiSiamatGUID = creature->GetGUID();
                         break;
                     case NPC_WIND_TUNNEL:
-                        {
-                            creature->SetVisible(false);
-                            creature->SetCanFly(true);
-                            uiTunnelGUID[uiTunnelFlag] = creature->GetGUID();
-                            ++uiTunnelFlag;
+                    {
+                        creature->SetVisible(false);
+                        creature->SetCanFly(true);
+                        uiTunnelGUID[uiTunnelFlag] = creature->GetGUID();
+                        ++uiTunnelFlag;
 
-                            if (uiTunnelFlag >= 6)
-                                uiTunnelFlag = 0;
-                        }
-                        break;
+                        if (uiTunnelFlag >= 6)
+                            uiTunnelFlag = 0;
+                    break;
+                    }
                 }
             }
 
-            uint64 GetData64(uint32 type) const
+            ObjectGuid GetGuidData(uint32 type) const override
             {
                 switch (type)
                 {
@@ -143,15 +155,16 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                     case DATA_HARBINGER:          return uiHarbingerGUID;
                     case DATA_SIAMAT:             return uiSiamatGUID;
                 }
-                return 0;
+
+                return ObjectGuid::Empty;
             }
 
-            uint32 GetData(uint32 type) const
+            uint32 GetData(uint32 type) const override
             {
                 return Encounter[type];
             }
 
-            void SetData64(uint32 type, uint64 data)
+            void SetGuidData(uint32 type, ObjectGuid data) override
             {
                 switch (type)
                 {
@@ -164,7 +177,7 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 }
             }
 
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
                 Encounter[type] = data;
 
@@ -179,60 +192,6 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
 
                 if (data == DONE)
                     SaveToDB();
-            }
-
-            std::string GetSaveData()
-            {
-                OUT_SAVE_INST_DATA;
-
-                std::string str_data;
-
-                std::ostringstream saveStream;
-                saveStream << "P S " << Encounter[0] << " " << Encounter[1]  << " " << Encounter[2]
-                << " " << Encounter[3]  << " " << Encounter[4];
-
-                str_data = saveStream.str();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return str_data;
-            }
-
-            void Load(char const* in)
-            {
-                if (!in)
-                {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
-                }
-
-                OUT_LOAD_INST_DATA(in);
-
-                char dataHead1, dataHead2;
-                uint16 data0, data1, data2, data3, data4;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2 >> data0 >> data1 >> data2 >> data3 >> data4;
-
-                if (dataHead1 == 'P' && dataHead2 == 'S')
-                {
-                    Encounter[0] = data0;
-                    Encounter[1] = data1;
-                    Encounter[2] = data2;
-                    Encounter[3] = data3;
-                    Encounter[4] = data4;
-
-                    for (uint8 data = 0; data < MAX_ENCOUNTER; ++data)
-                    {
-                        if (Encounter[data] == IN_PROGRESS)
-                            Encounter[data] = NOT_STARTED;
-
-                        SetData(data, Encounter[data]);
-                    }
-                }
-                else
-                    OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
             }
         };
 };

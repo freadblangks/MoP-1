@@ -1,2063 +1,2397 @@
-
 /*
-* Copyright (C) 2012-2013 JadeCore <http://www.pandashan.com/>
-* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
-* Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of the GNU General Public License as published by the
-* Free Software Foundation; either version 2 of the License, or (at your
-* option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along
-* with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright 2021 FuzionCore Project
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-#include "GameObjectAI.h"
-#include "GridNotifiers.h"
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "siege_of_orgrimmar.h"
+#include "siege_of_orgrimmar.hpp"
+#include "SpellAuraEffects.h"
+#include "SpellMgr.h"
 
-Position afterimmersius_cho_spawn[4] =
+enum ScriptedTextRookStonetoe
 {
-    { 1452.132f, 820.978f, 246.835f, 2.879340f },
-    { 1444.54f, 985.199f, 339.831f },
-    { 1435.78f, 1038.228f, 340.378f },
-    { 1289.39f, 4038.764f, 434.519f },
+    SAY_ROOK_AGGRO       = 0,
+    SAY_ROOK_DEATH       = 1,
+    SAY_ROOK_INTRO_1     = 2,
+    SAY_ROOK_INTRO_2     = 3,
+    SAY_ROOK_INTRO_3     = 4,
+    SAY_ROOK_KILL        = 5,
+    SAY_ROOK_KICK        = 6,
+    SAY_ROOK_MEASURES    = 7,
+    SAY_ROOK_LOTUS       = 8,
 };
 
-void Fallen_StartProtectors(InstanceScript* instance, Creature* me, Unit* /*target*/)
+enum ScriptedTextHeSoftfoot
 {
-    Creature* rook = instance->instance->GetCreature(instance->GetData64(DATA_STONE));
-    if (rook)
-        rook->SetInCombatWithZone();
-
-    Creature* sun = instance->instance->GetCreature(instance->GetData64(DATA_SUN));
-    if (sun)
-        sun->SetInCombatWithZone();
-
-    Creature* hu = instance->instance->GetCreature(instance->GetData64(DATA_HU));
-    if (hu)
-        hu->SetInCombatWithZone();
-}
-enum eFGobjects
-{
-    GOBJECT_CHEST_10_MAN = 135351,
-    GOBJECT_CHEST_10_HEROIC = 135352,
-    GOBJECT_CHEST_25_MAN = 135353,
-    GOBJECT_CHEST_25_HEROIC = 135354,
+    SAY_HE_AGGRO       = 0,
+    SAY_HE_MEASURES    = 1,
+    SAY_HE_LOTUS       = 2,
 };
-enum eFEvents
+
+enum ScriptedTextSunTenderHeart
 {
+    SAY_SUN_AGGRO       = 0,
+    SAY_SUN_DEATH       = 1,
+    SAY_SUN_INTRO_1     = 2,
+    SAY_SUN_KILL        = 3,
+    SAY_SUN_RESET       = 4,
+    SAY_SUN_CALAMITY    = 5,
+    SAY_SUN_MEASURES    = 6,
+    SAY_SUN_LOTUS       = 7,
+};
+
+enum Spells
+{
+    SPELL_ZERO_POWER                    = 96301,
+    SPELL_BOND_OF_THE_GOLDEN_LOTUS      = 143497,
+    SPELL_BERSERK                       = 26662,
+
     // Rook Stonetoe
-    EVENT_VENGEFUL_STRIKES = 10,
-    EVENT_CORRUPTED_BREW = 11,
-    EVENT_CLASH = 12,
-    EVENT_CORRUPTION_KICK = 13,
-    // Desperate
-    EVENT_DEFILED_GROUND = 30,
-    EVENT_INFERNO_STRIKE = 31,
-    EVENT_CORRUPTION_SHOCK = 32,
-    // He Softfoot
-    EVENT_GARROTE = 14,
-    EVENT_GOUGE = 15,
-    EVENT_NOXIOUS_POISION = 16,
-    EVENT_INSTANT_POISION = 17,
-    // Desperate
-    EVENT_MARK_OF_ANGUISH = 33,
-    EVENT_SHADOW_WEAKNESS = 34,
-    EVENT_DEBILITATION = 35,
-    EVENT_CHOOSE_VICTIM = 100,
-    // Sun Tenderheart
-    EVENT_SHA_FEAR = 18,
-    EVENT_SHADOW_WORD_BANE = 19,
-    EVENT_CALAMITY = 20,
-    // Desperate
-    EVENT_DARK_MEDITATION = 36,
-    EVENT_DESPAIR_SPAWNS = 37,
-    EVENT_DEATH_SITUATION = 38,
-    EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT = 39,
-};
-enum eFSpells
-{
-    SPELL_BOND_OF_THE_GOLDEN_LOTUS = 143497,
+    SPELL_VENGEFUL_STRIKES              = 144396,
+    SPELL_VENGEFUL_STRIKES_DMG          = 144397,
 
-    SPELL_VENGFUL_STRIKES_DUMMY = 144437,
-    SPELL_VENGFUL_STRIKES_DAMAGE = 144397,
-    SPELL_VENGFUL_STRIKES_POSSES_AURA = 144396,
-    SPELL_CORRUPTED_BREW_DUMMY = 145608,
-    SPELL_CLASH_DUMMY = 143027,
-    SPELL_CLASH_DAMAGE_JUMP = 143028,
-    SPELL_CLASH_CHARGE = 143030,
-    SPELL_CORRUPTION_KICK_AURA = 143007,
-    SPELL_CORRUPTION_KICK_DAMAGE = 143009,
-    SPELL_CORRUPTION_KICK_DEBUFF = 143010,
+    SPELL_CORRUPTED_BREW_AOE            = 143019,
+    SPELL_CORRUPTED_BREW_MISSILE_1      = 143021,
+    SPELL_CORRUPTED_BREW_MISSILE_2      = 145608,
+    SPELL_CORRUPTED_BREW_MISSILE_3      = 145609,
+    SPELL_CORRUPTED_BREW_MISSILE_4      = 145610,
+    SPELL_CORRUPTED_BREW_MISSILE_5      = 145611,
+    SPELL_CORRUPTED_BREW_MISSILE_6      = 145612,
+    SPELL_CORRUPTED_BREW_MISSILE_7      = 145615,
+    SPELL_CORRUPTED_BREW_MISSILE_8      = 145617,
+    SPELL_CORRUPTED_BREW_DMG            = 143023,
+    SPELL_CORRUPTED_BREW_DUMMY          = 145605, // ?
 
-    // Stone - desperate measures
-    SPELL_DEFILED_GROUND_AURA = 143959,
-    SPELL_DEFILED_GROUND_AREA_TRIGGER = 143960,
-    SPELL_DEFILED_GROUND_DAMAGE = 143961, // 144357 ?
+    SPELL_CLASH_AOE                     = 143027,
+    SPELL_CLASH_JUMP                    = 143028, // creature
+    SPELL_CLASH_CHARGE                  = 143030, // player
 
-    SPELL_INFERNO_STRIKE_DUMMY = 143962,
+    SPELL_CORRUPTION_KICK               = 143007,
+    SPELL_CORRUPTION_DMG                = 143009,
+    SPELL_CORRUPTION_PERIODIC           = 143010,
 
-    SPELL_CORRUPTION_SHOCK_DUMMY = 143958,
-    SPELL_CORRUPTION_SHOCK_DAMAGE = 144018,
-    SPELL_CORRUPTION_SHOCK_MISSILE = 144020,
+    SPELL_MISERY_SORROW_AND_GLOOM       = 143955,
+    SPELL_MISERY_SORROW_AND_GLOOM_JUMP_1    = 143946,
+    SPELL_MISERY_SORROW_AND_GLOOM_JUMP_2    = 143948,
+    SPELL_MISERY_SORROW_AND_GLOOM_JUMP_3    = 143949,
 
-    SPELL_GOUGE_KNOCKBACK = 143331,
-    SPELL_GOUGE_DUMMY = 143330,
-    SPELL_GOUGE_DAMAGE = 143301,
+    SPELL_SHARED_TORMENT                = 145655,
 
-    SPELL_GARROTE = 143198,
-    SPELL_SHADOWSTEP = 55966,
-    SPELL_MARK_OF_ANGUISH_AURA = 143812,
-    SPELL_MARK_OF_ANGUISH_DAMAGE = 144365,
-    SPELL_MARK_OF_ANGUISH_PLAYER_DOT = 143840,
+    SPELL_DEFILED_GROUND                = 143961,
+    SPELL_DEFILED_GROUND_AREATRIGGER    = 143960,
+    SPELL_DEFILED_GROUND_AURA           = 143959,
 
-    SPELL_DEBILLITATION = 147383,
-    SPELL_NOXIOUS_POISON_DOT = 143239,
-    SPELL_NOXIOUS_POISON_AREA_TRIGGER = 143235,
-    SPELL_NOXIOUS_POISON_DAMAGE = 144367,
-    SPELL_INSANT_POISON = 143210,
+    SPELL_INFERNO_STRIKE                = 143962,
+    SPELL_RESIDUAL_BURN                 = 144007,
 
-    SPELL_SHA_SEAR = 143423,
-    SPELL_SHADOW_WORD_BANE_DOT = 143434,
-    SPELL_SHADOW_WORD_BANE_JUMP = 143879,
-    SPELL_CALAMITY_DUMMY = 143491,
-    SPELL_CALAMITY_DAMAGE = 143493,
+    SPELL_CORRUPTION_SHOCK_AOE          = 143958,
+    SPELL_CORRUPTION_SHOCK_DMG          = 144018,
 
-    SPELL_DARK_MEDITATION_DUMMY = 143546,
-    SPELL_DARK_MEDITATION_TICK = 143559,
-    SPELL_DARK_MEDITATION_SHIELD = 143728,
-    SPELL_DARK_MEDITATION_VISUAL = 143843,
+    // He StoneFoot
+    SPELL_SHADOWSTEP_DUMMY              = 143262,
+    SPELL_SHADOWSTEP                    = 143048,
+    SPELL_SHADOWSTEP_BACK               = 143267,
+    SPELL_GARROTE                       = 143198,
 
-    SPELL_SHA_CORRUPTION = 120000,
-};
-enum eFActions
-{
-    ACTION_GOLDEN_LOTUS = 500,
-    ACTION_COUNT_ADDS_DEATH = 501,
-    ACTION_DESPERATE_METHOD_ACTIVATE = 502,
-    ACTION_DESPERATE_METHOD_DEACTIVATE = 503,
-    ACTION_WIN_SITUATION = 504,
-};
-enum eFTriggers
-{
+    SPELL_GOUGE                         = 143330,
+    SPELL_GOUGE_DMG                     = 143301,
+    SPELL_GOUGE_KNOCKBACK               = 143331,
 
-};
-enum eFCreatures
-{
-    CREATURE_EMBODIED_MISERY = 71476,
-    CREATURE_EMBODIED_SORROW = 71481,
-    CREATURE_EMBODIED_GLOOM = 71477,
-    CREATURE_MARK_OF_ANGUISH = 71478,
-    CREATURE_DESPAIR_SPAWN = 71712,
-};
-enum eFTalks
-{
-    TALK_SUN_AGGRO = 1, // 38413 "Will you success"
-    TALK_SUN_DEATH = 2, // 38414 "We return to when we lost our way.. You are... very kind"
-    TALK_SUN_INTRO = 3, // 38415 "We only know despair now, a fitting punishment for our failure" 
-    TALK_SUN_KILL = 4, // 38416 "You too have failed!"
-    TALK_SUN_RESET = 5, // 38417 "We'll never find solace"
-    TALK_SUN_SPELL_01 = 6, // 38418 "We must redeem the vale" 
-    TALK_SUN_SPELL_02 = 7, // 38419 "You'll suffer for our failure"
-    TALK_SUN_SPELL_03 = 8, // 38420 "Protectors come to my aid!"
-    TALK_SUN_SPELL_04 = 9, // 38421 "We'll not forgive our oath"
+    SPELL_NOXIOUS_POISON                = 143225,
+    SPELL_NOXIOUS_POISON_AREATRIGGER    = 143235,
+    SPELL_NOXIOUS_POISON_MISSILE_1      = 143245,
+    SPELL_NOXIOUS_POISON_MISSILE_2      = 143276,
+    SPELL_NOXIOUS_POISON_AURA           = 143239, // dmg
+    SPELL_NOXIOUS_POISON_DMG            = 144367,
 
-    TALK_ROOK_AGGRO = 10, // 38176 "Sun.. Hei... Aid me!
-    TALK_ROOK_DEATH = 11, // 38177 "Feeling.. better.. now, little friend."
-    TALK_ROOK_INTRO = 12, // 38178 "You... Rook.. knows you."
-    TALK_ROOK_INTRO2 = 13, // 38720 "Rook... doesn't know.. head's cloudy"
-    TALK_ROOK_INTRO3 = 14, // 38722 "Please.. help..."
-    TALK_ROOK_KILL = 15, // 38724 "You! are not my friend!"
-    TALK_ROOK_SPELL_01 = 16, // 38725 "Brawl! with rook!"
-    TALK_ROOK_SPELL_02 = 17, // 38726 "ROOK FIGHT!"
-    TALK_ROOK_SPELL_03 = 18, // 38727 "Rook needs... HELPPP!"
-    TALK_ROOK_SPELL_04 = 19, // 38728 "Rook... not.. Safe!"
+    SPELL_INSTANT_POISON                = 143210,
+    SPELL_INSTANT_POISON_DMG            = 143224,
 
-    // cho
-    TALK_9 = 20, // Ah.. you have done it, the waters are pure once more. (38128)
-    // 2nd boss
-    TALK_10 = 21, // Can you feel the life giving energy flow through you? (38129)
-    TALK_11 = 22, // It'll take much time for vale to heal, but you have giving us hope (38130)
-    TALK_12 = 23, // Can it be?... Oh no.. no! NO! (38131)
-    TALK_13 = 24, // The Golden Lotus?! but.. the pledged their life to defend this place! (38132)
-    TALK_14 = 25, // Oh.. Rook stonetoe! you remember me! What has happened to you? (38133)
-    TALK_15 = 26, // I see.. this Sha energy has trapped their spirits here to endlessely relive their failure, It weads on their despair. (38134)
-    TALK_16 = 27, // This is a fate far worse then death.. please.. Heroes, set their souls free! (38135)
-};
-enum eventsose
-{
-    EVENT_TALK_1 = 20,
-    EVENT_TALK_2 = 22,
-    EVENT_TALK_3 = 23,
-    EVENT_TALK_4 = 24,
-    EVENT_TALK_5 = 25,
-    EVENT_TALK_6 = 26,
-    EVENT_TALK_7 = 27,
-    EVENT_TALK_8 = 28,
-    EVENT_TALK_9 = 29,
-    EVENT_TALK_10 = 30,
+    SPELL_MARK_OF_ANGUISH_JUMP          = 143808,
+    SPELL_MARK_OF_ANGUISH_AURA_1        = 143812, // on boss, visual
+    SPELL_MARK_OF_ANGUISH_AOE           = 143822, // targetting, is used to set next target for embodied anguish
+    SPELL_MARK_OF_ANGUISH_AURA_2        = 143840, // on players, main aura (root, override spells)
+    SPELL_MARK_OF_ANGUISH_DUMMY         = 143842, // casted by a player to send the mark to another player
+    SPELL_MARK_OF_ANGUISH_DMG           = 144365, // is triggered by 143840 periodically, it damages the owner
+    SPELL_SHADOW_WEAKNESS               = 144079, // ?
+    SPELL_SHADOW_WEAKNESS_AOE           = 144081, // targetting to apply 144176 on players
+    SPELL_SHADOW_WEAKNESS_DEBUFF        = 144176,
+    SPELL_DEBILITATION                  = 147383,
+
+    // Sun TenderHeart
+    SPELL_SHA_SEAR                      = 143423,
+    SPELL_SHA_SEAR_DMG                  = 143424,
+
+    SPELL_SHADOW_WORD_BANE              = 143446, ///< Boss cast this
+    SPELL_SHADOW_WORD_BANE_AOE          = 143438, ///< Jump spell
+    SPELL_SHADOW_WORD_BANE_DMG          = 143434, ///< Damage aura
+
+    SPELL_CALAMITY                      = 143491,
+    SPELL_CALAMITY_DMG                  = 143493,
+    SPELL_CALAMITY_DUMMY                = 143544, // ?
+
+    SPELL_DARK_MEDITATION_AREATRIGGER   = 143546,
+    SPELL_MEDITATIVE_FIELD              = 143564,
+    SPELL_DARK_MEDITATION_DUMMY_1       = 143649, // ? no visual
+    SPELL_DARK_MEDITATION_JUMP_1        = 143728, // ? for adds ?
+    SPELL_DARK_MEDITATION_JUMP_2        = 143730, // ? for adds ?
+    SPELL_DARK_MEDITATION_PERIODIC      = 143745,
+    SPELL_DARK_MEDITATION_DUMMY_2       = 143843, // for boss
+    SPELL_DARK_MEDITATION_DMG           = 143559,
+
+    SPELL_MANIFEST_DESPAIR              = 143746,
+    SPELL_MANIFEST_DESPERATION          = 144504,
+
+    SPELL_SPIRIT_BOUND                  = 143724,
 };
 
-Position chestposition = { 1215.03f, 1001.684f, 418.062f, 1.753704f };
-/*
-class boss_rook;
-class boss_hu;
-class boss_sun;
-*/
-
-Position bubbleaddspos[2] =
+enum Adds
 {
-    { 1219.41f, 1063.98f, 417.963f, 4.609289f },
-    { 1236.79f, 1029.65f, 418.076f, 22.54114f },
+    NPC_EMBODIED_MISERY         = 71476,
+    NPC_EMBODIED_SORROW         = 71481,
+    NPC_EMBODIED_GLOOM          = 71477,
+
+    NPC_EMBODIED_ANGUISH        = 71478,
+
+    NPC_EMBODIED_DESPAIR        = 71474,
+    NPC_EMBODIED_DESPERATION    = 71482,
+    NPC_DESPAIR_SPAWN           = 71712,
+    NPC_DESPERATION_SPAWN       = 71993,
 };
 
-class siege_of_orgrimmar_lorewalker_cho_second_part : public CreatureScript
+enum Events
 {
-public:
-    siege_of_orgrimmar_lorewalker_cho_second_part() : CreatureScript("siege_of_orgrimmar_lorewalker_cho_second_part") { }
+    EVENT_BOND_OF_GOLDEN_LOTUS_END  = 1,
+    EVENT_BERSERK,
 
-    struct soo_triggers : public CreatureAI
+    EVENT_VENGEFUL_STRIKES,
+    EVENT_CORRUPTED_BREW,
+    EVENT_CLASH,
+
+    EVENT_AGGRO,
+    EVENT_DEFILED_GROUND,
+    EVENT_INFERNO_STRIKE,
+    EVENT_CORRUPTION_SHOCK,
+
+    EVENT_GOUGE,
+    EVENT_SHADOWSTEP,
+    EVENT_SHADOWSTEP_BACK,
+    EVENT_RESET_REACT_STATE,
+    EVENT_POISON,
+
+    EVENT_MARK_OF_ANGUISH,
+    EVENT_MARK_OF_ANGUISH_TARGET_CHANGED,
+    EVENT_CHECK_MARK_OF_ANGUISH_TARGET,
+
+    EVENT_SHA_SEAR,
+    EVENT_CALAMITY,
+    EVENT_SHADOW_WORD_BANE,
+    EVENT_DARK_MEDITATION,
+    EVENT_DARK_MEDITATION_DMG,
+    EVENT_MANIFEST,
+};
+
+enum Timers
+{
+    TIMER_BERSERK = 10 * MINUTE * IN_MILLISECONDS,
+    TIMER_EVADE_CHECK = 5 * IN_MILLISECONDS,
+};
+
+enum Actions
+{
+    DATA_CASTING_LOW_HEALTH = 1,
+    GUID_MARK_OF_ANGUISH,
+    ACTION_OTHER_BOSS_BEGINS_MEASURES,
+    ACTION_OTHER_BOSS_ENDS_MEASURES,
+    DATA_ABILITY_COUNT,
+    ACTION_PREPARE_SHADOWSTEP_BACK,
+
+    /// Rook Stonetoe
+    ACTION_VENGEFUL_STRIKES_FAILED,
+
+    ACTION_SPAWNS_SYNC_HP,
+};
+
+enum Guids
+{
+    GUID_FIXATE_TARGET = 1
+};
+
+const Position embodiedStonetoePos[6] =
+{
+    { 1201.225f, 1018.279f, 452.1667f, 0.04791985f }, // Embodied Misery in air
+    { 1201.64f, 1009.629f, 452.1667f, 0.04791985f },  // Embodied Sorrow in air
+    { 1208.924f, 1014.313f, 452.1667f, 0.04791985f }, // Embodied Gloom in air
+    { 1203.12f, 1011.185f, 418.1869f, 1.138274f },    // Embodied Misery on ground
+    { 1228.698f, 1038.337f, 418.0633f, 3.502512f },   // Embodied Sorrowon ground
+    { 1195.622f, 1037.929f, 418.0638f, 5.916756f }    // Embodied Gloom on ground
+};
+
+const Position embodiedDespairPos = { 1205.122f, 1007.743f, 418.0642f, 1.267296f };
+const Position embodiedDesperationPos = { 1220.946f, 1055.802f, 417.523224f, 4.353518f };
+
+struct fallen_protectorAI : public BossAI
+{
+    fallen_protectorAI(Creature* creature) : BossAI(creature, DATA_FALLEN_PROTECTORS)
     {
-        soo_triggers(Creature* creature) : CreatureAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-            intro = false;
-            eighth = false;
-        }
+        //ApplyAllImmunities(true);
 
-        InstanceScript* pInstance;
-        EventMap events;
-
-        bool intro;
-        bool eighth;
-        uint32 interval;
-
-        void Reset()
-        {
-            me->setFaction(35);
-
-            me->SetSpeed(MOVE_RUN, 1.6f);
-            me->SetReactState(REACT_PASSIVE);
-
-            Talk(TALK_9);
-
-            events.ScheduleEvent(EVENT_TALK_1, 9000);
-
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-        }
-        void DamageTaken(Unit* /*attacker*/, uint32& damage)
-        {
-            damage = 0;
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_TALK_3:
-            {
-                Talk(TALK_12);
-                events.ScheduleEvent(EVENT_TALK_4, 8000);
-                break;
-            }
-            case EVENT_TALK_4:
-            {
-                Talk(TALK_13);
-                events.ScheduleEvent(EVENT_TALK_5, 10000);
-                break;
-            }
-            case EVENT_TALK_5:
-            {
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                {
-                    stone->AI()->Talk(TALK_ROOK_INTRO);
-                    events.ScheduleEvent(EVENT_TALK_6, 10000);
-                    break;
-                }
-            }
-            case EVENT_TALK_6:
-            {
-                Talk(TALK_14);
-                events.ScheduleEvent(EVENT_TALK_7, 15000);
-                break;
-            }
-            case EVENT_TALK_7:
-            {
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                {
-                    stone->AI()->Talk(TALK_ROOK_INTRO2);
-                    events.ScheduleEvent(EVENT_TALK_8, 10000);
-                    break;
-                }
-            }
-            case EVENT_TALK_8:
-            {
-                Talk(TALK_15);
-                events.ScheduleEvent(EVENT_TALK_9, 10000);
-                break;
-            }
-            case EVENT_TALK_9:
-            {
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                {
-                    stone->AI()->Talk(TALK_ROOK_INTRO3);
-                    events.ScheduleEvent(EVENT_TALK_10, 10000);
-                    break;
-                }
-            }
-            case EVENT_TALK_10:
-            {
-                Talk(TALK_16);
-
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                {
-                    if (Creature* hue = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU)))
-                    {
-                        if (Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN)))
-                        {
-                            stone->setFaction(16);
-                            hue->setFaction(16);
-                            sun->setFaction(16);
-
-                            me->DespawnOrUnsummon(4000);
-                        }
-                    }
-                }
-            }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new soo_triggers(creature);
+        me->setActive(true);
     }
-};
-class boss_rook : public CreatureScript
-{
-public:
-    boss_rook() : CreatureScript("boss_rook") { }
 
-    struct boss_rook_ai : public BossAI
+    void Reset() override
     {
-        boss_rook_ai(Creature* creature) : BossAI(creature, DATA_STONE)
+        me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+        me->SetReactState(REACT_DEFENSIVE);
+
+        m_IsCastingLowHealth = false;
+        m_SummonedNpcsForMeasures.clear();
+        m_Phase = 0;
+        m_IsInMeasure = false;
+        m_AbilityCount = 0;
+        m_evadeTimer = TIMER_EVADE_CHECK;
+    }
+
+    void EnterCombat(Unit* who) override
+    {
+        bool isFirstAggro = true;
+
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
         {
-            pInstance = creature->GetInstanceScript();
-
-            me->setFaction(35);
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-        bool desperateone, desperatetwo, deathsituation;
-        uint32 addsdeathcounting, addsdeathinterval;
-        uint32 berserk;
-
-        void Reset()
-        {
-            events.Reset();
-
-            berserk = 60000 * 10;
-
-            desperateone = false;
-            desperatetwo = false;
-            deathsituation = false;
-            addsdeathcounting = 0;
-            addsdeathinterval = 7000;
-
-            me->CastSpell(me, SPELL_SHA_CORRUPTION);
-
-            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GARROTE);
-            me->setFaction(16);
-
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetReactState(REACT_AGGRESSIVE);
-            me->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
-        }
-        void DespawnCreaturesInArea(uint32 entry, WorldObject* object)
-        {
-            std::list<Creature*> creatures;
-            GetCreatureListWithEntryInGrid(creatures, object, entry, 300.0f);
-            if (creatures.empty())
-                return;
-
-            for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-                (*iter)->DespawnOrUnsummon();
-        }
-        void JustReachedHome()
-        {
-            _JustReachedHome();
-
-            DespawnCreaturesInArea(CREATURE_EMBODIED_MISERY, me);
-            DespawnCreaturesInArea(CREATURE_EMBODIED_SORROW, me);
-            DespawnCreaturesInArea(CREATURE_EMBODIED_GLOOM, me);
-            DespawnCreaturesInArea(CREATURE_MARK_OF_ANGUISH, me);
-            DespawnCreaturesInArea(CREATURE_DESPAIR_SPAWN, me);
-
-            me->GetMotionMaster()->MovePoint(0, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ());
-
-            if (pInstance)
+            if (pBoss && !pBoss->IsInCombat())
             {
-                pInstance->SetBossState(DATA_FALLEN_PROTECTORS, FAIL);
+                DoZoneInCombat(pBoss);
+            }
+            else
+            {
+                isFirstAggro = false;
+            }
+        }
 
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+        if (isFirstAggro)
+        {
+            DoFirstAggro();
+        }
 
-                Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN));
-                Creature* hu = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU));
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+    }
 
-                if (sun && hu)
+    uint32 GetData(uint32 type) const override
+    {
+        if (type == DATA_CASTING_LOW_HEALTH)
+        {
+            return m_IsCastingLowHealth ? 1 : 0;
+        }
+        else if (type == DATA_ABILITY_COUNT)
+        {
+            return m_AbilityCount;
+        }
+
+        return 0;
+    }
+
+    void DamageTaken(Unit* who, uint32 & damage) override
+    {
+        if (me->GetHealth() <= damage)
+        {
+            if (IsCastingLowHealth())
+            {
+                damage = me->GetHealth() - 1;
+            }
+            else
+            {
+                if (!IsOthersCastingLowHealth())
                 {
-                    me->Respawn();
-                    me->GetMotionMaster()->MovePoint(0, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ());
-                    me->RemoveAllAuras();
+                    DoBoundOfGoldenLotus();
 
-                    sun->Respawn();
-                    sun->GetMotionMaster()->MovePoint(0, sun->GetHomePosition().GetPositionX(), sun->GetHomePosition().GetPositionY(), sun->GetHomePosition().GetPositionZ());
-                    sun->RemoveAllAuras();
+                    SetCastingLowHealth(true);
 
-                    hu->Respawn();
-                    hu->GetMotionMaster()->MovePoint(0, hu->GetHomePosition().GetPositionX(), hu->GetHomePosition().GetPositionY(), hu->GetHomePosition().GetPositionZ());
-                    hu->RemoveAllAuras();
+                    damage = me->GetHealth() - 1;
+
+                    me->CastStop();
+
+                    DoCast(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
+
+                    events.ScheduleEvent(EVENT_BOND_OF_GOLDEN_LOTUS_END, 15000);
+                }
+                else
+                {
+                    KillOthers();
                 }
             }
         }
-        void EnterCombat(Unit* attacker)
+    }
+
+    void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+    {
+        if (IsInMeasures())
         {
-            if (pInstance)
+            RemoveMeasureNpc(summon->GetEntry());
+
+            if (!IsAnyMeasureNpc())
+                EndMeasures();
+        }
+    }
+
+    void DoAction(const int32 action) override
+    {
+        if (action == ACTION_OTHER_BOSS_BEGINS_MEASURES)
+        {
+            OtherBossBeginsMeasures();
+        }
+        else if (action == ACTION_OTHER_BOSS_ENDS_MEASURES)
+        {
+            OtherBossEndsMeasures();
+        }
+    }
+
+    void JustDied(Unit* who) override
+    {
+        _JustDied();
+    }
+
+    bool CheckPhase()
+    {
+        if ((m_Phase == 0 && me->GetHealthPct() < 66.0f) ||
+            (m_Phase == 2 && me->GetHealthPct() < 33.0f))
+        {
+            ++m_Phase;
+
+            //BeginMeasures();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        if (m_evadeTimer <= diff)
+        {
+            m_evadeTimer = TIMER_EVADE_CHECK;
+
+            if (me->GetExactDist(&me->GetHomePosition()) >= 65.0f)
             {
-                Fallen_StartProtectors(pInstance, me, attacker);
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-                DoZoneInCombat();
+                EnterEvadeMode(EVADE_REASON_BOUNDARY);
 
-                Talk(TALK_ROOK_AGGRO);
+                std::list<Creature*> otherBosses;
+                //GetOtherBosses(otherBosses);
 
-                events.ScheduleEvent(EVENT_CLASH, 16000);
-                events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 14000);
-                events.ScheduleEvent(EVENT_CORRUPTED_BREW, urand(8000, 10000));
+                for (Creature* other : otherBosses)
+                    other->AI()->EnterEvadeMode();
+                return;
             }
         }
-        void JustSummoned(Creature* summon)
-        {
-            summons.Summon(summon);
-        }
-        void SummonedCreatureDespawn(Creature* summon)
-        {
-            summons.Despawn(summon);
-        }
-        void JustDied(Unit* killer)
-        {
-            Talk(TALK_ROOK_DEATH);
+        else
+            m_evadeTimer -= diff;
 
-            if (pInstance)
+        _Update(diff);
+    }
+
+protected:
+
+    virtual void _Update(uint32 diff) = 0;
+    virtual void DoFirstAggro() = 0;
+    virtual void DoBoundOfGoldenLotus() = 0;
+    virtual void DoBeginMeasures() = 0;
+    virtual void DoEndMeasures() = 0;
+    virtual void OtherBossBeginsMeasures() = 0;
+    virtual void OtherBossEndsMeasures() = 0;
+
+    bool IsCastingLowHealth() const { return m_IsCastingLowHealth; }
+    void SetCastingLowHealth(bool value) { m_IsCastingLowHealth = value; }
+
+    void AddMeasureNpc(uint32 entry) { m_SummonedNpcsForMeasures.insert(entry); }
+    void RemoveMeasureNpc(uint32 entry) { m_SummonedNpcsForMeasures.erase(entry); }
+    bool IsAnyMeasureNpc() const { return !m_SummonedNpcsForMeasures.empty(); }
+
+    bool IsInMeasures() const { return m_IsInMeasure; }
+    void SetInMeasures(bool value) { m_IsInMeasure = value; }
+
+    void IncreaseAbilityCount() { ++m_AbilityCount; }
+
+    void ApplyBerserkToAll()
+    {
+        if (Creature* pRook = GetRookStoneToe())
+            pRook->AddAura(SPELL_BERSERK, pRook);
+
+        if (Creature* pHe = GetHeSoftFoot())
+            pHe->AddAura(SPELL_BERSERK, pHe);
+
+        if (Creature* pSun = GetSunTenderHeart())
+            pSun->AddAura(SPELL_BERSERK, pSun);
+    }
+
+private:
+
+    Creature* GetRookStoneToe()
+    {
+        return instance->instance->GetCreature(instance->GetObjectGuid(DATA_ROOK_STONETOE));
+    }
+
+    Creature* GetHeSoftFoot()
+    {
+        return instance->instance->GetCreature(instance->GetObjectGuid(DATA_HE_SOFTFOOT));
+    }
+
+    Creature* GetSunTenderHeart()
+    {
+        return instance->instance->GetCreature(instance->GetObjectGuid(DATA_SUN_TENDERHEART));
+    }
+
+    /*void GetOtherBosses(std::list<Creature*>& creatures)
+    {
+        Creature* pRook = GetRookStoneToe();
+        Creature* pHe = GetHeSoftFoot();
+        Creature* pSun = GetSunTenderHeart();
+
+        if (pRook && pRook->GetEntry() != me->GetEntry())
+            creatures.push_back(pRook);
+
+        if (pHe && pHe->GetEntry() != me->GetEntry())
+            creatures.push_back(pHe);
+
+        if (pSun && pSun->GetEntry() != me->GetEntry())
+            creatures.push_back(pSun);
+    }*/
+
+    bool IsOthersCastingLowHealth()
+    {
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss)
             {
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-
-                Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN));
-                Creature* hu = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU));
-
-                if (sun && hu)
+                if (pBoss->AI()->GetData(DATA_CASTING_LOW_HEALTH) == 0)
                 {
-                    sun->setFaction(35);
-                    hu->setFaction(35);
-                    me->setFaction(35);
+                    return false;
+                }
+            }
+        }
 
-                    me->CombatStop(true);
-                    sun->CombatStop(true);
-                    hu->CombatStop(true);
-                    sun->getHostileRefManager().clearReferences();
-                    hu->getHostileRefManager().clearReferences();
-                    me->getHostileRefManager().clearReferences();
+        return true;
+    }
 
-                    me->SetHealth(me->GetMaxHealth());
-                    sun->SetHealth(sun->GetMaxHealth());
-                    hu->SetHealth(hu->GetMaxHealth());
+    void KillOthers()
+    {
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
 
-                    me->RemoveAura(SPELL_SHA_CORRUPTION);
-                    sun->RemoveAura(SPELL_SHA_CORRUPTION);
-                    hu->RemoveAura(SPELL_SHA_CORRUPTION);
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss)
+            {
+                if (Unit* victim = pBoss->GetVictim())
+                {
+                    victim->Kill(pBoss);
+                }
+            }
+        }
+    }
 
-                    // loot
-                    switch (me->GetMap()->GetDifficulty())
+    void BeginMeasures()
+    {
+        SetInMeasures(true);
+        NotifyOtherBossesForMeasures(true);
+
+        m_AbilityCount = 0;
+
+        me->SetUnitFlags(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+        me->AttackStop();
+        me->StopMoving();
+        me->InterruptNonMeleeSpells(true);
+        me->SetReactState(REACT_PASSIVE);
+
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+        DoBeginMeasures();
+    }
+
+    void EndMeasures()
+    {
+        SetInMeasures(false);
+        NotifyOtherBossesForMeasures(false);
+
+        ++m_Phase;
+        me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+        me->SetReactState(REACT_AGGRESSIVE);
+
+        instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+        DoEndMeasures();
+    }
+
+    void NotifyOtherBossesForMeasures(bool isInMeasure)
+    {
+        std::list<Creature*> otherBosses;
+        //GetOtherBosses(otherBosses);
+
+        for (Creature* pBoss : otherBosses)
+        {
+            if (pBoss)
+            {
+                pBoss->AI()->DoAction(isInMeasure ? ACTION_OTHER_BOSS_BEGINS_MEASURES : ACTION_OTHER_BOSS_ENDS_MEASURES);
+            }
+        }
+    }
+
+private:
+
+    bool m_IsCastingLowHealth;
+    std::set<uint32 /*entry*/> m_SummonedNpcsForMeasures;
+    uint8 m_Phase;
+    bool m_IsInMeasure;
+    uint32 m_AbilityCount;
+    uint32 m_evadeTimer;
+};
+
+class boss_rook_stonetoe : public CreatureScript
+{
+    public:
+        boss_rook_stonetoe() : CreatureScript("boss_rook_stonetoe") { }
+
+        CreatureAI* GetAI(Creature* creature) const
+        {
+            return new boss_rook_stonetoeAI(creature);
+        }
+
+        struct boss_rook_stonetoeAI : public fallen_protectorAI
+        {
+            boss_rook_stonetoeAI(Creature* creature) : fallen_protectorAI(creature) { }
+
+            void Reset() override
+            {
+                fallen_protectorAI::Reset();
+            }
+
+            void EnterCombat(Unit* attacker) override
+            {
+                _EnterCombat();
+                events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 8000);
+                events.ScheduleEvent(EVENT_CORRUPTED_BREW, 18000);
+                events.ScheduleEvent(EVENT_CLASH, 45000);
+                events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
+            }
+
+            void KilledUnit(Unit* who) override
+            {
+                if (who->IsPlayer())
+                {
+                    Talk(SAY_ROOK_KILL);
+                }
+            }
+
+            void DoAction(const int32 p_Action) override
+            {
+                if (p_Action == Actions::ACTION_VENGEFUL_STRIKES_FAILED)
+                    events.RescheduleEvent(EVENT_VENGEFUL_STRIKES, urand(3000, 5000));
+            }
+
+            void JustDied(Unit* who) override
+            {
+                _JustDied();
+                Talk(SAY_ROOK_DEATH);
+            }
+
+            void MovementInform(uint32 type, uint32 id) override
+            {
+                if (id == EVENT_JUMP)
+                {
+                    Talk(SAY_ROOK_KICK);
+
+                    me->GetMotionMaster()->MovementExpired(false);
+                    DoCast(me, SPELL_CORRUPTION_KICK);
+
+                    // reenable moving to the target
+                    me->ClearUnitState(UNIT_STATE_MELEE_ATTACKING);
+                }
+            }
+
+            void _Update(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (CheckPhase())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
                     {
-                    case MAN10_DIFFICULTY:
-                        me->SummonGameObject(GOBJECT_CHEST_10_MAN, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                        break;
-                    case MAN10_HEROIC_DIFFICULTY:
-                        me->SummonGameObject(GOBJECT_CHEST_10_HEROIC, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                        break;
-                    case MAN25_DIFFICULTY:
-                        me->SummonGameObject(GOBJECT_CHEST_25_MAN, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                        break;
-                    case MAN25_HEROIC_DIFFICULTY:
-                        me->SummonGameObject(GOBJECT_CHEST_25_HEROIC, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                        break;
-
-                    }
-
-                    std::list<Player*> pl_list;
-                    pl_list.clear();
-
-                    me->GetPlayerListInGrid(pl_list, 100.0f);
-
-                    if (pl_list.empty())
-                        return;
-
-                    CurrencyOnKillEntry const* Curr = sObjectMgr->GetCurrencyOnKillEntry(me->ToCreature()->GetEntry());
-                    if (!Curr)
-                        return;
-
-                    for (auto itr : pl_list)
-                    {
-                        if (Curr->currencyId1 && Curr->currencyCount1)
-                        {
-                            if (CurrencyTypesEntry const* entry = sCurrencyTypesStore.LookupEntry(Curr->currencyId1))
+                        case EVENT_BERSERK:
+                            ApplyBerserkToAll();
+                            break;
+                        case EVENT_BOND_OF_GOLDEN_LOTUS_END:
+                            SetCastingLowHealth(false);
+                            break;
+                        case EVENT_VENGEFUL_STRIKES:
+                            if (auto l_Victim = me->GetVictim())
                             {
-                                if (Curr->currencyId1 == CURRENCY_TYPE_JUSTICE_POINTS)
+                                if (me->GetDistance(l_Victim) < 5.f)
                                 {
-                                    if ((itr->GetCurrency(Curr->currencyId1, true) + Curr->currencyCount1) > itr->GetCurrencyTotalCap(entry))
-                                    {
-                                        uint32 max = itr->GetCurrencyTotalCap(entry);
-                                        uint32 lessPoint = max - itr->GetCurrency(Curr->currencyId1, true);
-                                        uint32 rest = Curr->currencyCount1 - lessPoint;
-
-                                        itr->ModifyCurrency(Curr->currencyId1, lessPoint);
-                                    }
-                                    else
-                                        itr->ModifyCurrency(Curr->currencyId1, Curr->currencyCount1);
+                                    DoCastVictim(SPELL_VENGEFUL_STRIKES);
+                                    events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 20000);
                                 }
                                 else
-                                    itr->ModifyCurrency(Curr->currencyId1, Curr->currencyCount1);
+                                    events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 3000);
                             }
-                        }
-                    }
-
-                    pInstance->SetBossState(DATA_FALLEN_PROTECTORS, DONE);
-                    _JustDied();
-                }
-                else
-                {
-                    me->SetLootRecipient(NULL);
-                }
-            }
-        }
-        void DoAction(const int32 action)
-        {
-            switch (action)
-            {
-            case ACTION_DESPERATE_METHOD_ACTIVATE:
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-                me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-
-                events.Reset();
-
-                int32 entries[3] = { CREATURE_EMBODIED_MISERY, CREATURE_EMBODIED_SORROW, CREATURE_EMBODIED_GLOOM };
-                addsdeathcounting = 0;
-
-                for (int i = 0; i < 3; i++)
-                {
-                    Position pos;
-                    me->GetRandomNearPosition(pos, 20.0f);
-
-                    me->SummonCreature(entries[i], pos, TEMPSUMMON_DEAD_DESPAWN);
-                }
-                break;
-            }
-            case ACTION_DESPERATE_METHOD_DEACTIVATE:
-            {
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->RemoveExtraUnitMovementFlag(MOVEMENTFLAG_ROOT);
-
-                events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 14000);
-                events.ScheduleEvent(EVENT_CLASH, 16000);
-                events.ScheduleEvent(EVENT_CORRUPTED_BREW, urand(8000, 10000));
-
-                addsdeathcounting = 0;
-                break;
-            }
-            case ACTION_COUNT_ADDS_DEATH:
-            {
-                addsdeathcounting++;
-
-                if (addsdeathcounting >= 3)
-                {
-                    addsdeathcounting = 0;
-                    DoAction(ACTION_DESPERATE_METHOD_DEACTIVATE);
-                }
-                break;
-            }
-            }
-        }
-        void DamageTaken(Unit* /*attacker*/, uint32& damage)
-        {
-            if (me->GetHealthPct() <= 66 && !desperateone)
-            {
-                DoAction(ACTION_DESPERATE_METHOD_ACTIVATE);
-                desperateone = true;
-            }
-            if (me->GetHealthPct() <= 33 && !desperatetwo)
-            {
-                DoAction(ACTION_DESPERATE_METHOD_ACTIVATE);
-                desperatetwo = true;
-            }
-            if (me->GetHealthPct() <= 10 && !deathsituation)
-            {
-                me->CastSpell(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
-                deathsituation = true;
-                addsdeathinterval = 9000;
-
-                events.Reset();
-
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                events.ScheduleEvent(EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT, 15000);
-            }
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (berserk <= diff)
-            {
-                me->CastSpell(me, 64238);
-                berserk = 32432234;
-            }
-            else
-                berserk -= diff;
-
-            if (deathsituation)
-            {
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                {
-                    if (Creature* hue = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU)))
-                    {
-                        if (Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN)))
-                        {
-                            if ((stone->HasUnitState(UNIT_STATE_CASTING) && stone->GetHealthPct() <= 10)
-                                && (sun->HasUnitState(UNIT_STATE_CASTING) && sun->GetHealthPct() <= 10
-                                && (hue->HasUnitState(UNIT_STATE_CASTING) && hue->GetHealthPct() <= 10)))
-                            {
-                                stone->AI()->JustDied(stone);
-                            }
-                        }
+                            break;
+                        case EVENT_CORRUPTED_BREW:
+                            DoCorruptedBrew();
+                            events.ScheduleEvent(EVENT_CORRUPTED_BREW, 11000);
+                            break;
+                        case EVENT_CLASH:
+                            DoCastAOE(SPELL_CLASH_AOE);
+                            events.ScheduleEvent(EVENT_CLASH, 46000);
+                            break;
+                        case EVENT_AGGRO:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 7500);
+                            events.ScheduleEvent(EVENT_CORRUPTED_BREW, 17000);
+                            events.ScheduleEvent(EVENT_CLASH, 45000);
+                            break;
+                        default:
+                            break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
 
-            if (me->HasUnitState(UNIT_STATE_CASTING) || me->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
-                return;
+        protected:
 
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
+            void DoCorruptedBrew()
             {
-            case EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT:
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->RemoveExtraUnitMovementFlag(MOVEMENTFLAG_ROOT);
+                IncreaseAbilityCount();
 
-                events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 14000);
-                events.ScheduleEvent(EVENT_CLASH, 16000);
-                events.ScheduleEvent(EVENT_CORRUPTED_BREW, urand(8000, 10000));
+                me->CastCustomSpell(Spells::SPELL_CORRUPTED_BREW_AOE, SpellValueMod::SPELLVALUE_MAX_TARGETS, Is25ManRaid() ? 3 : 1, nullptr, true);
+            }
 
-                deathsituation = false;
-                break;
-            case EVENT_VENGEFUL_STRIKES:
-                Talk(TALK_ROOK_SPELL_01);
+            virtual void DoFirstAggro() override
+            {
+                Talk(SAY_ROOK_AGGRO);
+            }
 
-                me->CastSpell(me->getVictim(), SPELL_VENGFUL_STRIKES_POSSES_AURA);
-                events.ScheduleEvent(EVENT_VENGEFUL_STRIKES, 14000);
-                break;
-            case EVENT_CORRUPTED_BREW:
-                if (Unit* random = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+            virtual void DoBoundOfGoldenLotus() override
+            {
+                Talk(SAY_ROOK_LOTUS);
+            }
+
+            virtual void DoBeginMeasures() override
+            {
+                Talk(SAY_ROOK_MEASURES);
+
+                events.CancelEvent(EVENT_VENGEFUL_STRIKES);
+                events.CancelEvent(EVENT_CORRUPTED_BREW);
+                events.CancelEvent(EVENT_CLASH);
+
+                me->CastSpell(me, SPELL_MISERY_SORROW_AND_GLOOM, true);
+
+                if (Creature* pMisery = me->SummonCreature(NPC_EMBODIED_MISERY, embodiedStonetoePos[0]))
                 {
-                    me->CastSpell(random, SPELL_CORRUPTED_BREW_DUMMY);
+                    AddMeasureNpc(pMisery->GetEntry());
+                    pMisery->GetMotionMaster()->MoveJump(embodiedStonetoePos[3].GetPositionX(), embodiedStonetoePos[3].GetPositionY(), embodiedStonetoePos[3].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[3].GetOrientation());
                 }
+                if (Creature* pSorrow = me->SummonCreature(NPC_EMBODIED_SORROW, embodiedStonetoePos[1]))
+                {
+                    AddMeasureNpc(pSorrow->GetEntry());
+                    pSorrow->GetMotionMaster()->MoveJump(embodiedStonetoePos[4].GetPositionX(), embodiedStonetoePos[4].GetPositionY(), embodiedStonetoePos[4].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[4].GetOrientation());
+                }
+                if (Creature* pGloom = me->SummonCreature(NPC_EMBODIED_GLOOM, embodiedStonetoePos[2]))
+                {
+                    AddMeasureNpc(pGloom->GetEntry());
+                    pGloom->GetMotionMaster()->MoveJump(embodiedStonetoePos[5].GetPositionX(), embodiedStonetoePos[5].GetPositionY(), embodiedStonetoePos[5].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[5].GetOrientation());
+                }
+            }
 
-                events.ScheduleEvent(EVENT_CORRUPTED_BREW, urand(8000, 10000));
-                break;
-            case EVENT_CLASH:
+            virtual void DoEndMeasures() override
             {
-                std::list<Player*> pl_rand_list;
-                pl_rand_list.clear();
+                me->RemoveAura(SPELL_MISERY_SORROW_AND_GLOOM);
 
-                me->GetPlayerListInGrid(pl_rand_list, 100.0f);
-
-                if (pl_rand_list.empty())
-                    return;
-
-                Talk(TALK_ROOK_SPELL_02);
-
-                /*
-                forward: x += 1.569, y += 5.74
-                backward:x-= 1.494, y += 5.46
-                */
-
-                std::list<Player*>::const_iterator it = pl_rand_list.begin();
-                std::advance(it, urand(0, pl_rand_list.size() - 1));
-
-                std::list<Player*>::const_iterator it2 = pl_rand_list.begin();
-                std::advance(it2, urand(0, pl_rand_list.size() - 1));
-
-                (*it)->GetMotionMaster()->MoveCharge(me->GetPositionX() + 1.569, me->GetPositionY() + 5.74, me->GetPositionZ(), 28.0f);
-                (*it2)->GetMotionMaster()->MoveCharge(me->GetPositionX() - 1.569, me->GetPositionY() - 5.74, me->GetPositionZ(), 28.0f);
-
-                events.ScheduleEvent(EVENT_CLASH, 26000);
-                events.ScheduleEvent(EVENT_CORRUPTION_KICK, 2000);
-                break;
-            }
-            case EVENT_CORRUPTION_KICK:
-                Talk(TALK_ROOK_SPELL_03);
-
-                me->CastSpell(me, SPELL_CORRUPTION_KICK_AURA);
-                break;
-            default:
-                break;
+                me->SetReactState(ReactStates::REACT_PASSIVE);
+                events.ScheduleEvent(Events::EVENT_AGGRO, 5000);
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            virtual void OtherBossBeginsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    events.PauseEvent(EVENT_CLASH);
+                }
+            }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_rook_ai(creature);
-    }
+            virtual void OtherBossEndsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    events.ContinueEvent(EVENT_CLASH);
+                }
+            }
+        };
 };
-class boss_hu : public CreatureScript
+
+class boss_he_softfoot : public CreatureScript
 {
-public:
-    boss_hu() : CreatureScript("boss_hu") { }
+    public:
+        boss_he_softfoot() : CreatureScript("boss_he_softfoot") { }
 
-    struct boss_hu_ai : public BossAI
-    {
-        boss_hu_ai(Creature* creature) : BossAI(creature, DATA_HU)
+        CreatureAI* GetAI(Creature* creature) const
         {
-            pInstance = creature->GetInstanceScript();
-
-            me->setFaction(35);
+            return new boss_he_softfootAI(creature);
         }
 
-        InstanceScript* pInstance;
-        EventMap events;
-        bool desperateone, desperatetwo, deathsituation;
-        uint32 addsdeathcounting, addsdeathinterval, berserk;
-
-        void Reset()
+        struct boss_he_softfootAI : public fallen_protectorAI
         {
-            events.Reset();
+            boss_he_softfootAI(Creature* creature) : fallen_protectorAI(creature) { }
 
-            desperateone = false;
-            desperatetwo = false;
-            deathsituation = false;
-            addsdeathcounting = 0;
-            addsdeathinterval = 7000;
+            ObjectGuid m_MainTargetGUID = ObjectGuid::Empty;
+            ObjectGuid m_FixateTargetGUID = ObjectGuid::Empty;
 
-            berserk = 60000 * 10;
-
-            me->setFaction(16);
-
-            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GARROTE);
-            me->AddAura(SPELL_SHA_CORRUPTION, me);
-
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetReactState(REACT_AGGRESSIVE);
-            me->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
-        }
-        void DespawnCreaturesInArea(uint32 entry, WorldObject* object)
-        {
-            std::list<Creature*> creatures;
-            GetCreatureListWithEntryInGrid(creatures, object, entry, 300.0f);
-            if (creatures.empty())
-                return;
-
-            for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-                (*iter)->DespawnOrUnsummon();
-        }
-        void JustReachedHome()
-        {
-            _JustReachedHome();
-
-            if (pInstance)
+            void Reset() override
             {
-                pInstance->SetBossState(DATA_FALLEN_PROTECTORS, FAIL);
-
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-
-                Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN));
-                Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE));
-
-                me->GetMotionMaster()->MovePoint(0, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ());
-
-                if (sun && stone)
-                {
-                    me->Respawn();
-                    me->GetMotionMaster()->MovePoint(0, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ());
-                    me->RemoveAllAuras();
-
-                    sun->Respawn();
-                    sun->RemoveAllAuras();
-
-                    stone->Respawn();
-                    stone->GetMotionMaster()->MovePoint(0, stone->GetHomePosition().GetPositionX(), stone->GetHomePosition().GetPositionY(), stone->GetHomePosition().GetPositionZ());
-                    stone->RemoveAllAuras();
-                }
+                fallen_protectorAI::Reset();
+                me->RemoveAllAreaTriggers();
             }
-        }
-        void EnterCombat(Unit* attacker)
-        {
-            if (pInstance)
+
+            void EnterCombat(Unit* attacker) override
             {
-                Fallen_StartProtectors(pInstance, me, attacker);
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-                DoZoneInCombat();
+                _EnterCombat();
+                events.ScheduleEvent(EVENT_GOUGE, 25000);
+                events.ScheduleEvent(EVENT_SHADOWSTEP, 9000);
+                events.ScheduleEvent(EVENT_POISON, urand(5000, 15000));
+            }
 
-                events.ScheduleEvent(EVENT_GOUGE, 16000);
-                events.ScheduleEvent(EVENT_GARROTE, 14000);
-                events.ScheduleEvent(EVENT_NOXIOUS_POISION, urand(8000, 10000));
-                events.ScheduleEvent(EVENT_INSTANT_POISION, urand(8000, 10000));
+            void AttackStart(Unit* p_Victim) override
+            {
+                if (m_FixateTargetGUID != ObjectGuid::Empty && p_Victim->GetGUID() != m_FixateTargetGUID)
+                {
+                    m_FixateTargetGUID = ObjectGuid::Empty;
+                    me->InterruptSpell(CURRENT_CHANNELED_SPELL);
+                }
 
-                std::list<Player*> pl_rand_list;
-                pl_rand_list.clear();
+                ScriptedAI::AttackStart(p_Victim);
+            }
 
-                me->GetPlayerListInGrid(pl_rand_list, 100.0f);
+            void SetGUID(ObjectGuid p_Guid, int32 p_Id) override
+            {
+                if (p_Id == Guids::GUID_FIXATE_TARGET)
+                    m_FixateTargetGUID = p_Guid;
+            }
 
-                if (pl_rand_list.empty())
+            void JustDied(Unit* who) override
+            {
+                _JustDied();
+            }
+
+            void DoAction(const int32 p_Action) override
+            {
+                if (p_Action == Actions::ACTION_PREPARE_SHADOWSTEP_BACK)
+                    events.ScheduleEvent(EVENT_SHADOWSTEP_BACK, 1000);
+            }
+
+            void _Update(uint32 diff) override
+            {
+                if (!UpdateVictim())
                     return;
 
-                for (auto itr : pl_rand_list)
+                if (CheckPhase())
                 {
-                    if (!itr->HasSpell(143842))
-                        itr->learnSpell(143842, true);
+                    return;
                 }
-            }
-        }
-        void JustSummoned(Creature* summon)
-        {
-            summons.Summon(summon);
-        }
-        void SummonedCreatureDespawn(Creature* summon)
-        {
-            summons.Despawn(summon);
-        }
-        void JustDied(Unit* killer)
-        {
-            if (pInstance)
-            {
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
-                Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN));
-                Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE));
+                events.Update(diff);
 
-                if (sun && stone)
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
                 {
-                    sun->setFaction(35);
-                    stone->setFaction(35);
-                    me->setFaction(35);
-
-                    me->CombatStop(true);
-                    sun->CombatStop(true);
-                    stone->CombatStop(true);
-                    sun->getHostileRefManager().clearReferences();
-                    stone->getHostileRefManager().clearReferences();
-                    me->getHostileRefManager().clearReferences();
-
-                    me->SetHealth(me->GetMaxHealth());
-                    sun->SetHealth(sun->GetMaxHealth());
-                    stone->SetHealth(stone->GetMaxHealth());
-
-                    me->RemoveAura(SPELL_SHA_CORRUPTION);
-                    sun->RemoveAura(SPELL_SHA_CORRUPTION);
-                    stone->RemoveAura(SPELL_SHA_CORRUPTION);
-
-                    /*
-                    // loot
-                    switch (me->GetMap()->GetDifficulty())
+                    switch (eventId)
                     {
-                    case MAN10_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_10_MAN, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    case MAN10_HEROIC_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_10_HEROIC, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    case MAN25_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_25_MAN, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    case MAN25_HEROIC_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_25_HEROIC, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
+                        case EVENT_BOND_OF_GOLDEN_LOTUS_END:
+                            SetCastingLowHealth(false);
+                            break;
+                        case EVENT_GOUGE:
+                            DoCastVictim(SPELL_GOUGE);
+                            events.ScheduleEvent(EVENT_GOUGE, 30000);
+                            break;
+                        case EVENT_SHADOWSTEP:
+                            DoCast(SelectTarget(SELECT_TARGET_RANDOM, 0, [&](Unit const* p_Target) -> bool
+                            {
+                                return p_Target->IsPlayer() && p_Target != me->GetVictim() && !p_Target->HasAura(Spells::SPELL_GARROTE);
+                            }), SPELL_SHADOWSTEP_DUMMY);
+                            events.ScheduleEvent(EVENT_SHADOWSTEP, 30000);
+                            break;
+                        case EVENT_SHADOWSTEP_BACK:
+                            if (auto l_Victim = me->GetVictim())
+                            {
+                                m_MainTargetGUID = l_Victim->GetGUID();
+                                DoCast(l_Victim, Spells::SPELL_SHADOWSTEP_BACK, true);
+                                me->SetReactState(ReactStates::REACT_PASSIVE);
+                                me->AttackStop();
+
+                                events.ScheduleEvent(EVENT_RESET_REACT_STATE, 3000);
+                            }
+                            break;
+                        case EVENT_RESET_REACT_STATE:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+
+                            if (auto l_OldVictim = ObjectAccessor::GetUnit(*me, m_MainTargetGUID))
+                                AttackStart(l_OldVictim);
+
+                            m_MainTargetGUID = ObjectGuid::Empty;
+                            break;
+                        case EVENT_POISON:
+                            UsePoisons();
+                            break;
+                        case EVENT_AGGRO:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_SHADOWSTEP, 800);
+                            events.ScheduleEvent(EVENT_GOUGE, 23000);
+                            events.ScheduleEvent(EVENT_POISON, urand(5000, 15000));
+                            break;
+                        default:
+                            break;
                     }
-                    */
-
-                    pInstance->SetBossState(DATA_FALLEN_PROTECTORS, DONE);
-                    _JustDied();
                 }
-                else
-                {
-                    me->SetLootRecipient(NULL);
-                }
+
+                DoMeleeAttackIfReady();
             }
-        }
-        void DoAction(const int32 action)
-        {
-            switch (action)
+
+        protected:
+
+            virtual void DoFirstAggro() override
             {
-            case ACTION_DESPERATE_METHOD_ACTIVATE:
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-                me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-
-                events.Reset();
-
-                DespawnCreaturesInArea(CREATURE_MARK_OF_ANGUISH, me);
-
-                Position pos;
-                me->GetRandomNearPosition(pos, 30.0f);
-                me->SummonCreature(CREATURE_MARK_OF_ANGUISH, pos, TEMPSUMMON_MANUAL_DESPAWN);
-                break;
+                Talk(SAY_HE_AGGRO);
             }
-            case ACTION_DESPERATE_METHOD_DEACTIVATE:
-            {
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->RemoveExtraUnitMovementFlag(MOVEMENTFLAG_ROOT);
 
-                DespawnCreaturesInArea(CREATURE_MARK_OF_ANGUISH, me);
+            virtual void DoBoundOfGoldenLotus() override
+            {
+                Talk(SAY_HE_LOTUS);
+            }
+
+            virtual void DoBeginMeasures() override
+            {
+                Talk(SAY_HE_MEASURES);
+
+                me->RemoveAreaTrigger(SPELL_NOXIOUS_POISON_AREATRIGGER);
+
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_GARROTE);
 
-                events.ScheduleEvent(EVENT_GARROTE, urand(15000, 19000));
-                events.ScheduleEvent(EVENT_GOUGE, urand(10000, 14000));
-                events.ScheduleEvent(EVENT_NOXIOUS_POISION, 20000);
-                events.ScheduleEvent(EVENT_INSTANT_POISION, 40000);
+                me->RemoveAura(SPELL_NOXIOUS_POISON);
+                me->RemoveAura(SPELL_INSTANT_POISON);
 
-                me->RemoveAllAuras();
+                events.CancelEvent(EVENT_GOUGE);
+                events.CancelEvent(EVENT_SHADOWSTEP);
+                events.CancelEvent(EVENT_POISON);
 
-                addsdeathcounting = 0;
-                break;
-            }
-            }
-        }
-        void DamageTaken(Unit* /*attacker*/, uint32& damage)
-        {
-            if (me->GetHealthPct() <= 66 && !desperateone)
-            {
-                DoAction(ACTION_DESPERATE_METHOD_ACTIVATE);
-                desperateone = true;
-            }
-            if (me->GetHealthPct() <= 33 && !desperatetwo)
-            {
-                DoAction(ACTION_DESPERATE_METHOD_ACTIVATE);
-                desperatetwo = true;
+                me->CastSpell(me, SPELL_MARK_OF_ANGUISH_AURA_1, true);
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-                me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            }
-            if (me->GetHealthPct() <= 10 && !deathsituation)
-            {
-                me->CastSpell(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
-                deathsituation = true;
-                addsdeathinterval = 9000;
-
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                events.ScheduleEvent(EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT, 14000);
-            }
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (berserk <= diff)
-            {
-                me->CastSpell(me, 64238);
-                berserk = 32432234;
-            }
-            else
-                berserk -= diff;
-
-            if (deathsituation)
-            {
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
+                if (Creature* pAnguish = me->SummonCreature(NPC_EMBODIED_ANGUISH, embodiedStonetoePos[0]))
                 {
-                    if (Creature* hue = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU)))
-                    {
-                        if (Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN)))
-                        {
-                            if ((stone->HasUnitState(UNIT_STATE_CASTING) && stone->GetHealthPct() <= 10)
-                                && (sun->HasUnitState(UNIT_STATE_CASTING) && sun->GetHealthPct() <= 10
-                                && (hue->HasUnitState(UNIT_STATE_CASTING) && hue->GetHealthPct() <= 10)))
-                            {
-                                stone->AI()->JustDied(stone);
-                            }
-                        }
-                    }
+                    AddMeasureNpc(pAnguish->GetEntry());
+                    pAnguish->GetMotionMaster()->MoveJump(embodiedStonetoePos[3].GetPositionX(), embodiedStonetoePos[3].GetPositionY(), embodiedStonetoePos[3].GetPositionZ() + 0.1f, 40.0f, 20.0f, embodiedStonetoePos[3].GetOrientation());
                 }
             }
 
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
+            virtual void DoEndMeasures() override
             {
-            case EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT:
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->RemoveExtraUnitMovementFlag(MOVEMENTFLAG_ROOT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_ANGUISH_AURA_2);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SHADOW_WEAKNESS_DEBUFF);
 
-                events.ScheduleEvent(EVENT_GOUGE, 16000);
-                events.ScheduleEvent(EVENT_GARROTE, 14000);
-                events.ScheduleEvent(EVENT_NOXIOUS_POISION, urand(8000, 10000));
-                events.ScheduleEvent(EVENT_INSTANT_POISION, urand(8000, 10000));
+                me->RemoveAura(SPELL_MARK_OF_ANGUISH_AURA_1);
 
-                deathsituation = false;
-                break;
-            case EVENT_GOUGE:
-                me->CastSpell(me->getVictim(), SPELL_GOUGE_DUMMY);
-                me->getHostileRefManager().deleteReference(me->getVictim());
-
-                events.ScheduleEvent(EVENT_GOUGE, urand(10000, 14000));
-                break;
-            case EVENT_GARROTE:
-                if (Unit* random = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0F, true))
-                {
-                    me->CastSpell(random, SPELL_SHADOWSTEP);
-                    me->CastSpell(random, SPELL_GARROTE, true);
-                }
-                events.ScheduleEvent(EVENT_GARROTE, urand(15000, 19000));
-                break;
-            case EVENT_NOXIOUS_POISION:
-                me->RemoveAura(143239);
-                me->RemoveAura(143210);
-
-                me->CastSpell(me, SPELL_NOXIOUS_POISON_DOT);
-                events.ScheduleEvent(EVENT_NOXIOUS_POISION, 20000);
-                break;
-            case EVENT_INSTANT_POISION:
-                me->RemoveAura(143239);
-                me->RemoveAura(143210);
-
-                me->CastSpell(me, SPELL_INSANT_POISON);
-                events.ScheduleEvent(EVENT_INSTANT_POISION, 40000);
-                break;
-            default:
-                break;
+                me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC));
+                me->SetReactState(ReactStates::REACT_PASSIVE);
+                events.ScheduleEvent(Events::EVENT_AGGRO, 5000);
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            virtual void OtherBossBeginsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    me->RemoveAura(SPELL_NOXIOUS_POISON);
+                    me->RemoveAura(SPELL_INSTANT_POISON);
+                }
+            }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_hu_ai(creature);
-    }
+            virtual void OtherBossEndsMeasures() override
+            {
+                if (!IsHeroic())
+                {
+                    UsePoisons();
+                }
+            }
+
+        private:
+
+            void UsePoisons()
+            {
+                uint32 nextPoisonSpell = urand(0, 1) ? SPELL_INSTANT_POISON : SPELL_NOXIOUS_POISON;
+                uint32 previousPoisonSpell = nextPoisonSpell == SPELL_INSTANT_POISON ? SPELL_NOXIOUS_POISON : SPELL_INSTANT_POISON;
+
+                DoCast(me, nextPoisonSpell);
+                me->RemoveAura(previousPoisonSpell);
+            }
+        };
 };
-class boss_sun : public CreatureScript
+
+class boss_sun_tenderheart : public CreatureScript
 {
-public:
-    boss_sun() : CreatureScript("boss_sun") { }
+    public:
+        boss_sun_tenderheart() : CreatureScript("boss_sun_tenderheart") { }
 
-    struct boss_sun_ai : public BossAI
-    {
-        boss_sun_ai(Creature* creature) : BossAI(creature, DATA_SUN)
+        CreatureAI* GetAI(Creature* creature) const
         {
-            pInstance = creature->GetInstanceScript();
-            me->setFaction(35);
+            return new boss_sun_tenderheartAI(creature);
         }
 
-        InstanceScript* pInstance;
-        EventMap events;
-        bool desperateone, desperatetwo, deathsituation, bubble;
-        uint32 bubblecounting, addsdeathcounting, addsdeathinterval, berserk;
-
-        void Reset()
+        struct boss_sun_tenderheartAI : public fallen_protectorAI
         {
-            events.Reset();
-
-            desperateone = false;
-            desperatetwo = false;
-            deathsituation = false;
-            bubble = false;
-
-            berserk = 60000 * 10;
-
-            bubblecounting = 500;
-            addsdeathcounting = 0;
-            addsdeathinterval = 0;
-
-            me->setFaction(16);
-
-            me->CastSpell(me, SPELL_SHA_CORRUPTION);
-
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetReactState(REACT_AGGRESSIVE);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-        }
-        void DespawnCreaturesInArea(uint32 entry, WorldObject* object)
-        {
-            std::list<Creature*> creatures;
-            GetCreatureListWithEntryInGrid(creatures, object, entry, 300.0f);
-            if (creatures.empty())
-                return;
-
-            for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-                (*iter)->DespawnOrUnsummon();
-        }
-        void JustReachedHome()
-        {
-            _JustReachedHome();
-
-            Talk(TALK_SUN_RESET);
-
-            if (pInstance)
+            boss_sun_tenderheartAI(Creature* creature) : fallen_protectorAI(creature)
             {
-                pInstance->SetBossState(DATA_FALLEN_PROTECTORS, FAIL);
+                // Enable to interrupt Sha Sear
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_INTERRUPT, false);
+            }
 
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+            void Reset() override
+            {
+                fallen_protectorAI::Reset();
 
-                Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE));
-                Creature* hu = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU));
+                DespawnCreaturesInArea(NPC_DESPAIR_SPAWN, me);
+                DespawnCreaturesInArea(NPC_DESPERATION_SPAWN, me);
 
-                me->GetMotionMaster()->MovePoint(0, me->GetHomePosition().GetPositionX(), me->GetHomePosition().GetPositionY(), me->GetHomePosition().GetPositionZ());
+                me->RemoveAllAreaTriggers();
+            }
 
-                if (stone && hu)
+            void DespawnCreaturesInArea(int entry, Unit* unit)
+            {
+                std::list<Creature*> creatureList = me->FindNearestCreatures(entry, 200);
+                for (Creature* creature : creatureList)
                 {
-                    me->Respawn();
-                    me->RemoveAllAuras();
-
-                    stone->Respawn();
-                    stone->GetMotionMaster()->MovePoint(0, stone->GetHomePosition().GetPositionX(), stone->GetHomePosition().GetPositionY(), stone->GetHomePosition().GetPositionZ());
-                    stone->RemoveAllAuras();
-
-                    hu->Respawn();
-                    hu->GetMotionMaster()->MovePoint(0, hu->GetHomePosition().GetPositionX(), hu->GetHomePosition().GetPositionY(), hu->GetHomePosition().GetPositionZ());
-                    hu->RemoveAllAuras();
-                }
-            }
-        }
-        void EnterCombat(Unit* attacker)
-        {
-            if (pInstance)
-            {
-                Fallen_StartProtectors(pInstance, me, attacker);
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-                DoZoneInCombat();
-
-                Talk(TALK_SUN_AGGRO);
-
-                events.ScheduleEvent(EVENT_SHA_FEAR, 16000);
-                events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 22000);
-                events.ScheduleEvent(EVENT_CALAMITY, urand(8000, 10000));
-            }
-        }
-        void JustSummoned(Creature* summon)
-        {
-            summons.Summon(summon);
-        }
-        void SummonedCreatureDespawn(Creature* summon)
-        {
-            summons.Despawn(summon);
-        }
-        void JustDied(Unit* killer)
-        {
-            Talk(TALK_SUN_DEATH);
-
-            if (pInstance)
-            {
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-
-                Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE));
-                Creature* hu = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU));
-
-                if (stone && hu)
-                {
-                    stone->setFaction(35);
-                    hu->setFaction(35);
-                    me->setFaction(35);
-
-                    me->CombatStop(true);
-                    stone->CombatStop(true);
-                    hu->CombatStop(true);
-                    stone->getHostileRefManager().clearReferences();
-                    hu->getHostileRefManager().clearReferences();
-                    me->getHostileRefManager().clearReferences();
-
-                    me->SetHealth(me->GetMaxHealth());
-                    stone->SetHealth(stone->GetMaxHealth());
-                    hu->SetHealth(hu->GetMaxHealth());
-
-                    me->RemoveAura(SPELL_SHA_CORRUPTION);
-                    stone->RemoveAura(SPELL_SHA_CORRUPTION);
-                    hu->RemoveAura(SPELL_SHA_CORRUPTION);
-
-                    /*
-                    // loot
-                    switch (me->GetMap()->GetDifficulty())
-                    {
-                    case MAN10_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_10_MAN, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    case MAN10_HEROIC_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_10_HEROIC, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    case MAN25_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_25_MAN, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    case MAN25_HEROIC_DIFFICULTY:
-                    me->SummonGameObject(GOBJECT_CHEST_25_HEROIC, chestposition.GetPositionX(), chestposition.GetPositionY(), chestposition.GetPositionZ(), chestposition.GetOrientation(), 0, 0, 0, 0, 0);
-                    break;
-                    }
-                    */
-
-                    pInstance->SetBossState(DATA_FALLEN_PROTECTORS, DONE);
-                    _JustDied();
-                }
-                else
-                {
-                    me->SetLootRecipient(NULL);
-                }
-            }
-        }
-        void DoAction(const int32 action)
-        {
-            switch (action)
-            {
-            case ACTION_DESPERATE_METHOD_ACTIVATE:
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-
-                Talk(TALK_SUN_SPELL_03);
-
-                events.Reset();
-                me->CastSpell(me, SPELL_DARK_MEDITATION_VISUAL);
-                bubble = true;
-
-                for (int i = 0; i < 10; i++)
-                {
-
-                    if (roll_chance_i(50))
-                        me->SummonCreature(CREATURE_DESPAIR_SPAWN, bubbleaddspos[0], TEMPSUMMON_DEAD_DESPAWN);
-                    else
-                        me->SummonCreature(CREATURE_DESPAIR_SPAWN, bubbleaddspos[1], TEMPSUMMON_DEAD_DESPAWN);
-                }
-
-                bubblecounting = 500;
-                addsdeathcounting = 0;
-                break;
-            }
-            case ACTION_DESPERATE_METHOD_DEACTIVATE:
-            {
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetReactState(REACT_AGGRESSIVE);
-
-                bubble = false;
-
-                events.Reset();
-
-                me->CastSpell(me, SPELL_SHA_CORRUPTION);
-                events.ScheduleEvent(EVENT_SHA_FEAR, 16000);
-                events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 14000);
-                events.ScheduleEvent(EVENT_CALAMITY, urand(8000, 10000));
-                DespawnCreaturesInArea(CREATURE_DESPAIR_SPAWN, me);
-                me->RemoveAllAuras();
-
-                addsdeathcounting = 0;
-                break;
-            }
-            case ACTION_COUNT_ADDS_DEATH:
-            {
-                addsdeathcounting++;
-
-                if (addsdeathcounting >= 8)
-                {
-                    DoAction(ACTION_DESPERATE_METHOD_DEACTIVATE);
-                }
-                break;
-            }
-            }
-        }
-        void DamageTaken(Unit* /*attacker*/, uint32& damage)
-        {
-            if (me->GetHealthPct() <= 66 && !desperateone)
-            {
-                DoAction(ACTION_DESPERATE_METHOD_ACTIVATE);
-                desperateone = true;
-
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-                me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            }
-            if (me->GetHealthPct() <= 33 && !desperatetwo)
-            {
-                DoAction(ACTION_DESPERATE_METHOD_ACTIVATE);
-                desperatetwo = true;
-
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-                me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            }
-            if (me->GetHealthPct() <= 10 && !deathsituation)
-            {
-                me->CastSpell(me, SPELL_BOND_OF_THE_GOLDEN_LOTUS);
-                deathsituation = true;
-                addsdeathinterval = 9000;
-
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                events.ScheduleEvent(EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT, 14000);
-            }
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (berserk <= diff)
-            {
-                me->CastSpell(me, 64238);
-                berserk = 32432234;
-            }
-            else
-                berserk -= diff;
-
-            if (deathsituation)
-            {
-                if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                {
-                    if (Creature* hue = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU)))
-                    {
-                        if (Creature* sun = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN)))
-                        {
-                            if ((stone->HasUnitState(UNIT_STATE_CASTING) && stone->GetHealthPct() <= 10)
-                                && (sun->HasUnitState(UNIT_STATE_CASTING) && sun->GetHealthPct() <= 10
-                                && (hue->HasUnitState(UNIT_STATE_CASTING) && hue->GetHealthPct() <= 10)))
-                            {
-                                stone->AI()->JustDied(stone);
-                            }
-                        }
-                    }
+                    if (me->GetAreaId() == creature->GetAreaId())
+                        creature->ForcedDespawn();
                 }
             }
 
-            if (bubble)
+            void EnterCombat(Unit* attacker) override
             {
-                if (bubblecounting <= diff)
-                {
-                    std::list<Player*> pl_list;
-                    pl_list.clear();
-
-                    me->GetPlayerListInGrid(pl_list, 100.0f);
-
-                    for (auto itr : pl_list)
-                    {
-                        if (itr->IsWithinDistInMap(me, 8.0f))
-                        {
-                            SpellInfo const* spell = sSpellMgr->GetSpellInfo(SPELL_DARK_MEDITATION_TICK);
-
-                            if (spell)
-                            {
-                                int32 damage = spell->Effects[0].BasePoints * 0.65;
-
-                                itr->CastCustomSpell(itr, spell->Id, &damage, NULL, NULL, true, NULL);
-                            }
-                        }
-                        else
-                            itr->CastSpell(itr, SPELL_DARK_MEDITATION_TICK);
-                    }
-
-                    bubblecounting = 500;
-                }
-                else
-                    bubblecounting -= diff;
+                _EnterCombat();
+                events.ScheduleEvent(EVENT_SHA_SEAR, urand(500, 2000));
+                events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 15000);
+                events.ScheduleEvent(EVENT_CALAMITY, 31000);
             }
 
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-
-            switch (events.ExecuteEvent())
+            void AttackStart(Unit* who) override
             {
-            case EVENT_BOND_OF_THE_GOLDEN_LOTUS_COUNT:
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->RemoveExtraUnitMovementFlag(MOVEMENTFLAG_ROOT);
-
-                events.ScheduleEvent(EVENT_SHA_FEAR, 16000);
-                events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 14000);
-                events.ScheduleEvent(EVENT_CALAMITY, urand(8000, 10000));
-
-                deathsituation = false;
-                break;
-            case EVENT_SHA_FEAR:
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                    me->CastSpell(target, SPELL_SHA_SEAR);
-
-                events.ScheduleEvent(EVENT_SHA_FEAR, 8000);
-                break;
-            case EVENT_SHADOW_WORD_BANE:
-                Talk(TALK_SUN_SPELL_01);
-
-                for (int i = 0; i < 3; i++)
-                {
-                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                        me->CastSpell(target, SPELL_SHADOW_WORD_BANE_DOT);
-                }
-
-                events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 22000);
-                break;
-            case EVENT_CALAMITY:
-                Talk(TALK_SUN_SPELL_04);
-
-                me->CastSpell(me, SPELL_CALAMITY_DUMMY);
-                events.ScheduleEvent(EVENT_CALAMITY, 34000);
-                break;
-            default:
-                break;
+                if (me->Attack(who, true))
+                    DoStartNoMovement(who);
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_sun_ai(creature);
-    }
-};
-class creature_mark_of_anguish : public CreatureScript
-{
-public:
-    creature_mark_of_anguish() : CreatureScript("creature_mark_of_anguish") { }
-
-    struct creature_mark_of_anguishAI : public ScriptedAI
-    {
-        creature_mark_of_anguishAI(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        void Reset()
-        {
-            me->CastSpell(me, SPELL_SHA_CORRUPTION);
-            me->setFaction(16);
-            DoZoneInCombat();
-
-            events.ScheduleEvent(EVENT_CHOOSE_VICTIM, 1000);
-        }
-        void OnAddThreat(Unit* victim, float& fThreat, SpellSchoolMask /*schoolMask*/, SpellInfo const* /*threatSpell*/)
-        {
-            fThreat = 0;
-            return;
-        }
-        void JustDied(Unit* killer)
-        {
-            if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_HU)))
-                stone->GetAI()->DoAction(ACTION_DESPERATE_METHOD_DEACTIVATE);
-
-            me->DespawnOrUnsummon(3000);
-        }
-        void KilledUnit(Unit* who)
-        {
-            events.ScheduleEvent(EVENT_CHOOSE_VICTIM, 1000);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
+            void KilledUnit(Unit* who) override
             {
-            case EVENT_CHOOSE_VICTIM:
+                if (who->IsPlayer())
+                    Talk(SAY_SUN_KILL);
+            }
+
+            void JustDied(Unit* who) override
             {
-                std::list<Player*> pl_list;
+                _JustDied();
+                Talk(SAY_SUN_DEATH);
+                DespawnCreaturesInArea(NPC_DESPAIR_SPAWN, me);
+                DespawnCreaturesInArea(NPC_DESPERATION_SPAWN, me);
+                me->RemoveAllAreaTriggers();
+            }
 
-                pl_list.clear();
-
-                me->GetPlayerListInGrid(pl_list, 100.0f);
-
-                if (pl_list.empty())
+            void _Update(uint32 diff) override
+            {
+                if (!UpdateVictim())
                     return;
 
-                std::list<Player*>::const_iterator it = pl_list.begin();
-                std::advance(it, urand(0, pl_list.size() - 1));
+                if (CheckPhase())
+                    return;
 
-                me->CastSpell((*it), SPELL_MARK_OF_ANGUISH_PLAYER_DOT);
-                break;
-            }
-            default:
-                break;
-            }
+                events.Update(diff);
 
-            DoMeleeAttackIfReady();
-        }
-    };
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new creature_mark_of_anguishAI(creature);
-    }
-};
-class spell_mark_of_anguish_periodic_damage : public SpellScriptLoader
-{
-public:
-    spell_mark_of_anguish_periodic_damage() : SpellScriptLoader("spell_mark_of_anguish_periodic_damage") { }
-
-    class spell_mark_of_anguish_periodic_damage_aura_script : public AuraScript
-    {
-        PrepareAuraScript(spell_mark_of_anguish_periodic_damage_aura_script);
-
-        void OnTick(constAuraEffectPtr /*aurEff*/)
-        {
-            if (Unit* unit = GetTarget())
-            {
-                if (AuraPtr aura = GetTarget()->GetAura(144176))
+                if (uint32 eventId = events.ExecuteEvent())
                 {
-                    SpellInfo const* info = sSpellMgr->GetSpellInfo(144365);
-
-                    if (!info)
-                        return;
-
-                    uint32 basepoints = info->Effects[0].BasePoints;
-                    uint32 stacksize = aura->GetStackAmount();
-                    int32 calc = basepoints + (basepoints + float(stacksize / 100));
-
-                    unit->CastCustomSpell(unit, 144365, &calc, NULL, NULL, true, NULL);
-                }
-                else
-                {
-                    GetTarget()->CastSpell(GetTarget(), 144176);
-                }
-
-                // hack fix of debilitation
-                if (!unit->HasAura(147383))
-                    unit->AddAura(147383, unit);
-            }
-        }
-
-        void Register()
-        {
-            OnEffectPeriodic += AuraEffectPeriodicFn(spell_mark_of_anguish_periodic_damage_aura_script::OnTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_mark_of_anguish_periodic_damage_aura_script();
-    }
-};
-class creature_embodied_despair : public CreatureScript
-{
-public:
-    creature_embodied_despair() : CreatureScript("creature_embodied_despair") { }
-
-    struct creature_embodied_despair_ai : public ScriptedAI
-    {
-        creature_embodied_despair_ai(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        void Reset()
-        {
-        }
-        void JustDied(Unit* killer)
-        {
-            if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SUN)))
-                stone->GetAI()->DoAction(ACTION_COUNT_ADDS_DEATH);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new creature_embodied_despair_ai(creature);
-    }
-};
-class creature_embodied_misery : public CreatureScript
-{
-public:
-    creature_embodied_misery() : CreatureScript("creature_embodied_misery") { }
-
-    struct creature_embodied_misery_ai : public ScriptedAI
-    {
-        creature_embodied_misery_ai(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        void Reset()
-        {
-        }
-        void EnterCombat(Unit* attacker)
-        {
-            if (pInstance)
-            {
-                DoZoneInCombat();
-
-                events.ScheduleEvent(EVENT_DEFILED_GROUND, urand(8000, 12000));
-            }
-        }
-        void JustDied(Unit* killer)
-        {
-            if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                stone->GetAI()->DoAction(ACTION_COUNT_ADDS_DEATH);
-
-            me->DespawnOrUnsummon(3000);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_DEFILED_GROUND:
-                // me->CastSpell(me, SPELL_DEFILED_GROUND_AREA_TRIGGER);
-                events.ScheduleEvent(EVENT_DEFILED_GROUND, urand(8000, 12000));
-                break;
-            default:
-                break;
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new creature_embodied_misery_ai(creature);
-    }
-};
-class creature_embodied_sorrow : public CreatureScript
-{
-public:
-    creature_embodied_sorrow() : CreatureScript("creature_embodied_sorrow") { }
-
-    struct creature_embodied_sorrow_ai : public ScriptedAI
-    {
-        creature_embodied_sorrow_ai(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        void Reset()
-        {
-        }
-        void EnterCombat(Unit* attacker)
-        {
-            if (pInstance)
-            {
-                DoZoneInCombat();
-
-                events.ScheduleEvent(EVENT_INFERNO_STRIKE, 4000);
-            }
-        }
-        void JustDied(Unit* killer)
-        {
-            if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                stone->GetAI()->DoAction(ACTION_COUNT_ADDS_DEATH);
-
-            me->DespawnOrUnsummon(3000);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_INFERNO_STRIKE:
-                me->CastSpell(me->getVictim(), SPELL_INFERNO_STRIKE_DUMMY);
-                events.ScheduleEvent(EVENT_INFERNO_STRIKE, 16000);
-                break;
-            default:
-                break;
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new creature_embodied_sorrow_ai(creature);
-    }
-};
-class creature_embodied_gloom : public CreatureScript
-{
-public:
-    creature_embodied_gloom() : CreatureScript("creature_embodied_gloom") { }
-
-    struct creature_embodied_gloom_ai : public ScriptedAI
-    {
-        creature_embodied_gloom_ai(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        void Reset()
-        {
-        }
-        void EnterCombat(Unit* attacker)
-        {
-            if (pInstance)
-            {
-                DoZoneInCombat();
-
-                events.ScheduleEvent(EVENT_CORRUPTION_SHOCK, 4000);
-            }
-        }
-        void JustDied(Unit* killer)
-        {
-            if (Creature* stone = pInstance->instance->GetCreature(pInstance->GetData64(DATA_STONE)))
-                stone->GetAI()->DoAction(ACTION_COUNT_ADDS_DEATH);
-
-            me->DespawnOrUnsummon(3000);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_CORRUPTION_SHOCK:
-                me->CastSpell(me, SPELL_CORRUPTION_SHOCK_DUMMY);
-                events.ScheduleEvent(EVENT_CORRUPTION_SHOCK, 10000);
-                break;
-            default:
-                break;
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new creature_embodied_gloom_ai(creature);
-    }
-};
-class spell_corruption_shock : public SpellScriptLoader
-{
-public:
-    spell_corruption_shock() : SpellScriptLoader("spell_corruption_shock") { }
-
-    class spell_corruption_shock_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_corruption_shock_spell_script);
-
-        void HandleDummy(SpellEffIndex /*effIndex*/)
-        {
-            if (!GetCaster())
-                return;
-
-            std::list<Player*> pl_list;
-
-            pl_list.clear();
-
-            GetCaster()->GetPlayerListInGrid(pl_list, 100.0f);
-
-            if (pl_list.empty())
-                return;
-
-            if (pl_list.size() >= 4)
-            {
-                std::list<Player*>::const_iterator it = pl_list.begin();
-                std::advance(it, urand(0, pl_list.size() - 4));
-
-                GetCaster()->CastSpell((*it), SPELL_CORRUPTION_SHOCK_MISSILE);
-            }
-            else
-            {
-                std::list<Player*>::const_iterator it = pl_list.begin();
-                std::advance(it, urand(0, pl_list.size() - 1));
-
-                GetCaster()->CastSpell((*it), SPELL_CORRUPTION_SHOCK_MISSILE);
-            }
-        }
-
-        void Register()
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_corruption_shock_spell_script::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_corruption_shock_spell_script();
-    }
-};
-class spell_garrote_dummy : public SpellScriptLoader
-{
-public:
-    spell_garrote_dummy() : SpellScriptLoader("spell_garrote_dummy") { }
-
-    class spell_garrote_dummy_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_garrote_dummy_spell_script);
-
-        void HandleDummy(SpellEffIndex /*effIndex*/)
-        {
-            if (!GetCaster() || !GetHitUnit())
-                return;
-
-            if (GetHitUnit()->isInFront(GetCaster(), M_PI))
-            {
-                GetCaster()->AddAura(SPELL_GOUGE_DAMAGE, GetHitUnit());
-            }
-            else
-            {
-                GetHitUnit()->CastSpell(GetHitUnit(), SPELL_GOUGE_KNOCKBACK);
-            }
-        }
-
-        void Register()
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_garrote_dummy_spell_script::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_garrote_dummy_spell_script();
-    }
-};
-class spell_mark_of_anguish_transfer_player : public SpellScriptLoader
-{
-public:
-    spell_mark_of_anguish_transfer_player() : SpellScriptLoader("spell_mark_of_anguish_transfer_player") { }
-
-    class spell_garrote_dummy_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_garrote_dummy_spell_script);
-
-        SpellCastResult CheckTarget()
-        {
-            if (!GetCaster())
-                return SPELL_FAILED_DONT_REPORT;
-
-            if (GetExplTargetUnit())
-            {
-                if (GetExplTargetUnit()->GetTypeId() == TYPEID_PLAYER)
-                    return SPELL_CAST_OK;
-
-                if (GetCaster()->HasAura(143840))
-                    return SPELL_CAST_OK;
-            }
-            return SPELL_FAILED_DONT_REPORT;
-        }
-        void OnCastT()
-        {
-            if (!GetCaster() || !GetHitUnit())
-                return;
-
-            if (GetCaster()->HasAura(143840))
-            {
-                GetCaster()->RemoveAura(143840);
-
-                if (GetHitUnit())
-                {
-                    if (Creature* hu = GetHitUnit()->FindNearestCreature(CREATURE_MARK_OF_ANGUISH, 300.0F, true))
+                    switch (eventId)
                     {
-                        if (boss_hu::boss_hu_ai* huai = CAST_AI(boss_hu::boss_hu_ai, hu->GetAI()))
-                        {
-                            hu->GetMotionMaster()->MoveJump(GetHitUnit()->GetPositionX() + 2, GetHitUnit()->GetPositionY() + 3, GetHitUnit()->GetPositionZ(), 45.0F, 15.0F, 10.0F);
-
-                            hu->CastSpell(GetHitUnit(), SPELL_MARK_OF_ANGUISH_PLAYER_DOT);
-                        }
+                        case EVENT_BOND_OF_GOLDEN_LOTUS_END:
+                            SetCastingLowHealth(false);
+                            break;
+                        case EVENT_SHA_SEAR:
+                            DoCastAOE(SPELL_SHA_SEAR);
+                            events.ScheduleEvent(EVENT_SHA_SEAR, urand(5000, 7000));
+                            break;
+                        case EVENT_SHADOW_WORD_BANE:
+                            DoCastAOE(SPELL_SHADOW_WORD_BANE);
+                            events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 25000);
+                            break;
+                        case EVENT_CALAMITY:
+                            DoCalamity();
+                            events.ScheduleEvent(EVENT_CALAMITY, 39000);
+                            break;
+                        case EVENT_DARK_MEDITATION:
+                            DarkMeditation();
+                            break;
+                        case EVENT_DARK_MEDITATION_DMG:
+                            DoCastAOE(SPELL_DARK_MEDITATION_DMG, true);
+                            events.ScheduleEvent(EVENT_DARK_MEDITATION_DMG, 500);
+                            break;
+                        case EVENT_AGGRO:
+                            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_SHA_SEAR, urand(1000, 3000));
+                            events.ScheduleEvent(EVENT_SHADOW_WORD_BANE, 10000);
+                            events.ScheduleEvent(EVENT_CALAMITY, urand(2000, 39000));
+                            break;
+                        default:
+                            break;
                     }
                 }
             }
-        }
 
-        void Register()
-        {
-            OnCheckCast += SpellCheckCastFn(spell_garrote_dummy_spell_script::CheckTarget);
-            OnCast += SpellCastFn(spell_garrote_dummy_spell_script::OnCastT);
-        }
-    };
+        protected:
 
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_garrote_dummy_spell_script();
-    }
-};
-class spell_shadow_word_bane : public SpellScriptLoader
-{
-public:
-    spell_shadow_word_bane() : SpellScriptLoader("spell_shadow_word_bane") { }
-
-    class spell_shadow_word_baneAI : public AuraScript {
-        PrepareAuraScript(spell_shadow_word_baneAI);
-
-        int32 cooldownPer;
-
-        void OnUpdate(constAuraEffectPtr aurEff)
-        {
-            if (!GetTarget())
-                return;
-
-            if (GetTarget()->GetTypeId() != TYPEID_PLAYER)
-                return;
-
-            if (!GetCaster())
-                return;
-
-            if (Unit* target = GetCaster()->GetAI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0F, true))
-                GetCaster()->CastSpell(target, SPELL_SHADOW_WORD_BANE_DOT);
-
-        }
-        void Register()
-        {
-            OnEffectPeriodic += AuraEffectPeriodicFn(spell_shadow_word_baneAI::OnUpdate, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_shadow_word_baneAI();
-    }
-};
-class spell_calamity : public SpellScriptLoader
-{
-public:
-    spell_calamity() : SpellScriptLoader("spell_calamity") { }
-
-    class spell_calamity_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_calamity_spell_script);
-
-        void HandleDummy(SpellEffIndex /*effIndex*/)
-        {
-            if (!GetCaster())
-                return;
-
-            std::list<Player*> pl_list;
-            pl_list.clear();
-
-            GetCaster()->GetPlayerListInGrid(pl_list, 100.0f);
-
-            if (pl_list.empty())
-                return;
-
-            for (auto itr : pl_list)
+            void DoCalamity()
             {
-                itr->CastSpell(itr, SPELL_CALAMITY_DAMAGE);
+                Talk(SAY_SUN_CALAMITY);
+
+                 DoCastAOE(SPELL_CALAMITY);
+
+                 IncreaseAbilityCount();
+            }
+
+            virtual void DoFirstAggro() override
+            {
+                Talk(SAY_SUN_AGGRO);
+            }
+
+            virtual void DoBoundOfGoldenLotus() override
+            {
+                Talk(SAY_SUN_LOTUS);
+            }
+
+            virtual void DoBeginMeasures() override
+            {
+                events.CancelEvent(EVENT_SHA_SEAR);
+                events.CancelEvent(EVENT_CALAMITY);
+                events.CancelEvent(EVENT_SHADOW_WORD_BANE);
+
+                events.ScheduleEvent(EVENT_DARK_MEDITATION, 1);
+            }
+
+            virtual void DoEndMeasures() override
+            {
+                events.CancelEvent(EVENT_DARK_MEDITATION_DMG);
+
+                me->RemoveAura(SPELL_DARK_MEDITATION_DUMMY_2);
+                me->RemoveAura(SPELL_DARK_MEDITATION_AREATRIGGER);
+                me->RemoveAreaTrigger(SPELL_DARK_MEDITATION_AREATRIGGER);
+
+                me->SetReactState(ReactStates::REACT_PASSIVE);
+                events.ScheduleEvent(Events::EVENT_AGGRO, 5000);
+            }
+
+            virtual void OtherBossBeginsMeasures() override
+            {
+                if (!IsHeroic())
+                    events.PauseEvent(EVENT_CALAMITY);
+            }
+
+            virtual void OtherBossEndsMeasures() override
+            {
+                if (!IsHeroic())
+                    events.ContinueEvent(EVENT_CALAMITY);
+            }
+
+            void DarkMeditation()
+            {
+                Talk(SAY_SUN_MEASURES);
+
+                me->AddAura(SPELL_DARK_MEDITATION_DUMMY_2, me);
+                DoCast(me, SPELL_DARK_MEDITATION_AREATRIGGER);
+
+                if (Creature* pDespair = me->SummonCreature(NPC_EMBODIED_DESPAIR, embodiedDespairPos, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 1000))
+                    AddMeasureNpc(pDespair->GetEntry());
+
+                if (Creature* pDesperation = me->SummonCreature(NPC_EMBODIED_DESPERATION, embodiedDesperationPos, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 1000))
+                    AddMeasureNpc(pDesperation->GetEntry());
+
+                events.ScheduleEvent(EVENT_DARK_MEDITATION_DMG, 500);
+            }
+        };
+};
+
+/// Embodied Misery - 71476, Embodied Sorrow - 71481, Embodied Gloom - 71477
+struct rook_stonetoe_embodiedAI : public ScriptedAI
+{
+    rook_stonetoe_embodiedAI(Creature* p_Creature) : ScriptedAI(p_Creature)
+    {
+        //ApplyAllImmunities(true);
+        me->SetReactState(REACT_PASSIVE);
+
+        m_Instance = p_Creature->GetInstanceScript();
+    }
+
+    InstanceScript* m_Instance = nullptr;
+
+    void Reset() override
+    {
+        events.Reset();
+    }
+
+    void MovementInform(uint32 p_Type, uint32 p_Id) override
+    {
+        if (p_Type == MovementGeneratorType::EFFECT_MOTION_TYPE && p_Id == EventId::EVENT_JUMP)
+        {
+            events.ScheduleEvent(EVENT_AGGRO, 4000);
+
+            if (IsHeroic())
+                DoCastAOE(Spells::SPELL_SHARED_TORMENT, true);
+        }
+    }
+
+    void EnterCombat(Unit* p_Who) override
+    {
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_ENGAGE, me);
+
+        ScriptedAI::EnterCombat(p_Who);
+    }
+
+    void JustDied(Unit* /*p_Killer*/) override
+    {
+        events.Reset();
+        me->DespawnOrUnsummon(1000);
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+    }
+
+    void UpdateAI(const uint32 p_Diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        _Update(p_Diff);
+    }
+
+protected:
+    virtual void _Update(uint32 p_Diff) { }
+};
+
+/// Embodied Misery - 71476
+struct npc_rook_stonetoe_embodied_misery : public rook_stonetoe_embodiedAI
+{
+    npc_rook_stonetoe_embodied_misery(Creature* p_Creature) : rook_stonetoe_embodiedAI(p_Creature) { }
+
+    void _Update(uint32 p_Diff) override
+    {
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    events.ScheduleEvent(Events::EVENT_DEFILED_GROUND, 3000);
+                    break;
+                case EVENT_DEFILED_GROUND:
+                    DoCastVictim(Spells::SPELL_DEFILED_GROUND);
+                    events.ScheduleEvent(Events::EVENT_DEFILED_GROUND, 10500);
+                    break;
             }
         }
 
+        DoMeleeAttackIfReady();
+    }
+};
+
+/// Embodied Sorrow - 71481
+struct npc_rook_stonetoe_embodied_sorrow : public rook_stonetoe_embodiedAI
+{
+    npc_rook_stonetoe_embodied_sorrow(Creature* p_Creature) : rook_stonetoe_embodiedAI(p_Creature) { }
+
+    void _Update(uint32 p_Diff) override
+    {
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    events.ScheduleEvent(Events::EVENT_INFERNO_STRIKE, 2000);
+                    break;
+                case EVENT_INFERNO_STRIKE:
+                    if (auto l_Target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                        DoCast(l_Target, Spells::SPELL_INFERNO_STRIKE);
+
+                    events.ScheduleEvent(Events::EVENT_INFERNO_STRIKE, 10000);
+                    break;
+            }
+        }
+    }
+};
+
+/// Embodied Gloom - 71477
+struct npc_rook_stonetoe_embodied_gloom : public rook_stonetoe_embodiedAI
+{
+    npc_rook_stonetoe_embodied_gloom(Creature* p_Creature) : rook_stonetoe_embodiedAI(p_Creature)
+    {
+        p_Creature->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_INTERRUPT, false);
+    }
+
+    void _Update(uint32 p_Diff) override
+    {
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    events.ScheduleEvent(Events::EVENT_CORRUPTION_SHOCK, 1000);
+                    break;
+                case EVENT_CORRUPTION_SHOCK:
+                    me->CastCustomSpell(Spells::SPELL_CORRUPTION_SHOCK_AOE, SpellValueMod::SPELLVALUE_MAX_TARGETS, Is25ManRaid() ? 5 : 2, nullptr, true);
+                    events.ScheduleEvent(Events::EVENT_CORRUPTION_SHOCK, urand(3000, 5000));
+                    break;
+            }
+        }
+    }
+};
+
+/// Embodied Anguish - 71478
+struct npc_he_softfoot_embodied_anguish : public ScriptedAI
+{
+    npc_he_softfoot_embodied_anguish(Creature* p_Creature) : ScriptedAI(p_Creature)
+    {
+       //ApplyAllImmunities(true);
+
+        me->ApplySpellImmune(0, SpellImmunity::IMMUNITY_STATE, AuraType::SPELL_AURA_MOD_TAUNT, true);
+        me->ApplySpellImmune(0, SpellImmunity::IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+
+        me->AddAura(Spells::SPELL_SHADOW_WEAKNESS, me);
+
+        m_Instance = p_Creature->GetInstanceScript();
+        p_Creature->SetReactState(ReactStates::REACT_PASSIVE);
+    }
+
+    InstanceScript* m_Instance = nullptr;
+    ObjectGuid m_TargetGUID = ObjectGuid::Empty;
+    bool m_IsCasting = false;
+
+    void Reset() override
+    {
+        events.Reset();
+        m_TargetGUID = ObjectGuid::Empty;
+    }
+
+    void EnterCombat(Unit* /*p_Who*/) override
+    {
+        events.ScheduleEvent(Events::EVENT_AGGRO, 3000);
+        events.ScheduleEvent(Events::EVENT_MARK_OF_ANGUISH, 0);
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_ENGAGE, me);
+    }
+
+    void SetGUID(ObjectGuid p_Guid, int32 p_Id) override
+    {
+        if (p_Id == Actions::GUID_MARK_OF_ANGUISH)
+        {
+            // if it is not first targetting
+            if (m_TargetGUID != ObjectGuid::Empty)
+                DoCastAOE(Spells::SPELL_SHADOW_WEAKNESS_AOE, true);
+
+            m_TargetGUID = p_Guid;
+
+            events.CancelEvent(Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET);
+            events.ScheduleEvent(Events::EVENT_MARK_OF_ANGUISH_TARGET_CHANGED, 500);
+        }
+    }
+
+    void JustDied(Unit* /*p_Killer*/) override
+    {
+        events.Reset();
+        me->DespawnOrUnsummon(1000);
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+    }
+
+    void UpdateAI(const uint32 p_Diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
+            return;
+
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case Events::EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+
+                    if (Player* l_Target = ObjectAccessor::GetPlayer(*me, m_TargetGUID))
+                    {
+                        me->AddThreat(l_Target, 10000000.0f);
+                        me->GetMotionMaster()->MoveChase(l_Target);
+                    }
+                    break;
+                case Events::EVENT_MARK_OF_ANGUISH:
+                    DoCastAOE(Spells::SPELL_MARK_OF_ANGUISH_AOE);
+                    break;
+                case Events::EVENT_MARK_OF_ANGUISH_TARGET_CHANGED:
+                {
+                    me->CastStop();
+                    DoResetThreat();
+                    m_IsCasting = false;
+
+                    if (me->GetReactState() != ReactStates::REACT_PASSIVE)
+                    {
+                        if (Player* l_Target = ObjectAccessor::GetPlayer(*me, m_TargetGUID))
+                        {
+                            me->AddThreat(l_Target, 10000000.0f);
+                            me->GetMotionMaster()->MoveChase(l_Target);
+                        }
+                    }
+
+                    events.ScheduleEvent(Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET, 1000);
+                    break;
+                }
+                case Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET:
+                {
+                    Player* l_Target = ObjectAccessor::GetPlayer(*me, m_TargetGUID);
+                    if (l_Target == nullptr || !l_Target->IsAlive())
+                    {
+                        m_IsCasting = false;
+                        m_TargetGUID = ObjectGuid::Empty;
+
+                        me->CastStop();
+                        DoResetThreat();
+
+                        events.ScheduleEvent(Events::EVENT_MARK_OF_ANGUISH, 1000);
+                        return;
+                    }
+
+                    if (!m_IsCasting)
+                    {
+                        DoCast(l_Target, Spells::SPELL_MARK_OF_ANGUISH_AURA_2);
+                        me->ClearUnitState(UnitState::UNIT_STATE_CASTING);
+                        m_IsCasting = true;
+                    }
+
+                    events.ScheduleEvent(Events::EVENT_CHECK_MARK_OF_ANGUISH_TARGET, 1000);
+                    break;
+                }
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+/// Embodied Despair - 71474, Embodied Desperation - 71482
+struct npc_sun_tenderheart_embodied_AI : public Scripted_NoMovementAI
+{
+    npc_sun_tenderheart_embodied_AI(Creature* p_Creature, uint32 p_SpellId) : Scripted_NoMovementAI(p_Creature), m_Spell(p_SpellId)
+    {
+        //ApplyAllImmunities(true);
+
+        p_Creature->SetReactState(REACT_PASSIVE);
+        m_Instance = p_Creature->GetInstanceScript();
+    }
+
+    uint32 m_Spell = 0;
+    InstanceScript* m_Instance = nullptr;
+
+    void Reset() override
+    {
+        events.Reset();
+        summons.DespawnAll();
+    }
+
+    void IsSummonedBy(Unit* /*p_Owner*/) override
+    {
+        events.ScheduleEvent(EVENT_MANIFEST, 1000);
+        DoCast(me, m_Spell, true);
+        me->AddAura(Spells::SPELL_SPIRIT_BOUND, me);
+    }
+
+    void JustSummoned(Creature* p_Summon) override
+    {
+        summons.Summon(p_Summon);
+
+        if (me->IsInCombat())
+            DoZoneInCombat(p_Summon);
+    }
+
+    void EnterCombat(Unit* /*p_Who*/) override
+    {
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+    }
+
+    void DoAction(const int32 p_Action) override
+    {
+        if (p_Action == Actions::ACTION_SPAWNS_SYNC_HP)
+        {
+            for (auto l_Guid : summons)
+                if (auto l_Summon = ObjectAccessor::GetUnit(*me, l_Guid))
+                    l_Summon->SetHealth(me->GetHealth());
+        }
+    }
+
+    void SummonedCreatureDespawn(Creature* p_Summon) override
+    {
+        summons.Despawn(p_Summon);
+    }
+
+    void JustDied(Unit* /*p_Who*/) override
+    {
+        events.Reset();
+        summons.DespawnAll();
+
+        if (m_Instance)
+            m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+        me->DespawnOrUnsummon(3000);
+    }
+
+    void UpdateAI(const uint32 p_Diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        if (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_MANIFEST:
+                    DoCast(me, m_Spell);
+                    events.ScheduleEvent(EVENT_MANIFEST, 9000);
+                    break;
+            }
+        }
+    }
+};
+
+/// Embodied Despair - 71474
+struct npc_sun_tenderheart_embodied_despair : public npc_sun_tenderheart_embodied_AI
+{
+    npc_sun_tenderheart_embodied_despair(Creature* p_Creature) : npc_sun_tenderheart_embodied_AI(p_Creature, Spells::SPELL_MANIFEST_DESPAIR) { }
+};
+
+/// Embodied Desperation - 71482
+struct npc_sun_tenderheart_embodied_desperation : public npc_sun_tenderheart_embodied_AI
+{
+    npc_sun_tenderheart_embodied_desperation(Creature* p_Creature) : npc_sun_tenderheart_embodied_AI(p_Creature, Spells::SPELL_MANIFEST_DESPERATION) { }
+};
+
+/// Despair Spawn - 71712, Desperation Spawn - 71993
+struct npc_sun_tenderheart_spawn : public ScriptedAI
+{
+    npc_sun_tenderheart_spawn(Creature* p_Creature) : ScriptedAI(p_Creature)
+    {
+        //ApplyAllImmunities(true);
+        p_Creature->SetReactState(ReactStates::REACT_PASSIVE);
+    }
+
+    enum eSpells
+    {
+        SpiritBound = 143723
+    };
+
+    void Reset()
+    {
+        events.Reset();
+    }
+
+    void IsSummonedBy(Unit* p_Owner) override
+    {
+        me->SetHealth(p_Owner->GetHealth());
+        p_Owner->CastSpell(me, eSpells::SpiritBound, true);
+        events.ScheduleEvent(Events::EVENT_AGGRO, 2000);
+    }
+
+    void JustDied(Unit* /*p_Who*/)
+    {
+        events.Reset();
+        summons.DespawnAll();
+
+        me->DespawnOrUnsummon(3000);
+    }
+
+    void UpdateAI(const uint32 p_Diff)
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(p_Diff);
+
+        if (uint32 l_EventId = events.ExecuteEvent())
+        {
+            switch (l_EventId)
+            {
+                case Events::EVENT_AGGRO:
+                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+class spell_sun_tenderheart_calamity : public SpellScriptLoader
+{
+    public:
+        spell_sun_tenderheart_calamity() : SpellScriptLoader("spell_sun_tenderheart_calamity") { }
+
+        class spell_sun_tenderheart_calamity_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_sun_tenderheart_calamity_SpellScript);
+
+            void HandleDummy(SpellEffIndex effIndex)
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
+
+                GetHitUnit()->RemoveAura(SPELL_SHADOW_WORD_BANE_DMG);
+
+                if (int32 dmg = GetCalamityDmg(GetCaster()))
+                {
+                    GetCaster()->CastCustomSpell(GetHitUnit(), SPELL_CALAMITY_DMG, &dmg, nullptr, true);
+                }
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_sun_tenderheart_calamity_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+
+        private:
+
+            int32 GetCalamityDmg(Unit* caster)
+            {
+                int32 damage = 30;
+
+                if (Creature* pCreature = caster->ToCreature())
+                {
+                    if (pCreature->GetMap()->IsHeroic())
+                    {
+                        uint32 calamityCount = pCreature->AI()->GetData(DATA_ABILITY_COUNT);
+
+                        // first ability should be with 30 dmg
+                        if (calamityCount > 0)
+                            calamityCount -= 1;
+
+                        damage += 10 * calamityCount;
+                    }
+                }
+
+                return damage;
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_sun_tenderheart_calamity_SpellScript();
+        }
+};
+
+/// Shadow Word: Bane - 143446
+class spell_sun_tenderheart_shadow_word_bane : public SpellScript
+{
+    PrepareSpellScript(spell_sun_tenderheart_shadow_word_bane);
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, SPELL_SHADOW_WORD_BANE_DMG, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_sun_tenderheart_shadow_word_bane::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+/// Shadow Word: Bane - 143438
+class spell_sun_tenderheart_shadow_word_bane_aoe : public SpellScript
+{
+    PrepareSpellScript(spell_sun_tenderheart_shadow_word_bane_aoe);
+
+    void CheckTarget(std::list<WorldObject*>& p_Targets)
+    {
+        Unit* l_Target = GetExplTargetUnit();
+        if (l_Target == nullptr)
+            return;
+
+        p_Targets.remove(l_Target);
+        p_Targets.remove_if(Trinity::UnitAuraCheck(true, SPELL_SHADOW_WORD_BANE_DMG));
+
+        if (!p_Targets.empty())
+        {
+            if (auto l_Aura = l_Target->GetAura(SPELL_SHADOW_WORD_BANE_DMG))
+                l_Aura->SetCharges(1);
+
+            //GetSpell()->SetSpellValue(SpellValueMod::SPELLVALUE_BASE_POINT0, GetSpell()->GetSpellValue(SpellValueMod::SPELLVALUE_BASE_POINT0) - 1);
+            GetSpell()->SetSpellValue(SpellValueMod::SPELLVALUE_BASE_POINT0, GetSpellValue()->EffectBasePoints[0] - 1);
+        }
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastCustomSpell(SPELL_SHADOW_WORD_BANE_DMG, SpellValueMod::SPELLVALUE_BASE_POINT0, GetSpellValue()->EffectBasePoints[0], l_Target);
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sun_tenderheart_shadow_word_bane_aoe::CheckTarget, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
+        OnEffectHitTarget += SpellEffectFn(spell_sun_tenderheart_shadow_word_bane_aoe::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+/// Shadow Word: Bane (Main target spell) - 143434
+class spell_sun_tenderheart_shadow_word_bane_dmg : public AuraScript
+{
+    PrepareAuraScript(spell_sun_tenderheart_shadow_word_bane_dmg);
+
+    void OnApply(AuraEffect const* p_AurEff, AuraEffectHandleModes /*p_Mode*/)
+    {
+        GetAura()->SetCharges(p_AurEff->GetAmount());
+    }
+
+    void HandlePeriodic(AuraEffect const* p_AurEff)
+    {
+        if (GetAura()->GetCharges() > 1)
+            if (auto l_Caster = GetCaster())
+                if (auto l_AuraOwner = GetUnitOwner())
+                    l_Caster->CastCustomSpell(SPELL_SHADOW_WORD_BANE_AOE, SpellValueMod::SPELLVALUE_BASE_POINT0, GetAura()->GetCharges(), l_AuraOwner);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_sun_tenderheart_shadow_word_bane_dmg::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_sun_tenderheart_shadow_word_bane_dmg::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
+    }
+};
+
+/// Sha Sear - 143424
+class spell_sun_sha_shear : public SpellScript
+{
+    PrepareSpellScript(spell_sun_sha_shear);
+
+    void CalculateDamage(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (Unit* l_Target = GetHitUnit())
+        {
+            if (AuraEffect* l_ShaShear = l_Target->GetAuraEffect(Spells::SPELL_SHA_SEAR, SpellEffIndex::EFFECT_0))
+            {
+                int32 l_Damage = GetHitDamage();
+                AddPct(l_Damage, l_ShaShear->GetTickNumber() * 25);
+                SetHitDamage(l_Damage);
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_sun_sha_shear::CalculateDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
+/// Corrupted Brew - 143019
+class spell_rook_stonetoe_corrupted_brew_aoe : public SpellScript
+{
+    PrepareSpellScript(spell_rook_stonetoe_corrupted_brew_aoe);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, GetCorruptedBrewSpellId(GetCaster()), true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_corrupted_brew_aoe::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+
+private:
+
+    uint32 GetCorruptedBrewSpellId(Unit* p_Caster)
+    {
+        uint32 l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_1;
+
+        if (p_Caster->GetMap()->IsHeroic())
+        {
+            uint32 l_BrewCount = p_Caster->ToCreature()->AI()->GetData(DATA_ABILITY_COUNT);
+
+            if (l_BrewCount < 3)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_1;
+            else if (l_BrewCount < 5)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_2;
+            else if (l_BrewCount < 7)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_3;
+            else if (l_BrewCount < 9)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_4;
+            else if (l_BrewCount < 11)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_5;
+            else if (l_BrewCount < 13)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_6;
+            else if (l_BrewCount < 15)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_7;
+            else if (l_BrewCount < 17)
+                l_SpellId = SPELL_CORRUPTED_BREW_MISSILE_8;
+        }
+
+        return l_SpellId;
+    }
+};
+
+class spell_rook_stonetoe_inferno_strike : public SpellScriptLoader
+{
+    public:
+        spell_rook_stonetoe_inferno_strike() : SpellScriptLoader("spell_rook_stonetoe_inferno_strike") { }
+
+        class spell_rook_stonetoe_inferno_strike_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_rook_stonetoe_inferno_strike_SpellScript);
+
+            void HandleDamage(SpellEffIndex effIndex)
+            {
+                //int32 multiplier = GetSpellInfo()->Effects[EFFECT_0].BasePoints;
+                int32 multiplier = GetSpellInfo()->GetEffect(EFFECT_0)->BasePoints;
+
+                SetHitDamage(GetHitDamage() * multiplier);
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_inferno_strike_SpellScript::HandleDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_rook_stonetoe_inferno_strike_SpellScript();
+        }
+};
+
+/// Gouge - 143330
+class spell_he_stonefoot_gouge : public SpellScript
+{
+    PrepareSpellScript(spell_he_stonefoot_gouge);
+
+    enum eSpells
+    {
+        Shadowstep = 143285
+    };
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        Unit* l_HeStoneFoot = GetCaster();
+
+        if (Unit* l_Target = GetHitUnit())
+        {
+            if (l_Target->isInBack(l_HeStoneFoot))
+                l_HeStoneFoot->CastSpell(l_Target, Spells::SPELL_GOUGE_KNOCKBACK, true);
+            else
+            {
+                l_HeStoneFoot->CastSpell(l_Target, SPELL_GOUGE_DMG, true);
+
+                if (Unit* l_NewTarget = l_HeStoneFoot->ToCreature()->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, [l_Target](Unit const* p_Target) -> bool
+                {
+                    return p_Target->IsPlayer() && p_Target != l_Target;
+                }))
+                {
+                    l_HeStoneFoot->getThreatManager().resetAllAggro();
+                    l_HeStoneFoot->AddThreat(l_NewTarget, 10000000.0f);
+                    l_HeStoneFoot->ToCreature()->AI()->AttackStart(l_NewTarget);
+
+                    l_HeStoneFoot->CastSpell(l_NewTarget, eSpells::Shadowstep, true);
+                    l_HeStoneFoot->ClearUnitState(UNIT_STATE_CASTING);
+
+                    l_HeStoneFoot->ToCreature()->AI()->SetGUID(l_NewTarget->GetGUID(), Guids::GUID_FIXATE_TARGET);
+                }
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_he_stonefoot_gouge::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+class spell_rook_stonetoe_clash_aoe : public SpellScriptLoader
+{
+    public:
+        spell_rook_stonetoe_clash_aoe() : SpellScriptLoader("spell_rook_stonetoe_clash_aoe") { }
+
+        class spell_rook_stonetoe_clash_aoe_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_rook_stonetoe_clash_aoe_SpellScript);
+
+            void HandleDummy(SpellEffIndex effIndex)
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
+
+                float distance = GetCaster()->GetDistance(GetHitUnit());
+                Position centerPos;
+                GetCaster()->GetNearPoint(GetCaster(), centerPos.m_positionX, centerPos.m_positionY, centerPos.m_positionZ, 0.0f, distance / 2.0f, GetCaster()->GetAngle(GetHitUnit()));
+                centerPos.m_positionZ += 0.1f;
+
+                GetCaster()->CastSpell(centerPos.GetPositionX(), centerPos.GetPositionY(), centerPos.GetPositionZ(), SPELL_CLASH_JUMP, true);
+                GetHitUnit()->CastSpell(centerPos.GetPositionX(), centerPos.GetPositionY(), centerPos.GetPositionZ(), SPELL_CLASH_CHARGE, true);
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_clash_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_rook_stonetoe_clash_aoe_SpellScript();
+        }
+};
+
+/// Corruption Shock - 143958
+class spell_rook_stonetoe_corruption_shock_aoe : public SpellScript
+{
+    PrepareSpellScript(spell_rook_stonetoe_corruption_shock_aoe);
+
+    void HandleDummy(SpellEffIndex p_EffIndex)
+    {
+        if (auto l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, GetSpellValue()->EffectBasePoints[0], true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_rook_stonetoe_corruption_shock_aoe::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+class spell_he_softfoot_mark_of_anguish_aoe : public SpellScriptLoader
+{
+    public:
+        spell_he_softfoot_mark_of_anguish_aoe() : SpellScriptLoader("spell_he_softfoot_mark_of_anguish_aoe") { }
+
+        class spell_he_softfoot_mark_of_anguish_aoe_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_he_softfoot_mark_of_anguish_aoe_SpellScript);
+
+            void HandleDummy(SpellEffIndex effIndex)
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
+
+                if (SpellInfo const* l_SpellInfo = sSpellMgr->GetSpellInfo(Spells::SPELL_DEBILITATION, DIFFICULTY_NONE))
+                    GetCaster()->AddAura(l_SpellInfo, MAX_EFFECT_MASK, GetHitUnit());
+
+                if (Creature* pCreature = GetCaster()->ToCreature())
+                {
+                    pCreature->AI()->SetGUID(GetHitUnit()->GetGUID(), GUID_MARK_OF_ANGUISH);
+                }
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_he_softfoot_mark_of_anguish_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_he_softfoot_mark_of_anguish_aoe_SpellScript();
+        }
+};
+
+/// Mark of Anguish - 143842
+class spell_he_softfoot_mark_of_anguish_dummy : public SpellScript
+{
+    PrepareSpellScript(spell_he_softfoot_mark_of_anguish_dummy);
+
+    void HandleDummy()
+    {
+        if (auto l_Target = GetHitUnit())
+        {
+            if (auto l_Aura = GetCaster()->GetAura(Spells::SPELL_MARK_OF_ANGUISH_AURA_2))
+            {
+                if (SpellInfo const* l_SpellInfo = sSpellMgr->GetSpellInfo(Spells::SPELL_DEBILITATION, DIFFICULTY_NONE))
+                    GetCaster()->AddAura(l_SpellInfo, MAX_EFFECT_MASK, l_Target);
+
+                if (auto l_AuraCaster = l_Aura->GetCaster()) ///< Anguish
+                    if (l_AuraCaster->IsCreature() && l_AuraCaster->ToCreature()->AI())
+                        l_AuraCaster->ToCreature()->AI()->SetGUID(l_Target->GetGUID(), GUID_MARK_OF_ANGUISH);
+
+                l_Aura->Remove();
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_he_softfoot_mark_of_anguish_dummy::HandleDummy);
+    }
+};
+
+class spell_he_softfoot_shadow_weakness_aoe : public SpellScriptLoader
+{
+    public:
+        spell_he_softfoot_shadow_weakness_aoe() : SpellScriptLoader("spell_he_softfoot_shadow_weakness_aoe") { }
+
+        class spell_he_softfoot_shadow_weakness_aoe_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_he_softfoot_shadow_weakness_aoe_SpellScript);
+
+            void HandleHitTarget(SpellEffIndex effIndex)
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
+
+                GetCaster()->AddAura(SPELL_SHADOW_WEAKNESS_DEBUFF, GetHitUnit());
+            }
+
+            void Register()
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_he_softfoot_shadow_weakness_aoe_SpellScript::HandleHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const
+        {
+            return new spell_he_softfoot_shadow_weakness_aoe_SpellScript();
+        }
+};
+
+/// Mark of Anguish - 143840
+class spell_he_softfoot_mark_of_anguish_aura_2 : public AuraScript
+{
+    PrepareAuraScript(spell_he_softfoot_mark_of_anguish_aura_2);
+
+    void HandlePeriodic(AuraEffect const* /*p_AurEff*/)
+    {
+        if (auto l_Onwer = GetUnitOwner())
+            l_Onwer->CastSpell(l_Onwer, Spells::SPELL_MARK_OF_ANGUISH_DMG, true);
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_he_softfoot_mark_of_anguish_aura_2::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
+    }
+};
+
+class spell_he_softfoot_instant_poison : public SpellScriptLoader
+{
+    public:
+        spell_he_softfoot_instant_poison() : SpellScriptLoader("spell_he_softfoot_instant_poison") { }
+
+        class spell_he_softfoot_instant_poison_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_he_softfoot_instant_poison_AuraScript);
+
+            void OnProc(AuraEffect const* /*p_AurEff*/, ProcEventInfo & p_EventInfo)
+            {
+                PreventDefaultAction();
+
+                if (!GetCaster())
+                    return;
+                // todo: readd commented part
+                if (Creature* pHe = GetCaster()->ToCreature())
+                /*{
+                    if (pHe->HasSpellCooldown(SPELL_INSTANT_POISON_DMG))
+                        return;
+
+                    */if (Unit* target = pHe->GetVictim())/*
+                    {*/
+                        pHe->CastSpell(target, SPELL_INSTANT_POISON_DMG, true);
+                /*        pHe->_AddCreatureSpellCooldown(SPELL_INSTANT_POISON_DMG, time(NULL) + 3);
+                    }
+                }*/
+            }
+
+            void Register()
+            {
+                OnEffectProc += AuraEffectProcFn(spell_he_softfoot_instant_poison_AuraScript::OnProc, EFFECT_1, SPELL_AURA_PROC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const
+        {
+            return new spell_he_softfoot_instant_poison_AuraScript();
+        }
+};
+
+class spell_he_softfoot_noxious_poison : public SpellScriptLoader
+{
+    public:
+        spell_he_softfoot_noxious_poison() : SpellScriptLoader("spell_he_softfoot_noxious_poison") { }
+
+        class spell_he_softfoot_noxious_poison_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_he_softfoot_noxious_poison_AuraScript);
+
+            void OnProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+            {
+                PreventDefaultAction();
+
+                Unit* actor = eventInfo.GetActor();
+
+                Unit* target = eventInfo.GetActionTarget();
+
+                if (!actor || !target)
+                    return;
+
+                actor->CastSpell(target, SPELL_NOXIOUS_POISON_MISSILE_1, true);
+            }
+
+            void Register()
+            {
+                OnEffectProc += AuraEffectProcFn(spell_he_softfoot_noxious_poison_AuraScript::OnProc, EFFECT_1, SPELL_AURA_PROC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const
+        {
+            return new spell_he_softfoot_noxious_poison_AuraScript();
+        }
+};
+
+/// Mark of Anguish - 144365
+class spell_he_softfoot_mark_of_anguish_dmg : public SpellScriptLoader
+{
+public:
+    spell_he_softfoot_mark_of_anguish_dmg() : SpellScriptLoader("spell_he_softfoot_mark_of_anguish_dmg") { }
+
+    class spell_he_softfoot_mark_of_anguish_dmg_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_he_softfoot_mark_of_anguish_dmg_SpellScript);
+
+        void HandleDamage()
+        {
+            // This spell has SPELL_ATTR3_NO_DONE_BONUS and SPELL_ATTR6_NO_DONE_PCT_DAMAGE_MODS.
+            // So calclate damage manually.
+            auto l_Damage = GetHitDamage();
+
+            if (auto l_Target = GetHitUnit())
+                if (auto l_Aura = l_Target->GetAura(Spells::SPELL_SHADOW_WEAKNESS_DEBUFF))
+                    SetHitDamage(AddPct(l_Damage, l_Aura->GetEffect(SpellEffIndex::EFFECT_0)->GetAmount()));
+        }
+
         void Register()
         {
-            OnEffectHitTarget += SpellEffectFn(spell_calamity_spell_script::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            AfterCast += SpellCastFn(spell_he_softfoot_mark_of_anguish_dmg_SpellScript::HandleDamage);
         }
+
     };
 
     SpellScript* GetSpellScript() const
     {
-        return new spell_calamity_spell_script();
+        return new spell_he_softfoot_mark_of_anguish_dmg_SpellScript();
     }
 };
-void AddSC_fallen_protectors()
-{
-    new siege_of_orgrimmar_lorewalker_cho_second_part();
 
-    new boss_rook();
-    new boss_sun();
-    new boss_hu();
-    new creature_embodied_despair();
-    new creature_embodied_gloom();
-    new creature_embodied_misery();
-    new creature_embodied_sorrow();
-    new creature_mark_of_anguish();
-    new spell_corruption_shock();
-    new spell_calamity();
-    new spell_shadow_word_bane();
-    new spell_mark_of_anguish_transfer_player();
-    new spell_garrote_dummy();
-    new spell_mark_of_anguish_periodic_damage();
+
+/// Called by Shadow Weakness - 144079
+class spell_he_softfoot_shadow_weakness : public SpellScriptLoader
+{
+    public:
+        spell_he_softfoot_shadow_weakness() : SpellScriptLoader("spell_he_softfoot_shadow_weakness") { }
+
+        class spell_he_softfoot_shadow_weakness_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_he_softfoot_shadow_weakness_AuraScript);
+
+            void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+            {
+                PreventDefaultAction();
+
+                Unit* l_Caster = eventInfo.GetActor();
+                Unit* l_Target = eventInfo.GetActionTarget();
+
+                if (!l_Caster || !l_Target)
+                    return;
+
+                l_Caster->CastSpell(l_Target, Spells::SPELL_SHADOW_WEAKNESS_DEBUFF, true);
+            }
+
+            void Register()
+            {
+                OnEffectProc += AuraEffectProcFn(spell_he_softfoot_shadow_weakness_AuraScript::HandleProc, EFFECT_0, SPELL_AURA_DUMMY);
+            }
+
+        };
+
+        AuraScript* GetAuraScript() const
+        {
+            return new spell_he_softfoot_shadow_weakness_AuraScript();
+        }
 };
 
+struct spell_area_sun_tenderheart_dark_meditation : public AreaTriggerAI
+{
+    spell_area_sun_tenderheart_dark_meditation(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
 
 
+    void OnUnitEnter(Unit* unit)
+    {
+        if (!at->GetCaster())
+            return;
 
+        at->GetCaster()->AddAura(SPELL_MEDITATIVE_FIELD, unit);
+    }
+
+    void OnUnitExit(Unit* unit)
+    {
+        unit->RemoveAura(SPELL_MEDITATIVE_FIELD);
+    }
+};
+
+struct spell_area_he_softfoot_noxious_poison : public AreaTriggerAI
+{
+    spell_area_he_softfoot_noxious_poison(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
+
+    void OnUnitEnter(Unit* unit)
+    {
+        if (!at->GetCaster())
+            return;
+
+        at->GetCaster()->AddAura(SPELL_NOXIOUS_POISON_AURA, unit);
+    }
+
+    void OnUnitExit(Unit* unit)
+    {
+        unit->RemoveAura(SPELL_NOXIOUS_POISON_AURA);
+    }
+};
+
+/// Defiled Ground - 143959
+class spell_rook_stonetoe_defiled_ground : public AuraScript
+{
+    PrepareAuraScript(spell_rook_stonetoe_defiled_ground);
+
+    ObjectGuid m_TriggerGuid = ObjectGuid::Empty;
+
+    // todo: readd
+    /*void SetGUID(ObjectGuid guid, int32 id) override
+    {
+        m_TriggerGuid = guid;
+    }
+
+    ObjectGuid GetGUID(int32 id) const override
+    {
+        return m_TriggerGuid;
+    }*/
+
+    void Register() override { }
+};
+
+/// Defiled Ground - 143960 (not existing in dbc)
+struct spell_area_rook_stonetoe_defiled_ground : public AreaTriggerAI
+{
+    spell_area_rook_stonetoe_defiled_ground(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
+
+    bool OnAddTarget(Unit* p_Target)
+    {
+        return p_Target->IsPlayer();
+    }
+
+    void OnUnitEnter(Unit* target)
+    {
+        if (!target->IsPlayer())
+            return;
+
+        Aura* l_DefiledGround = target->GetAura(Spells::SPELL_DEFILED_GROUND_AURA);
+        bool l_HasInArc = at->HasInArc(float(M_PI) / 2, target);
+
+        if (l_DefiledGround /*&& l_DefiledGround->GetScriptGuid(0) == trigger->GetGUID() */ && !l_HasInArc)
+            l_DefiledGround->Remove();
+        else if (l_HasInArc && l_DefiledGround == nullptr)
+            if (auto l_Aura = target->AddAura(Spells::SPELL_DEFILED_GROUND_AURA, target))
+                //l_Aura->SetScriptGuid(0, at->GetGUID());
+                return;
+    }
+
+    void OnUnitExit(Unit* unit)
+    {
+        Aura* l_DefiledGround = unit->GetAura(Spells::SPELL_DEFILED_GROUND_AURA);
+
+        if (l_DefiledGround /*&& l_DefiledGround->GetScriptGuid(0) == at->GetGUID()*/)
+            l_DefiledGround->Remove();
+    }
+};
+
+/// Shadowstep - 143262
+class spell_he_stonefoot_shadowstep : public SpellScript
+{
+    PrepareSpellScript(spell_he_stonefoot_shadowstep);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void HandleDummy(SpellEffIndex /*p_EffIndex*/)
+    {
+        if (Unit* l_Target = GetHitUnit())
+            GetCaster()->CastSpell(l_Target, Spells::SPELL_SHADOWSTEP, true);
+
+        GetCaster()->ToCreature()->AI()->DoAction(Actions::ACTION_PREPARE_SHADOWSTEP_BACK);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_he_stonefoot_shadowstep::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+/// Vengeful Strikes - 144396
+class spell_rook_stonetoe_vengeful_strikes : public AuraScript
+{
+    PrepareAuraScript(spell_rook_stonetoe_vengeful_strikes);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void OnRemove(AuraEffect const* p_AurEff, AuraEffectHandleModes /*p_Mode*/)
+    {
+        if (auto l_Caster = GetCaster())
+            if (GetTargetApplication()->GetRemoveMode() != AuraRemoveMode::AURA_REMOVE_BY_EXPIRE)
+                l_Caster->ToCreature()->AI()->DoAction(Actions::ACTION_VENGEFUL_STRIKES_FAILED);
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_rook_stonetoe_vengeful_strikes::OnRemove, EFFECT_2, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+/// Spirit Bound - 143724
+class spell_sun_tenderheart_spawn_spirit_bound : public AuraScript
+{
+    PrepareAuraScript(spell_sun_tenderheart_spawn_spirit_bound);
+
+    bool Load() override
+    {
+        return GetCaster()->IsCreature();
+    }
+
+    void OnPeriodic(AuraEffect const* /*p_AurEff*/)
+    {
+        if (auto l_Caster = GetCaster())
+            l_Caster->ToCreature()->AI()->DoAction(Actions::ACTION_SPAWNS_SYNC_HP);
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_sun_tenderheart_spawn_spirit_bound::OnPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+    }
+};
+
+void AddSC_boss_fallen_protectors()
+{
+    new boss_rook_stonetoe();                               // 71475
+    new boss_he_softfoot();                                 // 71479
+    new boss_sun_tenderheart();                             // 71480
+
+    RegisterCreatureAI(npc_rook_stonetoe_embodied_misery);          // 71476
+    RegisterCreatureAI(npc_rook_stonetoe_embodied_sorrow);          // 71481
+    RegisterCreatureAI(npc_rook_stonetoe_embodied_gloom);           // 71477
+
+    RegisterCreatureAI(npc_he_softfoot_embodied_anguish);           // 71478
+
+    RegisterCreatureAI(npc_sun_tenderheart_embodied_despair);       // 71474
+    RegisterCreatureAI(npc_sun_tenderheart_embodied_desperation);   // 71482
+    RegisterCreatureAI(npc_sun_tenderheart_spawn);                  // 71712, 71993
+
+    new spell_sun_tenderheart_calamity();                   // 143491
+
+    RegisterSpellScript(spell_sun_tenderheart_shadow_word_bane);        // 143446
+    RegisterSpellScript(spell_sun_tenderheart_shadow_word_bane_aoe);    // 143438
+    RegisterAuraScript(spell_sun_tenderheart_shadow_word_bane_dmg);     // 143434
+
+    RegisterSpellScript(spell_sun_sha_shear);               // 143424
+    RegisterSpellScript(spell_rook_stonetoe_corrupted_brew_aoe);        // 143019
+    new spell_rook_stonetoe_clash_aoe();                    // 143027
+    new spell_rook_stonetoe_inferno_strike();               // 143962
+    RegisterSpellScript(spell_rook_stonetoe_corruption_shock_aoe);           // 143958
+    RegisterSpellScript(spell_he_stonefoot_gouge);          // 143330
+    new spell_he_softfoot_mark_of_anguish_aoe();            // 143822
+    RegisterSpellScript(spell_he_softfoot_mark_of_anguish_dummy);            // 143842
+    new spell_he_softfoot_shadow_weakness_aoe();            // 144081
+    RegisterAuraScript(spell_he_softfoot_mark_of_anguish_aura_2);            // 143840
+    new spell_he_softfoot_instant_poison();                 // 143210
+    new spell_he_softfoot_noxious_poison();                 // 143225
+    new spell_he_softfoot_mark_of_anguish_dmg();              // 144365
+    new spell_he_softfoot_shadow_weakness();                // 144079
+
+    RegisterAreaTriggerAI(spell_area_sun_tenderheart_dark_meditation);       // 143546
+    RegisterAreaTriggerAI(spell_area_he_softfoot_noxious_poison);            // 143235
+
+    RegisterAuraScript(spell_rook_stonetoe_defiled_ground);                  // 143959
+    RegisterAreaTriggerAI(spell_area_rook_stonetoe_defiled_ground);          // 143960
+
+    RegisterSpellScript(spell_he_stonefoot_shadowstep);                      // 143262
+    RegisterAuraScript(spell_rook_stonetoe_vengeful_strikes);                // 144396
+
+    RegisterAuraScript(spell_sun_tenderheart_spawn_spirit_bound);            // 143724
+}

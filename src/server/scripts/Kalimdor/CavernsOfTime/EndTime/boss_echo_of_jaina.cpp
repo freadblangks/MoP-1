@@ -1,375 +1,283 @@
-#include "ScriptPCH.h"
-#include "end_time.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-enum Yells
-{
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_INTRO   = 2,
-	SAY_KILL    = 3,   
-    SAY_SPELL   = 4,
-};
+/* ScriptData
+SDName: boss_echo_of_jaina
+SD%Complete:
+SDComment:
+EndScriptData */
+
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "end_time.h"
+#include "SpellInfo.h"
 
 enum Spells
 {
-    SPELL_BLINK                 = 101812,
-    SPELL_FLARECORE_MISSILE     = 101927,
-    SPELL_UNSTABLE_FLARE        = 101980,
-    SPELL_TIME_EXPIRE_FLARE     = 101587, 
-    SPELL_CHECK_PLAYER_DIST     = 101588,
-
-    SPELL_FROSTBOLT_VOLLEY      = 101810,
     SPELL_PYROBLAST             = 101809,
+    SPELL_BLINK                 = 101812,
+    SPELL_SUMMON_FROST_BLADES   = 101339,
+    SPELL_FROST_BLADES          = 101338,
+    SPELL_SUMMON_FLARECORE      = 101927,
+    SPELL_FLARECORE             = 101588,
+    SPELL_FLARE_UP              = 101589,
+    SPELL_UNSTABLE_FLARE        = 101980,
+    SPELL_FLARE                 = 101587,
+    SPELL_FROSTBOLT_VOLLEY      = 101810
 
-    SPELL_FROST_BLADES_SUMMON   = 101339,
 };
 
 enum Events
 {
-    EVENT_FLARECORE         = 1, 
-    EVENT_BLINK             = 2, 
-    EVENT_FROSTBOLT_VOLLEY  = 3, 
-    EVENT_PYROBLAST         = 4, 
-    EVENT_FROST_BLADES      = 5, 
-    EVENT_CHECK_PLAYER      = 6,
-    EVENT_EXPLODE           = 7,
+    EVENT_PYROBLAST = 1,
+    EVENT_FLARECORE,
+    EVENT_BLINK,
+    EVENT_FROST_BLADES,
+    EVENT_FROSTBOLT_VOLLEY
 };
 
-enum Creatures
+enum Misc
 {
-    NPC_FLARECORE       = 54446,
-    NPC_FROSTBLADES     = 54494,
-    NPC_BLINK_TARGET    = 54542,
-    NPC_ARCANE_CIRCLE   = 54639,
-    NPC_JAINA           = 54641,
+    NPC_FROST_BLADE             = 54494,
+    NPC_FLARECORE               = 54446
 };
 
-enum Others
+const float TelePoint[4][4]=
 {
-    ACTION_FRAGMENTS = 1,
+    {3052.10f, 489.98f, 21.7684f, 1.8236f},
+    {3017.94f, 491.92f, 26.5740f, 0.4384f},
+    {2989.04f, 506.10f, 26.4568f, 5.8042f},
+    {3017.94f, 491.92f, 26.5740f, 0.4384f},
 };
-
-uint32 FragmentsCount = 1;
-
-
-static const Position jainaPos = {3004.780029f, 515.729004f, 21.55f, 3.12f};
 
 class boss_echo_of_jaina : public CreatureScript
 {
     public:
         boss_echo_of_jaina() : CreatureScript("boss_echo_of_jaina") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_echo_of_jainaAI(pCreature);
-        }
-
         struct boss_echo_of_jainaAI : public BossAI
         {
-            boss_echo_of_jainaAI(Creature* pCreature) : BossAI(pCreature, DATA_ECHO_OF_JAINA)
+            boss_echo_of_jainaAI(Creature* creature) : BossAI(creature, DATA_JAINA), Summons(me)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->SetReactState(REACT_PASSIVE);
-                me->setActive(true);
-                me->SetVisible(false);
-                bIntro = false;
-                uiVolleyCount = 0;
-                uiFragments = 0;
+                instance = creature->GetInstanceScript();
             }
 
-            uint32 uiVolleyCount;
-            uint8 uiFragments;
-            bool bIntro;
+            InstanceScript* instance;
+            EventMap events;
+            SummonList Summons;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
+            Position points[3];
+            int i;
+            int count;
+            int volley;
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
-                uiVolleyCount = 0;
-                if (instance->GetData(DATA_JAINA_EVENT) == DONE)
-                {
-                    uiFragments = MAX_FRAGMENTS_COUNT;
-                    me->SetVisible(true);
-                    me->SetReactState(REACT_AGGRESSIVE);
-                }
-                else
-                    me->SummonCreature(NPC_ARCANE_CIRCLE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f);
+                events.Reset();
+
+                Summons.DespawnAll();
             }
 
-            void DoAction(const int32 action)
+            void EnterCombat(Unit* /*who*/) override
             {
-                if (action == ACTION_FRAGMENTS)
-                {
-                    if (uiFragments >= MAX_FRAGMENTS_COUNT)
-                        return;
+                _EnterCombat();
 
-                    if (!bIntro)
-                    {
-                        bIntro = true;
-                        Talk(SAY_INTRO);
-                    }
-                    uiFragments++;
+                DoZoneInCombat();
+                i = 0;
+                me->AddUnitFlag(UNIT_FLAG_REMOVE_CLIENT_CONTROL);
 
-                    if (uiFragments >= MAX_FRAGMENTS_COUNT)
-                    {
-                        instance->SetData(DATA_JAINA_EVENT, DONE);
-                        me->SetVisible(true);
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        summons.DespawnEntry(NPC_ARCANE_CIRCLE);
-                    }
-
-                    instance->SetData(DATA_FRAGMENTS, uiFragments);
-                    instance->DoUpdateWorldState(WORLDSTATE_SHOW_FRAGMENTS, 1);
-                    instance->DoUpdateWorldState(WORLDSTATE_FRAGMENTS_COLLECTED, uiFragments);
-                }
+                events.ScheduleEvent(EVENT_PYROBLAST, 1000);
+                events.ScheduleEvent(EVENT_BLINK, 3500); // 20 seconds
+                events.ScheduleEvent(EVENT_FLARECORE, 5000); // 30 seconds
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-                Talk(SAY_DEATH);
-
-                // Quest
-                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
-                if (!PlayerList.isEmpty())
-                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_JAINA, true);
+                instance->SetData(DATA_BOSS_COUNT, 1);
             }
 
-            void KilledUnit(Unit * /*victim*/)
+            void JustSummoned(Creature* summon) override
             {
-                Talk(SAY_KILL);
-            }
+                Summons.Summon(summon);
 
-		    void JustSummoned(Creature* summon)
-		    {
-                BossAI::JustSummoned(summon);
-
-                switch(summon->GetEntry())
+                if(summon->GetEntry() == NPC_FLARECORE)
                 {
-                    case NPC_FROSTBLADES:
-                    {
-                        summon->SetReactState(REACT_PASSIVE);
-                        float x, y, z;
-                        summon->GetClosePoint(x, y, z, me->GetObjectSize() / 3, 100.0f);
-                        summon->GetMotionMaster()->MovePoint(1, x, y, z);
-                        summon->DespawnOrUnsummon(10000);
-                        break;
-                    }
-                    default:
-                        break;
+                    summon->SetReactState(REACT_PASSIVE);
+                    summon->CastSpell(summon, SPELL_FLARECORE, false);
                 }
-		    }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                Talk(SAY_AGGRO);
-
-                events.ScheduleEvent(EVENT_BLINK, 30000);
-                events.ScheduleEvent(EVENT_PYROBLAST, 1000);
-                events.ScheduleEvent(EVENT_FLARECORE, urand(10000, 20000));
-
-                instance->SetBossState(DATA_ECHO_OF_JAINA, IN_PROGRESS);
-                DoZoneInCombat();
             }
 
-            void AttackStart(Unit* who)
-            {
-                if (who)
-                    me->Attack(who, false);
-            }
+            void UpdateAI(uint32 diff) override
 
-            void UpdateAI(const uint32 diff)
             {
                 if (!UpdateVictim())
                     return;
 
-                events.Update(diff);
-
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
+
+                events.Update(diff);
 
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_PYROBLAST:
-                            DoCast(me->getVictim(), SPELL_PYROBLAST);
-                            events.ScheduleEvent(EVENT_PYROBLAST, urand(3500, 4500));
-                            break;
-                        case EVENT_FLARECORE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(pTarget, SPELL_FLARECORE_MISSILE);
-                            events.ScheduleEvent(EVENT_FLARECORE, urand(19000, 21000));
+                            me->CastSpell(me->GetVictim(), SPELL_PYROBLAST, false);
+                            events.CancelEvent(EVENT_FROSTBOLT_VOLLEY);
+                            events.ScheduleEvent(EVENT_PYROBLAST, 500);
                             break;
                         case EVENT_BLINK:
-                        {
-                            std::list<Creature*> creatures;
-                            me->GetCreatureListWithEntryInGrid(creatures, NPC_BLINK_TARGET, 40.0f);
-                            if (!creatures.empty())
-                            {
-                                JadeCore::Containers::RandomResizeList(creatures, 1);
-                                DoCast(me, SPELL_BLINK, true);
-                                if (Creature* pTarget = creatures.front())
-                                    me->NearTeleportTo(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ(), 0.0f, true);
-                            }
-                            me->UpdateObjectVisibility();
+                            me->CastSpell(me, SPELL_BLINK, false);
+                            i = i < 4 ? i : 0;
+                            me->NearTeleportTo(TelePoint[i][0], TelePoint[i][1], TelePoint[i][2], TelePoint[i][3]);
+                            i++;
                             events.CancelEvent(EVENT_PYROBLAST);
-                            events.CancelEvent(EVENT_FLARECORE);
-                            events.ScheduleEvent(EVENT_FROST_BLADES, 1500);
-                            events.ScheduleEvent(EVENT_FROSTBOLT_VOLLEY, 2000);
-                            events.ScheduleEvent(EVENT_BLINK, 31500);
+                            events.ScheduleEvent(EVENT_FROST_BLADES, 1);
+                            break;
+                        case EVENT_FROST_BLADES:
+                        {
+                            count =0;
+                            for(int i = 0; i < 3; i++)
+                            {
+                                if(Creature* summon = me->SummonCreature(NPC_FROST_BLADE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 5000))
+                                {
+                                    summon->SetReactState(REACT_PASSIVE);
+                                    summon->CastSpell(summon, SPELL_FROST_BLADES, false);
+                                    float dir =(me->GetOrientation() - (0.52f) + count * (0.52f));
+                                    if (dir >6.28f)
+                                        dir-=6.28f;
+                                    count++;
+                                    summon->GetMotionMaster()->MovePoint(0,
+                                                                         me->GetPositionX()+ 120  * cos(dir),
+                                                                         me->GetPositionY()+ 120  * sin(dir),
+                                                                         me->GetPositionZ());
+                                }
+                            }
+                            volley = 0;
+                            events.ScheduleEvent(EVENT_FROSTBOLT_VOLLEY, 500);
                             break;
                         }
                         case EVENT_FROSTBOLT_VOLLEY:
-                            if(uiVolleyCount < 3)
+                            if(volley < 3)
                             {
-                                DoCast(me, SPELL_FROSTBOLT_VOLLEY);
-                                events.ScheduleEvent(EVENT_FROSTBOLT_VOLLEY, 2200);
-                                uiVolleyCount++;
+                                me->CastSpell(me, SPELL_FROSTBOLT_VOLLEY, false);
+
+                                volley++;
+                                events.ScheduleEvent(EVENT_FROSTBOLT_VOLLEY, 1);
                             }
                             else
                             {
                                 events.CancelEvent(EVENT_FROSTBOLT_VOLLEY);
-                                uiVolleyCount = 0;
-                                events.ScheduleEvent(EVENT_PYROBLAST, urand(3000, 3500));
-                                events.ScheduleEvent(EVENT_FLARECORE, urand (7500, 8500));
+                                events.ScheduleEvent(EVENT_PYROBLAST, 1);
+                                events.ScheduleEvent(EVENT_BLINK, 2500);
                             }
                             break;
-                        case EVENT_FROST_BLADES:
-                            Talk(SAY_SPELL);
-                            me->SummonCreature(NPC_FROSTBLADES, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation() - (M_PI / 4.0f), TEMPSUMMON_TIMED_DESPAWN, 30000);
-                            me->SummonCreature(NPC_FROSTBLADES, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 30000);
-                            me->SummonCreature(NPC_FROSTBLADES, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation() + (M_PI / 4.0f), TEMPSUMMON_TIMED_DESPAWN, 30000);
+                        case EVENT_FLARECORE:
+                            if(Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                me->CastSpell(target, SPELL_SUMMON_FLARECORE, false);
+                            events.ScheduleEvent(EVENT_FLARECORE, 5000);
                             break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_echo_of_jainaAI(creature);
+        }
 };
 
-class npc_echo_of_jaina_blink_target : public CreatureScript
+class spell_flarecore : public SpellScriptLoader
 {
     public:
+        spell_flarecore() : SpellScriptLoader("spell_flarecore") { }
 
-        npc_echo_of_jaina_blink_target() : CreatureScript("npc_echo_of_jaina_blink_target") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
+        class spell_flarecore_SpellScript : public SpellScript
         {
-            return new npc_echo_of_jaina_blink_targetAI(pCreature);
-        }
+            PrepareSpellScript(spell_flarecore_SpellScript);
 
-        struct npc_echo_of_jaina_blink_targetAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_jaina_blink_targetAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            void HandleOnHit(SpellEffIndex /*effIndex*/)
             {
-                me->SetReactState(REACT_PASSIVE);
-            }
-        };
-};
-
-class npc_echo_of_jaina_flarecore : public CreatureScript
-{
-    public:
-        npc_echo_of_jaina_flarecore() : CreatureScript("npc_echo_of_jaina_flarecore") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_echo_of_jaina_flarecoreAI(pCreature);
-        }
-
-        struct npc_echo_of_jaina_flarecoreAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_jaina_flarecoreAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
-            {
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            EventMap events;
-
-            void Reset()
-            {
-                if (!me->HasAura(SPELL_CHECK_PLAYER_DIST))
-                    me->AddAura(SPELL_CHECK_PLAYER_DIST, me);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_CHECK_PLAYER, 500);
-                events.ScheduleEvent(EVENT_EXPLODE, 10000);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
+                if(Unit* caster = GetCaster())
                 {
-                    switch (eventId)
+                    if(caster->GetEntry() == NPC_FLARECORE)
                     {
-                        case EVENT_CHECK_PLAYER:
-                            if(me->SelectNearestPlayer(3.0f))
-                            {
-                                DoCast(me, SPELL_UNSTABLE_FLARE);
-                                me->DespawnOrUnsummon(100);
-                            }
-                            else
-                                events.ScheduleEvent(EVENT_CHECK_PLAYER, 500);
-                            break;
-                        case EVENT_EXPLODE:
-                            DoCast(me, SPELL_TIME_EXPIRE_FLARE);
-                            me->DespawnOrUnsummon(100);
-                            break;
-					}
-				}
+                        caster->CastSpell(caster, SPELL_FLARE_UP, false);
+                        caster->CastSpell(caster, SPELL_UNSTABLE_FLARE, false);
+                        caster->RemoveAura(SPELL_FLARECORE);
+                    }
+                }
+
+            }
+
+            void Register() override
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_flarecore_SpellScript::HandleOnHit, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_flarecore_SpellScript();
+        }
 };
 
-class go_echo_of_jaina_jaina_staff_fragment : public GameObjectScript
+class spell_flarecore_periodic : public SpellScriptLoader
 {
     public:
-        go_echo_of_jaina_jaina_staff_fragment() : GameObjectScript("go_echo_of_jaina_jaina_staff_fragment") { }
+        spell_flarecore_periodic() : SpellScriptLoader("spell_flarecore_periodic") { }
 
-        bool OnGossipHello(Player* pPlayer, GameObject* pGo)
+    private:
+        class spell_flarecore_periodic_AuraScript : public AuraScript
         {
-            InstanceScript* pInstance = pGo->GetInstanceScript();
-            if (!pInstance)
-                return true;
+            PrepareAuraScript(spell_flarecore_periodic_AuraScript);
 
-            if (Creature* pJaina = ObjectAccessor::GetCreature(*pGo, pInstance->GetData64(DATA_ECHO_OF_JAINA)))
-                pJaina->AI()->DoAction(ACTION_FRAGMENTS);
- 
-            pGo->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE);
-            pGo->SetGoState(GO_STATE_ACTIVE);
-            return true;
+            void HandleEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if(Unit* owner = GetUnitOwner())
+                    if(!owner->HasAura(SPELL_FLARE_UP))
+                        owner->CastSpell(owner, SPELL_FLARE, false);
+            }
+
+            void Register() override
+            {
+                OnEffectRemove += AuraEffectRemoveFn(spell_flarecore_periodic_AuraScript::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_flarecore_periodic_AuraScript();
         }
 };
 
 void AddSC_boss_echo_of_jaina()
 {
     new boss_echo_of_jaina();
-    new npc_echo_of_jaina_flarecore();
-    new npc_echo_of_jaina_blink_target();
-    new go_echo_of_jaina_jaina_staff_fragment();
+    new spell_flarecore();
+    new spell_flarecore_periodic();
 }

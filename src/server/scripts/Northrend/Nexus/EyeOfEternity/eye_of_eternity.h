@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,6 +17,11 @@
 
 #ifndef DEF_EYE_OF_ETERNITY_H
 #define DEF_EYE_OF_ETERNITY_H
+
+#include "CreatureAIImpl.h"
+
+#define EoEScriptName "instance_eye_of_eternity"
+#define DataHeader "EOE"
 
 enum InstanceData
 {
@@ -78,7 +83,14 @@ enum InstanceSpells
     SPELL_VORTEX_5                        = 56263, // damage | used to enter to the vehicle
     SPELL_PORTAL_OPENED                   = 61236,
     SPELL_RIDE_RED_DRAGON_TRIGGERED       = 56072,
-    SPELL_IRIS_OPENED                     = 61012  // visual when starting encounter
+    SPELL_IRIS_OPENED                     = 61012, // visual when starting encounter
+    SPELL_SUMMOM_RED_DRAGON_BUDDY         = 56070
 };
+
+template <class AI, class T>
+inline AI* GetEyeOfEternityAI(T* obj)
+{
+    return GetInstanceAI<AI>(obj, EoEScriptName);
+}
 
 #endif

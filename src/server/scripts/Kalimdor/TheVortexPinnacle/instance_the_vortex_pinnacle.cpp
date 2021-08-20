@@ -1,108 +1,153 @@
-#include "ScriptPCH.h"
-#include "the_vortex_pinnacle.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2010-2011 Trinity <http://www.projecttrinity.org/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-#define MAX_ENCOUNTER 3
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "InstanceScript.h"
+#include "the_vortex_pinnacle.h"
 
 class instance_the_vortex_pinnacle : public InstanceMapScript
 {
     public:
-        instance_the_vortex_pinnacle() : InstanceMapScript("instance_the_vortex_pinnacle", 657) { }
-        
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        instance_the_vortex_pinnacle() : InstanceMapScript("instance_the_vortex_pinnacle", 657)
+        {
+        }
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
             return new instance_the_vortex_pinnacle_InstanceMapScript(map);
         }
 
         struct instance_the_vortex_pinnacle_InstanceMapScript: public InstanceScript
         {
-            instance_the_vortex_pinnacle_InstanceMapScript(InstanceMap* map) : InstanceScript(map) { }
-
-            uint64 uiGrandVizierErtanGUID;
-            uint64 uiAltairusGUID;
-            uint64 uiAsaadGUID;
-
-            void Initialize()
+            instance_the_vortex_pinnacle_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
-                SetBossNumber(MAX_ENCOUNTER);
-                uiGrandVizierErtanGUID = 0;
-                uiAltairusGUID = 0;
-                uiAsaadGUID = 0;
             }
 
-            void OnCreatureCreate(Creature* pCreature)
+            ObjectGuid grandVizierErtanGUID;
+            ObjectGuid altairusGUID;
+            ObjectGuid asaadGUID;
+            ObjectGuid npcWindGUID;
+            uint32 goldenOrbCount;
+
+            void Initialize() override
             {
-                switch(pCreature->GetEntry())
+                npcWindGUID = ObjectGuid::Empty;
+                SetBossNumber(MAX_BOSSES);
+                underMapTimer = 2000;
+                goldenOrbCount = 0;
+            }
+
+            void OnCreatureCreate(Creature* creature) override
+            {
+                switch (creature->GetEntry())
                 {
                     case NPC_GRAND_VIZIER_ERTAN:
-                        uiGrandVizierErtanGUID = pCreature->GetGUID();
+                        grandVizierErtanGUID = creature->GetGUID();
                         break;
                     case NPC_ALTAIRUS:
-                        uiAltairusGUID = pCreature->GetGUID();
+                        altairusGUID = creature->GetGUID();
                         break;
                     case NPC_ASAAD:
-                        uiAsaadGUID = pCreature->GetGUID();
+                        asaadGUID = creature->GetGUID();
+                        break;
+                    case NPC_WIND:
+                        if (!npcWindGUID.IsEmpty())
+                            if (Creature *c = instance->GetCreature(npcWindGUID))
+                                c->DespawnOrUnsummon();
+                        npcWindGUID = creature->GetGUID();
+                        break;
+                    default:
                         break;
                 }
-                
             }
 
-            uint64 GetData64(uint32 identifier)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
-                switch(identifier)
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
+                return true;
+            }
+
+            ObjectGuid GetGuidData(uint32 data) const override
+            {
+                switch (data)
                 {
-                    case DATA_ERTAN:
-                        return uiGrandVizierErtanGUID;
-                    case DATA_ALTAIRUS:
-                        return uiAltairusGUID;
-                    case DATA_ASAAD:
-                        return uiAsaadGUID;
-                }
-                return 0;
-            }
-
-            std::string GetSaveData()
-            {
-                OUT_SAVE_INST_DATA;
-
-                std::string str_data;
-                std::ostringstream saveStream;
-                saveStream << "V P" << GetBossSaveData(); 
-                str_data = saveStream.str();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return str_data;
-            }
-
-            void Load(const char* in)
-            {
-                if (!in)
-                {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
+                    case BOSS_GRAND_VIZIER_ERTAN:
+                        return grandVizierErtanGUID;
+                    case BOSS_ALTAIRUS:
+                        return altairusGUID;
+                    case BOSS_ASAAD:
+                        return asaadGUID;
+                    case NPC_WIND:
+                        return npcWindGUID;
                 }
 
-                OUT_LOAD_INST_DATA(in);
+                return ObjectGuid::Empty;
+            }
 
-                char dataHead1, dataHead2;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2;
-
-                if (dataHead1 == 'V' && dataHead2 == 'P')
+            void SetData(uint32 type, uint32 /*data*/) override
+            {
+                switch (type)
                 {
-                    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
+                    case DATA_GOLDEN_ORB:
                     {
-                        uint32 tmpState;
-                        loadStream >> tmpState;
-                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                            tmpState = NOT_STARTED;
-                        SetBossState(i, EncounterState(tmpState));
+                        goldenOrbCount++;
+                        if (goldenOrbCount == 5)
+                            DoCompleteAchievement(5289);
                     }
+                    break;
+                default:
+                    break;
                 }
-                else OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
             }
+
+            void Update(uint32 diff) override
+            {
+                if (underMapTimer <= diff)
+                {
+                    DoOnPlayers([this](Player* player)
+                    {
+                        Position pos = player->GetPosition();
+                        if (player->GetPositionZ() <= 568.0f)
+                        {
+                            if (Creature * sp = instance->SummonCreature(NPC_SLIPSTREAM, pos))
+                            {
+                                sp->AI()->SetGUID(player->GetGUID());
+                                sp->GetMotionMaster()->MoveJump(savePlayersPos[player->GetGUID()], 20, 50, 42);
+                            }
+                        }
+                        else if (!player->IsFalling() && !player->GetVehicle() && player->GetPositionZ() > 568.0f)
+                        {
+                            pos.m_positionZ += 1.0f;
+                            savePlayersPos[player->GetGUID()] = pos;
+                        }
+                    });
+
+                    underMapTimer = 1000;
+                }
+                else
+                    underMapTimer -= diff;
+            }
+
+        private:
+            uint32 underMapTimer;
+            std::map<ObjectGuid, Position> savePlayersPos;
         };
 };
 

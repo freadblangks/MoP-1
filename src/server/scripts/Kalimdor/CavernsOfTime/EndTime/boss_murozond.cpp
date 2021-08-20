@@ -1,246 +1,289 @@
-#include "ScriptPCH.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2014 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/* ScriptData
+SDName: boss_murozond
+SD%Complete:
+SDComment:
+EndScriptData */
+
 #include "end_time.h"
-#include "Group.h"
-
-enum MurozondScriptTexts
-{
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_GLASS_1 = 2,
-    SAY_GLASS_2 = 3,
-    SAY_GLASS_3 = 4,
-    SAY_GLASS_4 = 5,
-    SAY_GLASS_5 = 6,
-    SAY_INTRO_1 = 7,
-    SAY_INTRO_2 = 8,
-    SAY_KILL    = 9,
-};
-
-enum NozdormuScriptTexts
-{
-    SAY_NOZDORMU_INTRO      = 0,
-    SAY_NOZDORMU_OUTRO_1    = 1,
-    SAY_NOZDORMU_OUTRO_2    = 2,
-    SAY_NOZDORMU_OUTRO_3    = 3,
-    SAY_NOZDORMU_OUTRO_4    = 4,
-    SAY_NOZDORMU_OUTRO_5    = 5,
-};
+#include "GameObject.h"
+#include "PhasingHandler.h"
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "SpellAuras.h"
+#include "SpellAuraEffects.h"
+#include "SpellInfo.h"
+#include "SpellHistory.h"
 
 enum Spells
 {
-    SPELL_INFINITE_BREATH               = 102569,
     SPELL_TEMPORAL_BLAST                = 102381,
+    SPELL_INFINITE_BREATH               = 102569,
+    SPELL_DISTORTION_BOMB               = 101983,
+    SPELL_HOURGLASS_BAR                 = 102668,
+    SPELL_REWIND_TIME                   = 101591,
     SPELL_TAIL_SWEEP                    = 108589,
     SPELL_FADING                        = 107550,
-    SPELL_DISTORTION_BOMB               = 102516,
-    SPELL_DISTORTION_BOMB_DMG           = 101984,
-    SPELL_SANDS_OF_THE_HOURGLASS        = 102668,
-    SPELL_TEMPORAL_SNAPSHOT             = 101592,
-    SPELL_REWIND_TIME                   = 101590,
-    SPELL_BLESSING_OF_BRONZE_DRAGONS    = 102364,
-    SPELL_KILL_MUROZOND                 = 110158,
+    SPELL_BUFF_BLESSING_OF_BRONZE       = 102364,
 };
 
 enum Events
 {
-    EVENT_INFINITE_BREATH   = 1,
-    EVENT_TEMPORAL_BLAST    = 2,
-    EVENT_TAIL_SWEEP        = 3,
-    EVENT_DESPAWN           = 4,
-    EVENT_DISTORTION_BOMB   = 5,
-    EVENT_CHECK_ADDS        = 6,
-    EVENT_INTRO_1           = 7,
-    EVENT_INTRO_2           = 8,
-    EVENT_INTRO_3           = 9,
-    EVENT_NOZDORMU_INTRO    = 10,
-    EVENT_CONTINUE          = 11,
-    EVENT_NOZDORMU_OUTRO_1  = 12,
-    EVENT_NOZDORMU_OUTRO_2  = 13,
-    EVENT_NOZDORMU_OUTRO_3  = 14,
-    EVENT_NOZDORMU_OUTRO_4  = 15,
-    EVENT_NOZDORMU_OUTRO_5  = 16,
+    EVENT_TEMPORAL_BLAST                = 1,
+    EVENT_INFINITE_BREATH,
+    EVENT_DISTORTION_BOMB,
+    EVENT_TAIL_SWEEP,
 };
 
-enum Adds
+enum MovementPoints
 {
-    NPC_MIRROR  = 54435,
+    POINT_MUROZOND_FLY_IN   = 1,
+    POINT_MUROZOND_LAND     = 2,
 };
 
-enum Other
+enum Misc
 {
-    POINT_LAND          = 1,
-    ACTION_HOURGLASS    = 2,
-    TYPE_HOURGLASS      = 3,
-    ACTION_NOZDORMU     = 4,
+    NPC_MUROZOND_ENTRY                  = 54432,
+    NPC_PLAYER_CLONE_ENTRY              = 46956,
 };
 
-const Position landPos = {4169.71f, -433.40f, 120.0f, 2.59f};
+Position const MurozondFlyPos       = {4156.6801f, -430.114f, 139.9719f, 2.981764f};
+Position const MurozondLandPos      = {4156.6801f, -430.114f, 119.9719f, 2.981764f};
+
+class MurozondLandEvent : public BasicEvent
+{
+    public:
+        MurozondLandEvent(Creature& owner, Position const& dest) : _owner(owner), _dest(dest) { }
+
+        bool Execute(uint64 /*eventTime*/, uint32 /*updateTime*/) override
+        {
+            _owner.GetMotionMaster()->MoveLand(POINT_MUROZOND_LAND, _dest);
+            return true;
+        }
+
+    private:
+        Creature& _owner;
+        Position const& _dest;
+};
+
+class MurozondStartAttack : public BasicEvent
+{
+    public:
+        MurozondStartAttack(Creature& owner) : _owner(owner) { }
+
+        bool Execute(uint64 /*eventTime*/, uint32 /*updateTime*/) override
+        {
+            _owner.SetReactState(REACT_AGGRESSIVE);
+            return true;
+        }
+
+    private:
+        Creature& _owner;
+};
 
 class boss_murozond : public CreatureScript
 {
     public:
         boss_murozond() : CreatureScript("boss_murozond") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_murozondAI(creature);
-        }
-
         struct boss_murozondAI : public BossAI
         {
-            boss_murozondAI(Creature* creature) : BossAI(creature, DATA_MUROZOND)
+            boss_murozondAI(Creature* creature) : BossAI(creature, DATA_MUROZOND), Summons(me)
             {
-				me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
-                bDead = false;
-                phase = 0;
-                hourglass = 5;
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                instance = creature->GetInstanceScript();
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
+            InstanceScript* instance;
+            EventMap events;
+            SummonList Summons;
 
-            void Reset()
+            GameObject* Rewardchest;
+
+            void Reset() override
             {
+                instance->SetData(DATA_MUROZOND_STARTED, false);
+                if (!instance->GetData(DATA_MUROZOND_TRASH))
+                {
+                    me->GetMotionMaster()->Clear();
+                    me->SetHomePosition(MurozondLandPos);
+                    me->GetMotionMaster()->MoveTargetedHome();
+                }
+
+                DoAction(ACTION_MUROZOND_REMOVE_HOURGLASS_BAR);
+
                 _Reset();
-                me->SetReactState(REACT_AGGRESSIVE);
-                bDead = false;
-                hourglass = 5;
-                me->RemoveAllDynObjects();
-                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SANDS_OF_THE_HOURGLASS);
+                events.Reset();
+
+                Summons.DespawnAll();
             }
 
-            void JustDied(Unit* /*killer*/)
+            void InitializeAI() override
+            {
+                instance->SetData(DATA_MUROZOND_STARTED, false);
+                if (!instance->GetData(DATA_MUROZOND_TRASH))
+                {
+                    me->GetMotionMaster()->Clear();
+                    DoAction(ACTION_MUROZOND_START);
+                }
+
+                Rewardchest = GetClosestGameObjectWithEntry(me, 209547, 500.0f);
+                if (Rewardchest != nullptr)
+                    PhasingHandler::AddPhase(Rewardchest, 50);
+            }
+
+            void JustReachedHome() override
+            {
+                DoAction(ACTION_MUROZOND_REMOVE_TEMPORAL_BOMB);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                _EnterCombat();
+
+                DoAction(ACTION_MUROZOND_REMOVE_TEMPORAL_BOMB);
+                me->setActive(false);
+                me->SetCanFly(false);
+                me->SetDisableGravity(false);
+                me->SetHomePosition(MurozondLandPos);
+                me->SetAnimTier(UNIT_BYTE1_FLAG_NONE, true);
+
+                instance->SetData(DATA_MUROZOND_STARTED, true);
+
+                events.ScheduleEvent(EVENT_INFINITE_BREATH, 22000);
+                events.ScheduleEvent(EVENT_TEMPORAL_BLAST, 12000);
+                events.ScheduleEvent(EVENT_DISTORTION_BOMB, 5000);
+                events.ScheduleEvent(EVENT_TAIL_SWEEP, 10000);
+                me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+                me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                DoZoneInCombat();
+
+                if (Map* map = me->GetMap())
+                {
+                    std::list<Player*> PlayerList;
+                    Map::PlayerList const& Players = map->GetPlayers();
+                    for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                    {
+                        if (Player* player = itr->GetSource())
+                        {
+                            Position pos = player->GetPosition();
+                            Creature* clone = player->SummonCreature(46956, pos);
+                            player->CastSpell(clone, 45204, true);
+                            player->CastSpell(clone, 41054, true);
+                            player->CastSpell(clone, 45205, true);
+                            clone->AddAura(37800, clone);
+                            player->AddAura(SPELL_HOURGLASS_BAR, player);
+                            player->CastSpell(player, SPELL_BUFF_BLESSING_OF_BRONZE, true);
+                            player->SetMaxPower(POWER_ALTERNATE_POWER, 50);
+                            player->SetPower(POWER_ALTERNATE_POWER, 50);
+                            Summons.Summon(clone);
+                        }
+                    }
+                }
+            }
+
+            void KilledUnit(Unit* /*victim*/) override
+            {
+            }
+
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-            }
 
-            uint32 GetData(uint32 type)
-            {
-                if (type == TYPE_HOURGLASS)
-                    return hourglass;
-                return 0;
-            }
+                Summons.DespawnAll();
 
-            void MoveInLineOfSight(Unit* who)
-            {
-                if (phase)
-                    return;
+                me->AddAura(SPELL_FADING, me);
+                DoAction(ACTION_MUROZOND_REMOVE_TEMPORAL_BOMB);
+                DoAction(ACTION_MUROZOND_REMOVE_HOURGLASS_BAR);
 
-                if (me->GetDistance2d(who) >= 60.0f)
-                    return;
-
-                phase = 1;
-                events.ScheduleEvent(EVENT_INTRO_1, 2000);
-                events.ScheduleEvent(EVENT_INTRO_2, 28000);
-                events.ScheduleEvent(EVENT_INTRO_3, 48000);
-            }
-
-            void DoAction(const int32 action)
-            {
-                if (action == ACTION_HOURGLASS)
+            if (me->GetMap()->IsHeroic())
+            {// this will give the achievement to players in heroic difficulty
+                Map::PlayerList const& PlayerList = instance->instance->GetPlayers();
+                for (Map::PlayerList::const_iterator itr = PlayerList.begin(); itr != PlayerList.end(); ++itr)
                 {
-                    if (hourglass == 0)
+                    if (Player* player = itr->GetSource())
+                    {
+                        player->CompletedAchievement(6117);
+                    }
+                }
+            }
+
+                if (Rewardchest)
+                    PhasingHandler::ResetPhaseShift(Rewardchest);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                Summons.Summon(summon);
+            }
+
+            void DoAction(int32 action) override
+            {
+                switch (action)
+                {
+                case ACTION_MUROZOND_START:
+                {
+                    if (me->isDead())
                         return;
 
-                    ActivateMirrors();
-                    me->RemoveAllDynObjects();
-                    me->AttackStop();
+                    me->setActive(true);
+                    me->SetCanFly(true);
+                    me->SetDisableGravity(true);
+                    me->SetSpeed(MOVE_FLIGHT, 1.0f);
+                    me->SetSpeed(MOVE_RUN, 1.0f);
+                    me->SetSpeed(MOVE_WALK, 1.0f);
+                    me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                    me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                     me->SetReactState(REACT_PASSIVE);
-                    hourglass--;
-                    instance->DoSetAlternatePowerOnPlayers(hourglass);
-                    events.ScheduleEvent(EVENT_CONTINUE, 5000);
-                    events.RescheduleEvent(EVENT_INFINITE_BREATH, urand(14000, 24000));
-                    events.RescheduleEvent(EVENT_TAIL_SWEEP, 14000);
-                    events.RescheduleEvent(EVENT_TEMPORAL_BLAST, 9000);
-                    events.RescheduleEvent(EVENT_DISTORTION_BOMB, urand(9000, 12000));
+                    float moveTime = me->GetExactDist(&MurozondFlyPos) / (me->GetSpeed(MOVE_FLIGHT) * 0.001f);
+                    me->m_Events.AddEvent(new MurozondLandEvent(*me, MurozondLandPos), me->m_Events.CalculateTime(uint64(moveTime) + 250));
+                    me->m_Events.AddEvent(new MurozondStartAttack(*me), me->m_Events.CalculateTime(uint64(moveTime) + 5250));
+                    me->GetMotionMaster()->MovePoint(POINT_MUROZOND_FLY_IN, MurozondFlyPos);
+                    break;
+                }
+                case ACTION_MUROZOND_REMOVE_TEMPORAL_BOMB:
+                    me->RemoveAllDynObjects();
+                    break;
+                case ACTION_MUROZOND_REMOVE_HOURGLASS_BAR:
+                    if (Map* map = me->GetMap())
+                    {
+                        std::list<Player*> PlayerList;
+                        Map::PlayerList const& Players = map->GetPlayers();
+                        for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                        {
+                            if (Player* player = itr->GetSource())
+                            player->RemoveAura(SPELL_HOURGLASS_BAR);
+                        }
+                    }
+                default:
+                    break;
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void UpdateAI(uint32 diff) override
+
             {
-                Talk(SAY_AGGRO);
-                events.ScheduleEvent(EVENT_INFINITE_BREATH, urand(10000, 20000));
-                events.ScheduleEvent(EVENT_TAIL_SWEEP, 10000);
-                events.ScheduleEvent(EVENT_TEMPORAL_BLAST, 5000);
-                events.ScheduleEvent(EVENT_NOZDORMU_INTRO, 5000);
-                events.ScheduleEvent(EVENT_DISTORTION_BOMB, urand(5000, 8000));
-
-                DoCastAOE(SPELL_TEMPORAL_SNAPSHOT);
-                instance->DoCastSpellOnPlayers(SPELL_BLESSING_OF_BRONZE_DRAGONS);
-                instance->DoCastSpellOnPlayers(SPELL_SANDS_OF_THE_HOURGLASS);
-                instance->SetBossState(DATA_MUROZOND, IN_PROGRESS);
-                me->RemoveAllDynObjects();
-                DoZoneInCombat();
-            }
-
-            void KilledUnit(Unit* who)
-            {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SAY_KILL);
-            }
-
-            void CompleteEncounter()
-            {
-                if (instance)
-                {
-                    // Achievement
-                    instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_KILL_MUROZOND, 0, 0, me); 
-                    
-                    instance->UpdateEncounterState(ENCOUNTER_CREDIT_CAST_SPELL, SPELL_KILL_MUROZOND, me); 
-                
-                    if (GameObject* pGo = ObjectAccessor::GetGameObject(*me, instance->GetData64(DATA_HOURGLASS)))
-                        pGo->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_INTERACT_COND);
-
-                    instance->DoKilledMonsterKredit(QUEST_MUROZOND, 54432, 0);
-                }
-            }
-
-            void JustReachedHome()
-            {
-                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SANDS_OF_THE_HOURGLASS);
-                BossAI::JustReachedHome();
-            }
-
-            void DamageTaken(Unit* /*who*/, uint32 &damage)
-            {
-                if (damage >= me->GetHealth())
-                    damage = 0;
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim() && phase != 1)
+                if (!UpdateVictim())
                     return;
-
-                if (!bDead && me->HealthBelowPct(8))
-                {
-                    bDead = true;
-                    me->InterruptNonMeleeSpells(false);
-                    me->RemoveAllAuras();
-                    DoCast(me, SPELL_FADING, true);
-                    CompleteEncounter();
-                    events.ScheduleEvent(EVENT_DESPAWN, 3000);
-                    Talk(SAY_DEATH);
-                    return;
-                }
 
                 events.Update(diff);
 
@@ -251,309 +294,161 @@ class boss_murozond : public CreatureScript
                 {
                     switch (eventId)
                     {
-                        case EVENT_INTRO_1:
-                            Talk(SAY_INTRO_1);
-                            break;
-                        case EVENT_INTRO_2:
-                            Talk(SAY_INTRO_2);
-                            break;
-                        case EVENT_INTRO_3:
-                            phase = 2;
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                            break;
-                        case EVENT_NOZDORMU_INTRO:
-                            if (Creature* pNozdormu = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_NOZDORMU)))
-                                pNozdormu->AI()->Talk(SAY_NOZDORMU_INTRO);
-                            break;
-                        case EVENT_DISTORTION_BOMB:
+                    case EVENT_TEMPORAL_BLAST:
+                        DoCast(me, SPELL_TEMPORAL_BLAST);
+                        events.ScheduleEvent(EVENT_TEMPORAL_BLAST, 12000);
+                        break;
+                    case EVENT_INFINITE_BREATH:
+                        DoCastAOE(SPELL_INFINITE_BREATH);
+                        events.ScheduleEvent(EVENT_INFINITE_BREATH, 22000);
+                        break;
+                    case EVENT_DISTORTION_BOMB:
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
                         {
-                            Unit* pTarget;
-                            pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, -20.0f, true);
-                            if (!pTarget)
-                                pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true);
-                            if (!pTarget)
-                                pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true);
-                            if (pTarget)
-                                DoCast(pTarget, SPELL_DISTORTION_BOMB);
-                            events.ScheduleEvent(EVENT_DISTORTION_BOMB, urand(5000, 8000));
-                            break;
+                            Position targetPos = target->GetPosition();
+                            float bombTimer = me->GetExactDist(&targetPos) / 4.0f;
+                            DoCast(target, SPELL_DISTORTION_BOMB, true);
+                            events.ScheduleEvent(EVENT_DISTORTION_BOMB, uint32(bombTimer * 1000));
                         }
-                        case EVENT_INFINITE_BREATH:
-                            DoCastVictim(SPELL_INFINITE_BREATH);
-                            events.ScheduleEvent(EVENT_INFINITE_BREATH, 15000);
-                            break;
-                        case EVENT_TAIL_SWEEP:
-                            DoCast(me, SPELL_TAIL_SWEEP);
-                            events.ScheduleEvent(EVENT_TAIL_SWEEP, 10000);
-                            break;
-                        case EVENT_TEMPORAL_BLAST:
-                            DoCastAOE(SPELL_TEMPORAL_BLAST);
-                            events.ScheduleEvent(EVENT_TEMPORAL_BLAST, urand(14000, 18000));
-                            break;
-                        case EVENT_CONTINUE:
-                            Talk(SAY_GLASS_5 - hourglass);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
-                            break;
-                        case EVENT_DESPAWN:
-                            me->RemoveAllDynObjects();
-                            if (Creature* pNozdormu = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_NOZDORMU)))
-                                pNozdormu->AI()->DoAction(ACTION_NOZDORMU);
-                            instance->SetBossState(DATA_MUROZOND, DONE);
-                            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SANDS_OF_THE_HOURGLASS);
-                            me->DespawnOrUnsummon(3000);
-                            break;
-                        default:
-                            break;
+                        break;
+                    case EVENT_TAIL_SWEEP:
+                        DoCastAOE(SPELL_TAIL_SWEEP);
+                        events.ScheduleEvent(EVENT_TAIL_SWEEP, 10000);
+                        break;
                     }
                 }
 
                 DoMeleeAttackIfReady();
             }
-        private:
-            uint8 phase;
-            bool bDead;
-            uint32 hourglass;
+        };
 
-            void ActivateMirrors()
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_murozondAI(creature);
+        }
+};
+
+class npc_murozond_trash : public CreatureScript
+{
+    public:
+        npc_murozond_trash() : CreatureScript("npc_murozond_trash") { }
+
+        struct npc_murozond_trashAI : public ScriptedAI
+        {
+            npc_murozond_trashAI(Creature* creature) : ScriptedAI(creature)
             {
-                //std::list<Creature*> mirrorList;
-                //me->GetCreatureListWithEntryInGrid(mirrorList, NPC_MIRROR, 500.0f);
-                
-                //if (mirrorList.empty())
-                //    return;
+                _instance = creature->GetInstanceScript();
+            }
 
-                //for (std::list<Creature*>::const_iterator itr = mirrorList.begin(); itr != mirrorList.end(); ++itr)
-                //{
-                //    if (Creature* pMirror = (*itr)->ToCreature())
-                //        if (pMirror->isAlive() && pMirror->IsInWorld())
-                //            pMirror->AI()->DoAction(ACTION_HOURGLASS);
-                //}
-                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
-                if (!PlayerList.isEmpty())
-                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
+            void InitializeAI() override
+            {
+                // Increase add count
+                if (!me->isDead())
+                {
+                    if (me->GetEntry() == NPC_INFINITE_WARDEN || me->GetEntry() == NPC_INFINITE_SUPPRESSOR)
+                    {
+                        if (WorldObject* hourglass = GetClosestGameObjectWithEntry(me, 209249, 300.0f))
                         {
-                            if (!pPlayer->IsInWorld())
+                            if (me->IsWithinDist(hourglass, 32.0f))
+                                _instance->SetData(DATA_MUROZOND_TRASH, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+                        }
+                        Reset();
+                    }
+                }
+            }
+
+            private:
+            InstanceScript* _instance;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetEndTimelAI<npc_murozond_trashAI>(creature);
+        }
+};
+
+class go_hourglass_of_time : public GameObjectScript
+{
+public:
+    go_hourglass_of_time() : GameObjectScript("go_hourglass_of_time") { }
+
+    bool OnGossipHello(Player* pPlayer, GameObject* pGO) override
+    {
+        InstanceScript* _instance = pGO->GetInstanceScript();
+
+        if (pPlayer->GetPower(POWER_ALTERNATE_POWER) < 1 || _instance->GetData(DATA_MUROZOND_TRASH) || !pPlayer->IsInCombat() || !_instance->GetData(DATA_MUROZOND_STARTED))
+            return true;
+        else
+        {
+            if (Creature* murozond = pGO->FindNearestCreature(NPC_MUROZOND_ENTRY, 200.0f))
+                murozond->AI()->DoAction(ACTION_MUROZOND_REMOVE_TEMPORAL_BOMB);
+            if (Map* map = pPlayer->GetMap())
+            {
+                std::list<Player*> PlayerList;
+                Map::PlayerList const& Players = map->GetPlayers();
+                for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                {
+                    if (Player* player = itr->GetSource())
+                    {
+                        if (player->isDead())
+                            player->ResurrectPlayer(100.0f, false);
+
+                        player->CastSpell(player, SPELL_BUFF_BLESSING_OF_BRONZE, true);
+
+                        int32 charges = player->GetPower(POWER_ALTERNATE_POWER);
+                        charges -= 10;
+
+                        if (player->HasAura(SPELL_HOURGLASS_BAR))
+                        {
+                            player->RemoveAura(SPELL_HOURGLASS_BAR);
+                            player->AddAura(SPELL_HOURGLASS_BAR, player);
+                        }
+
+                        player->SetMaxPower(POWER_ALTERNATE_POWER, 50);
+                        player->SetPower(POWER_ALTERNATE_POWER, charges);
+
+                        std::list<Creature*> playerClones;
+                        player->GetCreatureListWithEntryInGrid(playerClones, NPC_PLAYER_CLONE_ENTRY, 200.0f);
+
+                        Creature* myClone;
+                        for (std::list<Creature*>::iterator iter = playerClones.begin(); iter != playerClones.end(); ++iter)
+                        {
+                            if (!(*iter) || (*iter)->isDead())
                                 continue;
 
-                            if (!pPlayer->isAlive())
-                                pPlayer->ResurrectPlayer(1.0f, false);
-
-                            std::list<uint32> spell_list;
-                            SpellCooldowns cd_list = pPlayer->GetSpellCooldowns();
-                            if (!cd_list.empty())
+                            if (Aura* aur = (*iter)->GetAura(45204))
                             {
-                                for (SpellCooldowns::const_iterator itr = cd_list.begin(); itr != cd_list.end(); ++itr)
-                                {
-                                    SpellInfo const* entry = sSpellMgr->GetSpellInfo(itr->first);
-                                    if (entry &&
-                                        entry->RecoveryTime <= 10 * MINUTE * IN_MILLISECONDS &&
-                                        entry->CategoryRecoveryTime <= 10 * MINUTE * IN_MILLISECONDS)
-                                    {
-                                        spell_list.push_back(itr->first);
-                                    }
-                                }
+                                if (aur->GetCasterGUID() == player->GetGUID())
+                                    myClone = (*iter);
+                                else
+                                    continue;
                             }
-
-                            pPlayer->RemoveAura(SPELL_TEMPORAL_BLAST);
-
-                            pPlayer->SetHealth(pPlayer->GetMaxHealth());
-                            pPlayer->SetPower(pPlayer->getPowerType(), pPlayer->GetMaxPower(pPlayer->getPowerType()));
-
-                            pPlayer->CastSpell(pPlayer, SPELL_BLESSING_OF_BRONZE_DRAGONS, true);
                         }
-            }
-        };   
-};
 
-class npc_murozond_mirror_image : public CreatureScript
-{
-    public:
-        npc_murozond_mirror_image() : CreatureScript("npc_murozond_mirror_image") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_murozond_mirror_imageAI(pCreature);
-        }
-
-        struct npc_murozond_mirror_imageAI : public Scripted_NoMovementAI
-        {
-            npc_murozond_mirror_imageAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                me->SetReactState(REACT_PASSIVE);
-                m_owner = NULL;
-                pInstance = me->GetInstanceScript();
-            }
-
-            Player* m_owner;
-            InstanceScript* pInstance;
-
-            void Reset()
-            {
-                if (!me->HasAura(SPELL_FADING))
-                    me->AddAura(SPELL_FADING, me);
-            }
-
-            void IsSummonedBy(Unit* owner)
-            {
-                if (owner && owner->isAlive() && owner->IsInWorld())
-                    if (owner->GetTypeId() == TYPEID_PLAYER)
-                        m_owner = owner->ToPlayer();
-            }
-
-            void DoAction(const int32 action)
-            {
-                if (action == ACTION_HOURGLASS)
-                {
-                    if (m_owner && m_owner->IsInWorld())
-                    {
-                        if (!m_owner->isAlive())
-                            m_owner->ResurrectPlayer(1.0f, false);
-
-                        std::list<uint32> spell_list;
-                        SpellCooldowns cd_list = m_owner->ToPlayer()->GetSpellCooldowns();
-                        if (!cd_list.empty())
+                        if (myClone)
                         {
-                            for (SpellCooldowns::const_iterator itr = cd_list.begin(); itr != cd_list.end(); ++itr)
-                            {
-                                SpellInfo const* entry = sSpellMgr->GetSpellInfo(itr->first);
-                                if (entry &&
-                                    entry->RecoveryTime <= 10 * MINUTE * IN_MILLISECONDS &&
-                                    entry->CategoryRecoveryTime <= 10 * MINUTE * IN_MILLISECONDS)
-                                {
-                                    spell_list.push_back(itr->first);
-                                }
-                            }
+                            float cloneDist = player->GetDistance2d(myClone);
+                            player->AddAura(SPELL_REWIND_TIME, player);
+                            player->GetMotionMaster()->MoveCharge(myClone->GetPositionX(), myClone->GetPositionY(), myClone->GetPositionZ(), cloneDist / 3.0f);
+                            player->GetSpellHistory()->ResetAllCooldowns();
+                            player->RemoveAura(57723);      // Heroism
+                            player->RemoveAura(57724);      // Bloodlust
+                            player->RemoveAura(80354);      // Time Warp
+                            player->RemoveAura(102381);     // Temporal Blast
+                            player->ToPlayer()->SetFullHealth();
+                            player->ToPlayer()->SetFullPower(player->GetPowerType());
                         }
-
-                        m_owner->RemoveAura(SPELL_TEMPORAL_BLAST);
-
-                        m_owner->SetHealth(m_owner->GetMaxHealth());
-                        m_owner->SetPower(m_owner->getPowerType(), m_owner->GetMaxPower(m_owner->getPowerType()));
-
-                        m_owner->CastSpell(m_owner, SPELL_BLESSING_OF_BRONZE_DRAGONS, true);
-                        m_owner->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), true);
                     }
                 }
             }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!pInstance || pInstance->GetBossState(DATA_MUROZOND) != IN_PROGRESS)
-                {
-                    me->DespawnOrUnsummon();
-                    return;
-                }
-            }
-        };
-};
-
-class npc_end_time_nozdormu : public CreatureScript
-{
-    public:
-
-        npc_end_time_nozdormu() : CreatureScript("npc_end_time_nozdormu") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_end_time_nozdormuAI(pCreature);
         }
-
-        struct npc_end_time_nozdormuAI : public ScriptedAI
-        {
-            npc_end_time_nozdormuAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                me->SetVisible(false);
-                me->setActive(true);
-                bTalk = false;
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void DoAction(const int32 action)
-            {
-                if (!bTalk && action == ACTION_NOZDORMU)
-                {
-                    bTalk = true;
-                    me->SetVisible(true);
-                    events.ScheduleEvent(EVENT_NOZDORMU_OUTRO_1, 5000);
-                    events.ScheduleEvent(EVENT_NOZDORMU_OUTRO_2, 20000);
-                    events.ScheduleEvent(EVENT_NOZDORMU_OUTRO_3, 33000);
-                    events.ScheduleEvent(EVENT_NOZDORMU_OUTRO_4, 41000);
-                    events.ScheduleEvent(EVENT_NOZDORMU_OUTRO_5, 44000);
-                }
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!bTalk)
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_NOZDORMU_OUTRO_1:
-                            Talk(SAY_NOZDORMU_OUTRO_1);
-                            break;
-                        case EVENT_NOZDORMU_OUTRO_2:
-                            Talk(SAY_NOZDORMU_OUTRO_2);
-                            break;
-                        case EVENT_NOZDORMU_OUTRO_3:
-                            Talk(SAY_NOZDORMU_OUTRO_3);
-                            break;
-                        case EVENT_NOZDORMU_OUTRO_4:
-                            if (GameObject* pGo = me->FindNearestGameObject(HOURGLASS_OF_TIME, 300.0f))
-                                me->SetFacingToObject(pGo);
-                            break;
-                        case EVENT_NOZDORMU_OUTRO_5:
-                            Talk(SAY_NOZDORMU_OUTRO_5);
-                            bTalk = false;
-                            break;
-                    }
-                }
-            }
-
-        private:
-            bool bTalk;
-            EventMap events;
-        };
-};
-
-class go_murozond_hourglass_of_time : public GameObjectScript
-{
-    public:
-        go_murozond_hourglass_of_time() : GameObjectScript("go_murozond_hourglass_of_time") { }
-
-        bool OnGossipHello(Player* pPlayer, GameObject* pGo)
-        {
-            InstanceScript* pInstance = pGo->GetInstanceScript();
-            if (!pInstance || pInstance->GetBossState(DATA_MUROZOND) != IN_PROGRESS)
-                return true;
-
-            if (Creature* pMurozond = ObjectAccessor::GetCreature(*pGo, pInstance->GetData64(DATA_MUROZOND)))
-            {
-                if (pMurozond->AI()->GetData(TYPE_HOURGLASS) == 0)
-                    return true;
-
-                pMurozond->AI()->DoAction(ACTION_HOURGLASS);
-            }
-
-            return false;
-        }
+        return true;
+    }
 };
 
 void AddSC_boss_murozond()
 {
     new boss_murozond();
-    new npc_end_time_nozdormu();
-    new npc_murozond_mirror_image();
-    new go_murozond_hourglass_of_time();
+    new npc_murozond_trash();
+    new go_hourglass_of_time();
 }

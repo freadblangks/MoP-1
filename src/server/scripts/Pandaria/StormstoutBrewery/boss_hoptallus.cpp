@@ -1,10 +1,22 @@
 /*
-    Dungeon : Stormstout Brewery 85-87
-    Boss: Hoptallus
-	www.pandawow.ir
-	stefan2008@ymail.com
-	it's a work of me and my friend
-*/
+ * Copyright (C) 2012 - 2016 MoPCore
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Dungeon: Stormstout Brewery.
+ * Boss: Hoptallus.
+ */
 
 #include "ObjectMgr.h"
 #include "ScriptMgr.h"
@@ -14,6 +26,7 @@
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
 #include "Player.h"
+#include "PassiveAI.h"
 
 #include "stormstout_brewery.h"
 
@@ -38,7 +51,7 @@ enum Spells
     SPELL_KEG_CARRY              = 131820, // Hopper carry keg.
     SPELL_EXPLOSIVE_BREW         = 114291, // When Hopper reaches target.
 
-    SPELL_HAMMER_VISUAL          = 114530,
+    SPELL_HAMMER_VISUAL          = 114530, // Bopper carry hammer + hammer ground visual.
     SPELL_HAMMER_ARROW           = 114533,
     SPELL_SMASH_AURA             = 111662, // Hammer aura.
     SPELL_SMASH                  = 111666  // Player cast spell on button click.
@@ -50,6 +63,7 @@ enum Events
     EVENT_CARROT_BREATH          = 1,
     EVENT_FURLWIND,
     EVENT_SUMMON_NPCS,
+    EVENT_SET_COMBAT,
 
     // NPCs
     EVENT_EXPLOSIVE_BREW,
@@ -57,6 +71,7 @@ enum Events
 };
 
 Position const bunnySummonPosition     = { -713.955f, 1254.574f, 164.790f }; // Bunny adds summon position.
+Position const hoptallusMovePosition   = { -692.524f, 1247.556f, 162.793f }; // Hoptallus move position after summoned.
 
 class boss_hoptallus : public CreatureScript
 {
@@ -69,15 +84,18 @@ class boss_hoptallus : public CreatureScript
             {
                 instance = creature->GetInstanceScript();
                 creature->ApplySpellImmune(0, IMMUNITY_ID, 111666, true); // Immune to Smash.
+                introStarted = false;
+                introDone    = false;
             }
 
             EventMap events;
             InstanceScript* instance;
             SummonList summons;
+            bool introStarted, introDone;
 
             void InitializeAI()
             {
-                if (!me->isDead())
+                if (!me->IsDead())
                     Reset();
             }
 
@@ -90,6 +108,25 @@ class boss_hoptallus : public CreatureScript
                     instance->SetData(DATA_HOPTALLUS_EVENT, NOT_STARTED);
 
                 _Reset();
+
+                if (!introStarted)
+                {
+                    me->SetReactState(REACT_PASSIVE);
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    me->SetHomePosition(hoptallusMovePosition.GetPositionX(), hoptallusMovePosition.GetPositionY(), hoptallusMovePosition.GetPositionZ(), 1.85f);
+                    me->GetMotionMaster()->MovePoint(1, hoptallusMovePosition);
+                    if (GameObject* barrel = me->FindNearestGameObject(GAMEOBJECT_MYSTERIOUS_BARREL, 100.0f))
+                        barrel->UseDoorOrButton(0);
+                    introStarted = true;
+                }
+            }
+
+            void MovementInform(uint32 type, uint32 id)
+            {
+                if (!me->IsAlive() || type != POINT_MOTION_TYPE || id != 1)
+                    return;
+
+                events.ScheduleEvent(EVENT_SET_COMBAT, 200);
             }
 
             void EnterCombat(Unit* /*who*/)
@@ -100,9 +137,12 @@ class boss_hoptallus : public CreatureScript
                 {
                     instance->SetData(DATA_HOPTALLUS_EVENT, IN_PROGRESS);
                     instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me); // Add
+
+                    if (GameObject* door = instance->instance->GetGameObject(instance->GetData64(DATA_HOPTALLUS_DOOR)))
+                        door->SetGoState(GO_STATE_READY);
                 }
 
-                // Carrot Breath handled through EVENT_FURLWIND Amin and the other way around.
+                // Carrot Breath handled through EVENT_FURLWIND and the other way around.
                 events.ScheduleEvent(EVENT_FURLWIND, urand(13000, 16000));
                 events.ScheduleEvent(EVENT_SUMMON_NPCS, urand(48000, 52000));
 
@@ -119,13 +159,16 @@ class boss_hoptallus : public CreatureScript
             {
                 Reset();
                 me->DeleteThreatList();
-                me->CombatStop(false);
+                me->CombatStop(true);
                 me->GetMotionMaster()->MoveTargetedHome();
 
                 if (instance)
                 {
                     instance->SetData(DATA_HOPTALLUS_EVENT, FAIL);
                     instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
+
+                    if (GameObject* door = instance->instance->GetGameObject(instance->GetData64(DATA_HOPTALLUS_DOOR)))
+                        door->SetGoState(GO_STATE_ACTIVE);
                 }
 
                 _EnterEvadeMode();
@@ -140,6 +183,12 @@ class boss_hoptallus : public CreatureScript
                 {
                     instance->SetData(DATA_HOPTALLUS_EVENT, DONE);
                     instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
+
+                    if (GameObject* door = instance->instance->GetGameObject(instance->GetData64(DATA_HOPTALLUS_DOOR)))
+                        door->SetGoState(GO_STATE_ACTIVE);
+
+                    if (GameObject* carrot = me->FindNearestGameObject(GAMEOBJECT_PART_CHEWED_CARROT, 100.0f))
+                        carrot->RemoveFromWorld();
                 }
 
                 _JustDied();
@@ -156,7 +205,7 @@ class boss_hoptallus : public CreatureScript
 
             void UpdateAI(const uint32 diff)
             {
-                if (!UpdateVictim())
+                if (!UpdateVictim() && introDone)
                     return;
 
                 events.Update(diff);
@@ -186,11 +235,21 @@ class boss_hoptallus : public CreatureScript
                             events.ScheduleEvent(EVENT_SUMMON_NPCS, urand(48000, 52000)); // Constant.
                             break;
 
+                        case EVENT_SET_COMBAT:
+                            me->SetFacingTo(1.879f);
+                            me->SetReactState(REACT_AGGRESSIVE);
+                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                            me->GetMotionMaster()->MovementExpired();
+                            me->GetMotionMaster()->Clear();
+                            introDone = true;
+                            break;
+
                         default: break;
                     }
                 }
 
-                DoMeleeAttackIfReady();
+                if (introDone && me->isInCombat())
+                    DoMeleeAttackIfReady();
             }
 
         // Special functions here.
@@ -198,15 +257,15 @@ class boss_hoptallus : public CreatureScript
             void CallNPCS()
             {
                 // 15 Hoppling, 7 Hopper, 5 Bopper.
-                for (uint8 i = 0; i < 15; i++)
+                for (uint8 i = 0; i < 8; i++)
                     if (Creature* hoppling = me->SummonCreature(NPC_HOPPLING, bunnySummonPosition, TEMPSUMMON_MANUAL_DESPAWN))
                         hoppling->GetMotionMaster()->MoveJump(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 5.0f, 10.0f);
 
-                for (uint8 i = 0; i < 7; i++)
+                for (uint8 i = 0; i < 4; i++)
                     if (Creature* hopper = me->SummonCreature(NPC_HOPPER, bunnySummonPosition, TEMPSUMMON_MANUAL_DESPAWN))
                         hopper->GetMotionMaster()->MoveJump(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 5.0f, 10.0f);
 
-                for (uint8 i = 0; i < 5; i++)
+                for (uint8 i = 0; i < 2; i++)
                     if (Creature* bopper = me->SummonCreature(NPC_BOPPER, bunnySummonPosition, TEMPSUMMON_MANUAL_DESPAWN))
                         bopper->GetMotionMaster()->MoveJump(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 5.0f, 10.0f);
             }
@@ -235,12 +294,12 @@ class npc_hopper : public CreatureScript
 
             void IsSummonedBy(Unit* /*summoner*/)
             {
-                me->AddAura(SPELL_KEG_CARRY, me);
                 Reset();
             }
 
             void Reset()
             {
+                me->AddAura(SPELL_KEG_CARRY, me);
                 events.Reset();
             }
 
@@ -253,8 +312,7 @@ class npc_hopper : public CreatureScript
             {
                 Reset();
                 me->DeleteThreatList();
-                me->CombatStop(false);
-                me->DespawnOrUnsummon();
+                me->CombatStop(true);
             }
 
             void UpdateAI(const uint32 diff)
@@ -313,14 +371,16 @@ class npc_bopper : public CreatureScript
                 Reset();
             }
 
-            void Reset() { }
+            void Reset()
+            {
+                me->AddAura(SPELL_HAMMER_VISUAL, me);
+            }
 
             void EnterEvadeMode()
             {
                 Reset();
                 me->DeleteThreatList();
-                me->CombatStop(false);
-                me->DespawnOrUnsummon();
+                me->CombatStop(true);
             }
 
             void JustDied(Unit* /*killer*/)
@@ -360,7 +420,8 @@ class npc_hoptallus_bopper_hammer : public CreatureScript
 
             void OnSpellClick(Unit* clicker)
             {
-                clicker->AddAura(SPELL_SMASH_AURA, clicker);
+                if (AuraPtr smash = clicker->AddAura(SPELL_SMASH_AURA, clicker))
+                    smash->SetStackAmount(3);
                 me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
                 me->DespawnOrUnsummon();
             }
@@ -372,19 +433,6 @@ class npc_hoptallus_bopper_hammer : public CreatureScript
         }
 };
 
-class PositionCheck : public std::unary_function<Unit*, bool>
-{
-    public:
-        explicit PositionCheck(Unit* _caster) : caster(_caster) { }
-        bool operator()(WorldObject* object)
-        {
-              return !caster->HasInArc(M_PI / 6, object);
-        }
-
-    private:
-        Unit* caster;
-};
-
 class PlayerCheck : public std::unary_function<Unit*, bool>
 {
     public:
@@ -392,6 +440,20 @@ class PlayerCheck : public std::unary_function<Unit*, bool>
         bool operator()(WorldObject* object)
         {
             return object->GetTypeId() != TYPEID_PLAYER;
+        }
+
+    private:
+        Unit* caster;
+};
+
+class VerminCheck : public std::unary_function<Unit*, bool>
+{
+    public:
+        explicit VerminCheck(Unit* _caster) : caster(_caster) { }
+        bool operator()(WorldObject* object)
+        {
+            return (object->GetTypeId() == TYPEID_UNIT && 
+                   (object->GetEntry() == NPC_BOPPER || object->GetEntry() == NPC_HOPPER || object->GetEntry() == NPC_HOPPLING)) ? true : false;
         }
 
     private:
@@ -437,7 +499,17 @@ public:
 
         void FilterTargets(std::list<WorldObject*>& targets)
         {
-            targets.remove_if(PositionCheck(GetCaster()));
+            Map* map = GetCaster()->GetMap();
+            if (map && map->IsDungeon())
+            {
+                targets.clear();
+                std::list<Player*> playerList;
+                Map::PlayerList const& players = map->GetPlayers();
+                for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                    if (Player* player = itr->getSource())
+                        if (GetCaster()->isInFront(player, M_PI / 3))
+                            targets.push_back(player);
+            }
         }
 
         void Register()
@@ -481,6 +553,69 @@ public:
     }
 };
 
+// Hoptallus Hammer: Smash! 111666.
+class spell_hoptallus_hammer_smash : public SpellScriptLoader
+{
+public:
+    spell_hoptallus_hammer_smash() : SpellScriptLoader("spell_hoptallus_hammer_smash") { }
+
+    class spell_hoptallus_hammer_smashSpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_hoptallus_hammer_smashSpellScript);
+
+        void FilterTargets(std::list<WorldObject*>& targets)
+        {
+            targets.remove_if(VerminCheck(GetCaster()));
+        }
+
+        void HandleScript(SpellEffIndex /*effIndex*/)
+        {
+            Unit* caster = GetCaster();
+            Unit* target = GetHitUnit();
+
+            if (!caster || !target)
+                return;
+
+            if (AuraPtr smash = caster->GetAura(SPELL_SMASH_AURA))
+            {
+                int32 stacks = smash->GetStackAmount();
+                if (stacks)
+                {
+                    if (stacks > 1)
+                        smash->SetStackAmount(stacks - 1);
+                    else
+                        caster->RemoveAurasDueToSpell(SPELL_SMASH_AURA);
+                }
+            }
+
+            const SpellInfo* SmashSpell = sSpellMgr->GetSpellInfo(SPELL_SMASH, caster->GetMap()->GetDifficulty());
+            if (SmashSpell)
+            {
+                std::list<Creature*> verminList;
+                GetCreatureListWithEntryInGrid(verminList, caster, NPC_BOPPER,   6.0f);
+                GetCreatureListWithEntryInGrid(verminList, caster, NPC_HOPPER,   6.0f);
+                GetCreatureListWithEntryInGrid(verminList, caster, NPC_HOPPLING, 6.0f);
+
+                if (!verminList.empty())
+                    for (auto vermin: verminList)
+                        caster->DealDamage(vermin, vermin->GetHealth(), NULL, SPELL_DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, SmashSpell);
+            }
+        }
+
+        void Register()
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_hoptallus_hammer_smashSpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_hoptallus_hammer_smashSpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+            OnEffectHitTarget += SpellEffectFn(spell_hoptallus_hammer_smashSpellScript::HandleScript, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
+        }
+    };
+
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_hoptallus_hammer_smashSpellScript();
+    }
+};
+
 void AddSC_boss_hoptallus()
 {
 	new boss_hoptallus();
@@ -490,4 +625,5 @@ void AddSC_boss_hoptallus()
     new spell_hoptallus_carrot_breath();
     new spell_hoptallus_carrot_breath_damage();
     new spell_hoptallus_furlwind_damage();
+    new spell_hoptallus_hammer_smash();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -15,500 +15,1120 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-// TODO: - more add spawn points
-//       - nonelite spells
-//       - spawn 2 more crusher groups
-//       - web doors
-
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
 #include "azjol_nerub.h"
+#include "InstanceScript.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "ObjectAccessor.h"
+#include "ScriptedCreature.h"
+#include "SpellAuraEffects.h"
+#include "SpellAuras.h"
+#include "SpellScript.h"
+#include "TemporarySummon.h"
+
+enum Events
+{
+    // Hadronox
+    EVENT_LEECH_POISON = 1,
+    EVENT_ACID_CLOUD,
+    EVENT_WEB_GRAB,
+    EVENT_PIERCE_ARMOR,
+    EVENT_PLAYER_CHECK,
+
+    // Anub'ar Crusher
+    EVENT_SMASH,
+
+    // Anub'ar foes - Shared
+    EVENT_TAUNT,
+
+    // Anub'ar Champion
+    EVENT_REND,
+    EVENT_PUMMEL,
+
+    // Anub'ar Crypt Guard
+    EVENT_CRUSHING_WEBS,
+    EVENT_INFECTED_WOUND,
+
+    // Anub'ar Necromancer
+    EVENT_SHADOW_BOLT,
+    EVENT_ANIMATE_BONES
+};
 
 enum Spells
 {
-    SPELL_ACID_CLOUD          = 53400,
-    H_SPELL_ACID_CLOUD        = 59419,
-    SPELL_LEECH_POISON        = 53030,
-    SPELL_LEECH_POISON_PCT    = 53800,
-    H_SPELL_LEECH_POISON      = 59417,
-    SPELL_PIERCE_ARMOR        = 53418,
-    SPELL_WEB_GRAB            = 57731,
-    H_SPELL_WEB_GRAB          = 59421,
-    SPELL_WEB_FRONT_DOORS     = 53177,
-    SPELL_WEB_SIDE_DOORS      = 53185,
+    // Hadronox
+    SPELL_WEB_FRONT_DOORS                   = 53177,
+    SPELL_WEB_SIDE_DOORS                    = 53185,
+    SPELL_LEECH_POISON                      = 53030,
+    SPELL_LEECH_POISON_HEAL                 = 53800,
+    SPELL_ACID_CLOUD                        = 53400,
+    SPELL_WEB_GRAB                          = 57731,
+    SPELL_PIERCE_ARMOR                      = 53418,
 
-    // anubar crusher
-    SPELL_FRENZY              = 53801,
-    SPELL_SMASH               = 53318,
-    H_SPELL_SMASH             = 59346
+    // Anub'ar opponent summoning spells
+    SPELL_SUMMON_CHAMPION_PERIODIC          = 53035,
+    SPELL_SUMMON_CRYPT_FIEND_PERIODIC       = 53037,
+    SPELL_SUMMON_NECROMANCER_PERIODIC       = 53036,
+    SPELL_SUMMON_CHAMPION_TOP               = 53064,
+    SPELL_SUMMON_CRYPT_FIEND_TOP            = 53065,
+    SPELL_SUMMON_NECROMANCER_TOP            = 53066,
+    SPELL_SUMMON_CHAMPION_BOTTOM            = 53090,
+    SPELL_SUMMON_CRYPT_FIEND_BOTTOM         = 53091,
+    SPELL_SUMMON_NECROMANCER_BOTTOM         = 53092,
+
+    // Anub'ar Crusher
+    SPELL_SMASH                             = 53318,
+    SPELL_FRENZY                            = 53801,
+
+    // Anub'ar foes - Shared
+    SPELL_TAUNT                             = 53798,
+
+    // Anub'ar Champion
+    SPELL_REND                              = 59343,
+    SPELL_PUMMEL                            = 59344,
+
+    // Anub'ar Crypt Guard
+    SPELL_CRUSHING_WEBS                     = 59347,
+    SPELL_INFECTED_WOUND                    = 59348,
+
+    // Anub'ar Necromancer
+    SPELL_SHADOW_BOLT                       = 53333,
+    SPELL_ANIMATE_BONES_1                   = 53334,
+    SPELL_ANIMATE_BONES_2                   = 53336,
+};
+
+enum SummonGroups
+{
+    SUMMON_GROUP_CRUSHER_1      = 1,
+    SUMMON_GROUP_CRUSHER_2      = 2,
+    SUMMON_GROUP_CRUSHER_3      = 3
+};
+
+enum Actions
+{
+    ACTION_HADRONOX_MOVE = 1,
+    ACTION_CRUSHER_ENGAGED,
+    ACTION_PACK_WALK
+};
+
+enum Data
+{
+    DATA_CRUSHER_PACK_ID = 1,
+    DATA_HADRONOX_ENTERED_COMBAT,
+    DATA_HADRONOX_WEBBED_DOORS
 };
 
 enum Creatures
 {
-    NPC_HADRONOX              = 28921,
-    NPC_ANUBAR_CHAMPION       = 29117,
-    NPC_ANUBAR_CRYPT_FIEND    = 29118,
-    NPC_ADD_CHAMPION          = 29062,
-    NPC_ADD_CRYPT_FIEND       = 29063,
-    NPC_ADD_NECROMANCER       = 29064
+    NPC_CRUSHER             = 28922,
+    NPC_WORLDTRIGGER_LARGE  = 23472
 };
 
-enum Events
+enum Talk
 {
-    EVENT_CLOUD = 1,
-    EVENT_LEECH,
-    EVENT_PIECRE,
-    EVENT_GRAB,
-    EVENT_SPAWN,
-    EVENT_FORCEMOVE,
-    EVENT_UNSTUCK // temporary
+    CRUSHER_SAY_AGGRO = 1,
+    CRUSHER_EMOTE_FRENZY = 2,
+    HADRONOX_EMOTE_MOVE = 1
 };
 
-Position const HadronoxWaypoints[14] =
+// Movement IDs used by the permanently spawning Anub'ar opponents - they are done in sequence, as one finishes, the next one starts
+enum Movements
 {
-    {565.681458f, 513.247803f, 698.7f, 0.0f},
-    {578.135559f, 512.468811f, 698.5f, 0.0f},
-    {596.820007f, 510.811249f, 694.8f, 0.0f},
-    {608.183777f, 513.395508f, 695.5f, 0.0f},
-    {618.232422f, 525.414185f, 697.0f, 0.0f},
-    {620.192932f, 539.329041f, 706.3f, 0.0f},
-    {615.690979f, 552.474915f, 713.2f, 0.0f},
-    {607.791870f, 566.636841f, 720.1f, 0.0f},
-    {599.256104f, 580.134399f, 724.7f, 0.0f},
-    {591.600220f, 589.028748f, 730.7f, 0.0f},
-    {587.181580f, 596.026489f, 739.5f, 0.0f},
-    {577.790588f, 583.640930f, 727.9f, 0.0f},
-    {559.274597f, 563.085999f, 728.7f, 0.0f},
-    {528.960815f, 565.453613f, 733.2f, 0.0f}
+    MOVE_NONE = 0,
+    MOVE_OUTSIDE,
+    MOVE_DOWNSTAIRS,
+    MOVE_DOWNSTAIRS_2,
+    MOVE_HADRONOX,       // this one might have us take a detour to avoid pathfinding "through" the floor...
+    MOVE_HADRONOX_REAL   // while this one will always make us movechase
 };
 
-Position const AddWaypoints[6] =
+static const uint8 NUM_STEPS = 4;
+static const Position hadronoxStep[NUM_STEPS] =
 {
-    {582.961304f, 606.298645f, 739.3f, 0.0f},
-    {590.240662f, 597.044556f, 739.2f, 0.0f},
-    {600.471436f, 585.080200f, 726.2f, 0.0f},
-    {611.900940f, 562.884094f, 718.9f, 0.0f},
-    {615.533936f, 529.052002f, 703.3f, 0.0f},
-    {606.844604f, 515.054199f, 696.2f, 0.0f}
+    { 515.5848f, 544.2007f, 673.6272f },
+    { 562.191f , 514.068f , 696.4448f },
+    { 610.3828f, 518.6407f, 695.9385f },
+    { 530.42f  , 560.003f,  733.0308f }
 };
 
 class boss_hadronox : public CreatureScript
 {
-    public:
-        boss_hadronox() : CreatureScript("boss_hadronox") { }
+public:
+    boss_hadronox() : CreatureScript("boss_hadronox") { }
 
-        struct boss_hadronoxAI : public ScriptedAI
+    struct boss_hadronoxAI : public BossAI
+    {
+        boss_hadronoxAI(Creature* creature) : BossAI(creature, DATA_HADRONOX), _enteredCombat(false), _doorsWebbed(false), _lastPlayerCombatState(false), _step(0) { }
+
+        bool IsInCombatWithPlayer() const
         {
-            boss_hadronoxAI(Creature* c) : ScriptedAI(c), _summons(me)
+            std::list<HostileReference*> const& refs = me->GetThreatManager().getThreatList();
+            for (HostileReference const* hostileRef : refs)
             {
-                _instance = c->GetInstanceScript();
-                _home = c->GetHomePosition();
+                if (Unit const* target = hostileRef->getTarget())
+                    if (target->IsControlledByPlayer())
+                        return true;
             }
+            return false;
+        }
 
-            void Reset()
+        void SetStep(uint8 step)
+        {
+            if (_lastPlayerCombatState)
+                return;
+
+            _step = step;
+            me->SetHomePosition(hadronoxStep[step]);
+            me->GetMotionMaster()->Clear();
+            me->AttackStop();
+            SetCombatMovement(false);
+            me->GetMotionMaster()->MovePoint(0, hadronoxStep[step]);
+        }
+
+        void SummonCrusherPack(SummonGroups group)
+        {
+            std::list<TempSummon*> summoned;
+            me->SummonCreatureGroup(group, &summoned);
+            for (TempSummon* summon : summoned)
             {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, 9.0f);
-                me->SetFloatValue(UNIT_FIELD_COMBATREACH, 9.0f);
-				me->GetMotionMaster()->Clear();
-				me->GetMotionMaster()->MovePoint(50,me->GetHomePosition());
-
-				_WaveCount = 0;
-                _wpCount = 0;
-                _wpReached = false;
-                _movementStarted = false;
-                _engaged = false;
-                _denied = true;
-
-                _events.Reset();
-                _summons.DespawnAll();
-
-                if (_instance)
-                    _instance->SetData(DATA_HADRONOX_EVENT, NOT_STARTED);
+                summon->AI()->SetData(DATA_CRUSHER_PACK_ID, group);
+                summon->AI()->DoAction(ACTION_PACK_WALK);
             }
+        }
 
-            void JustSummoned(Creature* summon)
+        void MovementInform(uint32 type, uint32 /*id*/) override
+        {
+            if (type != POINT_MOTION_TYPE)
+                return;
+            SetCombatMovement(true);
+            AttackStart(me->GetVictim());
+            if (_step < NUM_STEPS-1)
+                return;
+            DoCastAOE(SPELL_WEB_FRONT_DOORS);
+            DoCastAOE(SPELL_WEB_SIDE_DOORS);
+            _doorsWebbed = true;
+            DoZoneInCombat();
+        }
+
+        uint32 GetData(uint32 data) const override
+        {
+            if (data == DATA_HADRONOX_ENTERED_COMBAT)
+                return _enteredCombat ? 1 : 0;
+            if (data == DATA_HADRONOX_WEBBED_DOORS)
+                return _doorsWebbed ? 1 : 0;
+            return 0;
+        }
+
+        bool CanAIAttack(Unit const* target) const override
+        {
+            // Prevent Hadronox from going too far from her current home position
+            if (!target->IsControlledByPlayer() && target->GetDistance(me->GetHomePosition()) > 20.0f)
+                return false;
+            return BossAI::CanAIAttack(target);
+        }
+
+        void EnterCombat(Unit* /*who*/) override
+        {
+            events.ScheduleEvent(EVENT_LEECH_POISON, randtime(Seconds(5), Seconds(7)));
+            events.ScheduleEvent(EVENT_ACID_CLOUD, randtime(Seconds(7), Seconds(13)));
+            events.ScheduleEvent(EVENT_WEB_GRAB, randtime(Seconds(13), Seconds(19)));
+            events.ScheduleEvent(EVENT_PIERCE_ARMOR, randtime(Seconds(4), Seconds(7)));
+            events.ScheduleEvent(EVENT_PLAYER_CHECK, Seconds(1));
+            me->setActive(true);
+        }
+
+        void DoAction(int32 action) override
+        {
+            switch (action)
             {
-                _summons.push_back(summon->GetGUID()); //.Summon(summon);
-            }
-
-            void MovementInform(uint32 type, uint32 id)
-            {
-                if (type != POINT_MOTION_TYPE || id != _wpCount)
-                    return;
-
-                if (id == 10)
-                {
-                    // TODO: web doors
-                    _denied = false;
-                    _events.CancelEvent(EVENT_SPAWN);
-                }
-
-                if (id < 13)
-                {
-                    ++_wpCount;
-                    _wpReached = true;
-                }
-                else
-                {
-                    _events.CancelEvent(EVENT_FORCEMOVE);
-                    me->SetReactState(REACT_AGGRESSIVE);
-                }
-            }
-
-            void ElementalDamageTaken(Unit* attacker, uint32 /*damage*/, SpellSchoolMask /*damageSchoolMask*/)
-            {
-                if (!_engaged && attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
-                {
-                    _engaged = true;
-                    me->GetMotionMaster()->Clear();
-                    me->SetReactState(REACT_AGGRESSIVE);
-                    DoResetThreat();
-                    DoZoneInCombat();
-                    me->AddThreat(attacker, 9999.9f);
-                    me->GetMotionMaster()->MoveChase(attacker);
-
-                    _events.CancelEvent(EVENT_FORCEMOVE);
-                    _events.ScheduleEvent(EVENT_PIECRE, urand(10, 15) *IN_MILLISECONDS);
-                    _events.ScheduleEvent(EVENT_GRAB, urand(15, 20) *IN_MILLISECONDS);
-                }
-            }
-
-            uint32 GetData(uint32 type)
-            {
-                switch (type)
-                {
-                    case DATA_ENGAGED:
-                        return _engaged ? 1 : 0;
-                    case DATA_DENIED:
-                        return _denied ? 1 : 0;
-                }
-
-                return 0;
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                if (_instance)
-                    _instance->SetData(DATA_HADRONOX_EVENT, DONE);
-            }
-
-            void EnterEvadeMode()
-            {
-                if (!_engaged)
-                {
-                    if (_wpCount >= 13)
-                        me->SetReactState(REACT_AGGRESSIVE);
-                    else
-                        me->SetReactState(REACT_PASSIVE);
-
-                    return;
-                }
-
-                //_EnterEvadeMode();
-                //me->SetHomePosition(_home);
-                //me->GetMotionMaster()->MoveTargetedHome();
-                Reset();
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (me->IsVisible() && !_movementStarted && me->isInCombat())
-                {
-                    _movementStarted = true;
-                    _wpReached = true;
-                    _events.ScheduleEvent(EVENT_CLOUD, urand(5, 10) *IN_MILLISECONDS);
-                    _events.ScheduleEvent(EVENT_LEECH, urand(7, 12) *IN_MILLISECONDS);
-                    _events.ScheduleEvent(EVENT_UNSTUCK, 3*IN_MILLISECONDS);
-                    _events.ScheduleEvent(EVENT_SPAWN, 1.5*IN_MILLISECONDS);
-                }
-
-                if (_wpReached)
-                {
-                    _wpReached = false;
-
-                    if (me->isInCombat())
+                case ACTION_CRUSHER_ENGAGED:
+                    if (_enteredCombat)
+                        break;
+                    instance->SetBossState(DATA_HADRONOX, IN_PROGRESS);
+                    _enteredCombat = true;
+                    SummonCrusherPack(SUMMON_GROUP_CRUSHER_2);
+                    SummonCrusherPack(SUMMON_GROUP_CRUSHER_3);
+                    break;
+                case ACTION_HADRONOX_MOVE:
+                    if (_step < NUM_STEPS-1)
                     {
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        _events.ScheduleEvent(EVENT_FORCEMOVE, urand(7, 10) *IN_MILLISECONDS);
+                        SetStep(_step + 1);
+                        Talk(HADRONOX_EMOTE_MOVE);
                     }
-                    else
-                        me->GetMotionMaster()->MovePoint(_wpCount, HadronoxWaypoints[_wpCount]);
+                    break;
+            }
+        }
+
+        void EnterEvadeMode(EvadeReason /*why*/) override
+        {
+            std::list<Creature*> triggers;
+            me->GetCreatureListWithEntryInGrid(triggers, NPC_WORLDTRIGGER_LARGE);
+            for (Creature* trigger : triggers)
+                if (trigger->HasAura(SPELL_SUMMON_CHAMPION_PERIODIC) || trigger->HasAura(SPELL_WEB_FRONT_DOORS) || trigger->HasAura(SPELL_WEB_SIDE_DOORS))
+                    _DespawnAtEvade(25, trigger);
+            _DespawnAtEvade(25);
+            summons.DespawnAll();
+            for (ObjectGuid gNerubian : _anubar)
+                if (Creature* nerubian = ObjectAccessor::GetCreature(*me, gNerubian))
+                    nerubian->DespawnOrUnsummon();
+        }
+
+        void SetGUID(ObjectGuid guid, int32 /*what*/) override
+        {
+            _anubar.push_back(guid);
+        }
+
+        void InitializeAI() override
+        {
+            BossAI::InitializeAI();
+            me->SetBoundingRadius(9.0f);
+            me->SetCombatReach(9.0f);
+            _enteredCombat = false;
+            _doorsWebbed = false;
+            _lastPlayerCombatState = false;
+            SetStep(0);
+        }
+
+        void JustAppeared() override
+        {
+            BossAI::JustAppeared();
+            SetCombatMovement(true);
+            SummonCrusherPack(SUMMON_GROUP_CRUSHER_1);
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if (!UpdateVictim())
+                return;
+
+            events.Update(diff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 eventId = events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                    case EVENT_LEECH_POISON:
+                        DoCastAOE(SPELL_LEECH_POISON);
+                        events.Repeat(randtime(Seconds(7), Seconds(9)));
+                        break;
+                    case EVENT_ACID_CLOUD:
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f))
+                            DoCast(target, SPELL_ACID_CLOUD);
+                        events.Repeat(randtime(Seconds(16), Seconds(23)));
+                        break;
+                    case EVENT_WEB_GRAB:
+                        DoCastAOE(SPELL_WEB_GRAB);
+                        events.Repeat(randtime(Seconds(20), Seconds(25)));
+                        break;
+                    case EVENT_PIERCE_ARMOR:
+                        DoCastVictim(SPELL_PIERCE_ARMOR);
+                        events.Repeat(randtime(Seconds(10), Seconds(15)));
+                        break;
+                    case EVENT_PLAYER_CHECK:
+                        if (IsInCombatWithPlayer() != _lastPlayerCombatState)
+                        {
+                            _lastPlayerCombatState = !_lastPlayerCombatState;
+                            if (_lastPlayerCombatState) // we are now in combat with players
+                            {
+                                if (!instance->CheckRequiredBosses(DATA_HADRONOX))
+                                {
+                                    EnterEvadeMode(EVADE_REASON_SEQUENCE_BREAK);
+                                    return;
+                                }
+                                // cancel current point movement if engaged by players
+                                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+                                {
+                                    me->GetMotionMaster()->Clear();
+                                    SetCombatMovement(true);
+                                    AttackStart(me->GetVictim());
+                                }
+                            }
+                            else // we are no longer in combat with players - reset the encounter
+                                EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
+                        }
+                        events.Repeat(Seconds(1));
+                        break;
                 }
-
-                if (!UpdateVictim() && _engaged)
-                    return;
-
-                _events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
-
-                while (uint32 eventId = _events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_CLOUD:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 60, false))
-                                DoCast(target, DUNGEON_MODE(SPELL_ACID_CLOUD, H_SPELL_ACID_CLOUD));
-                            _events.ScheduleEvent(EVENT_CLOUD, urand(25, 35) *IN_MILLISECONDS);
-                            break;
-                        case EVENT_LEECH:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 20, false))
-                                DoCast(target, DUNGEON_MODE(SPELL_LEECH_POISON, H_SPELL_LEECH_POISON));
-                            _events.ScheduleEvent(EVENT_LEECH, urand(10, 20) *IN_MILLISECONDS);
-                            break;
-                        case EVENT_PIECRE:
-                            DoCastVictim(SPELL_PIERCE_ARMOR);
-                            _events.ScheduleEvent(EVENT_PIECRE, urand(15, 20) *IN_MILLISECONDS);
-                            break;
-                        case EVENT_GRAB:
-                            DoCast(me, DUNGEON_MODE(SPELL_WEB_GRAB, H_SPELL_WEB_GRAB));
-                            DoCast(me, DUNGEON_MODE(SPELL_ACID_CLOUD, H_SPELL_ACID_CLOUD));
-                            _events.ScheduleEvent(EVENT_GRAB, urand(17, 23) *IN_MILLISECONDS);
-                            break;
-                        case EVENT_SPAWN:
-                            me->SummonCreature(RAND(NPC_ADD_CHAMPION, NPC_ADD_CRYPT_FIEND, NPC_ADD_NECROMANCER), AddWaypoints[0]);
-							_WaveCount++;
-							if (_WaveCount <= 50 )  //prevent too much spawn & freeze serv
-								_events.ScheduleEvent(EVENT_SPAWN, urand(1500, 3000));
-                            break;
-                        case EVENT_FORCEMOVE:
-                            me->SetReactState(REACT_PASSIVE);
-                            me->GetMotionMaster()->MovePoint(_wpCount, HadronoxWaypoints[_wpCount]);
-                            break;
-                        case EVENT_UNSTUCK:
-                            if (me->getVictim())
-                                if (me->IsWithinCombatRange(me->getVictim(), 10.0f) && !me->IsWithinLOSInMap(me->getVictim()))
-                                    me->GetMotionMaster()->MoveJump(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 10.0f, 1.0f, 1.0f);
-                            if (_engaged)
-                            {
-                                Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 150.0f, true);
-                                if (!target)
-                                    EnterEvadeMode();
-                            }
-                            _events.ScheduleEvent(EVENT_UNSTUCK, 3*IN_MILLISECONDS);
-                            break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
             }
 
-        private:
-            InstanceScript* _instance;
-            SummonList _summons;
-            EventMap _events;
-            Position _home;
-            uint8 _wpCount;
-			uint8 _WaveCount;
-            bool _wpReached;
-            bool _movementStarted;
-            bool _engaged;
-            bool _denied;
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_hadronoxAI(creature);
+            DoMeleeAttackIfReady();
         }
-};
 
-class npc_anubar_crusher : public CreatureScript
-{
-    public:
-        npc_anubar_crusher() : CreatureScript("npc_anubar_crusher") { }
-
-        struct npc_anubar_crusherAI : public ScriptedAI
+        // Safeguard to prevent Hadronox dying to NPCs
+        void DamageTaken(Unit* who, uint32& damage) override
         {
-            npc_anubar_crusherAI(Creature* c) : ScriptedAI(c)
+            if (!who->IsControlledByPlayer() && me->HealthBelowPct(70))
             {
-                _instance = c->GetInstanceScript();
-            }
-
-            void Reset()
-            {
-                _smashTimer = urand(7, 10) *IN_MILLISECONDS;
-
-                if (_instance)
-                    _instance->SetData(DATA_HADRONOX_EVENT, NOT_STARTED);
-
-				if (Creature* Hadronox = ObjectAccessor::GetCreature(*me, _instance->GetData64(DATA_HADRONOX)))
-					Hadronox->AI()->Reset();
-
-                if (Creature* champion = GetClosestCreatureWithEntry(me, NPC_ANUBAR_CHAMPION, 200.0f, false))
-                    champion->Respawn();
-                if (Creature* cryptFiend = GetClosestCreatureWithEntry(me, NPC_ANUBAR_CRYPT_FIEND, 200.0f, false))
-                    cryptFiend->Respawn();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                if (_instance)
-                    _instance->SetData(DATA_HADRONOX_EVENT, IN_PROGRESS);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                if (_smashTimer <= diff)
-                {
-                    DoCastVictim(DUNGEON_MODE(SPELL_SMASH, H_SPELL_SMASH));
-                    _smashTimer = urand(10, 15) *IN_MILLISECONDS;
-                }
+                if (me->HealthBelowPctDamaged(5, damage))
+                    damage = 0;
                 else
-                    _smashTimer -= diff;
-
-                if (HealthBelowPct(30) && !me->HasAura(SPELL_FRENZY))
-                {
-                    me->InterruptNonMeleeSpells(true);
-                    DoCast(me, SPELL_FRENZY, true);
-                }
-
-                DoMeleeAttackIfReady();
+                    damage *= (me->GetHealthPct()-5.0f)/ 65.0f;
             }
+        }
+
+        void JustSummoned(Creature* summon) override
+        {
+            summons.Summon(summon);
+            // Do not enter combat with zone
+        }
 
         private:
-            InstanceScript* _instance;
-            uint32 _smashTimer;
+            bool _enteredCombat; // has a player entered combat with the first crusher pack? (talk and spawn two more packs)
+            bool _doorsWebbed;   // obvious - have we reached the top and webbed the doors shut? (trigger for hadronox denied achievement)
+            bool _lastPlayerCombatState; // was there a player in our threat list the last time we checked (we check every second)
+            uint8 _step;
+            std::list<ObjectGuid> _anubar;
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return GetAzjolNerubAI<boss_hadronoxAI>(creature);
+    }
+};
+
+struct npc_hadronox_crusherPackAI : public ScriptedAI
+{
+    npc_hadronox_crusherPackAI(Creature* creature, Position const* positions) : ScriptedAI(creature), _instance(creature->GetInstanceScript()), _positions(positions), _myPack(SummonGroups(0)), _doFacing(false) { }
+
+    void DoAction(int32 action) override
+    {
+        if (action == ACTION_PACK_WALK)
+        {
+            switch (_myPack)
+            {
+                case SUMMON_GROUP_CRUSHER_1:
+                case SUMMON_GROUP_CRUSHER_2:
+                case SUMMON_GROUP_CRUSHER_3:
+                    me->GetMotionMaster()->MovePoint(ACTION_PACK_WALK, _positions[_myPack - SUMMON_GROUP_CRUSHER_1]);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    void MovementInform(uint32 type, uint32 id) override
+    {
+        if (type == POINT_MOTION_TYPE && id == ACTION_PACK_WALK)
+            _doFacing = true;
+    }
+
+    void EnterEvadeMode(EvadeReason /*why*/) override
+    {
+        if (Creature* hadronox = _instance->GetCreature(DATA_HADRONOX))
+            hadronox->AI()->EnterEvadeMode(EVADE_REASON_OTHER);
+    }
+
+    uint32 GetData(uint32 data) const override
+    {
+        if (data == DATA_CRUSHER_PACK_ID)
+            return _myPack;
+        return 0;
+    }
+
+    void SetData(uint32 data, uint32 value) override
+    {
+        if (data == DATA_CRUSHER_PACK_ID)
+        {
+            _myPack = SummonGroups(value);
+            me->SetReactState(_myPack ? REACT_PASSIVE : REACT_AGGRESSIVE);
+        }
+    }
+
+    void EnterCombat(Unit* who) override
+    {
+        if (me->HasReactState(REACT_PASSIVE))
+        {
+            std::list<Creature*> others;
+            me->GetCreatureListWithEntryInGrid(others, 0, 40.0f);
+            for (Creature* other : others)
+                if (other->AI()->GetData(DATA_CRUSHER_PACK_ID) == _myPack)
+                {
+                    other->SetReactState(REACT_AGGRESSIVE);
+                    other->AI()->AttackStart(who);
+                }
+        }
+        _EnterCombat();
+        ScriptedAI::EnterCombat(who);
+    }
+
+    virtual void _EnterCombat() = 0;
+    virtual void DoEvent(uint32 /*eventId*/) = 0;
+
+    void MoveInLineOfSight(Unit* who) override
+    {
+        if (!me->HasReactState(REACT_PASSIVE))
+        {
+            ScriptedAI::MoveInLineOfSight(who);
+            return;
+        }
+
+        if (me->CanStartAttack(who, false) && me->IsWithinDistInMap(who, me->GetAttackDistance(who) + me->m_CombatDistance))
+            EnterCombat(who);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (_doFacing)
+        {
+            _doFacing = false;
+            me->SetFacingTo(_positions[_myPack - SUMMON_GROUP_CRUSHER_1].GetOrientation());
+        }
+
+        if (!UpdateVictim())
+            return;
+
+        _events.Update(diff);
+
+        while (uint32 eventId = _events.ExecuteEvent())
+            DoEvent(eventId);
+
+        DoMeleeAttackIfReady();
+    }
+
+    protected:
+        InstanceScript* const _instance;
+        EventMap _events;
+        Position const* const _positions;
+        SummonGroups _myPack;
+        bool _doFacing;
+
+};
+
+static const Position crusherWaypoints[] =
+{
+    { 529.6913f, 547.1257f, 731.9155f, 4.799650f },
+    { 517.51f  , 561.439f , 734.0306f, 4.520403f },
+    { 543.414f , 551.728f , 732.0522f, 3.996804f }
+};
+class npc_anub_ar_crusher : public CreatureScript
+{
+    public:
+        npc_anub_ar_crusher() : CreatureScript("npc_anub_ar_crusher") { }
+
+        struct npc_anub_ar_crusherAI : public npc_hadronox_crusherPackAI
+        {
+            npc_anub_ar_crusherAI(Creature* creature) : npc_hadronox_crusherPackAI(creature, crusherWaypoints), _hadFrenzy(false) { }
+
+            void _EnterCombat() override
+            {
+                _events.ScheduleEvent(EVENT_SMASH, randtime(Seconds(8), Seconds(12)));
+
+                if (_myPack != SUMMON_GROUP_CRUSHER_1)
+                    return;
+
+                if (Creature* hadronox = _instance->GetCreature(DATA_HADRONOX))
+                {
+                    if (hadronox->AI()->GetData(DATA_HADRONOX_ENTERED_COMBAT))
+                        return;
+                    hadronox->AI()->DoAction(ACTION_CRUSHER_ENGAGED);
+                }
+
+                Talk(CRUSHER_SAY_AGGRO);
+            }
+
+            void DamageTaken(Unit* /*source*/, uint32& damage) override
+            {
+                if (_hadFrenzy || !me->HealthBelowPctDamaged(25, damage))
+                    return;
+                _hadFrenzy = true;
+                Talk(CRUSHER_EMOTE_FRENZY);
+                DoCastSelf(SPELL_FRENZY);
+            }
+
+            void DoEvent(uint32 eventId) override
+            {
+                switch (eventId)
+                {
+                    case EVENT_SMASH:
+                        DoCastVictim(SPELL_SMASH);
+                        _events.Repeat(randtime(Seconds(13), Seconds(21)));
+                        break;
+                }
+            }
+
+            void JustDied(Unit* killer) override
+            {
+                if (Creature* hadronox = _instance->GetCreature(DATA_HADRONOX))
+                    hadronox->AI()->DoAction(ACTION_HADRONOX_MOVE);
+                ScriptedAI::JustDied(killer);
+            }
+
+            private:
+                bool _hadFrenzy;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_anubar_crusherAI(creature);
+            return GetAzjolNerubAI<npc_anub_ar_crusherAI>(creature);
         }
 };
 
-class npc_hadronox_nerubian : public CreatureScript
+static const Position championWaypoints[] =
+{
+    { 539.2076f, 549.7539f, 732.8668f, 4.55531f  },
+    { 527.3098f, 559.5197f, 732.9407f, 4.742493f },
+    { }
+};
+class npc_anub_ar_crusher_champion : public CreatureScript
 {
     public:
-        npc_hadronox_nerubian() : CreatureScript("npc_hadronox_nerubian") { }
+        npc_anub_ar_crusher_champion() : CreatureScript("npc_anub_ar_crusher_champion") { }
 
-        struct npc_hadronox_nerubianAI : public ScriptedAI
+        struct npc_anub_ar_crusher_championAI : public npc_hadronox_crusherPackAI
         {
-            npc_hadronox_nerubianAI(Creature* c) : ScriptedAI(c)
+            npc_anub_ar_crusher_championAI(Creature* creature) : npc_hadronox_crusherPackAI(creature, championWaypoints) { }
+
+            void DoEvent(uint32 eventId) override
             {
-                _instance = c->GetInstanceScript();
-            }
-
-            void Reset()
-            {
-                _wpCount = 1;
-                _wpReached = true;
-                me->SetReactState(REACT_DEFENSIVE);
-            }
-
-            void MovementInform(uint32 type, uint32 id)
-            {
-                if (type != POINT_MOTION_TYPE || id != _wpCount)
-                    return;
-
-                if (id == 2)
-                    if (Creature* hadronox = ObjectAccessor::GetCreature(*me, _instance ? _instance->GetData64(DATA_HADRONOX) : 0))
-                        if (hadronox->AI()->GetData(DATA_ENGAGED))
-                        {
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            me->SetInCombatWithZone();
-                            me->AddThreat(hadronox, 1000.0f);
-                            AttackStart(hadronox);
-                            return;
-                        }
-
-                if (id < 5)
+                switch (eventId)
                 {
-                    ++_wpCount;
-                    _wpReached = true;
-                }
-                else // somehow missed hadronox
-                {
-                    me->SetReactState(REACT_AGGRESSIVE);
-                    me->SetInCombatWithZone();
+                    case EVENT_REND:
+                        DoCastVictim(SPELL_REND);
+                        _events.Repeat(randtime(Seconds(12), Seconds(16)));
+                        break;
+                    case EVENT_PUMMEL:
+                        DoCastVictim(SPELL_PUMMEL);
+                        _events.Repeat(randtime(Seconds(12), Seconds(17)));
+                        break;
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void _EnterCombat() override
             {
-                if (_wpReached && !me->isInCombat())
-                {
-                    _wpReached = false;
-                    me->GetMotionMaster()->MovePoint(_wpCount, AddWaypoints[_wpCount]);
-                }
+                _events.ScheduleEvent(EVENT_REND, randtime(Seconds(4), Seconds(8)));
+                _events.ScheduleEvent(EVENT_PUMMEL, randtime(Seconds(15), Seconds(19)));
+            }
+        };
 
-                if (me->HasReactState(REACT_DEFENSIVE))
-                    if (Creature* hadronox = me->FindNearestCreature(NPC_HADRONOX, 20.0f))
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetAzjolNerubAI<npc_anub_ar_crusher_championAI>(creature);
+        }
+};
+
+static const Position cryptFiendWaypoints[] =
+{
+    { 520.3911f, 548.7895f, 732.0118f, 5.0091f   },
+    { },
+    { 550.9611f, 545.1674f, 731.9031f, 3.996804f }
+};
+class npc_anub_ar_crusher_crypt_fiend : public CreatureScript
+{
+    public:
+        npc_anub_ar_crusher_crypt_fiend() : CreatureScript("npc_anub_ar_crusher_crypt_fiend") { }
+
+        struct npc_anub_ar_crusher_crypt_fiendAI : public npc_hadronox_crusherPackAI
+        {
+            npc_anub_ar_crusher_crypt_fiendAI(Creature* creature) : npc_hadronox_crusherPackAI(creature, cryptFiendWaypoints) { }
+
+            void DoEvent(uint32 eventId) override
+            {
+                switch (eventId)
+                {
+                    case EVENT_CRUSHING_WEBS:
+                        DoCastVictim(SPELL_CRUSHING_WEBS);
+                        _events.Repeat(randtime(Seconds(12), Seconds(16)));
+                        break;
+                    case EVENT_INFECTED_WOUND:
+                        DoCastVictim(SPELL_INFECTED_WOUND);
+                        _events.Repeat(randtime(Seconds(16), Seconds(25)));
+                        break;
+                }
+            }
+
+            void _EnterCombat() override
+            {
+                _events.ScheduleEvent(EVENT_CRUSHING_WEBS, randtime(Seconds(4), Seconds(8)));
+                _events.ScheduleEvent(EVENT_INFECTED_WOUND, randtime(Seconds(15), Seconds(19)));
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetAzjolNerubAI<npc_anub_ar_crusher_crypt_fiendAI>(creature);
+        }
+};
+
+static const Position necromancerWaypoints[] =
+{
+    { },
+    { 507.6937f, 563.3471f, 734.8986f, 4.520403f },
+    { 535.1049f, 552.8961f, 732.8441f, 3.996804f },
+};
+class npc_anub_ar_crusher_necromancer : public CreatureScript
+{
+    public:
+        npc_anub_ar_crusher_necromancer() : CreatureScript("npc_anub_ar_crusher_necromancer") { }
+
+        struct npc_anub_ar_crusher_necromancerAI : public npc_hadronox_crusherPackAI
+        {
+            npc_anub_ar_crusher_necromancerAI(Creature* creature) : npc_hadronox_crusherPackAI(creature, necromancerWaypoints) { }
+
+            void DoEvent(uint32 eventId) override
+            {
+                switch (eventId)
+                {
+                    case EVENT_SHADOW_BOLT:
+                        DoCastVictim(SPELL_SHADOW_BOLT);
+                        _events.Repeat(randtime(Seconds(2), Seconds(5)));
+                        break;
+                    case EVENT_ANIMATE_BONES:
+                        DoCastVictim(urand(0, 1) ? SPELL_ANIMATE_BONES_2 : SPELL_ANIMATE_BONES_1);
+                        _events.Repeat(randtime(Seconds(35), Seconds(50)));
+                        break;
+                }
+            }
+
+            void _EnterCombat() override
+            {
+                _events.ScheduleEvent(EVENT_SHADOW_BOLT, randtime(Seconds(2), Seconds(4)));
+                _events.ScheduleEvent(EVENT_ANIMATE_BONES, randtime(Seconds(37), Seconds(45)));
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetAzjolNerubAI<npc_anub_ar_crusher_necromancerAI>(creature);
+        }
+};
+
+static const uint8 NUM_SPAWNS = 3;
+static const Position initialMoves[NUM_SPAWNS] =
+{
+    { 485.314606f, 611.418640f, 771.428406f },
+    { 575.760437f, 611.516418f, 771.427368f },
+    { 588.930725f, 598.233276f, 739.142151f }
+};
+static const Position downstairsMoves[NUM_SPAWNS] =
+{
+    { 513.574341f, 587.022156f, 736.229065f },
+    { 537.920410f, 580.436157f, 732.796692f },
+    { 601.289246f, 583.259644f, 725.443054f },
+};
+static const Position downstairsMoves2[NUM_SPAWNS] =
+{
+    { 571.498718f, 576.978333f, 727.582947f },
+    { 571.498718f, 576.978333f, 727.582947f },
+    { }
+};
+struct npc_hadronox_foeAI : public ScriptedAI
+{
+    npc_hadronox_foeAI(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()), _nextMovement(MOVE_OUTSIDE), _mySpawn(0) { }
+
+    void InitializeAI() override
+    {
+        ScriptedAI::InitializeAI();
+        if (Creature* hadronox = _instance->GetCreature(DATA_HADRONOX))
+            hadronox->AI()->SetGUID(me->GetGUID());
+    }
+
+    void MovementInform(uint32 type, uint32 id) override
+    {
+        if (type == POINT_MOTION_TYPE)
+            _nextMovement = Movements(id+1);
+    }
+
+    void EnterEvadeMode(EvadeReason /*why*/) override
+    {
+        me->DespawnOrUnsummon();
+    }
+
+    virtual void DoEvent(uint32 /*eventId*/) = 0;
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (_nextMovement)
+        {
+            switch (_nextMovement)
+            {
+                case MOVE_OUTSIDE:
+                {
+                    float dist = HUGE_VALF;
+                    for (uint8 spawn = 0; spawn < NUM_SPAWNS; ++spawn)
                     {
-                        me->GetMotionMaster()->Clear();
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        me->AddThreat(hadronox, 1000.0f);
+                        float thisDist = initialMoves[spawn].GetExactDistSq(me);
+                        if (thisDist < dist)
+                        {
+                            _mySpawn = spawn;
+                            dist = thisDist;
+                        }
+                    }
+                    me->GetMotionMaster()->MovePoint(MOVE_OUTSIDE, initialMoves[_mySpawn], false); // do not pathfind here, we have to pass through a "wall" of webbing
+                    break;
+                }
+                case MOVE_DOWNSTAIRS:
+                    me->GetMotionMaster()->MovePoint(MOVE_DOWNSTAIRS, downstairsMoves[_mySpawn]);
+                    break;
+                case MOVE_DOWNSTAIRS_2:
+                    if (downstairsMoves2[_mySpawn].GetPositionX() > 0.0f) // might be unset for this spawn - if yes, skip
+                    {
+                        me->GetMotionMaster()->MovePoint(MOVE_DOWNSTAIRS_2, downstairsMoves2[_mySpawn]);
+                        break;
+                    }
+                    // intentional missing break
+                case MOVE_HADRONOX:
+                case MOVE_HADRONOX_REAL:
+                {
+                    static const float zCutoff = 702.0f;
+                    Creature* hadronox = _instance->GetCreature(DATA_HADRONOX);
+                    if (hadronox && hadronox->IsAlive())
+                    {
+                        if (_nextMovement != MOVE_HADRONOX_REAL)
+                            if (hadronox->GetPositionZ() < zCutoff)
+                            {
+                                me->GetMotionMaster()->MovePoint(MOVE_HADRONOX, hadronoxStep[2]);
+                                break;
+                            }
                         AttackStart(hadronox);
                     }
+                    break;
+                }
+                default:
+                    break;
+            }
+            _nextMovement = MOVE_NONE;
+        }
 
-                if (!UpdateVictim())
-                    return;
+        if (!UpdateVictim())
+            return;
 
-                /*
-                TODO: spells
-                */
+        _events.Update(diff);
 
-                DoMeleeAttackIfReady();
+        while (uint32 eventId = _events.ExecuteEvent())
+            DoEvent(eventId);
+
+        DoMeleeAttackIfReady();
+    }
+
+    protected:
+        EventMap _events;
+        InstanceScript* const _instance;
+
+    private:
+        Movements _nextMovement;
+        uint8 _mySpawn;
+};
+
+class npc_anub_ar_champion : public CreatureScript
+{
+    public:
+        npc_anub_ar_champion() : CreatureScript("npc_anub_ar_champion") { }
+
+        struct npc_anub_ar_championAI : public npc_hadronox_foeAI
+        {
+            npc_anub_ar_championAI(Creature* creature) : npc_hadronox_foeAI(creature) { }
+
+            void DoEvent(uint32 eventId) override
+            {
+                switch (eventId)
+                {
+                    case EVENT_REND:
+                        DoCastVictim(SPELL_REND);
+                        _events.Repeat(randtime(Seconds(12), Seconds(16)));
+                        break;
+                    case EVENT_PUMMEL:
+                        DoCastVictim(SPELL_PUMMEL);
+                        _events.Repeat(randtime(Seconds(12), Seconds(17)));
+                        break;
+                    case EVENT_TAUNT:
+                        DoCastVictim(SPELL_TAUNT);
+                        _events.Repeat(randtime(Seconds(15), Seconds(50)));
+                        break;
+                }
             }
 
-        private:
-            InstanceScript* _instance;
-            uint8 _wpCount;
-            bool _wpReached;
-            bool _movementStarted;
+            void EnterCombat(Unit* /*who*/) override
+            {
+                _events.ScheduleEvent(EVENT_REND, randtime(Seconds(4), Seconds(8)));
+                _events.ScheduleEvent(EVENT_PUMMEL, randtime(Seconds(15), Seconds(19)));
+                _events.ScheduleEvent(EVENT_TAUNT, randtime(Seconds(15), Seconds(50)));
+            }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_hadronox_nerubianAI(creature);
+            return GetAzjolNerubAI<npc_anub_ar_championAI>(creature);
         }
 };
 
-class spell_hadronox_leech_poison : public SpellScriptLoader
+class npc_anub_ar_crypt_fiend : public CreatureScript
 {
     public:
-        spell_hadronox_leech_poison() : SpellScriptLoader("spell_hadronox_leech_poison") { }
+    npc_anub_ar_crypt_fiend() : CreatureScript("npc_anub_ar_crypt_fiend") { }
 
-        class spell_hadronox_leech_poison_AuraScript : public AuraScript
+    struct npc_anub_ar_crypt_fiendAI : public npc_hadronox_foeAI
+    {
+        npc_anub_ar_crypt_fiendAI(Creature* creature) : npc_hadronox_foeAI(creature) { }
+
+        void DoEvent(uint32 eventId) override
         {
-            PrepareAuraScript(spell_hadronox_leech_poison_AuraScript);
-
-            void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            switch (eventId)
             {
-                Unit* caster = GetCaster();
-                if (caster && caster->isAlive() && GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_DEATH)
-                    caster->CastSpell(caster, SPELL_LEECH_POISON_PCT, true);
+                case EVENT_CRUSHING_WEBS:
+                    DoCastVictim(SPELL_CRUSHING_WEBS);
+                    _events.Repeat(randtime(Seconds(12), Seconds(16)));
+                    break;
+                case EVENT_INFECTED_WOUND:
+                    DoCastVictim(SPELL_INFECTED_WOUND);
+                    _events.Repeat(randtime(Seconds(16), Seconds(25)));
+                    break;
+                case EVENT_TAUNT:
+                    DoCastVictim(SPELL_TAUNT);
+                    _events.Repeat(randtime(Seconds(15), Seconds(50)));
+                    break;
+            }
+        }
+
+        void EnterCombat(Unit* /*who*/) override
+        {
+            _events.ScheduleEvent(EVENT_CRUSHING_WEBS, randtime(Seconds(4), Seconds(8)));
+            _events.ScheduleEvent(EVENT_INFECTED_WOUND, randtime(Seconds(15), Seconds(19)));
+            _events.ScheduleEvent(EVENT_TAUNT, randtime(Seconds(15), Seconds(50)));
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return GetAzjolNerubAI<npc_anub_ar_crypt_fiendAI>(creature);
+    }
+};
+
+class npc_anub_ar_necromancer : public CreatureScript
+{
+    public:
+    npc_anub_ar_necromancer() : CreatureScript("npc_anub_ar_necromancer") { }
+
+    struct npc_anub_ar_necromancerAI : public npc_hadronox_foeAI
+    {
+        npc_anub_ar_necromancerAI(Creature* creature) : npc_hadronox_foeAI(creature) { }
+
+        void DoEvent(uint32 eventId) override
+        {
+            switch (eventId)
+            {
+                case EVENT_SHADOW_BOLT:
+                    DoCastVictim(SPELL_SHADOW_BOLT);
+                    _events.Repeat(randtime(Seconds(2), Seconds(5)));
+                    break;
+                case EVENT_ANIMATE_BONES:
+                    DoCastVictim(urand(0,1) ? SPELL_ANIMATE_BONES_2 : SPELL_ANIMATE_BONES_1);
+                    _events.Repeat(randtime(Seconds(35), Seconds(50)));
+                    break;
+                case EVENT_TAUNT:
+                    DoCastVictim(SPELL_TAUNT);
+                    _events.Repeat(randtime(Seconds(15), Seconds(50)));
+                    break;
+            }
+        }
+
+        void EnterCombat(Unit* /*who*/) override
+        {
+            _events.ScheduleEvent(EVENT_SHADOW_BOLT, randtime(Seconds(2), Seconds(4)));
+            _events.ScheduleEvent(EVENT_ANIMATE_BONES, randtime(Seconds(37), Seconds(45)));
+            _events.ScheduleEvent(EVENT_TAUNT, randtime(Seconds(15), Seconds(50)));
+        }
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return GetAzjolNerubAI<npc_anub_ar_necromancerAI>(creature);
+    }
+};
+
+class spell_hadronox_periodic_summon_template_AuraScript : public AuraScript
+{
+    public:
+        spell_hadronox_periodic_summon_template_AuraScript(uint32 topSpellId, uint32 bottomSpellId) : AuraScript(), _topSpellId(topSpellId), _bottomSpellId(bottomSpellId) { }
+        PrepareAuraScript(spell_hadronox_periodic_summon_template_AuraScript);
+
+    private:
+        bool Validate(SpellInfo const* /*spell*/) override
+        {
+            return ValidateSpellInfo({ _topSpellId, _bottomSpellId });
+        }
+
+        void HandleApply(AuraEffect const* /*eff*/, AuraEffectHandleModes /*mode*/)
+        {
+            if (AuraEffect* effect = GetAura()->GetEffect(EFFECT_0))
+                effect->SetPeriodicTimer(urandms(2, 17));
+        }
+
+        void HandlePeriodic(AuraEffect const* /*eff*/)
+        {
+            Unit* caster = GetCaster();
+            if (!caster)
+                return;
+            InstanceScript* instance = caster->GetInstanceScript();
+            if (!instance)
+                return;
+            if (!instance->instance->HavePlayers())
+                return;
+            if (instance->GetBossState(DATA_HADRONOX) == DONE)
+                GetAura()->Remove();
+            else
+            {
+                if (caster->GetPositionZ() >= 750.0f)
+                    caster->CastSpell(caster, _topSpellId, true);
+                else
+                    caster->CastSpell(caster, _bottomSpellId, true);
+            }
+        }
+
+        void Register() override
+        {
+            AfterEffectApply += AuraEffectApplyFn(spell_hadronox_periodic_summon_template_AuraScript::HandleApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
+            OnEffectPeriodic += AuraEffectPeriodicFn(spell_hadronox_periodic_summon_template_AuraScript::HandlePeriodic, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+        }
+
+        uint32 _topSpellId;
+        uint32 _bottomSpellId;
+};
+
+class spell_hadronox_periodic_summon_champion : public SpellScriptLoader
+{
+    public:
+        spell_hadronox_periodic_summon_champion() : SpellScriptLoader("spell_hadronox_periodic_summon_champion") { }
+
+        class spell_hadronox_periodic_summon_champion_AuraScript : public spell_hadronox_periodic_summon_template_AuraScript
+        {
+            public:
+                spell_hadronox_periodic_summon_champion_AuraScript() : spell_hadronox_periodic_summon_template_AuraScript(SPELL_SUMMON_CHAMPION_TOP, SPELL_SUMMON_CHAMPION_BOTTOM) { }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_hadronox_periodic_summon_champion_AuraScript();
+        }
+};
+
+class spell_hadronox_periodic_summon_crypt_fiend : public SpellScriptLoader
+{
+    public:
+        spell_hadronox_periodic_summon_crypt_fiend() : SpellScriptLoader("spell_hadronox_periodic_summon_crypt_fiend") { }
+
+        class spell_hadronox_periodic_summon_crypt_fiend_AuraScript : public spell_hadronox_periodic_summon_template_AuraScript
+        {
+            public:
+                spell_hadronox_periodic_summon_crypt_fiend_AuraScript() : spell_hadronox_periodic_summon_template_AuraScript(SPELL_SUMMON_CRYPT_FIEND_TOP, SPELL_SUMMON_CRYPT_FIEND_BOTTOM) { }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_hadronox_periodic_summon_crypt_fiend_AuraScript();
+        }
+};
+
+class spell_hadronox_periodic_summon_necromancer : public SpellScriptLoader
+{
+    public:
+        spell_hadronox_periodic_summon_necromancer() : SpellScriptLoader("spell_hadronox_periodic_summon_necromancer") { }
+
+        class spell_hadronox_periodic_summon_necromancer_AuraScript : public spell_hadronox_periodic_summon_template_AuraScript
+        {
+            public:
+                spell_hadronox_periodic_summon_necromancer_AuraScript() : spell_hadronox_periodic_summon_template_AuraScript(SPELL_SUMMON_NECROMANCER_TOP, SPELL_SUMMON_NECROMANCER_BOTTOM) { }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_hadronox_periodic_summon_necromancer_AuraScript();
+        }
+};
+
+class spell_hadronox_leeching_poison : public SpellScriptLoader
+{
+    public:
+    spell_hadronox_leeching_poison() : SpellScriptLoader("spell_hadronox_leeching_poison") { }
+
+    class spell_hadronox_leeching_poison_AuraScript : public AuraScript
+    {
+        PrepareAuraScript(spell_hadronox_leeching_poison_AuraScript);
+
+        bool Validate(SpellInfo const* /*spell*/) override
+        {
+            return ValidateSpellInfo({ SPELL_LEECH_POISON_HEAL });
+        }
+
+        void HandleEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        {
+            if (GetTargetApplication()->GetRemoveMode() != AURA_REMOVE_BY_DEATH)
+                return;
+
+            if (GetTarget()->IsGuardian())
+                return;
+
+            if (Unit* caster = GetCaster())
+                caster->CastSpell(caster, SPELL_LEECH_POISON_HEAL, true);
+        }
+
+        void Register() override
+        {
+            OnEffectRemove += AuraEffectRemoveFn(spell_hadronox_leeching_poison_AuraScript::HandleEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_LEECH, AURA_EFFECT_HANDLE_REAL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const override
+    {
+        return new spell_hadronox_leeching_poison_AuraScript();
+    }
+};
+
+class spell_hadronox_web_doors : public SpellScriptLoader
+{
+    public:
+        spell_hadronox_web_doors() : SpellScriptLoader("spell_hadronox_web_doors") { }
+
+        class spell_hadronox_web_doors_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_hadronox_web_doors_SpellScript);
+
+            bool Validate(SpellInfo const* /*spell*/) override
+            {
+                return ValidateSpellInfo({ SPELL_SUMMON_CHAMPION_PERIODIC, SPELL_SUMMON_CRYPT_FIEND_PERIODIC, SPELL_SUMMON_NECROMANCER_PERIODIC });
             }
 
-            void Register()
+            void HandleDummy(SpellEffIndex /*effIndex*/)
             {
-                AfterEffectRemove += AuraEffectRemoveFn(spell_hadronox_leech_poison_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_LEECH, AURA_EFFECT_HANDLE_REAL);
+                if (Unit* target = GetHitUnit())
+                {
+                    target->RemoveAurasDueToSpell(SPELL_SUMMON_CHAMPION_PERIODIC);
+                    target->RemoveAurasDueToSpell(SPELL_SUMMON_CRYPT_FIEND_PERIODIC);
+                    target->RemoveAurasDueToSpell(SPELL_SUMMON_NECROMANCER_PERIODIC);
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_hadronox_web_doors_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        SpellScript* GetSpellScript() const override
         {
-            return new spell_hadronox_leech_poison_AuraScript();
+            return new spell_hadronox_web_doors_SpellScript();
         }
 };
 
 class achievement_hadronox_denied : public AchievementCriteriaScript
 {
     public:
-        achievement_hadronox_denied() : AchievementCriteriaScript("achievement_hadronox_denied")
-        {
-        }
+        achievement_hadronox_denied() : AchievementCriteriaScript("achievement_hadronox_denied") { }
 
-        bool OnCheck(Player* /*player*/, Unit* target)
+        bool OnCheck(Player* /*player*/, Unit* target) override
         {
             if (!target)
                 return false;
 
-            if (Creature* hadronox = target->ToCreature())
-                if (hadronox->AI()->GetData(DATA_DENIED))
+            if (Creature* cTarget = target->ToCreature())
+                if (!cTarget->AI()->GetData(DATA_HADRONOX_WEBBED_DOORS))
                     return true;
 
             return false;
@@ -518,8 +1138,22 @@ class achievement_hadronox_denied : public AchievementCriteriaScript
 void AddSC_boss_hadronox()
 {
     new boss_hadronox();
-    new npc_anubar_crusher();
-    new npc_hadronox_nerubian();
-    new spell_hadronox_leech_poison();
+
+    new npc_anub_ar_crusher();
+    new npc_anub_ar_crusher_champion();
+    new npc_anub_ar_crusher_crypt_fiend();
+    new npc_anub_ar_crusher_necromancer();
+
+    new npc_anub_ar_champion();
+    new npc_anub_ar_crypt_fiend();
+    new npc_anub_ar_necromancer();
+
+    new spell_hadronox_periodic_summon_champion();
+    new spell_hadronox_periodic_summon_crypt_fiend();
+    new spell_hadronox_periodic_summon_necromancer();
+
+    new spell_hadronox_leeching_poison();
+    new spell_hadronox_web_doors();
+
     new achievement_hadronox_denied();
 }

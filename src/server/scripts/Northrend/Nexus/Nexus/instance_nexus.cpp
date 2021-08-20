@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,129 +15,136 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
+#include "Creature.h"
+#include "GameObject.h"
+#include "InstanceScript.h"
+#include "Map.h"
 #include "nexus.h"
+#include "Player.h"
+
+enum Factions
+{
+    FACTION_HOSTILE_FOR_ALL                       = 16
+};
 
 class instance_nexus : public InstanceMapScript
 {
     public:
         instance_nexus() : InstanceMapScript(NexusScriptName, 576) { }
 
-        struct instance_nexus_InstanceScript : public InstanceScript
+        struct instance_nexus_InstanceMapScript : public InstanceScript
         {
-            instance_nexus_InstanceScript(Map* map) : InstanceScript(map)
+            instance_nexus_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
-                SetBossNumber(MAX_ENCOUNTER);
-                _anomalusGUID = 0;
-                _magusTelestraGUID = 0;
-                _ormorokGUID = 0;
-                _keristraszaGUID = 0;
-                _anomalusContainmentSphereGUID = 0;
-                _ormoroksContainmentSphereGUID = 0;
-                _telestrasContainmentSphereGUID = 0;
+                SetHeaders(DataHeader);
+                SetBossNumber(EncounterCount);
                 _teamInInstance = 0;
             }
 
-            void OnPlayerEnter(Player* player)
+            void OnPlayerEnter(Player* player) override
             {
                 if (!_teamInInstance)
                     _teamInInstance = player->GetTeam();
             }
 
-            void OnCreatureCreate(Creature* creature)
+            void OnCreatureCreate(Creature* creature) override
             {
-                if (!_teamInInstance)
-                {
-                    Map::PlayerList const &players = instance->GetPlayers();
-                    if (!players.isEmpty())
-                        if (Player* player = players.begin()->getSource())
-                            _teamInInstance = player->GetTeam();
-                }
-
                 switch (creature->GetEntry())
                 {
-                    case NPC_GRAND_MAGUS_TELESTRA:
-                        _magusTelestraGUID = creature->GetGUID();
-                        break;
                     case NPC_ANOMALUS:
-                        _anomalusGUID = creature->GetGUID();
-                        break;
-                    case NPC_ORMOROK:
-                        _ormorokGUID = creature->GetGUID();
+                        AnomalusGUID = creature->GetGUID();
                         break;
                     case NPC_KERISTRASZA:
-                        _keristraszaGUID = creature->GetGUID();
+                        KeristraszaGUID = creature->GetGUID();
                         break;
+                    // Alliance npcs are spawned by default, if you are alliance, you will fight against horde npcs.
                     case NPC_ALLIANCE_BERSERKER:
+                        if (ServerAllowsTwoSideGroups())
+                            creature->SetFaction(FACTION_HOSTILE_FOR_ALL);
                         if (_teamInInstance == ALLIANCE)
-                            creature->UpdateEntry(NPC_HORDE_BERSERKER, HORDE);
+                            creature->UpdateEntry(NPC_HORDE_BERSERKER);
                         break;
                     case NPC_ALLIANCE_RANGER:
+                        if (ServerAllowsTwoSideGroups())
+                            creature->SetFaction(FACTION_HOSTILE_FOR_ALL);
                         if (_teamInInstance == ALLIANCE)
-                            creature->UpdateEntry(NPC_HORDE_RANGER, HORDE);
+                            creature->UpdateEntry(NPC_HORDE_RANGER);
                         break;
                     case NPC_ALLIANCE_CLERIC:
+                        if (ServerAllowsTwoSideGroups())
+                            creature->SetFaction(FACTION_HOSTILE_FOR_ALL);
                         if (_teamInInstance == ALLIANCE)
-                            creature->UpdateEntry(NPC_HORDE_CLERIC, HORDE);
+                            creature->UpdateEntry(NPC_HORDE_CLERIC);
                         break;
                     case NPC_ALLIANCE_COMMANDER:
+                        if (ServerAllowsTwoSideGroups())
+                            creature->SetFaction(FACTION_HOSTILE_FOR_ALL);
                         if (_teamInInstance == ALLIANCE)
-                            creature->UpdateEntry(NPC_HORDE_COMMANDER, HORDE);
+                            creature->UpdateEntry(NPC_HORDE_COMMANDER);
                         break;
                     case NPC_COMMANDER_STOUTBEARD:
+                        if (ServerAllowsTwoSideGroups())
+                            creature->SetFaction(FACTION_HOSTILE_FOR_ALL);
                         if (_teamInInstance == ALLIANCE)
-                            creature->UpdateEntry(NPC_COMMANDER_KOLURG, HORDE);
+                            creature->UpdateEntry(NPC_COMMANDER_KOLURG);
                         break;
                     default:
                         break;
                 }
             }
 
-            void OnGameObjectCreate(GameObject* go)
+            void OnGameObjectCreate(GameObject* go) override
             {
                 switch (go->GetEntry())
                 {
-                    case GO_TELESTRAS_CONTAINMENT_SPHERE:
-                        _telestrasContainmentSphereGUID = go->GetGUID();
-                        if (GetBossState(DATA_GRAND_MAGUS_TELESTRA) == DONE)
-                            go->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                        break;
-                    case GO_ANOMALUS_CONTAINMENT_SPHERE:
-                        _anomalusContainmentSphereGUID = go->GetGUID();
+                    case GO_ANOMALUS_CONTAINMET_SPHERE:
+                        AnomalusContainmentSphere = go->GetGUID();
                         if (GetBossState(DATA_ANOMALUS) == DONE)
-                            go->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                            go->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
                         break;
-                    case GO_ORMOROKS_CONTAINMENT_SPHERE:
-                        _ormoroksContainmentSphereGUID = go->GetGUID();
+                    case GO_ORMOROKS_CONTAINMET_SPHERE:
+                        OrmoroksContainmentSphere = go->GetGUID();
                         if (GetBossState(DATA_ORMOROK) == DONE)
-                            go->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                            go->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
+                        break;
+                    case GO_TELESTRAS_CONTAINMET_SPHERE:
+                        TelestrasContainmentSphere = go->GetGUID();
+                        if (GetBossState(DATA_MAGUS_TELESTRA) == DONE)
+                            go->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
                         break;
                     default:
                         break;
                 }
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
 
                 switch (type)
                 {
-                    case DATA_GRAND_MAGUS_TELESTRA:
+                    case DATA_MAGUS_TELESTRA:
                         if (state == DONE)
-                            if (GameObject* sphere = instance->GetGameObject(_telestrasContainmentSphereGUID))
-                                sphere->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        {
+                            if (GameObject* sphere = instance->GetGameObject(TelestrasContainmentSphere))
+                                sphere->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
+                        }
                         break;
                     case DATA_ANOMALUS:
                         if (state == DONE)
-                            if (GameObject* sphere = instance->GetGameObject(_anomalusContainmentSphereGUID))
-                                sphere->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        {
+                            if (GameObject* sphere = instance->GetGameObject(AnomalusContainmentSphere))
+                                sphere->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
+                        }
                         break;
                     case DATA_ORMOROK:
                         if (state == DONE)
-                            if (GameObject* sphere = instance->GetGameObject(_ormoroksContainmentSphereGUID))
-                                sphere->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        {
+                            if (GameObject* sphere = instance->GetGameObject(OrmoroksContainmentSphere))
+                                sphere->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
+                        }
                         break;
                     default:
                         break;
@@ -147,90 +153,39 @@ class instance_nexus : public InstanceMapScript
                 return true;
             }
 
-            uint64 GetData64(uint32 type)
+            ObjectGuid GetGuidData(uint32 type) const override
             {
                 switch (type)
                 {
                     case DATA_ANOMALUS:
-                        return _anomalusGUID;
-                    case DATA_GRAND_MAGUS_TELESTRA:
-                        return _magusTelestraGUID;
-                    case DATA_ORMOROK:
-                        return _ormorokGUID;
+                        return AnomalusGUID;
                     case DATA_KERISTRASZA:
-                        return _keristraszaGUID;
-                    case DATA_ANOMALUS_CONTAINMET_SPHERE:
-                        return _anomalusContainmentSphereGUID;
-                    case DATA_ORMOROKS_CONTAINMET_SPHERE:
-                        return _ormoroksContainmentSphereGUID;
-                    case DATA_TELESTRAS_CONTAINMET_SPHERE:
-                        return _telestrasContainmentSphereGUID;
+                        return KeristraszaGUID;
+                    case ANOMALUS_CONTAINMET_SPHERE:
+                        return AnomalusContainmentSphere;
+                    case ORMOROKS_CONTAINMET_SPHERE:
+                        return OrmoroksContainmentSphere;
+                    case TELESTRAS_CONTAINMET_SPHERE:
+                        return TelestrasContainmentSphere;
                     default:
                         break;
                 }
 
-                return 0;
-            }
-
-            std::string GetSaveData()
-            {
-                OUT_SAVE_INST_DATA;
-
-                std::ostringstream saveStream;
-                saveStream << "T N " << GetBossSaveData();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return saveStream.str();
-            }
-
-            void Load(const char* in)
-            {
-                if (!in)
-                {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
-                }
-
-                OUT_LOAD_INST_DATA(in);
-
-                char dataHead1, dataHead2;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2;
-
-                if (dataHead1 == 'T' && dataHead2 == 'N')
-                {
-                    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-                    {
-                        uint32 tmpState;
-                        loadStream >> tmpState;
-                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                            tmpState = NOT_STARTED;
-
-                        SetBossState(i, EncounterState(tmpState));
-                    }
-                }
-                else
-                    OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
+                return ObjectGuid::Empty;
             }
 
         private:
-            uint64 _anomalusGUID;
-            uint64 _magusTelestraGUID;
-            uint64 _ormorokGUID;
-            uint64 _keristraszaGUID;
-            uint64 _anomalusContainmentSphereGUID;
-            uint64 _ormoroksContainmentSphereGUID;
-            uint64 _telestrasContainmentSphereGUID;
-
+            ObjectGuid AnomalusGUID;
+            ObjectGuid KeristraszaGUID;
+            ObjectGuid AnomalusContainmentSphere;
+            ObjectGuid OrmoroksContainmentSphere;
+            ObjectGuid TelestrasContainmentSphere;
             uint32 _teamInInstance;
         };
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
-            return new instance_nexus_InstanceScript(map);
+            return new instance_nexus_InstanceMapScript(map);
         }
 };
 

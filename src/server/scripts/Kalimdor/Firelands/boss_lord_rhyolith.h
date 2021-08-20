@@ -1,9 +1,26 @@
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #define _MIN_DAMAGE 40000.0f
 #define _MAX_DAMAGE 240000.0f
 #define _MAX_MOVE 192
 #define _MAX_VOLCANO 32
 
-const Position movePos[192] = 
+const Position movePos[192] =
 {
     {-355.225708f, -376.727631f, 99.903870f, 0.0f},
     {-355.225708f, -376.727631f, 99.903870f, 0.0f},
@@ -199,7 +216,7 @@ const Position movePos[192] =
     {-347.421143f, -374.073273f, 100.319786f, 0.0f}
 };
 
-const Position volcanoPos[32] = 
+const Position volcanoPos[32] =
 {
     {-396.114746f, -346.146484f, 100.684708f, 0.0f},
     {-399.102173f, -342.254395f, 100.808762f, 0.0f},

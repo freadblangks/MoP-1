@@ -1,5 +1,25 @@
-#include "ScriptPCH.h"
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "Item.h"
 #include "lost_city_of_the_tolvir.h"
+#include "ScriptMgr.h"
+#include "SpellAuras.h"
+#include "SpellAuraEffects.h"
 #include "Vehicle.h"
 
 enum eSpells
@@ -52,11 +72,11 @@ enum eActions
 
 enum eTexts
 {
-    SAY_START                                  = -1877004,
-    SAY_KNEEL_DOWN                             = -1877005,
-    SAY_DEATH                                  = -1877006,
-    SAY_KILL_PLAYER_1                          = -1877023,
-    SAY_KILL_PLAYER_2                          = -1877024,
+    SAY_START                                  = 0,
+    SAY_KNEEL_DOWN                             = 1,
+    SAY_DEATH                                  = 2,
+    SAY_KILL_PLAYER_1                          = 3,
+    SAY_KILL_PLAYER_2                          = 4,
 };
 
 enum ePhases
@@ -96,7 +116,7 @@ class boss_high_prophet_barim : public CreatureScript
 public:
     boss_high_prophet_barim() : CreatureScript("boss_high_prophet_barim") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new boss_high_prophet_barimAI (creature);
     }
@@ -116,7 +136,7 @@ public:
         uint8 uiEventPhase;
         bool Repentance;
 
-        void Reset()
+        void Reset() override
         {
             events.Reset();
             lSummons.DespawnAll();
@@ -128,49 +148,49 @@ public:
             {
                 instance->SetData(DATA_HIGH_PROPHET_BARIM, NOT_STARTED);
 
-                if (Creature* blaze = Unit::GetCreature(*me, instance->GetData64(DATA_BLAZE)))
+                if (Creature* blaze = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_BLAZE)))
                     blaze->AI()->EnterEvadeMode();
             }
         }
 
-        void JustReachedHome()
+        void JustReachedHome() override
         {
-            if (me->isInCombat())
+            if (me->IsInCombat())
             {
                 if (instance)
-                    if (Creature* blaze = Unit::GetCreature(*me, instance->GetData64(DATA_BLAZE)))
+                    if (Creature* blaze = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_BLAZE)))
                         blaze->AI()->DoAction(ACTION_REPENTANCE_START);
 
-                DoScriptText(SAY_KNEEL_DOWN, me);
+                Talk(SAY_KNEEL_DOWN);
                 me->CastSpell(me, SPELL_REPENTANCE_START, false);
                 events.ScheduleEvent(EVENT_REPENTANCE, 1500, 0, PHASE_REPENTANCE);
                 return;
             }
         }
 
-        void DoAction(const int32 action)
+        void DoAction(const int32 action) override
         {
             if (action == ACTION_REPENTANCE_DONE)
             {
                 lSummons.DespawnEntry(NPC_SOUL_FRAGMENT);
 
                 for (SummonList::const_iterator itr = lSummons.begin(); itr != lSummons.end(); ++itr)
-                    if (Creature* pSummon = Unit::GetCreature(*me, (*itr))) 
+                    if (Creature* pSummon = ObjectAccessor::GetCreature(*me, (*itr)))
                         if (pSummon->GetEntry() == NPC_REPENTANCE_MIRROR && pSummon->IsAIEnabled)
                             pSummon->AI()->DoAction(ACTION_REPENTANCE_DONE);
-                    
+
                 events.ScheduleEvent(EVENT_REPENTANCE, 1500, 0, PHASE_REPENTANCE);
             }
         }
 
-        void JustSummoned(Creature* summon)
+        void JustSummoned(Creature* summon) override
         {
             lSummons.Summon(summon);
         }
 
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
-            DoScriptText(SAY_DEATH, me);
+            Talk(SAY_DEATH);
             events.Reset();
             lSummons.DespawnAll();
 
@@ -178,11 +198,11 @@ public:
                 instance->SetData(DATA_HIGH_PROPHET_BARIM, DONE);
 
             if (instance)
-                if (Creature* blaze = Unit::GetCreature(*me, instance->GetData64(DATA_BLAZE)))
+                if (Creature* blaze = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_BLAZE)))
                     blaze->AI()->EnterEvadeMode();
         }
 
-        void EnterCombat(Unit* /*who*/)
+        void EnterCombat(Unit* /*who*/) override
         {
             if (instance)
                 instance->SetData(DATA_HIGH_PROPHET_BARIM, IN_PROGRESS);
@@ -190,20 +210,20 @@ public:
             if (IsHeroic())
                 events.ScheduleEvent(EVENT_SUMMON_BLAZE_OF_THE_HEAVENS, 3000);
 
-            DoScriptText(SAY_START, me);
+            Talk(SAY_START);
             events.SetPhase(PHASE_BARIM);
             events.ScheduleEvent(EVENT_FIFTY_LASHINGS, 5000, 0, PHASE_BARIM);
             events.ScheduleEvent(EVENT_HEAVENS_FURY, 5000, 0, PHASE_BARIM);
             events.ScheduleEvent(EVENT_PLAGUE_OF_AGES, 6000, 0, PHASE_BARIM);
         }
 
-        void KilledUnit(Unit* victim)
+        void KilledUnit(Unit* victim) override
         {
-            if (victim->GetTypeId() == TYPEID_PLAYER)
-                DoScriptText(RAND(SAY_KILL_PLAYER_1, SAY_KILL_PLAYER_2), me);
+            if (victim->IsPlayer())
+                Talk(RAND(SAY_KILL_PLAYER_1, SAY_KILL_PLAYER_2));
         }
 
-        void DamageTaken(Unit* /*done_by*/, uint32 & /*damage*/)
+        void DamageTaken(Unit* /*done_by*/, uint32 & /*damage*/) override
         {
             if (!Repentance && me->GetHealthPct() <= 50.0f)
             {
@@ -216,7 +236,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -278,7 +298,7 @@ public:
                                         events.ScheduleEvent(EVENT_PLAGUE_OF_AGES, 6000, 0, PHASE_BARIM);
 
                                         if (instance)
-                                            if (Creature* blaze = Unit::GetCreature(*me, instance->GetData64(DATA_BLAZE)))
+                                            if (Creature* blaze = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_BLAZE)))
                                                 blaze->AI()->DoAction(ACTION_REPENTANCE_DONE);
                                     }
                                     break;
@@ -350,7 +370,7 @@ class npc_blaze_of_the_heavens : public CreatureScript
 public:
     npc_blaze_of_the_heavens() : CreatureScript("npc_blaze_of_the_heavens") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_blaze_of_the_heavensAI (creature);
     }
@@ -369,7 +389,7 @@ public:
             Birth = true;
 
             if (instance)
-                instance->SetData64(DATA_BLAZE, me->GetGUID());
+                instance->SetGuidData(DATA_BLAZE, me->GetGUID());
         }
 
         InstanceScript* instance;
@@ -380,18 +400,18 @@ public:
         uint8 uiBlazeTimer;
         bool Birth;
 
-        void Reset()
+        void Reset() override
         {
             events.Reset();
             uiBlazeTimer = 5;
         }
 
-        void DoAction(const int32 action)
+        void DoAction(const int32 action) override
         {
             switch (action)
             {
                 case ACTION_REPENTANCE_START:
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
                     events.SetPhase(PHASE_REPENTANCE);
@@ -409,7 +429,7 @@ public:
                             uiBirthTimer = 2500;
                             me->RemoveAura(SPELL_BLAZE_OF_THE_HEAVENS_TRANSFORM);
                             events.SetPhase(PHASE_BLAZE);
-                            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                            me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                         }
 
                     }
@@ -417,27 +437,27 @@ public:
             }
         }
 
-        void EnterEvadeMode()
+        void EnterEvadeMode(EvadeReason /*why*/) override
         {
             if (instance)
-                instance->SetData64(DATA_BLAZE, 0);
+                instance->SetGuidData(DATA_BLAZE, ObjectGuid::Empty);
 
             lSummons.DespawnAll();
             me->DespawnOrUnsummon();
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             lSummons.Summon(summoned);
         }
 
-        void SpellHit(Unit* /*caster*/, const SpellInfo* spell)
+        void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
         {
             if (spell->Id == SPELL_BLAZE_OF_THE_HEAVENS_TRANSFORM)
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
         }
 
-        void HealReceived(Unit* /*healer*/, uint32& heal)
+        void HealReceived(Unit* /*healer*/, uint32& heal) override
         {
             if (me->GetHealth() + heal >= me->GetMaxHealth())
                 if (events.GetPhaseMask() & PHASE_EGG_MASK)
@@ -451,7 +471,7 @@ public:
                 }
         }
 
-        void DamageTaken(Unit* /*done_by*/, uint32 &damage)
+        void DamageTaken(Unit* /*done_by*/, uint32 &damage) override
         {
             if (damage >= me->GetHealth())
             {
@@ -460,7 +480,7 @@ public:
 
                 if (events.GetPhaseMask() & PHASE_BLAZE_MASK)
                 {
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
                     events.SetPhase(PHASE_EGG);
@@ -470,17 +490,17 @@ public:
             }
         }
 
-        void EnterCombat(Unit* /*who*/)
+        void EnterCombat(Unit* /*who*/) override
         {
             events.SetPhase(PHASE_BLAZE);
             me->CastSpell(me, SPELL_BLAZE_OF_THE_HEAVENS_PERIODIC, false);
             events.ScheduleEvent(EVENT_SUMMON_BLAZE_OF_THE_HEAVENS_GROUND, 3000, 0, PHASE_BLAZE);
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (Birth)
-            { 
+            {
                 if (uiBirthTimer <= diff)
                 {
                     switch(uiBirthPhase)
@@ -499,7 +519,7 @@ public:
                             break;
                         case 3:
                             Birth = false;
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                            me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                             me->SetReactState(REACT_AGGRESSIVE);
                             me->CastSpell(me, SPELL_BLAZE_OF_THE_HEAVENS_PERIODIC, false);
                             events.ScheduleEvent(EVENT_SUMMON_BLAZE_OF_THE_HEAVENS_GROUND, 3000, 0, PHASE_BLAZE);
@@ -543,7 +563,7 @@ class npc_repentance_mirror : public CreatureScript
 public:
     npc_repentance_mirror() : CreatureScript("npc_repentance_mirror") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_repentance_mirrorAI (creature);
     }
@@ -559,7 +579,7 @@ public:
             me->SetVisible(false);
 
             if (instance)
-                if (Creature* barim = Unit::GetCreature(*me, instance->GetData64(DATA_HIGH_PROPHET_BARIM)))
+                if (Creature* barim = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_HIGH_PROPHET_BARIM)))
                     barim->AI()->JustSummoned(me);
         }
 
@@ -567,7 +587,7 @@ public:
         uint8 uiBirthPhase;
         bool Birth;
 
-        void Reset()
+        void Reset() override
         {
             if (!Birth)
             {
@@ -576,7 +596,7 @@ public:
             }
         }
 
-        void DoAction(const int32 action)
+        void DoAction(const int32 action) override
         {
             if (action == ACTION_REPENTANCE_DONE)
             {
@@ -585,7 +605,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (Birth)
             {
@@ -617,7 +637,7 @@ class npc_harbinger_of_darkness : public CreatureScript
 public:
     npc_harbinger_of_darkness() : CreatureScript("npc_harbinger_of_darkness") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_harbinger_of_darknessAI (creature);
     }
@@ -637,9 +657,9 @@ public:
 
             if (instance)
             {
-                instance->SetData64(DATA_HARBINGER, me->GetGUID());
+                instance->SetGuidData(DATA_HARBINGER, me->GetGUID());
 
-                if (Creature* barim = Unit::GetCreature(*me, instance->GetData64(DATA_HIGH_PROPHET_BARIM)))
+                if (Creature* barim = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_HIGH_PROPHET_BARIM)))
                     barim->AI()->JustSummoned(me);
             }
         }
@@ -651,21 +671,21 @@ public:
         bool Birth;
         bool Dead;
 
-        void Reset()
+        void Reset() override
         {
             Dead = false;
             events.Reset();
         }
 
-        void EnterEvadeMode()
+        void EnterEvadeMode(EvadeReason /*why*/) override
         {
-            instance->SetData64(DATA_HARBINGER, 0);
+            instance->SetGuidData(DATA_HARBINGER, ObjectGuid::Empty);
 
-            if (Creature* barim = Unit::GetCreature(*me, instance->GetData64(DATA_HIGH_PROPHET_BARIM)))
+            if (Creature* barim = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_HIGH_PROPHET_BARIM)))
                 barim->AI()->EnterEvadeMode();
         }
 
-        void DamageTaken(Unit* /*done_by*/, uint32 &damage)
+        void DamageTaken(Unit* /*done_by*/, uint32 &damage) override
         {
             if (damage >= me->GetHealth())
             {
@@ -675,7 +695,7 @@ public:
                 {
                     if (instance)
                     {
-                        instance->SetData64(DATA_HARBINGER, 0);
+                        instance->SetGuidData(DATA_HARBINGER, ObjectGuid::Empty);
 
                         if (Creature* barim = me->FindNearestCreature(BOSS_HIGH_PROPHET_BARIM, 300.0f))
                             barim->AI()->DoAction(ACTION_REPENTANCE_DONE);
@@ -687,21 +707,21 @@ public:
                     me->AttackStop();
                     me->SetHealth(1);
                     me->CastSpell(me, SPELL_WAIL_OF_DARKNESS_DEATH, false);
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                    me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                     me->SetDisplayId(INVISIBLE_CREATURE_MODEL);
                     me->DespawnOrUnsummon(2000);
                 }
             }
         }
 
-        void EnterCombat(Unit* who)
+        void EnterCombat(Unit* who) override
         {
             events.ScheduleEvent(EVENT_SOUL_SEVER, 1000);
             events.ScheduleEvent(EVENT_WAIL_OF_DARKNESS, urand(1000, 4000));
             me->CastSpell(who, SPELL_SOUL_SEVER, false);
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (Birth)
             {
@@ -761,7 +781,7 @@ class npc_soul_fragment : public CreatureScript
 public:
     npc_soul_fragment() : CreatureScript("npc_soul_fragment") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_soul_fragmentAI (creature);
     }
@@ -774,7 +794,7 @@ public:
             me->SetReactState(REACT_PASSIVE);
 
             if (instance)
-                if (Creature* barim = Unit::GetCreature(*me, instance->GetData64(DATA_HIGH_PROPHET_BARIM)))
+                if (Creature* barim = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_HIGH_PROPHET_BARIM)))
                     barim->AI()->JustSummoned(me);
         }
 
@@ -784,14 +804,13 @@ public:
         float i_targetX, i_targetY;
         bool ReloadMoving;
 
-        void Reset()
+        void Reset() override
         {
-            if (instance)
-                if (!instance->GetData64(DATA_HARBINGER))
-                {
-                    me->DespawnOrUnsummon();
-                    return;
-                }
+            if (instance && !instance->GetGuidData(DATA_HARBINGER))
+            {
+                me->DespawnOrUnsummon();
+                return;
+            }
 
             Cast = false;
             me->CastSpell(me, SPELL_REPENTANCE_COPY_WEAPON, false);
@@ -799,11 +818,11 @@ public:
             me->CastSpell(me, SPELL_SOUL_SEVER_CHANNEL, false);
         }
 
-        void SpellHit(Unit* /*unit*/, const SpellInfo* spell)
+        void SpellHit(Unit* /*unit*/, const SpellInfo* spell) override
         {
             if (spell->Id == 91277)
             {
-                if (AuraPtr aura = me->GetAura(62214))
+                if (Aura* aura = me->GetAura(62214))
                 {
                     aura->SetDuration(5000);
                     return;
@@ -813,140 +832,21 @@ public:
                 me->GetPosition(x, y, z);
 
                 if (Creature* soul = me->SummonCreature(49219, x, y, z, 0.0f, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 5000))
-                    if (AuraPtr aura = soul->AddAura(62214, me))
+                    if (Aura* aura = soul->AddAura(62214, me))
                         aura->SetDuration(5000);
             }
-        }
-
-        /*bool _setTargetLocation(Unit* target)
-        {
-            if (me->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_DISTRACTED))
-                return true;
-
-            float x, y, z;
-            Traveller<Creature> traveller(*me);
-
-            if (i_destinationHolder.HasDestination() && !ReloadMoving)
-            {
-                if (i_destinationHolder.HasArrived())
-                {
-                    if (target->IsWithinMeleeRange(me))
-                        return false;
-                }
-                else
-                {
-                    bool stop = false;
-
-                    if (me->GetExactDist2d(target->getX(), target->getY()) < 3.0f)
-                        stop = true;
-
-                    if (stop)
-                    {
-                        me->GetPosition(x, y, z);
-                        i_destinationHolder.SetDestination(traveller, x, y, z);
-                        i_destinationHolder.StartTravel(traveller, false);
-                        me->StopMoving();
-                        return false;
-                    }
-                }
-
-                if (target->GetExactDist2d(i_targetX, i_targetY) < 0.01f)
-                    return false;
-            }
-            else
-            {
-                ReloadMoving = false;
-                me->AddUnitMovementFlag(MOVEMENTFLAG_WALKING);
-                target->GetPosition(i_targetX, i_targetY);
-                i_destinationHolder.ResetTravelTime();
-            }
-
-            target->GetPosition(x, y, z);
-            i_destinationHolder.SetDestination(traveller, x, y, z);
-            me->AddUnitState(UNIT_STATE_CHASE);
-            return true;
-        }
-
-        bool DoUpdate(const uint32 time_diff)
-        {
-            Unit* target = NULL;
-
-            if (instance)
-                target = Unit::GetCreature(*me, instance->GetData64(DATA_HARBINGER));
-
-            if (!target || !target->isAlive())
-                return false;
-
-            if (me->HasUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_DISTRACTED))
-                return true;
-
-            Traveller<Creature> traveller(*me);
-
-            if (!i_destinationHolder.HasDestination() || ReloadMoving)
-            {
-                if (!_setTargetLocation(target))
-                    Finish();
-            }
-            else if (me->IsStopped() && !i_destinationHolder.HasArrived())
-            {
-                me->AddUnitState(UNIT_STATE_CHASE);
-                i_destinationHolder.StartTravel(traveller);
-                return true;
-            }
-            else if (i_destinationHolder.HasArrived())
-                Finish();
-
-            if (i_destinationHolder.UpdateTraveller(traveller, time_diff))
-            {
-                if (i_targetX != target->getX() || i_targetY != target->getY())
-                {
-                    if (!_setTargetLocation(target))
-                        Finish();
-
-                    target->GetPosition(i_targetX, i_targetY);
-                }
-
-                if ((me->IsStopped() && !i_destinationHolder.HasArrived()))
-                {
-                    me->SetInFront(target);
-                    me->StopMoving();
-                }
-            }
-
-            return true;
-        }
-
-        void Finish()
-        {
-            if (Cast)
-                return;
-
-            if (instance)
-                if (Creature* harbinger = Unit::GetCreature(*me, instance->GetData64(DATA_HARBINGER)))
-                {
-                    Cast = true;
-                    me->CastSpell(harbinger, SPELL_MERGED_SOULS, false, NULL, NULL, harbinger->GetGUID());
-                    me->RemoveAllAuras();
-                    me->StopMoving();
-                    me->ForcedDespawn(1000);
-                }
-        }*/
-
-        void UpdateAI(const uint32 diff)
-        {
-            //DoUpdate(diff);
         }
     };
 };
 
-class spell_repentance_pull_player : public SpellScriptLoader
+class spell_repentance_pull_player: public SpellScriptLoader
 {
     public:
         spell_repentance_pull_player() : SpellScriptLoader("spell_repentance_pull_player") { }
 
         class spell_repentance_pull_player_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_repentance_pull_player_SpellScript)
+            PrepareSpellScript(spell_repentance_pull_player_SpellScript);
 
             void PullPlayer(SpellEffIndex effIndex)
             {
@@ -965,32 +865,32 @@ class spell_repentance_pull_player : public SpellScriptLoader
                     return;
 
                 caster->GetNearPoint2D(x, y, frand(5.0f, 9.0f), caster->GetAngle(_x, _y));
-                float z = caster->GetBaseMap()->GetHeight(x, y, MAX_HEIGHT);
-                float speedZ = (float)(GetSpellInfo()->Effects[effIndex].CalcValue() / 10);
-                float speedXY = (float)(GetSpellInfo()->Effects[effIndex].MiscValue / 10);
+                float z = caster->GetMap()->GetHeight(caster->GetPhaseShift(), x, y, MAX_HEIGHT);
+                float speedZ = (float)(GetSpellInfo()->GetEffect(effIndex)->CalcValue() / 10);
+                float speedXY = (float)(GetSpellInfo()->GetEffect(effIndex)->MiscValue / 10);
                 target->GetMotionMaster()->MoveJump(x, y, z, speedXY, speedZ);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_repentance_pull_player_SpellScript::PullPlayer, EFFECT_0, SPELL_EFFECT_PULL_TOWARDS);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript *GetSpellScript() const override
         {
             return new spell_repentance_pull_player_SpellScript();
         }
 };
 
-class spell_repentance_trigger_clone_spell : public SpellScriptLoader
+class spell_repentance_trigger_clone_spell: public SpellScriptLoader
 {
     public:
         spell_repentance_trigger_clone_spell() : SpellScriptLoader("spell_repentance_trigger_clone_spell") { }
 
         class spell_repentance_trigger_clone_spell_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_repentance_trigger_clone_spell_SpellScript)
+            PrepareSpellScript(spell_repentance_trigger_clone_spell_SpellScript);
 
             void TriggerCast(SpellEffIndex effIndex)
             {
@@ -1004,36 +904,36 @@ class spell_repentance_trigger_clone_spell : public SpellScriptLoader
                 target->CastSpell(caster, uint32(GetEffectValue()), true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_repentance_trigger_clone_spell_SpellScript::TriggerCast, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript *GetSpellScript() const override
         {
             return new spell_repentance_trigger_clone_spell_SpellScript();
         }
 };
 
-class spell_copy_melee_weapon : public SpellScriptLoader
+class spell_copy_melee_weapon: public SpellScriptLoader
 {
     public:
         spell_copy_melee_weapon() : SpellScriptLoader("spell_copy_melee_weapon") { }
 
         class spell_copy_melee_weapon_AuraScript : public AuraScript
         {
-            PrepareAuraScript(spell_copy_melee_weapon_AuraScript)
+            PrepareAuraScript(spell_copy_melee_weapon_AuraScript);
 
             uint32 uiTargetDefaultWeapon;
 
-            bool Load()
+            bool Load() override
             {
                 uiTargetDefaultWeapon = 0;
                 return true;
             }
 
-            void ApplyEffect(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void ApplyEffect(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 PreventDefaultAction();
                 Unit* caster = GetCaster();
@@ -1042,18 +942,18 @@ class spell_copy_melee_weapon : public SpellScriptLoader
                 if (!(caster && target))
                     return;
 
-                uiTargetDefaultWeapon = target->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID);
+                uiTargetDefaultWeapon = target->GetVirtualItemId(0);
 
                 if (Player* player = caster->ToPlayer())
                 {
                     if (Item* main_weapon = player->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND))
-                        target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, main_weapon->GetEntry());
+                        target->SetVirtualItem(0, main_weapon->GetEntry());
                 }
                 else
-                    target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, caster->GetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID));
+                    target->SetVirtualItem(0, uiTargetDefaultWeapon);
             }
 
-            void RemoveEffect(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void RemoveEffect(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 PreventDefaultAction();
                 Unit* target = GetTarget();
@@ -1061,56 +961,56 @@ class spell_copy_melee_weapon : public SpellScriptLoader
                 if (!target)
                     return;
 
-                target->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, uiTargetDefaultWeapon);
+                target->SetVirtualItem(0, uiTargetDefaultWeapon);
             }
 
-            void Register()
+            void Register() override
             {
-                OnEffectApply += AuraEffectApplyFn(spell_copy_melee_weapon_AuraScript::ApplyEffect, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
-                OnEffectRemove += AuraEffectRemoveFn(spell_copy_melee_weapon_AuraScript::RemoveEffect, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                OnEffectApply += AuraEffectApplyFn(spell_copy_melee_weapon_AuraScript::ApplyEffect, EFFECT_0, SPELL_AURA_MOD_DISARM, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_copy_melee_weapon_AuraScript::RemoveEffect, EFFECT_0, SPELL_AURA_MOD_DISARM, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_copy_melee_weapon_AuraScript();
         }
 };
 
-class spell_repentance_player_kneel : public SpellScriptLoader
+class spell_repentance_player_kneel: public SpellScriptLoader
 {
     public:
         spell_repentance_player_kneel() : SpellScriptLoader("spell_repentance_player_kneel") { }
 
         class spell_repentance_player_kneel_AuraScript : public AuraScript
         {
-            PrepareAuraScript(spell_repentance_player_kneel_AuraScript)
+            PrepareAuraScript(spell_repentance_player_kneel_AuraScript);
 
-            void DecayPeriodicTimer(AuraEffectPtr aurEff)
+            void DecayPeriodicTimer(AuraEffect* aurEff)
             {
                 aurEff->SetPeriodic(false);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_repentance_player_kneel_AuraScript::DecayPeriodicTimer, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
             }
         };
 
-        AuraScript *GetAuraScript() const
+        AuraScript *GetAuraScript() const override
         {
             return new spell_repentance_player_kneel_AuraScript();
         }
 };
 
-class spell_repentance_player_summon_mirror : public SpellScriptLoader
+class spell_repentance_player_summon_mirror: public SpellScriptLoader
 {
     public:
         spell_repentance_player_summon_mirror() : SpellScriptLoader("spell_repentance_player_summon_mirror") { }
 
         class spell_repentance_player_summon_mirror_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_repentance_player_summon_mirror_SpellScript)
+            PrepareSpellScript(spell_repentance_player_summon_mirror_SpellScript);
 
             void SummonMirror(SpellEffIndex effIndex)
             {
@@ -1120,7 +1020,7 @@ class spell_repentance_player_summon_mirror : public SpellScriptLoader
                 if (!caster)
                     return;
 
-                uint32 uiEntry = GetSpellInfo()->Effects[effIndex].MiscValue;
+                uint32 uiEntry = GetSpellInfo()->GetEffect(effIndex)->MiscValue;
 
                 if (!uiEntry)
                     return;
@@ -1130,13 +1030,13 @@ class spell_repentance_player_summon_mirror : public SpellScriptLoader
                 caster->SummonCreature(uiEntry, x, y, z, o);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHit += SpellEffectFn(spell_repentance_player_summon_mirror_SpellScript::SummonMirror, EFFECT_0, SPELL_EFFECT_SUMMON);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript *GetSpellScript() const override
         {
             return new spell_repentance_player_summon_mirror_SpellScript();
         }

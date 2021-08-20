@@ -1,7 +1,31 @@
-#include "ScriptPCH.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2014-2018 RoG_WoW Source <http://wow.rog.snet>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "Cell.h"
 #include "CreatureTextMgr.h"
 #include "Containers.h"
 #include "dragon_soul.h"
+#include "GridNotifiers.h"
+#include "CellImpl.h"
+#include "GridNotifiersImpl.h"
+#include "ObjectMgr.h"
+#include "ScriptMgr.h"
+#include "SpellMgr.h"
 
 enum ScriptedTexts
 {
@@ -26,9 +50,6 @@ enum Spells
     SPELL_DEEP_CORRUPTION           = 105171,
     SPELL_DEEP_CORRUPTION_AURA      = 103628,
     SPELL_DEEP_CORRUPTION_DMG       = 105173,
-    SPELL_DEEP_CORRUPTION_DMG_25    = 108347,
-    SPELL_DEEP_CORRUPTION_DMG_10H   = 108348,
-    SPELL_DEEP_CORRUPTION_DMG_25H   = 108349,
     SPELL_DIGESTIVE_ACID            = 105031,
     SPELL_DIGESTIVE_ACID_DUMMY      = 105562,
     SPELL_DIGESTIVE_ACID_AOE        = 105571,
@@ -120,7 +141,7 @@ enum Actions
     ACTION_BLUE     = 7,
 };
 
-const Position globulesPos[6] = 
+const Position globulesPos[6] =
 {
     {-1662.959961f, -2992.280029f, -173.52f, 3.63f}, // Crimson
     {-1723.760010f, -2935.330078f, -174.03f, 4.32f}, // Acidic
@@ -138,7 +159,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
     public:
         boss_yorsahj_the_unsleeping() : CreatureScript("boss_yorsahj_the_unsleeping") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        CreatureAI* GetAI(Creature* pCreature) const override
         {
             return new boss_yorsahj_the_unsleepingAI(pCreature);
         }
@@ -146,7 +167,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
         struct boss_yorsahj_the_unsleepingAI : public BossAI
         {
             boss_yorsahj_the_unsleepingAI(Creature* pCreature) : BossAI(pCreature, DATA_YORSAHJ)
-            {             
+            {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
@@ -165,15 +186,15 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                 memset(bAchieve, false, sizeof(bAchieve));
             }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(DSScriptName))
+                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptIdOrAdd(DSScriptName))
                     me->IsAIEnabled = false;
                 else if (!me->isDead())
                     Reset();
             }
 
-            void MoveInLineOfSight(Unit* who)
+            void MoveInLineOfSight(Unit* who) override
             {
                 if (!bIntro && me->GetDistance(who) <= 70.0f)
                 {
@@ -186,21 +207,21 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                 BossAI::MoveInLineOfSight(who);
             }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
                 bShuma = false;
                 bContinue = false;
+                corruptedMinion = false;
                 _spellId = 0;
                 memset(bAchieve, false, sizeof(bAchieve));
-
+                instance->SetBossState(DATA_YORSAHJ, NOT_STARTED);
                 me->SetReactState(REACT_AGGRESSIVE);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
-
                 if (instance->GetBossState(DATA_MORCHOK) != DONE)
                 {
                     EnterEvadeMode();
@@ -220,13 +241,29 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                 instance->SetBossState(DATA_YORSAHJ, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
 
                 Talk(SAY_DEATH);
                 Talk(SAY_DEATH_1);
                 DoCastAOE(SPELL_YORSAHJ_WHISPER_DEATH, true);
+
+                if (instance)
+                {
+                    //instance->DoModifyPlayerCurrenciesIfLevel(395, 7500, 85);
+                    if (!IsHeroic())
+                    {
+                        instance->DoModifyPlayerCurrencies(614, 1);
+                        instance->DoModifyPlayerCurrencies(615, 1);
+                    }
+                    else
+                    {
+                        instance->DoModifyPlayerCurrencies(614, 2);
+                        instance->DoModifyPlayerCurrencies(615, 2);
+                    }
+                    instance->SetBossState(DATA_YORSAHJ, DONE);
+                }
 
             }
 
@@ -235,7 +272,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                 return bAchieve[Id];
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* victim) override
             {
                 if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                 {
@@ -245,7 +282,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                 }
             }
 
-            void DoAction(const int32 action)
+            void DoAction(const int32 action) override
             {
                 if (action == ACTION_CONTINUE && !bContinue)
                 {
@@ -254,14 +291,14 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                 }
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 BossAI::JustSummoned(summon);
                 if (summon->GetEntry() == NPC_MANA_VOID)
                     summon->GetMotionMaster()->MoveRandom(25.0f);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(const uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -306,6 +343,9 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                             me->RemoveAura(SPELL_BLACK_BLOOD_OF_SHUMA);
                             me->RemoveAura(SPELL_SHADOWED_BLOOD_OF_SHUMA);
                             me->RemoveAura(SPELL_COBALT_BLOOD_OF_SHUMA);
+                            me->RemoveAura(SPELL_SPAWNING_POOL_1);
+                            me->RemoveAura(SPELL_SPAWNING_POOL_2);
+                            me->RemoveAura(SPELL_SPAWNING_POOL_3);
 
                             me->SetReactState(REACT_PASSIVE);
                             me->AttackStop();
@@ -345,7 +385,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
 
                                 if (Creature* pGlobule = me->SummonCreature((*itr), globulesPos[i], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 3000))
                                 {
-                                    pGlobule->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                                    pGlobule->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                                     pGlobule->SetDisplayId(11686);
                                 }
                             }
@@ -359,8 +399,8 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                         {
                             std::list<Creature*> creatures;
                             GlobulesCheck checker;
-                            JadeCore::CreatureListSearcher<GlobulesCheck> searcher(me, creatures, checker);
-                            me->VisitNearbyObject(100.0f, searcher);
+                            Trinity::CreatureListSearcher<GlobulesCheck> searcher(me, creatures, checker);
+                            Cell::VisitGridObjects(me, searcher, 100.0f);
 
                             if (!creatures.empty())
                             {
@@ -368,29 +408,30 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                                 {
                                     switch ((*itr)->GetEntry())
                                     {
-                                        case NPC_CRIMSON_GLOBULE: 
-                                            DoCast(me, SPELL_CRIMSON_BLOOD_OF_SHUMA, true); 
+                                        case NPC_CRIMSON_GLOBULE:
+                                            DoCast(me, SPELL_CRIMSON_BLOOD_OF_SHUMA, true);
                                             events.ScheduleEvent(EVENT_SEARING_BLOOD, urand(5000, 7000));
                                             break;
-                                        case NPC_ACIDIC_GLOBULE: 
+                                        case NPC_ACIDIC_GLOBULE:
                                             me->SummonCreature(NPC_MAW_OF_SHUMA, mawofshumaPos, TEMPSUMMON_TIMED_DESPAWN, 60000);
                                             DoCast(me, SPELL_ACIDIC_BLOOD_OF_SHUMA, true);
                                             DoCast(me, SPELL_DIGESTIVE_ACID_DUMMY, true);
                                             events.ScheduleEvent(EVENT_DIGESTIVE_ACID, urand(7000, 9000));
                                             break;
-                                        case NPC_GLOWING_GLOBULE: 
+                                        case NPC_GLOWING_GLOBULE:
                                             bShuma = true;
-                                            DoCast(me, SPELL_GLOWING_BLOOD_OF_SHUMA, true); 
+                                            corruptedMinion = true;
+                                            DoCast(me, SPELL_GLOWING_BLOOD_OF_SHUMA, true);
                                             break;
-                                        case NPC_DARK_GLOBULE: 
-                                            DoCast(me, SPELL_BLACK_BLOOD_OF_SHUMA, true); 
+                                        case NPC_DARK_GLOBULE:
+                                            DoCast(me, SPELL_BLACK_BLOOD_OF_SHUMA, true);
                                             events.ScheduleEvent(EVENT_CORRUPTED_MINIONS, 1000);
                                             break;
-                                        case NPC_SHADOWED_GLOBULE: 
+                                        case NPC_SHADOWED_GLOBULE:
                                             DoCast(me, SPELL_SHADOWED_BLOOD_OF_SHUMA, true);
                                             events.ScheduleEvent(EVENT_DEEP_CORRUPTION, urand(3000, 4000));
                                             break;
-                                        case NPC_COBALT_GLOBULE: 
+                                        case NPC_COBALT_GLOBULE:
                                             DoCast(me, SPELL_COBALT_BLOOD_OF_SHUMA, true);
                                             events.ScheduleEvent(EVENT_MANA_VOID_1, urand(2000, 3000));
                                             break;
@@ -410,7 +451,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                                 bAchieve[3] = true;
 
                             me->SetReactState(REACT_AGGRESSIVE);
-                            AttackStart(me->getVictim());
+                            AttackStart(me->GetVictim());
                             events.ScheduleEvent(EVENT_VOID_BOLT, urand(6000, 7000));
                             events.ScheduleEvent(EVENT_CALL_BLOOD_1, 62000);
                             break;
@@ -428,8 +469,11 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
                             DoCast(me, SPELL_SPAWNING_POOL_2, true);
                             DoCast(me, SPELL_SPAWNING_POOL_3, true);
                             DoCast(me, SPELL_CORRUPTED_MINIONS_AURA);
-                            if (bShuma)
+                            if (bShuma && corruptedMinion)
+                            {
+                                corruptedMinion = false;
                                 events.ScheduleEvent(EVENT_CORRUPTED_MINIONS, 30000);
+                            }
                             break;
                         case EVENT_DEEP_CORRUPTION:
                             DoCastAOE(SPELL_DEEP_CORRUPTION);
@@ -455,6 +499,7 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
             bool bContinue;
             bool bShuma;
             bool bAchieve[4];
+            bool corruptedMinion;
 
             // Returns spell for animation
             void SelectRandomGlobules(uint32 &spellId, std::list<uint32> &entryList)
@@ -521,13 +566,13 @@ class boss_yorsahj_the_unsleeping: public CreatureScript
 
                     bool operator()(Creature* u)
                     {
-                        if ((u->GetEntry() == NPC_CRIMSON_GLOBULE || 
+                        if ((u->GetEntry() == NPC_CRIMSON_GLOBULE ||
                             u->GetEntry() == NPC_ACIDIC_GLOBULE ||
                             u->GetEntry() == NPC_GLOWING_GLOBULE ||
-                            u->GetEntry() == NPC_DARK_GLOBULE || 
+                            u->GetEntry() == NPC_DARK_GLOBULE ||
                             u->GetEntry() == NPC_SHADOWED_GLOBULE ||
-                            u->GetEntry() == NPC_COBALT_GLOBULE) && 
-                            u->isAlive())
+                            u->GetEntry() == NPC_COBALT_GLOBULE) &&
+                            u->IsAlive())
                             return true;
                         return false;
                     }
@@ -540,7 +585,7 @@ class npc_yorsahj_the_unsleeping_globule: public CreatureScript
     public:
         npc_yorsahj_the_unsleeping_globule() : CreatureScript("npc_yorsahj_the_unsleeping_globule") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        CreatureAI* GetAI(Creature* pCreature) const override
         {
             return new npc_yorsahj_the_unsleeping_globuleAI(pCreature);
         }
@@ -548,7 +593,7 @@ class npc_yorsahj_the_unsleeping_globule: public CreatureScript
         struct npc_yorsahj_the_unsleeping_globuleAI : public Scripted_NoMovementAI
         {
             npc_yorsahj_the_unsleeping_globuleAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {             
+            {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
@@ -566,15 +611,15 @@ class npc_yorsahj_the_unsleeping_globule: public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*owner*/) override
             {
                 switch(me->GetEntry())
-                { 
+                {
                     case NPC_CRIMSON_GLOBULE: DoCast(me, SPELL_AURA_TALL_RED, true); break;
                     case NPC_ACIDIC_GLOBULE: DoCast(me, SPELL_AURA_TALL_GREEN, true); break;
                     case NPC_GLOWING_GLOBULE: DoCast(me, SPELL_AURA_TALL_YELLOW, true); break;
@@ -585,7 +630,7 @@ class npc_yorsahj_the_unsleeping_globule: public CreatureScript
                 }
             }
 
-            void SpellHit(Unit* /*who*/, const SpellInfo* spellInfo)
+            void SpellHit(Unit* /*who*/, const SpellInfo* spellInfo) override
             {
                 if (spellInfo->Id == SPELL_COLOR_COMBINATION_1 ||
                     spellInfo->Id == SPELL_COLOR_COMBINATION_2 ||
@@ -598,12 +643,12 @@ class npc_yorsahj_the_unsleeping_globule: public CreatureScript
                 }
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 DoCastAOE(SPELL_FUSING_VAPORS_IMMUNE, true);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(const uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -631,8 +676,8 @@ class npc_yorsahj_the_unsleeping_globule: public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CONTINUE:
-                            me->SetSpeed(MOVE_RUN, 0.47142876f, true);
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                            me->SetSpeed(MOVE_RUN, 0.47142876f);
+                            me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                             me->SetDisplayId(me->GetNativeDisplayId());
                             DoCast(me, SPELL_FUSING_VAPORS, true);
                             if (Creature* pYorsahj = me->FindNearestCreature(NPC_YORSAHJ, 200.0f))
@@ -654,7 +699,7 @@ class npc_yorsahj_the_unsleeping_forgotten_one: public CreatureScript
     public:
         npc_yorsahj_the_unsleeping_forgotten_one() : CreatureScript("npc_yorsahj_the_unsleeping_forgotten_one") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        CreatureAI* GetAI(Creature* pCreature) const override
         {
             return new npc_yorsahj_the_unsleeping_forgotten_oneAI(pCreature);
         }
@@ -662,7 +707,7 @@ class npc_yorsahj_the_unsleeping_forgotten_one: public CreatureScript
         struct npc_yorsahj_the_unsleeping_forgotten_oneAI : public ScriptedAI
         {
             npc_yorsahj_the_unsleeping_forgotten_oneAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {             
+            {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
@@ -681,22 +726,22 @@ class npc_yorsahj_the_unsleeping_forgotten_one: public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*owner*/) override
             {
                 events.ScheduleEvent(EVENT_CONTINUE, 1000);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->DespawnOrUnsummon(3000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(const uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -711,7 +756,7 @@ class npc_yorsahj_the_unsleeping_forgotten_one: public CreatureScript
                             me->SetReactState(REACT_AGGRESSIVE);
                             if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
                             {
-                                me->AddThreat(pTarget, 1000000.0f);
+                                AddThreat(pTarget, 1000000.0f);
                                 AttackStart(pTarget);
                                 events.ScheduleEvent(EVENT_PSYCHIC_SLICE, urand(6000, 20000));
                             }
@@ -737,7 +782,7 @@ class npc_yorsahj_the_unsleeping_mana_void: public CreatureScript
     public:
         npc_yorsahj_the_unsleeping_mana_void() : CreatureScript("npc_yorsahj_the_unsleeping_mana_void") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        CreatureAI* GetAI(Creature* pCreature) const override
         {
             return new npc_yorsahj_the_unsleeping_mana_voidAI(pCreature);
         }
@@ -745,7 +790,7 @@ class npc_yorsahj_the_unsleeping_mana_void: public CreatureScript
         struct npc_yorsahj_the_unsleeping_mana_voidAI : public Scripted_NoMovementAI
         {
             npc_yorsahj_the_unsleeping_mana_voidAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {             
+            {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
@@ -761,7 +806,7 @@ class npc_yorsahj_the_unsleeping_mana_void: public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 DoCastAOE(SPELL_MANA_DIFFUSION, true);
                 me->DespawnOrUnsummon(1000);
@@ -778,38 +823,29 @@ class spell_yorsahj_the_unsleeping_deep_corruption : public SpellScriptLoader
         {
             PrepareAuraScript(spell_yorsahj_the_unsleeping_deep_corruption_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr aurEff)
+            void HandlePeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetUnitOwner())
                     return;
 
-                if (AuraPtr aur = GetAura())
+                if (Aura* aur = GetAura())
                 {
                     if (aur->GetStackAmount() >= 5)
                     {
                         uint32 spellId = SPELL_DEEP_CORRUPTION_DMG;
-                        switch (GetCaster()->GetMap()->GetDifficulty())
-                        {
-                            case MAN10_DIFFICULTY: spellId = SPELL_DEEP_CORRUPTION_DMG; break;
-                            case MAN25_DIFFICULTY: spellId = SPELL_DEEP_CORRUPTION_DMG_25; break;
-                            case MAN10_HEROIC_DIFFICULTY: spellId = SPELL_DEEP_CORRUPTION_DMG_10H; break;
-                            case MAN25_HEROIC_DIFFICULTY: spellId = SPELL_DEEP_CORRUPTION_DMG_25H; break;
-                        }
-
                         GetUnitOwner()->CastSpell(GetUnitOwner(), spellId, true);
-
                         aur->Remove();
                     }
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_yorsahj_the_unsleeping_deep_corruption_AuraScript::HandlePeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_yorsahj_the_unsleeping_deep_corruption_AuraScript();
         }
@@ -833,11 +869,11 @@ class spell_yorsahj_the_unsleeping_digestive_acid_aoe : public SpellScriptLoader
                     return;
 
                 if (Creature* pYorsahj = GetCaster()->FindNearestCreature(NPC_YORSAHJ, 200.0f))
-                    if (Unit* pTank = pYorsahj->getVictim())
+                    if (Unit* pTank = pYorsahj->GetVictim())
                         targets.remove(pTank);
 
                 uint32 max_targets = (GetCaster()->GetMap()->Is25ManRaid() ? 8 : 4);
-                JadeCore::Containers::RandomResizeList(targets, max_targets);
+                Trinity::Containers::RandomResize(targets, max_targets);
             }
 
             void HandleScript(SpellEffIndex /*effIndex*/)
@@ -848,18 +884,76 @@ class spell_yorsahj_the_unsleeping_digestive_acid_aoe : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_DIGESTIVE_ACID_DMG, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yorsahj_the_unsleeping_digestive_acid_aoe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 OnEffectHitTarget += SpellEffectFn(spell_yorsahj_the_unsleeping_digestive_acid_aoe_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_yorsahj_the_unsleeping_digestive_acid_aoe_SpellScript();
         }
 };
+
+//Digestive Acid Dmg 105573
+class spell_yorsahj_the_unsleeping_digestive_acid_dmg : public SpellScriptLoader
+{
+public:
+    spell_yorsahj_the_unsleeping_digestive_acid_dmg() : SpellScriptLoader("spell_yorsahj_the_unsleeping_digestive_acid_dmg") { }
+
+    class spell_yorsahj_the_unsleeping_digestive_acid_dmg_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_yorsahj_the_unsleeping_digestive_acid_dmg_SpellScript);
+
+        bool Load() override
+        {
+            // This script should execute only in Dragon Soul
+            if (InstanceMap* instance = GetCaster()->GetMap()->ToInstanceMap())
+            if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptIdOrAdd(DSScriptName))
+                return true;
+
+            return false;
+        }
+
+        void HandleDummy(SpellEffIndex /*effIndex*/)
+        {
+
+            PreventHitDamage();
+
+            if (!GetHitUnit()->IsAlive() || !GetCaster())
+                return;
+
+            if (Creature* creature = GetCaster()->ToCreature())
+            {
+                if (Unit* target = GetHitUnit())
+                {
+                    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_DIGESTIVE_ACID_DMG, creature->GetMap()->GetDifficultyID()))
+                    {
+                        uint32 damage = (uint32(GetEffectValue()));
+                        SpellNonMeleeDamage damageInfo(creature, target, spellInfo, { spellInfo->GetSpellXSpellVisualId(), 0 }, spellInfo->SchoolMask);
+                        damageInfo.damage = damage;
+                        creature->SendSpellNonMeleeDamageLog(&damageInfo);
+                        creature->DealSpellDamage(&damageInfo, false);
+                    }
+                }
+            }
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(spell_yorsahj_the_unsleeping_digestive_acid_dmg_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_yorsahj_the_unsleeping_digestive_acid_dmg_SpellScript();
+    }
+};
+
 
 class spell_yorsahj_the_unsleeping_mana_void : public SpellScriptLoader
 {
@@ -881,7 +975,7 @@ class spell_yorsahj_the_unsleeping_mana_void : public SpellScriptLoader
                 targets.remove_if(ManaCheck());
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yorsahj_the_unsleeping_mana_void_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yorsahj_the_unsleeping_mana_void_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
@@ -892,21 +986,50 @@ class spell_yorsahj_the_unsleeping_mana_void : public SpellScriptLoader
             {
                 public:
                     ManaCheck() {}
-            
+
                     bool operator()(WorldObject* unit)
                     {
                         if (unit->GetTypeId() != TYPEID_PLAYER)
                             return true;
-                        return (unit->ToPlayer()->getPowerType() != POWER_MANA);
+                        return (unit->ToPlayer()->GetPowerType() != POWER_MANA);
                     }
             };
 
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_yorsahj_the_unsleeping_mana_void_SpellScript();
         }
+};
+
+class spell_yorsahj_the_unsleeping_deep_corruption_aoe : public SpellScriptLoader
+{
+public:
+    spell_yorsahj_the_unsleeping_deep_corruption_aoe() : SpellScriptLoader("spell_yorsahj_the_unsleeping_deep_corruption_aoe") {}
+
+    class spell_yorsahj_the_unsleeping_deep_corruption_aoe_AuraScript : public AuraScript
+    {
+        PrepareAuraScript(spell_yorsahj_the_unsleeping_deep_corruption_aoe_AuraScript);
+
+        void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        {
+            Unit* owner = GetUnitOwner();
+            if (owner)
+            if (owner->HasAura(SPELL_DEEP_CORRUPTION_AURA))
+                owner->RemoveAura(SPELL_DEEP_CORRUPTION_AURA);
+        }
+
+        void Register() override
+        {
+            AfterEffectRemove += AuraEffectRemoveFn(spell_yorsahj_the_unsleeping_deep_corruption_aoe_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PROC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const override
+    {
+        return new spell_yorsahj_the_unsleeping_deep_corruption_aoe_AuraScript();
+    }
 };
 
 typedef boss_yorsahj_the_unsleeping::boss_yorsahj_the_unsleepingAI YorsahjAI;
@@ -916,7 +1039,7 @@ class achievement_taste_the_rainbow : public AchievementCriteriaScript
     public:
         achievement_taste_the_rainbow(char const* scriptName, uint32 Id) : AchievementCriteriaScript(scriptName), _Id(Id) { }
 
-        bool OnCheck(Player* source, Unit* target)
+        bool OnCheck(Player* /*source*/, Unit* target) override
         {
             if (!target)
                 return false;
@@ -939,7 +1062,9 @@ void AddSC_boss_yorsahj_the_unsleeping()
     new npc_yorsahj_the_unsleeping_mana_void();
     new spell_yorsahj_the_unsleeping_deep_corruption();
     new spell_yorsahj_the_unsleeping_digestive_acid_aoe();
+    new spell_yorsahj_the_unsleeping_digestive_acid_dmg();
     new spell_yorsahj_the_unsleeping_mana_void();
+    new spell_yorsahj_the_unsleeping_deep_corruption_aoe();
     new achievement_taste_the_rainbow("achievement_taste_the_rainbow_BY", 0);
     new achievement_taste_the_rainbow("achievement_taste_the_rainbow_RG", 1);
     new achievement_taste_the_rainbow("achievement_taste_the_rainbow_BB", 2);

@@ -1,2300 +1,3026 @@
-/*
-* Copyright (C) 2016-20XX JadeCore <https://github.com/cooler-SAI/JadeCore548-patched>
-* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- *
- * Raid: Throne of Thunder.
- * Boss: Horridon.
- *
- * Wowpedia boss history:
- *
- * "The Zandalari brought powerful creatures with them to the Isle of Thunder to use as engines of war. 
- *  Led by the War-God Jalak, the dinomancers of the Zandalari Beast Ward use ancient tribal magics to strengthen the great beasts and command obedience. 
- *  The horns of Horridon, the fabled mount of Jalak himself, can tear through the stone walls of a keep as a blade cuts silk."
- */
-
-#include "ObjectMgr.h"
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "SpellScript.h"
-#include "SpellAuraEffects.h"
-#include "SpellAuras.h"
-#include "MapManager.h"
-#include "Spell.h"
-#include "Vehicle.h"
-#include "Cell.h"
-#include "CellImpl.h"
-#include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
-#include "CreatureTextMgr.h"
-#include "Unit.h"
-#include "Player.h"
-#include "Creature.h"
-#include "InstanceScript.h"
-#include "Map.h"
-#include "VehicleDefines.h"
-#include "SpellInfo.h"
-
 #include "throne_of_thunder.h"
+#include "GridNotifiers.h"
+#include "Vehicle.h"
+#include "GameObjectAI.h"
+#include "SpellAuraDefines.h"
+#include "SpellAuraEffects.h"
 
-enum Yells
+enum eSpells
 {
-    // Boss
+    //===============================================
+    // Horridon
 
-    ANN_FARRAKI_ADDS            = 0, // Farraki forces pour from the Farraki Tribal Door!
-    ANN_GURUBASHI_ADDS,              // Gurubashi forces pour from the Gurubashi Tribal Door!
-    ANN_DRAKKARI_ADDS,               // Drakkari forces pour from the Drakkari Tribal Door!
-    ANN_AMANI_ADDS,                  // Amani forces pour from the Amani Tribal Door!
+    // Triple Puncture
+    SPELL_TRIPLE_PUNCTURE = 136767, // Casted on Main Tank
 
-    // War God Jalak
+    // Double Swipe
+    SPELL_DOUBLE_SWIPE = 136741, // Launch everything
+    SPELL_DOUBLE_SWIPE_FRONT = 136740, // Frontal damages
+    SPELL_DOUBLE_SWIPE_BACK = 136739, // Back damages
 
-    SAY_INTRO_1,                     // Welcome, weaklings, to the rebirth of the Zandalari Empire!
-    SAY_INTRO_2,                     // The tribes have assembled - ye face not one force, but the combined might of all of the troll empire! The hand of Zul will span all the continents of Azeroth once again! An ye lesser races will know pain!
-    SAY_INTRO_3,                     // Now, witness the true might of the Beast Ward. D'akala di'chuka HORRIDON! Kalimaste!
+    // Charge
+    SPELL_CHARGE = 136769,
 
-    SAY_FARRAKI,                     // Farraki tribe, flay their flesh wit the fury of the sands!
-    SAY_GURUBASHI,                   // Gurubashi tribe, send their bloated corpses down the river with ya jungle poisons.
-    SAY_DRAKKARI,                    // Drakkari tribe, show them the might of the frozen North!
-    SAY_AMANI,                       // Amani tribe, avenge ye fallen warlords, in the name of Zul'jin!
+    // Dire Call
+    SPELL_DIRE_CALL = 137458, // Launch everything
+    SPELL_SUMMON_DIREHORN_SPIRIT_SELECTOR = 140947,
+    SPELL_SUMMON_DIREHORN_SPIRIT = 140945,
 
-    SAY_AGGRO,                       // Hahaha! Now it be my turn! Ye gonna see what it means to be a War-God!
-    SAY_KILL,                        // Ya skull gonna make a fine ornament for my tusks.
-    SAY_DEATH                        // Da'kala koraste...Horridon...destroy them...
-};
+    // After a charge at a door
+    SPELL_HEADACHE = 137294,
+    SPELL_CRACKED_SHELL = 137240,
 
-enum Spells
-{
-    /*** Boss ***/
+    // Enrage
+    SPELL_RAMPAGE = 136821,
 
-    SPELL_TRIPLE_PUNCTURE       = 136767, // On tank, 370000 to 430000 Physical damage and increases the damage taken from Triple Puncture by 10% for 1.50 min. Stacks.
-    SPELL_DOUBLE_SWIPE          = 136741, // Both swipe spells trigger 136739 / 136740. 277500 to 322500 Physical damage in front and back of caster in a 35y cone.
-    SPELL_HORRIDON_CHARGE       = 136769, // Horridon charges at a random player, performing a Double Swipe once he reaches their location.
-    SPELL_HORRIDON_CHARGE_TRIG  = 146740, // Charge to Object spell. Custom.
-    SPELL_DOUBLE_SWIPE_CHARGE   = 136770, // This one is triggered by Charge.
-    SPELL_DIRE_CALL             = 137458, // Increase ally melee speed 50% (eff 0), 250000 Physical damage to all raid (eff 1), summon direhorn spirit dummy (effect 2) - 140947. HEROIC only.
-    SPELL_HEADACHE              = 137294, // 10 second stun after crashing in door by Orb of Control usage. Triggers SPELL_CRACKED_SHELL.
-
-    SPELL_BERSERK               = 144369, // Berserk, Enrage, Bye - Bye or, simply put, a wipe. :)
-
-    // Unused boss spells:
-    // SPELL_CRACKED_SHELL         = 137240, // Door slam 50% increase damage debuff.
-    // SPELL_SUMMON_DIREHORN_SPIR  = 140945, // Triggered from 140947 spell on SPELL_DIRE_CALL effect 2. Done by DB (insert into spell_linked_spell values (140947, 140945, 0, 'summon Direhorn Spirit');).
-
-    // Direhorn Spirit - Heroic
-    SPELL_DIRE_FIXATION         = 140946, // Pet control Fixate aura (like Jin'rokh's Focused Lightning).
-    SPELL_WEAK_LINK             = 140948, // Mob aura, knockback on damage taken.
-
-    /*** Farraki tribe ***/
-
-    // Sul'lithuz Stonegazer
-    SPELL_STONE_GAZE            = 136708, // 10 second stun.
-
-    // Farraki Skirmisher - melee only.
-
-    // Farraki Wastewalker
-    SPELL_BLAZING_SUNLIGHT      = 136719, // Damage + periodic.
-
-    // Sand Trap (summoned by Farraki Wastewalker)
-    SPELL_SAND_TRAP             = 136724, // Periodic aura, visual included. Does not move. Grows.
-
-    /*** Gurubashi tribe ***/
-
-    // Gurubashi Bloodlord
-    SPELL_RENDING_CHARGE        = 136654,
-    SPELL_RENDING_CHARGE_DOT    = 136654, // 40k / sec for 15 seconds. Stacks.
-
-    // Gurubashi Venom Priest
-    SPELL_VENOM_BOLT_VOLLEY     = 136587, // Damage + periodic.
-
-    // Venomous Effusion (summoned by Venom Priest) - uses also SPELL_VENOM_BOLT_VOLLEY.
-
-    // Living Poison (summoned by Venomous Effusion)
-    SPELL_LIVING_POISON         = 136645, // Periodic aura, visual included. Moves random.
-
-    /*** Drakkari tribe ***/
-
-    // Risen Drakkari Warrior
-    SPELL_UNCONTROLLED_ABOM     = 136709, // Attacks random targets and stacks Deadly Plague on them for 15k / sec dmg.
-
-    // Risen Drakkari Champion - uses also SPELL_UNCONTROLLED_ABOM.
-
-    // Drakkari Frozen Warlord
-    SPELL_MORTAL_STRIKE_W       = 136670, // 200% weapon damage and 50% heal decrease for 8 secs.
-
-    // Frozen Orb (summoned by Drakkari Frozen Warlord)
-    SPELL_FROZEN_BOLT           = 136572, // periodic aura, visual included.
-
-    /*** Amani tribe ***/
-
-    // Amani'shi Protector - melee only.
-
-    // Amani'shi Flame Caster
-    SPELL_FIREBALL_FC           = 136465, // 92500 - 107500 damage.
-
-    // Amani Warbear
-    SPELL_WARBEAR_SWIPE         = 136463, // 92500 - 107500 damage 5y cone.
-
-    // Amani'shi Beast Shaman
-    SPELL_CHAIN_LIGHTNING       = 136480, // 74000 - 86000 damage, 3 target jumps.
-    SPELL_HEX_OF_CONFUSION      = 136512, // Aura, triggers 136513 (60% chance) on ability use, inflicting self damage of 46250 to 53750.
-    SPELL_LIGHTNING_NOVA_TOTEM  = 136487, // Summons NPC_LIGHTNING_NOVA_TOTEM.
-
-    // Lightning Nova Totem (summoned by Amani'shi Beast Shaman)
-    SPELL_LIGHTNING_NOVA        = 136489, // periodic aura, visual included.
-
-    /*** Zandalari Dinomancer ("mini bosses" which signal the end of each triber phase) ***/
-
-    SPELL_DINO_MENDING          = 136797, // Heals 1% of Horridon's health each sec. Cast continously till 50%. Interruptible.
-    SPELL_DINO_FORM             = 137237, // Transform, increase damage by 50%, stops healing boss.
-
-    /*** War-God Jalak ***/
-    SPELL_BESTIAL_CRY           = 136817, // 100k raid dmg + 50% increase. Stacks.
-    SPELL_RAMPAGE               = 136821, // On Horridon, when he dies.
-
-    /*** Orb of Control ***/
-    SPELL_ORB_OF_CONTROL_FARRAK = 137433, // These 4 correspond to the GO's.
-    SPELL_ORB_OF_CONTROL_GURUB  = 137442,
-    SPELL_ORB_OF_CONTROL_DRAKK  = 137443,
-    SPELL_ORB_OF_CONTROL_AMANI  = 137444
-};
-
-enum Events
-{
-    // Boss
-
-    EVENT_TRIPLE_PUNCTURE        = 1, // 10 secs from combat start, 11 seconds after that.
-    EVENT_DOUBLE_SWIPE           = 2, // 16 - 17 secs from combat start, 17 seconds after that
-    EVENT_HORRIDON_CHARGE        = 3, // 31 - 35 secs from combat start, 50 - 60 seconds after that.
-    EVENT_DOUBLE_SWIPE_CHARGE    = 4,
-    EVENT_DIRE_CALL              = 5, // HEROIC only. Every 62 - 70 seconds.
-
-    // Taken from lua: "So it goes, door, 18.91 seconds later, 1 add jumps down. 18.91 seconds later, next 2 drop down. 18.91 seconds later, dinomancer drops down, then 56.75 seconds later, next door starts.".
-    // "When the Zandalari Dinomancer transforms (at 50%), it drops its Orb of Control. A player can interact with the orb to temporarily dominate Horridon's mind, forcing the beast to charge into a tribal door."
-
-    EVENT_CALL_ADDS              = 6, // 18.9 secs from combat start, and afterwards. Open add door.
-    EVENT_CALL_NEW_ADDS          = 7, // Mostly 2.4 seconds after new door opens, so 113.5 seconds after that.
-    EVENT_CALL_JALAK             = 8, // Jalak jumps in arena and engages, 143 seconds after all 4 add doors opened and closed.
-
-    EVENT_BROKE_DOOR             = 9, // Charged door.
-
-    EVENT_BERSERK                = 10, // 12 minutes into the fight.
-
-    // Adds
-
-    EVENT_STONE_GAZE             = 11,
-    EVENT_BLAZING_SUNLIGHT       = 12,
-    EVENT_SAND_TRAP              = 13,
-
-    EVENT_RENDING_CHARGE         = 14,
-    EVENT_VENOM_BOLT_VOLLEY      = 15,
-    EVENT_EFFUSION_AND_POISON    = 16,
-
-    EVENT_MORTAL_STRIKE_W        = 17,
-    EVENT_FROZEN_ORB             = 18,
-
-    EVENT_FIREBALL               = 19,
-    EVENT_SWIPE                  = 20,
-    EVENT_CHAIN_LIGHTNING        = 21,
-    EVENT_HEX_OF_CONFUSION       = 22,
-    EVENT_LIGHTNING_NOVA_TOTEM   = 23,
-
-    EVENT_DINO_MENDING           = 24,
-
-    EVENT_INTRO_1                = 25,
-    EVENT_INTRO_2                = 26,
-    EVENT_INTRO_3                = 27,
-
-    EVENT_HORRIDON_MOVE          = 28,
-    EVENT_HORRIDON_ENGAGE        = 29,
-
-    EVENT_JALAK_JUMP             = 30,
-    EVENT_ENGAGE                 = 31,
-    EVENT_BESTIAL_CRY            = 32,
-    EVENT_RAMPAGE                = 33,
-};
-
-enum Timers
-{
-    // Boss
-
-    TIMER_TRIPLE_PUNCTURE_F     = 10000,
-    TIMER_TRIPLE_PUNCTURE_S     = 11000,
-
-    TIMER_DOUBLE_SWIPE_F        = 17000,
-    TIMER_DOUBLE_SWIPE_S        = 17000,
-
-    TIMER_CHARGE_F              = 33000,
-    TIMER_CHARGE_S              = 55000,
-    TIMER_DOUBLE_SWIPE_CHARGE   = 6000,
-
-    TIMER_DIRE_CALL             = 66000, // HEROIC only.
-
-    TIMER_CALL_ADDS             = 18900,
-    TIMER_CALL_NEW_ADDS_F       = 115800,
-    TIMER_CALL_NEW_ADDS_S       = 113500,
-
-    TIMER_CALL_JALAK            = 143000,
-
-    TIMER_BROKE_DOOR            = 3000,
-
-    TIMER_BERSERK               = 720000, // 12 minutes.
-
+    //===============================================
     // Farraki
+    SPELL_STONE_GAZE = 136708, // Stonegazer
+    SPELL_BLAZING_SUNLIGHT = 136719, // Wastewalker
+    SPELL_SUMMON_SAND_TRAP = 136725, // Wastewalker
 
-    TIMER_STONE_GAZE_F          = 7000,
-    TIMER_STONE_GAZE_S          = 16000,
-
-    TIMER_BLAZING_SUNLIGHT_F    = 8000,
-    TIMER_BLAZING_SUNLIGHT_S    = 17000,
-
-    TIMER_SAND_TRAP             = 14000,
-
+    //===============================================
     // Gurubashi
+    SPELL_RENDING_CHARGE = 136653, // Bloodlord
+    SPELL_RENDING_CHARGE_DAMAGES = 136654, // Bloodlord 
+    SPELL_VENOM_BOLT_VOLLEY = 136587, // Venom Priest
+    SPELL_SUMMON_VENOMOUS_EFFUSION = 136644, // Venom Priest
 
-    TIMER_RENDING_CHARGE_F      = 5000,
-    TIMER_RENDING_CHARGE_S      = 18000,
-
-    TIMER_VENOM_BOLT_VOLLEY_F   = 16000,
-    TIMER_VENOM_BOLT_VOLLEY_S   = 67000,
-    TIMER_VENOM_BOLT_VOLLEY_I   = 6000,
-
-    TIMER_EFFUSION_POISON_F     = 8000,
-    TIMER_EFFUSION_POISON_S     = 29000,
-
+    //===============================================
     // Drakkari
+    SPELL_UNCONTROLLED_ABOMINATION = 136709, // Risen Drakkari Champion / Warrior
+    SPELL_DEADLY_PLAGUE = 136710, // Risen Drakkari Champion / Warrior 
+    SPELL_MORTAL_STRIKE = 136670, // Frozen Warlord
+    SPELL_SUMMON_FROZEN_ORB = 136564, // Frozen Warlord
 
-    TIMER_MORTAL_STRIKE_W_F     = 9000,
-    TIMER_MORTAL_STRIKE_W_S     = 1300,
-
-    TIMER_FROZEN_ORB            = 19000,
-
+    //===============================================
     // Amani
+    SPELL_FIREBALL = 136465, // Flame Caster
+    SPELL_SWIPE = 136463, // Warbear
+    SPELL_CHAIN_LIGHTNING = 136480, // Beast Shaman
+    SPELL_HEX_OF_CONFUSION = 136512, // 
+    SPELL_SUMMON_LIGHTNING_NOVA_TOTEM = 136487, // 
 
-    TIMER_FIREBALL              = 6000,
+    //===============================================
+    // Zandalari
+    SPELL_DINO_MENDING = 136797, // Dinomancer
+    SPELL_DINO_FORM = 137237, // 
+    SPELL_SUMMON_ORB_OF_CONTROL_FARRAKI = 137445, // 
+    SPELL_SUMMON_ORB_OF_CONTROL_GURUBASHI = 137447, // 
+    SPELL_SUMMON_ORB_OF_CONTROL_DRAKKARI = 137448, // 
+    SPELL_SUMMON_ORB_OF_CONTROL_AMANI = 137449, // 
 
-    TIMER_SWIPE                 = 9000,
+    //===============================================
+    // Summons
+    SPELL_DIRE_FIXATION = 140946, // Dire Horn Spirit
+    SPELL_WEAK_LINK = 140948, // Dire Horn Spirit
+    SPELL_SAND_TRAP_PERIODIC = 136724,
+    SPELL_SAND_TRAP = 136723, // SpellScript needed (radius)
+    SPELL_SUMMON_LIVING_POISON = 136644, // Three times ?
+    SPELL_LIVING_POISON_PERIODIC = 136645,
+    SPELL_LIVING_POISON = 136646,
+    SPELL_FROZEN_BOLT_PERIODIC = 136572,
+    SPELL_FROZEN_BOLT = 136573, // Frozen Orb
+    SPELL_LIGHTNING_NOVA_PERIODIC = 136489, // Lightning Nova Totem
+    SPELL_LIGHTNING_NOVA = 136490,
 
-    TIMER_CHAIN_LIGHTNING       = 14000,
-    TIMER_HEX_OF_CONFUSION_F    = 6000,
-    TIMER_HEX_OF_CONFUSION_S    = 29000,
-    TIMER_LIGHTNING_NOVA_TOTEM  = 24000,
+    //===============================================
+    // Jalak
+    SPELL_BESTIAL_CRY = 136817,
 
-    // Zandalari Dinomancer
-    TIMER_DINO_MENDING_F        = 6000,
-    TIMER_DINO_MENDING_S        = 31000,
-    TIMER_DINO_MENDING_I        = 3000,
-
-    // War-God Jalak
-
-    TIMER_INTRO_1               = 2000,
-    TIMER_INTRO_2               = 7000,
-    TIMER_INTRO_3               = 19000,
-
-    TIMER_HORRIDON_MOVE         = 2000,
-    TIMER_HORRIDON_ENGAGE       = 7000,
-
-    TIMER_JUMP                  = 1000,
-    TIMER_ENGAGE                = 5000,
-
-    TIMER_BESTIAL_CRY_F         = 5000,
-    TIMER_BESTIAL_CRY_S         = 10000
+    //===============================================
+    // Orb of Control
+    SPELL_CONTROL_HORRIDON_FARRAKI = 137433,
+    SPELL_CONTROL_HORRIDON_GURUBASHI = 137442,
+    SPELL_CONTROL_HORRIDON_DRAKKARI = 137443,
+    SPELL_CONTROL_HORRIDON_AMANI = 137444,
 };
 
-enum Actions
+enum eEvents
 {
-    // Boss
-    ACTION_CRASH_DOOR           = 1, // On Orb of Control usage.
+    //===============================================
+    // Horridon
+    EVENT_TRIPLE_PUNCTURE = 1,
+    EVENT_DOUBLE_SWIPE = 2,
+    EVENT_HORRIDON_CHARGE = 3, // 
+    EVENT_DIRE_CALL = 4,
+    EVENT_PREPARE_CHARGE = 5, // Pseudo hack
+    EVENT_CHARGE_AT_DOOR = 6,
+    EVENT_BERSERK = 34,
+    EVENT_EVADE_CHECK = 35,
 
-    // Gurubashi Venom Priest
-    ACTION_VENOM_VOLLEY_REMOVED,
-
-    // Zandalari Dinomancer
-    ACTION_MENDING_REMOVED,
-
-    // War-God Jalak
-    ACTION_START_INTRO,              // Start boss intro.
-    ACTION_JUMP_AND_ENGAGE           // After all 4 tribes defeated (last boss phase).
-};
-
-enum Phases
-{
-    PHASE_NONE                  = 0,
-
-    PHASE_FARRAKI               = 1,
-    PHASE_GURUBASHI             = 2,
-    PHASE_DRAKKARI              = 3,
-    PHASE_AMANI                 = 4,
-    PHASE_JALAK                 = 5,
-};
-
-enum Npcs
-{
-    // Boss
-    NPC_DIREHORN_SPIRIT          = 70688, // Heroic
-
-    // Adds
-
+    //===============================================
     // Farraki
-    NPC_SUL_LITHUZ_STONEGAZER    = 69172,
-    NPC_FARRAKI_SKIRMISHER       = 69173,
-    NPC_FARRAKI_WASTEWALKER      = 69175,
-    NPC_SAND_TRAP                = 69346,
+    EVENT_STONE_GAZE = 7,
+    EVENT_BLAZING_LIGHT = 8,
+    EVENT_SUMMON_SAND_TRAP = 9,
 
+    //===============================================
     // Gurubashi
-    NPC_GURUBASHI_BLOODLORD      = 69167,
-    NPC_GURUBASHI_VENOM_PRIEST   = 69164,
-    NPC_VENOMOUS_EFFUSION_HORR   = 69314,
-    NPC_LIVING_POISON            = 69313,
+    EVENT_RENDING_CHARGE = 10,
+    EVENT_GURUBASHI_VENOM_BOLT_VOLLEY = 11,
+    EVENT_SUMMON_VENOMOUS_EFFUSION = 12,
 
+    //===============================================
     // Drakkari
-    NPC_RISEN_DRAKKARI_WARRIOR   = 69184,
-    NPC_RISEN_DRAKKARI_CHAMPION  = 69185,
-    NPC_DRAKKARI_FROZEN_WARLORD  = 69178,
-    NPC_FROZEN_ORB_HORR          = 69268,
+    EVENT_SWITCH_TARGET = 13, // Risen Drakkari doesn't have a real threat list
+    EVENT_MORTAL_STRIKE = 14,
+    EVENT_SUMMON_FROZEN_ORB = 15,
 
+    //===============================================
     // Amani
-    NPC_AMANI_SHI_PROTECTOR      = 69169,
-    NPC_AMANI_SHI_FLAME_CASTER   = 69168,
-    NPC_AMANI_WARBEAR            = 69177,
-    NPC_AMANI_SHI_BEAST_SHAMAN   = 69176,
-    NPC_LIGHTNING_NOVA_TOTEM     = 69215,
+    EVENT_FIREBALL = 16,
+    EVENT_SWIPE = 17,
+    EVENT_CHAIN_LIGHTNING = 18,
+    EVENT_HEX_OF_CONFUSION = 19,
+    EVENT_SUMMON_LIGHTNING_NOVA_TOTEM = 20,
 
-    // Zandalari Dinomancer
-    NPC_ZANDALARI_DINOMANCER     = 69221,
+    //===============================================
+    // Zandalari
+    EVENT_DINO_MENDING = 21,
 
-    // War-God Jalak
-    NPC_WAR_GOD_JALAK            = 69374
+    //===============================================
+    // Summons
+    EVENT_EFFUSION_VENOM_BOLT_VOLLEY = 22,
+
+    //===============================================
+    // Jalak
+    EVENT_BESTIAL_CRY = 23,
+
+    //===============================================
+    // Helper
+    EVENT_SUMMON_MINOR = 24, // 
+    EVENT_SUMMON_MAJOR = 25, // 
+    EVENT_SUMMON_ZANDALARI_DINOMANCER = 26, // 
+    EVENT_SUMMON_MINOR_DRAKKARI = 27, // 
+    EVENT_TRANSITION = 28, // 
+
+    //===============================================
+    // RP Event Helper
+    EVENT_CHECK_PLAYERS = 29, // Every 500 ms to not flood the world
+    EVENT_INTRO_PART_I = 30, // Jalak begins it's speech... 
+    EVENT_INTRO_PART_II = 31, // Continues
+    EVENT_INTRO_PART_III = 32, // Horridon breaks free and go and kill every... oh wait... that's not the time
+    EVENT_INTRO_PART_IV = 33, // Now Horridon breaks free 
+
+    //===============================================
+    // Direhorn
+    EVENT_TARGET_A_RANDOM_PLAYER,
+    EVENT_DAMAGE_IF_NEARBY,
+    EVENT_RETURN_TO_COMBAT,
+    EVENT_CALL_JALAK,
+    EVENT_DOUBLE_SWIPE_ACTION,
 };
 
-enum GameObjects
+enum eCreatures
 {
-    GO_ORB_OF_CONTROL_FARRAKI    = 218193, // Used to get Horridon to crash into the Farraki gate.
-    GO_ORB_OF_CONTROL_GURUBASHI  = 218374, // Used to get Horridon to crash into the Gurubashi gate.
-    GO_ORB_OF_CONTROL_DRAKKARI   = 218375, // Used to get Horridon to crash into the Drakkari gate.
-    GO_ORB_OF_CONTROL_AMANI      = 218376, // Used to get Horridon to crash into the Amani gate.
+    //===============================================
+    // Farraki
+    MOB_SUL_LITHUZ_STONEGAZER = 69172,
+    MOB_FARRAKI_SKIRMISHER = 69173,
+    MOB_FARRAKI_WASTEWALKER = 69175, // Total of three will be called to action
 
-    GO_FARRAKI_DOOR              = 218672,
-    GO_GURUBASHI_DOOR            = 218670,
-    GO_DRAKKARI_DOOR             = 218671,
-    GO_AMANI_DOOR                = 218673,
-    GO_START_DOOR                = 218674  // Door Horridon breaks during intro.
+    //===============================================
+    // Gurubashi
+    MOB_GURUBASHI_BLOODLORD = 69167,
+    MOB_GURUBASHI_VENOM_PRIEST = 69164, // Total of three will be called to action
+
+    //===============================================
+    // Drakkari
+    MOB_RISEN_DRAKKARI_WARRIOR = 69184,
+    MOB_RISEN_DRAKKARI_CHAMPION = 69185,
+    MOB_DRAKKARI_FROZEN_WARLORD = 69178, // Total of three will be called to action
+
+    //===============================================
+    // Amani
+    MOB_AMANI_SHI_PROTECTOR = 69169,
+    MOB_AMANI_SHI_FLAME_CASTER = 69168,
+    MOB_AMANI_WARBEAR = 69177, // Total of three will be called to action
+    MOB_AMANI_SHI_BEAST_SHAMAN = 69176, // Riding Amani Warbears, attackable once Amani Warbear has fallen
+
+    //===============================================
+    // Zandalari
+    MOB_ZANDALARI_DINOMANCER = 69221, // Jumping periodically during subphases
+
+    //===============================================
+    // Summons
+    MOB_DIREHORN_SPIRIT = 70688, // Only spawn in Heroic
+    MOB_SAND_TRAP = 69346, // Summoned by Farraki Wastewalker
+    MOB_VENOMOUS_EFFUSION = 69314, // Summoned by Gurubashi Venom Priests
+    MOB_LIVING_POISON = 69313, // Created when a Venomous Effusion is created
+    MOB_FROZEN_ORB = 69268, // Summoned by Drakkari Frozen Warlords
+    MOB_LIGHTNING_NOVA_TOTEM = 69215, // Summoned by Amani'Shi Beast Shaman
+
+    //===============================================
+    // Others
 };
 
-Position const chargePlace[4] =
+enum eActions
 {
-    { 5492.223f, 5813.665f, 130.04f }, // Farraki   - North-west.
-    { 5488.879f, 5695.583f, 130.04f }, // Gurubashi - North-east.
-    { 5372.876f, 5694.684f, 130.04f }, // Drakkari  - South-east.
-    { 5373.481f, 5811.625f, 130.04f }, // Amani     - South-west.
+    //===============================================
+    // Controller
+    ACTION_FIGHT_BEGIN = 0,
+    ACTION_FIGHT_RESET = 1,
+    ACTION_ENTER_NEXT_TRASH_PHASE = 2,
+    ACTION_FIGHT_END = 3,
+    ACTION_PREPARE_TRANSITION = 4,
+    ACTION_RESET_AFTER_CRASH = 10,
+
+    //===============================================
+    // Jalak
+    ACTION_ENTER_PHASE_TWO = 5,
+
+    //===============================================
+    // Horridon
+    ACTION_INTRO = 6,
+    ACTION_PREPARE_CHARGE = 7,
+    ACTION_CONTROL_APPLY = 8,
+
+    //===============================================
+    //Living Poison
+    ACTION_LIVING_POISON_DESPAWN = 9,
+    ACTION_DOUBLE_SWIPE = 12,
+    ACTION_FORCE_RESET = 13,
 };
 
-Position const tribesmenSummonPlace[4] =
+
+enum eMotions
 {
-    { 5525.238f, 5850.004f, 131.123f }, // Farraki   - North-west.
-    { 5530.141f, 5658.262f, 130.130f }, // Gurubashi - North-east.
-    { 5337.873f, 5657.117f, 130.122f }, // Drakkari  - South-east.
-    { 5336.561f, 5845.739f, 130.117f }, // Amani     - South-west.
+    //===============================================
+    // Majors
+    MOTION_MAJOR_JUMP = 6845,
+
+    //===============================================
+    // Zandalari Dinomancers
+    MOTION_DINOMANCER_JUMP = 7849,
+
+    //===============================================
+    // Horridon
+    MOTION_HORRIDON_CHARGE = 4551,
+    MOTION_HORRIDON_DOOR_CHARGE = 3205,
+
 };
 
-Position const jalakIntroPos        = { 5432.82f, 5671.34f, 192.323f }; // Jalak summon position.
-Position const midPos               = { 5434.05f, 5752.63f, 129.689f }; // Mid arena position Horridon moves to during intro.
 
-float addOrientations[5] =
+enum eTalks : uint32
 {
-    3.94f,  // Farraki   - North-west.
-    2.41f,  // Gurubashi - North-east.
-    0.85f,  // Drakkari  - South-east.
-    5.54f,  // Amani     - South-west.
-    1.53f   // Jalak     - Intro.
+    TALK_INTRO_FIRST = 0, // Welcome weaklings
+    TALK_INTRO_SECOND = 1, // The tribes have assembled
+    TALK_INTRO_THIRD = 2, // Now, witness the true might
+    TALK_ENTER_PHASE_2 = 3, // Hahaha, now it be my turn
+    TALK_DRAKKARI = 4, // Drakkari tribe
+    TALK_GURUBASHI = 5,
+    TALK_FARRAKI = 6,
+    TALK_AMANI = 7,
+    TALK_ON_JALAK_KILLED_UNIT = 8, // Ya skull
+    TALK_ON_HORRIDON_KILLED_UNIT = 9, // Da'kala koraste
+
+    EMOTE_FARRAKI = 0,
+    EMOTE_GURUBASHI = 1,
+    EMOTE_DRAKKARI = 2,
+    EMOTE_AMANI = 3,
+    EMOTE_CHARGE = 4,
+    EMOTE_FARAKKI_DOOR = 5,
+    EMOTE_GURUBASHI_DOOR = 6,
+    EMOTE_DRAKKARI_DOOR = 7,
+    EMOTE_AMANI_DOOR = 8,
 };
 
-#define MAX_TRIBAL_DOORS 4
+enum eGameObjects
+{
+    //===============================================
+    // Orbs of Control
+    GOB_ORB_OF_CONTROL_FARRAKI = 218193,
+    GOB_ORB_OF_CONTROL_GURUBASHI = 218374,
+    GOB_ORB_OF_CONTROL_DRAKKARI = 218375,
+    GOB_ORB_OF_CONTROL_AMANI = 218376,
 
+    //===============================================
+    // Others
+    GOB_HORRIDON_PRISON_DOOR = 218674,
+};
+
+enum eDatas : uint32
+{
+    DATA_AMANI_BEAST_SHAMAN_LIGHTNING_COUNT = 0, // To know how many time we stroke
+};
+
+
+enum eBossPhases : uint32
+{
+    BOSS_PHASE_SUMMONS = 0,
+    BOSS_PHASE_JALAK = 1
+};
+#define MAX_BOSS_PHASE BOSS_PHASE_JALAK + 1
+
+enum eTrashPhases : uint32
+{
+    TRASH_PHASE_FARRAKI = 0,
+    TRASH_PHASE_GURUBASHI = 1,
+    TRASH_PHASE_DRAKKARI = 2,
+    TRASH_PHASE_AMANI = 3,
+
+    MAX_TRASH_PHASE = TRASH_PHASE_AMANI + 1,
+};
+
+
+enum eMajorsCycle
+{
+    MAJOR_CYCLE_FIRST = 0,
+    MAJOR_CYCLE_SECOND = 1,
+
+    MAX_MAJOR_CYCLE = 2,
+};
+
+
+enum eDrakkariCycle
+{
+    DRAKKARI_CYCLE_FIRST = 0,
+    DRAKKARI_CYCLE_SECOND = 1,
+
+    MAX_DRAKKARI_CYCLE = 2,
+};
+
+//=========================================================
+// Positions
+
+#define MAX_SUMMON_POSITIONS_BY_PHASE   3
+#define MAX_JUMP_POSITIONS_BY_PHASE     3
+
+// Major trashes jump positions
+static const Position farrakiWastewalkerJumpPositions[MAX_JUMP_POSITIONS_BY_PHASE] =
+{
+    { 5467.25f, 5816.40f, 129.9f, 4.08f },
+    { 5483.03f, 5790.85f, 129.9f, 3.16f },
+    { 5468.46f, 5797.77f, 129.9f, 3.94f },
+};
+
+static const Position gurubashiVenomPriestJumpPositions[MAX_JUMP_POSITIONS_BY_PHASE] =
+{
+    { 5501.31f, 5709.33f, 129.9f, 2.12f },
+    { 5474.69f, 5712.25f, 129.9f, 2.58f },
+    { 5459.25f, 5694.25f, 129.9f, 1.09f },
+};
+
+static const Position drakkariFrozenWarlordJumpPositions[MAX_JUMP_POSITIONS_BY_PHASE] =
+{
+    { 5400.35f, 5693.92f, 129.9f, 0.72f },
+    { 5392.05f, 5711.79f, 129.9f, 0.91f },
+    { 5371.40f, 5728.19f, 129.9f, 0.60f },
+};
+
+static const Position amaniWarbearJumpPositions[MAX_JUMP_POSITIONS_BY_PHASE] =
+{
+    { 5363.80f, 5787.88f, 129.90f, 5.38f },
+    { 5385.03f, 5793.05f, 129.90f, 5.62f },
+    { 5397.14f, 5811.65f, 129.90f, 5.16f },
+};
+
+
+// Summoning of minor and medium trashes positions
+static const Position farrakiTrashSummonPositions[MAX_SUMMON_POSITIONS_BY_PHASE] =
+{
+    { 5505.863281f, 5841.025391f, 130.537231f, 0.000000f },
+    { 5514.541992f, 5841.049316f, 130.537231f, 0.000000f },
+    { 5513.420898f, 5827.835938f, 130.537231f, 0.000000f },
+};
+
+static const Position gurubashiTrashSummonPositions[MAX_SUMMON_POSITIONS_BY_PHASE] =
+{
+    { 5520.958008f, 5675.670898f, 130.537231f, 0.000000f },
+    { 5519.500000f, 5667.600098f, 130.537231f, 0.000000f },
+    { 5509.516113f, 5668.375000f, 130.537231f, 0.000000f },
+};
+
+static const Position drakkariTrashSummonPositions[MAX_SUMMON_POSITIONS_BY_PHASE] =
+{
+    { 5358.775391f, 5662.011719f, 130.537231f, 0.000000f },
+    { 5346.132324f, 5668.255859f, 130.537231f, 0.000000f },
+    { 5346.598633f, 5677.144043f, 130.537231f, 0.000000f },
+};
+
+static const Position amaniTrashSummonPositions[MAX_SUMMON_POSITIONS_BY_PHASE] =
+{
+    { 5346.283203f, 5824.987305f, 130.537231f, 0.000000f },
+    { 5348.529785f, 5839.762207f, 130.537231f, 0.000000f },
+    { 5360.542969f, 5844.966309f, 130.537231f, 0.000000f },
+};
+
+
+// Jump positions for Zandalari Dinomancers
+static const Position zandalariDinomancersJumpPositions[MAX_TRASH_PHASE][MAX_JUMP_POSITIONS_BY_PHASE] =
+{
+    {
+        { 5467.25f, 5816.40f, 129.9f, 4.08f },
+        { 5483.03f, 5790.85f, 129.9f, 3.16f },
+        { 5468.46f, 5797.77f, 129.9f, 3.94f },
+    },
+    {
+        { 5501.31f, 5709.33f, 129.9f, 2.12f },
+        { 5474.69f, 5712.25f, 129.9f, 2.58f },
+        { 5459.25f, 5694.25f, 129.9f, 1.09f },
+    },
+    {
+        { 5400.35f, 5693.92f, 129.9f, 0.72f },
+        { 5392.05f, 5711.79f, 129.9f, 0.91f },
+        { 5371.40f, 5728.19f, 129.9f, 0.60f },
+    },
+    {
+        { 5363.80f, 5787.88f, 129.90f, 5.38f },
+        { 5385.03f, 5793.05f, 129.90f, 5.62f },
+        { 5397.14f, 5811.65f, 129.90f, 5.16f },
+    }
+};
+
+// Summoning positions for Zandalari Dinomancers
+static const Position zandalariDinomancersSummonPositions[] =
+{
+    { 5326.83f, 5787.72f, 169.237f, 6.10253f },
+    { 5536.14f, 5721.06f, 169.238f, 2.95279f },
+    { 5325.51f, 5720.81f, 169.237f, 0.32948f },
+    { 5418.50f, 5666.55f, 192.349f, 1.45472f },
+    { 5447.01f, 5667.53f, 192.352f, 1.64919f },
+    { 5340.08f, 5648.40f, 190.758f, 0.87616f },
+    { 5521.05f, 5649.76f, 190.653f, 2.39193f },
+    { 5537.03f, 5784.27f, 169.238f, 3.67703f },
+    { 5534.14f, 5838.86f, 190.416f, 3.98585f },
+    { 5377.32f, 5884.95f, 190.356f, 5.23621f },
+};
+
+// Relocation of Horridon's Home Position
+static const Position middlePosition = { 5431.621094f, 5763.865723f, 129.606461f, 1.57860f };
+
+static uint32 GetNewEmoteBySpell(uint32 spellId)
+{
+    switch (spellId)
+    {
+    case SPELL_CONTROL_HORRIDON_FARRAKI:
+        return EMOTE_FARAKKI_DOOR;
+    case SPELL_CONTROL_HORRIDON_GURUBASHI:
+        return EMOTE_GURUBASHI_DOOR;
+    case SPELL_CONTROL_HORRIDON_DRAKKARI:
+        return EMOTE_DRAKKARI_DOOR;
+    case SPELL_CONTROL_HORRIDON_AMANI:
+        return EMOTE_AMANI_DOOR;
+    }
+    return 0;
+}
+
+static uint32 GetSummoningOrbSpellByPhase(uint32 phase)
+{
+    switch (phase)
+    {
+    case TRASH_PHASE_FARRAKI:
+        return SPELL_SUMMON_ORB_OF_CONTROL_FARRAKI;
+
+    case TRASH_PHASE_GURUBASHI:
+        return SPELL_SUMMON_ORB_OF_CONTROL_GURUBASHI;
+
+    case TRASH_PHASE_DRAKKARI:
+        return SPELL_SUMMON_ORB_OF_CONTROL_DRAKKARI;
+
+    case TRASH_PHASE_AMANI:
+        return SPELL_SUMMON_ORB_OF_CONTROL_AMANI;
+
+    default:
+        return 0;
+    }
+}
+
+static uint32 GetControlSpellByOrb(GameObject* pOrb)
+{
+    switch (pOrb->GetEntry())
+    {
+    case GOB_ORB_OF_CONTROL_FARRAKI:
+        return SPELL_CONTROL_HORRIDON_FARRAKI;
+
+    case GOB_ORB_OF_CONTROL_GURUBASHI:
+        return SPELL_CONTROL_HORRIDON_GURUBASHI;
+
+    case GOB_ORB_OF_CONTROL_DRAKKARI:
+        return SPELL_CONTROL_HORRIDON_DRAKKARI;
+
+    case GOB_ORB_OF_CONTROL_AMANI:
+        return SPELL_CONTROL_HORRIDON_AMANI;
+
+    default:
+        return 0;
+    }
+}
+
+static uint32 GetControlSpellByPhase(eTrashPhases ePhase)
+{
+    switch (ePhase)
+    {
+    case TRASH_PHASE_FARRAKI:
+        return SPELL_CONTROL_HORRIDON_FARRAKI;
+
+    case TRASH_PHASE_GURUBASHI:
+        return SPELL_CONTROL_HORRIDON_GURUBASHI;
+
+    case TRASH_PHASE_DRAKKARI:
+        return SPELL_CONTROL_HORRIDON_DRAKKARI;
+
+    case TRASH_PHASE_AMANI:
+        return SPELL_CONTROL_HORRIDON_AMANI;
+
+    default:
+        return 0;
+    }
+}
+
+static Position GetChargePositionByDoor(GameObject* pDoor)
+{
+    switch (pDoor->GetEntry())
+    {
+    case GOB_TRIBAL_DOOR_FARRAKI:
+        return { 5502.53f, 5826.19f, 130.53f, 0.82f };
+
+    case GOB_TRIBAL_DOOR_GURUBASHI:
+        return { 5501.19f, 5865.15f, 130.53f, 5.39f };
+
+    case GOB_TRIBAL_DOOR_DRAKKARI:
+        return { 5361.72f, 5863.75f, 130.53f, 3.89f };
+
+    case GOB_TRIBAL_DOOR_AMANI:
+        return { 5363.09f, 5823.77f, 130.53f, 2.35f };
+
+    default:
+        return { 0.0f, 0.0f, 0.0f, 0.0f };
+    }
+}
+
+
+// Helper AI
+class npc_horridon_event_helper : public CreatureScript
+{
+public:
+    npc_horridon_event_helper() : CreatureScript("npc_horridon_event_helper") { }
+
+    class npc_horridon_event_helper_AI : public ScriptedAI
+    {
+    public:
+        npc_horridon_event_helper_AI(Creature* pCreature) : ScriptedAI(pCreature), pInstance(pCreature->GetInstanceScript()), summons(me)
+        {
+            events.Reset();
+            jumpers.clear();
+            me->AddUnitState(UNIT_STATE_ROOT);
+            me->SetUnitFlags(UNIT_FLAG_NOT_SELECTABLE);
+            me->SetUnitFlags(UNIT_FLAG_NON_ATTACKABLE);
+
+            uiTrashPhase = MAX_TRASH_PHASE;
+            uiMinorTrashId = 0;
+            memset(&uiMediumTrashId, 0, sizeof(uiMediumTrashId));
+            uiMajorTrashId = 0;
+            uiMajorCycle = MAJOR_CYCLE_FIRST;
+            uiDrakkariCycle = DRAKKARI_CYCLE_FIRST;
+
+            jumpPositions = NULL;
+        }
+
+        Creature* GetHorridon()
+        {
+            return me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true);
+        }
+
+        bool IsWipe()
+        {
+            if (Creature* pHorridon = GetHorridon())
+            {
+                return ((pHorridon->IsInCombat() || pHorridon->GetVictim()) && pHorridon->getThreatManager().isThreatListEmpty());
+            }
+
+            return true;
+        }
+
+        void DoAction(int32 iAction) override
+        {
+            switch (iAction)
+            {
+            case ACTION_FIGHT_BEGIN:
+                FightBegin();
+                break;
+
+            case ACTION_ENTER_NEXT_TRASH_PHASE:
+                EnterNextPhase();
+                break;
+
+            case ACTION_FIGHT_RESET:
+                summons.DespawnAll();
+                FightReset();
+                break;
+
+            case ACTION_FIGHT_END:
+                summons.DespawnAll();
+                FightEnd();
+                break;
+
+            case ACTION_PREPARE_TRANSITION:
+                PrepareTransition();
+                break;
+
+            case ACTION_RESET_AFTER_CRASH:
+                ResetRequiredCreatures();
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        void ForceHorridonToEvade();
+
+        void ResetRequiredCreatures()
+        {
+            std::list<Creature*> resets;
+            GetCreatureListWithEntryInGrid(resets, me, MOB_DRAKKARI_FROZEN_WARLORD, 1000.f);
+            GetCreatureListWithEntryInGrid(resets, me, MOB_GURUBASHI_VENOM_PRIEST, 1000.f);
+            GetCreatureListWithEntryInGrid(resets, me, MOB_FARRAKI_WASTEWALKER, 1000.f);
+            GetCreatureListWithEntryInGrid(resets, me, MOB_AMANI_WARBEAR, 1000.f);
+            GetCreatureListWithEntryInGrid(resets, me, MOB_ZANDALARI_DINOMANCER, 1000.f);
+
+            for (Creature* pCreature : resets)
+            {
+                if (!pCreature->IsAlive())
+                    pCreature->Respawn();
+            }
+        }
+
+        uint8 MaxSummonsByPhase()
+        {
+            switch (uiTrashPhase)
+            {
+            case TRASH_PHASE_FARRAKI:
+            case TRASH_PHASE_DRAKKARI:
+                return 3;
+            case TRASH_PHASE_GURUBASHI:
+            case TRASH_PHASE_AMANI:
+                return 2;
+            }
+
+            return 3;
+        }
+
+        bool CheckFlyingHacks()
+        {
+            Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
+            for (Map::PlayerList::const_iterator i = playerList.begin(); i != playerList.end(); ++i)
+                if (Player* player = i->GetSource())
+                {
+                    if (player->IsAlive())
+                    {
+                        if (player->IsFlying() && !player->IsGameMaster())
+                        {
+                            player->Kill(player, true);
+                            player->GetSession()->KickPlayer();
+                        }
+                    }
+                }
+            return true;
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            CheckFlyingHacks();
+
+            if (uiTrashPhase == MAX_TRASH_PHASE)
+                return;
+
+            events.Update(uiDiff);
+
+            // Handle gate timings a bit better at least
+            if (uiNextGateTimer)
+            {
+                if (uiNextGateTimer <= uiDiff)
+                    uiNextGateTimer = 0;
+                else
+                    uiNextGateTimer -= uiDiff;
+            }
+
+            while (uint32 uiEventId = events.ExecuteEvent())
+            {
+                switch (uiEventId)
+                {
+                case EVENT_SUMMON_MINOR:
+                    if (summonPositions)
+                    {
+                        if (!bHasEmotedForGate)
+                        {
+                            if (Creature* pHorridon = GetHorridon())
+                                pHorridon->AI()->Talk(uiTrashPhase);
+
+                            bHasEmotedForGate = true;
+                        }
+
+                        std::list<uint32> entries;
+
+                        if (uiMinorTrashId)
+                            entries.push_back(uiMinorTrashId);
+                        if (uiMediumTrashId[0])
+                            entries.push_back(uiMediumTrashId[0]);
+                        if (uiMediumTrashId[1])
+                            entries.push_back(uiMediumTrashId[1]);
+
+                        if (entries.empty()) // Entries is empty, no need to reschedule event
+                            break;
+
+                        uint8 maxSummonsPerPhase = MaxSummonsByPhase();
+
+                        for (uint8 i = 0; i < maxSummonsPerPhase; ++i)
+                        {
+                            uint32 uiSummonEntry = Trinity::Containers::SelectRandomContainerElement(entries);
+                            me->SummonCreature(uiSummonEntry, summonPositions[urand(0, 2)]);
+                        }
+
+
+                        events.ScheduleEvent(EVENT_SUMMON_MINOR, 19000);
+                    }
+                    break;
+
+                case EVENT_SUMMON_MAJOR:
+                    if (jumpPositions)
+                    {
+                        std::list<Creature*> majors;
+                        GetCreatureListWithEntryInGrid(majors, me, uiMajorTrashId, 1000.0f);
+
+                        majors.remove_if([this](Creature* const pCreature) -> bool
+                            {
+                                return !pCreature->IsAlive();
+                            });
+
+                        if (!majors.empty())
+                        {
+                            if (uiMajorCycle == MAJOR_CYCLE_FIRST)
+                            {
+                                if (Creature* pCreature = Trinity::Containers::SelectRandomContainerElement(majors))
+                                {
+                                    pCreature->GetMotionMaster()->MoveJump(jumpPositions[urand(0, MAX_JUMP_POSITIONS_BY_PHASE - 1)], 20.0f, 42.0f, MOTION_MAJOR_JUMP);
+                                    jumpers.push_back(pCreature);
+                                }
+                            }
+                            else
+                            {
+                                for (Creature* pCreature : majors)
+                                {
+                                    if (!pCreature->IsInCombat())
+                                    {
+                                        pCreature->GetMotionMaster()->MoveJump(jumpPositions[urand(0, MAX_JUMP_POSITIONS_BY_PHASE - 1)], 20.0f, 42.0f, MOTION_MAJOR_JUMP);
+                                        jumpers.push_back(pCreature);
+                                    }
+                                }
+                            }
+                        }
+
+                        ++uiMajorCycle;
+                        events.ScheduleEvent(EVENT_SUMMON_MAJOR, 20 * IN_MILLISECONDS);
+                    }
+                    break;
+
+                case EVENT_SUMMON_ZANDALARI_DINOMANCER:
+                {
+                    Position const summonPosition = zandalariDinomancersSummonPositions[urand(0, 9)];
+                    if (Creature* pDinomancer = me->SummonCreature(MOB_ZANDALARI_DINOMANCER, summonPosition))
+                        pDinomancer->GetMotionMaster()->MoveJump(zandalariDinomancersJumpPositions[uiTrashPhase][urand(0, MAX_SUMMON_POSITIONS_BY_PHASE - 1)], 20.0f, 42.0f, MOTION_DINOMANCER_JUMP);
+                    //TODO: only one dinomancer per phase
+                    //events.CancelEvent(EVENT_SUMMON_ZANDALARI_DINOMANCER);
+                    break;
+                }
+
+                case EVENT_SUMMON_MINOR_DRAKKARI:
+                {
+                    switch (uiDrakkariCycle)
+                    {
+                    case DRAKKARI_CYCLE_FIRST:
+                        uiDrakkariCycle = DRAKKARI_CYCLE_SECOND;
+                        if (summonPositions)
+                        {
+                            me->SummonCreature(MOB_RISEN_DRAKKARI_CHAMPION, summonPositions[urand(0, MAX_SUMMON_POSITIONS_BY_PHASE - 1)]);
+                            me->SummonCreature(MOB_RISEN_DRAKKARI_WARRIOR, summonPositions[urand(0, MAX_SUMMON_POSITIONS_BY_PHASE - 1)]);
+                            events.ScheduleEvent(EVENT_SUMMON_MINOR_DRAKKARI, urand(6, 10) * IN_MILLISECONDS);
+                        }
+                        break;
+
+                    case DRAKKARI_CYCLE_SECOND:
+                        uiDrakkariCycle = DRAKKARI_CYCLE_FIRST;
+                        if (summonPositions)
+                        {
+                            me->SummonCreature(MOB_RISEN_DRAKKARI_CHAMPION, summonPositions[urand(0, MAX_SUMMON_POSITIONS_BY_PHASE - 1)]);
+                            events.ScheduleEvent(EVENT_SUMMON_MINOR_DRAKKARI, urand(8, 15) * IN_MILLISECONDS);
+                        }
+                        break;
+                    }
+
+                    break;
+                }
+
+                case EVENT_TRANSITION:
+                    EnterNextPhase();
+                    break;
+
+                default:
+                    break;
+                }
+            }
+        }
+
+        void JustSummoned(Creature* pSummoned)
+        {
+            summons.Summon(pSummoned);
+        }
+
+        void SummonedCreatureDespawn(Creature* pSummoned)
+        {
+            summons.Despawn(pSummoned);
+        }
+
+        uint32 GetTrashPhase() const
+        {
+            return uiTrashPhase;
+        }
+
+    private:
+        SummonList summons;
+        EventMap                events;
+        InstanceScript* pInstance;
+        Position         summonPositions[3];
+        const Position* jumpPositions;
+        std::list<Creature*>    jumpers;
+        uint32                  uiTrashPhase;
+        uint32                  uiMinorTrashId;
+        uint32                  uiMediumTrashId[2];
+        uint32                  uiMajorTrashId;
+        uint32                  uiMajorCycle;
+        uint32                  uiDrakkariCycle;
+        uint32                  uiNextGateTimer;
+        bool                    bHasEmotedForGate;
+
+        void FightReset()
+        {
+            // Be sure that we have not already reset
+            if (uiTrashPhase == MAX_TRASH_PHASE && summonPositions == NULL && jumpPositions == NULL)
+                return;
+
+            uiNextGateTimer = 0;
+
+            std::list<GameObject*> pOrbs;
+
+            GetGameObjectListWithEntryInGrid(pOrbs, me, GOB_ORB_OF_CONTROL_AMANI, 400.f);
+            GetGameObjectListWithEntryInGrid(pOrbs, me, GOB_ORB_OF_CONTROL_FARRAKI, 400.f);
+            GetGameObjectListWithEntryInGrid(pOrbs, me, GOB_ORB_OF_CONTROL_GURUBASHI, 400.f);
+            GetGameObjectListWithEntryInGrid(pOrbs, me, GOB_ORB_OF_CONTROL_DRAKKARI, 400.f);
+
+            for (GameObject* pOrb : pOrbs)
+                pOrb->AddObjectToRemoveList();
+
+
+            // Respawn dead jumpers
+            for (Creature* pJumpersIter : jumpers)
+            {
+                if (pJumpersIter->isDead())
+                {
+                    pJumpersIter->Respawn();
+                    if (pJumpersIter->AI())
+                        pJumpersIter->AI()->EnterEvadeMode();
+                }
+
+                // Creature will automatically reset because it is registered in DB; no need to make them
+                // return to home position or Reset() them.
+            }
+
+            // Boss reset by themselves, but won't revive if dead
+            if (Creature* pHorridon = GetHorridon())
+            {
+                if (pHorridon->isDead())
+                    pHorridon->Respawn();
+            }
+
+            if (Creature* pWarGodJalak = GetJalak())
+            {
+                if (pWarGodJalak->isDead())
+                {
+                    pWarGodJalak->Respawn();
+                    //pWarGodJalak->AI()->EnterEvadeMode();
+                }
+            }
+
+            events.Reset();
+            summons.DespawnAll();
+            jumpers.clear();
+
+            uiTrashPhase = MAX_TRASH_PHASE;
+            uiMinorTrashId = 0;
+            memset(&uiMediumTrashId, 0, sizeof(uiMediumTrashId));
+            uiMajorTrashId = 0;
+            uiMajorCycle = MAJOR_CYCLE_FIRST;
+            uiDrakkariCycle = DRAKKARI_CYCLE_FIRST;
+
+            jumpPositions = NULL;
+        }
+
+        void FightBegin()
+        {
+            EnterNextPhase(true);
+        }
+
+        void FightEnd()
+        {
+            summons.DespawnAll();
+            jumpers.clear();
+            events.Reset();
+
+            uiTrashPhase = MAX_TRASH_PHASE;
+        }
+
+        void DemoralizeLivingPoison()
+        {
+            std::list<Creature*> poisonList;
+            GetCreatureListWithEntryInGrid(poisonList, me, MOB_LIVING_POISON, 400.f);
+
+            for (auto const pCreature : poisonList)
+            {
+                if (pCreature->AI())
+                    pCreature->AI()->DoAction(ACTION_LIVING_POISON_DESPAWN);
+            }
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+        void EnterNextPhase(bool reset = false)
+        {
+            uiMajorCycle = MAJOR_CYCLE_FIRST;
+            uiDrakkariCycle = DRAKKARI_CYCLE_FIRST;
+
+            if (reset)
+                uiTrashPhase = TRASH_PHASE_FARRAKI;
+            else
+                ++uiTrashPhase;
+
+            bHasEmotedForGate = false;
+            if (Creature* pJalak = GetJalak())
+            {
+                switch (uiTrashPhase)
+                {
+                case TRASH_PHASE_FARRAKI:
+                    uiMinorTrashId = MOB_SUL_LITHUZ_STONEGAZER;
+                    uiMediumTrashId[0] = MOB_FARRAKI_SKIRMISHER;
+                    uiMediumTrashId[1] = 0;
+                    uiMajorTrashId = MOB_FARRAKI_WASTEWALKER;
+                    for (int i = 0; i < 3; ++i)
+                        summonPositions[i] = farrakiTrashSummonPositions[i];
+                    jumpPositions = farrakiWastewalkerJumpPositions;
+                    if (Creature* pJalak = GetJalak())
+                        pJalak->AI()->Talk(TALK_FARRAKI);
+                    break;
+
+                case TRASH_PHASE_GURUBASHI:
+                    uiMinorTrashId = MOB_GURUBASHI_BLOODLORD;
+                    uiMajorTrashId = MOB_GURUBASHI_VENOM_PRIEST;
+                    memset(&uiMediumTrashId, 0, sizeof(uiMediumTrashId));
+                    for (int i = 0; i < 3; ++i)
+                        summonPositions[i] = gurubashiTrashSummonPositions[i];
+                    jumpPositions = gurubashiVenomPriestJumpPositions;
+                    pJalak->AI()->Talk(TALK_GURUBASHI);
+                    break;
+
+                case TRASH_PHASE_DRAKKARI:
+                    uiMajorTrashId = MOB_DRAKKARI_FROZEN_WARLORD;
+                    for (int i = 0; i < 3; ++i)
+                        summonPositions[i] = drakkariTrashSummonPositions[i];
+                    jumpPositions = drakkariFrozenWarlordJumpPositions;
+                    pJalak->AI()->Talk(TALK_DRAKKARI);
+                    DemoralizeLivingPoison();
+                    break;
+
+                case TRASH_PHASE_AMANI:
+                    uiMinorTrashId = MOB_AMANI_SHI_PROTECTOR;
+                    uiMediumTrashId[0] = MOB_AMANI_SHI_FLAME_CASTER;
+                    uiMediumTrashId[1] = 0;
+                    uiMajorTrashId = MOB_AMANI_WARBEAR;
+                    for (int i = 0; i < 3; ++i)
+                        summonPositions[i] = amaniTrashSummonPositions[i];
+                    jumpPositions = amaniWarbearJumpPositions;
+                    pJalak->AI()->Talk(TALK_AMANI);
+                    break;
+
+                case MAX_TRASH_PHASE:
+                    if (Creature* pJalak = GetJalak())
+                        pJalak->AI()->DoAction(ACTION_ENTER_PHASE_TWO);
+                    return;
+
+                default:
+                    return;
+                }
+
+                events.Reset();
+
+
+                if (uiTrashPhase != TRASH_PHASE_DRAKKARI)
+                {
+                    events.ScheduleEvent(EVENT_SUMMON_MINOR, 5 * IN_MILLISECONDS);
+                }
+                else
+                {
+                    events.ScheduleEvent(EVENT_SUMMON_MINOR_DRAKKARI, 5 * IN_MILLISECONDS);
+                }
+
+                events.ScheduleEvent(EVENT_SUMMON_MAJOR, 20 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_SUMMON_ZANDALARI_DINOMANCER, 1 * MINUTE * IN_MILLISECONDS);
+
+                uiNextGateTimer = 120000;
+            }
+        }
+
+        void PrepareTransition()
+        {
+            events.Reset();
+            events.ScheduleEvent(EVENT_TRANSITION, uiNextGateTimer + 7000);
+        }
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new npc_horridon_event_helper_AI(pCreature);
+    }
+};
+typedef npc_horridon_event_helper::npc_horridon_event_helper_AI HorridonHelperAI;
+
+// RP Event Helper AI
+class npc_horridon_rp_event_helper : public CreatureScript
+{
+public:
+    npc_horridon_rp_event_helper() : CreatureScript("npc_horridon_rp_event_helper") { }
+
+    class npc_horridon_rp_event_helper_AI : public ScriptedAI
+    {
+    public:
+        npc_horridon_rp_event_helper_AI(Creature* pCreature) :
+            ScriptedAI(pCreature), pInstance(pCreature->GetInstanceScript()), bIntroDone(false)
+        {
+            me->AddUnitState(UNIT_STATE_ROOT);
+            me->SetUnitFlags(UNIT_FLAG_NOT_SELECTABLE);
+            me->SetUnitFlags(UNIT_FLAG_NON_ATTACKABLE);
+        }
+
+        void Reset()
+        {
+            bIntroDone = false;
+            events.Reset();
+            events.ScheduleEvent(EVENT_CHECK_PLAYERS, 500);
+        }
+
+        Creature* GetHorridonHelper()
+        {
+            return me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true);
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+        Creature* GetHorridon()
+        {
+            return me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true);
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (bIntroDone)
+                return;
+
+            events.Update(uiDiff);
+
+            while (uint32 uiEventId = events.ExecuteEvent())
+            {
+                switch (uiEventId)
+                {
+                case EVENT_CHECK_PLAYERS:
+                {
+                    std::list<Player*> playerList;
+                    GetPlayerListInGrid(playerList, me, 25.f);
+
+                    if (playerList.empty())
+                    {
+                        events.ScheduleEvent(EVENT_CHECK_PLAYERS, 500);
+                    }
+                    else
+                    {
+                        if (Creature* pHelper = GetHorridonHelper())
+                        {
+                            if (pHelper->AI())
+                                pHelper->AI()->DoAction(ACTION_RESET_AFTER_CRASH);
+                        }
+                        events.ScheduleEvent(EVENT_INTRO_PART_I, 1000);
+                        events.ScheduleEvent(EVENT_INTRO_PART_II, 7500);
+                        events.ScheduleEvent(EVENT_INTRO_PART_III, 27500);
+                        events.ScheduleEvent(EVENT_INTRO_PART_IV, 30000);
+                    }
+
+                    break;
+                }
+
+                case EVENT_INTRO_PART_I:
+                    if (Creature* pJalak = GetJalak())
+                        pJalak->AI()->Talk(TALK_INTRO_FIRST);
+                    break;
+
+                case EVENT_INTRO_PART_II:
+                    if (Creature* pJalak = GetJalak())
+                        pJalak->AI()->Talk(TALK_INTRO_SECOND);
+                    break;
+
+                case EVENT_INTRO_PART_III:
+                    if (Creature* pJalak = GetJalak())
+                        pJalak->AI()->Talk(TALK_INTRO_THIRD);
+
+                    // Horridon should break door?
+                    if (GameObject* pDoor = me->FindNearestGameObject(GOB_HORRIDON_PRISON_DOOR, 50000.0f))
+                        pDoor->SetGoState(GO_STATE_ACTIVE);
+                    break;
+
+                case EVENT_INTRO_PART_IV:
+                    if (Creature* pHorridon = GetHorridon())
+                        pHorridon->AI()->DoAction(ACTION_INTRO);
+                    bIntroDone = true;
+                    break;
+
+                default:
+                    break;
+                }
+            }
+        }
+
+    private:
+        EventMap        events;
+        InstanceScript* pInstance;
+        bool            bIntroDone;
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new npc_horridon_rp_event_helper_AI(pCreature);
+    }
+};
+
+
+// Horridon AI
 class boss_horridon : public CreatureScript
 {
-    public:
-        boss_horridon() : CreatureScript("boss_horridon") { }
+public:
+    boss_horridon() : CreatureScript("boss_horridon") {}
 
-        struct boss_horridonAI : public BossAI
+    struct boss_horridon_AI : public BossAI
+    {
+        boss_horridon_AI(Creature* pCreature) : BossAI(pCreature, DATA_HORRIDON), pInstance(pCreature->GetInstanceScript()), bJalakCalled(false)
         {
-            boss_horridonAI(Creature* creature) : BossAI(creature, DATA_HORRIDON_EVENT), summons(me)
+            me->SetReactState(REACT_PASSIVE);
+            pChargeDoor = NULL;
+            events.Reset();
+        }
+
+        EventMap m_mBerserkEvents;
+        float const_orientation;
+
+        float GetPretdeterminedOrientation() const
+        {
+            return const_orientation;
+        }
+
+
+        Creature* GetHorridonHelper()
+        {
+            return me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true);
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+
+        void Reset()
+        {
+            const_orientation = 0.0f;
+            m_mBerserkEvents.Reset();
+            events.Reset();
+            pChargeDoor = NULL;
+            bJalakCalled = false;
+            me->RemoveAurasDueToSpell(SPELL_HEADACHE);
+            me->RemoveAurasDueToSpell(SPELL_CRACKED_SHELL);
+            me->RemoveAurasDueToSpell(SPELL_RAMPAGE);
+            me->SetHomePosition(middlePosition);
+
+            if (Creature* pHorridonHelper = GetHorridonHelper())
             {
-                instance  = creature->GetInstanceScript();
-                introDone = false;
-                wiped = false;
+                if (CreatureAI* pHelperAI = pHorridonHelper->AI())
+                    pHelperAI->DoAction(ACTION_FIGHT_RESET);
             }
 
-            InstanceScript* instance;
-            SummonList summons;
-            EventMap events;
-            Phases phase;
-            bool introDone, wiped;
-            uint8 addWavesSummonedPhase;
+            pInstance->SetBossState(DATA_HORRIDON, NOT_STARTED);
+            pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+            DespawnDirehorns();
+            DespawnEffusions();
+            DespawnBombs();
+            DespawnLivingPoisons();
+            RemovePhase();
+        }
 
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
+        void EnterEvadeMode(EvadeReason w)
+        {
+            //if (me->HasUnitState(UNIT_STATE_CANNOT_TURN))
+              //  me->SetControlled(false, UNIT_STATE_CANNOT_TURN);
+            float x, y, z, o;
 
-                for (uint8 i = 0; i < MAX_TRIBAL_DOORS + 1; ++i) // +1 cause of intro one.
+            me->GetHomePosition(x, y, z, o);
+            /*
+            me->NearTeleportTo(x, y, z, o);
+            me->SetFacingTo(o);
+            */
+            me->GetMotionMaster()->Clear(false);
+            me->GetMotionMaster()->MovePoint(5000, x, y, z);
+
+            BossAI::EnterEvadeMode();
+            if (Creature* jalak = me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true))
+                jalak->AI()->DoAction(ACTION_FORCE_RESET);
+        }
+
+        void DespawnDirehorns()
+        {
+            std::list<Creature*> cList;
+            me->GetCreatureListWithEntryInGrid(cList, 70688, 500.0f);
+            if (!cList.empty())
+                for (std::list<Creature*>::const_iterator itr = cList.begin(); itr != cList.end(); ++itr)
+                    (*itr)->DespawnOrUnsummon();
+        }
+
+        // just in case if the main AI doesn't have smth like this
+        void DespawnLivingPoisons()
+        {
+            std::list<Creature*> cList;
+            me->GetCreatureListWithEntryInGrid(cList, MOB_LIVING_POISON, 500.0f);
+            if (!cList.empty())
+                for (std::list<Creature*>::const_iterator itr = cList.begin(); itr != cList.end(); ++itr)
+                    (*itr)->DespawnOrUnsummon();
+        }
+
+        void RemovePhase()
+        {
+            Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
+            for (Map::PlayerList::const_iterator i = playerList.begin(); i != playerList.end(); ++i)
+                if (Player* player = i->GetSource())
                 {
-                    if (GameObject* door = me->FindNearestGameObject(GO_GURUBASHI_DOOR + i, 500.0f))
+                    player->RemoveAura(SPELL_DIRE_FIXATION);
+                }
+        }
+
+        void DespawnEffusions()
+        {
+            std::list<Creature*> cList;
+            me->GetCreatureListWithEntryInGrid(cList, MOB_VENOMOUS_EFFUSION, 500.0f);
+            if (!cList.empty())
+                for (std::list<Creature*>::const_iterator itr = cList.begin(); itr != cList.end(); ++itr)
+                    (*itr)->DespawnOrUnsummon();
+        }
+
+
+        void DespawnWarGodJalak()
+        {
+            std::list<Creature*> WarGod;
+            me->GetCreatureListWithEntryInGrid(WarGod, MOB_WAR_GOD_JALAK, 800.0f);
+            if (!WarGod.empty())
+                for (std::list<Creature*>::const_iterator itr = WarGod.begin(); itr != WarGod.end(); ++itr)
+                    (*itr)->DespawnOrUnsummon();
+        }
+
+        void DespawnBombs()
+        {
+            std::list<Creature*> bombs;
+            me->GetCreatureListWithEntryInGrid(bombs, MOB_FROZEN_ORB, 800.0f);
+            if (!bombs.empty())
+                for (std::list<Creature*>::const_iterator itr = bombs.begin(); itr != bombs.end(); ++itr)
+                    (*itr)->DespawnOrUnsummon();
+        }
+
+        // To avoid the endless combat and mob spawning
+        void KillTriggersandHelpers()
+        {
+            if (Creature* trigger = me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true))
+                trigger->Kill(trigger);
+            if (Creature* trigger2 = me->FindNearestCreature(662202, 500.0f, true))
+                trigger2->Kill(trigger2);
+        }
+
+        void EnterCombat(Unit* pVictim)
+        {
+            events.ScheduleEvent(EVENT_TRIPLE_PUNCTURE, 10 * IN_MILLISECONDS);
+            events.ScheduleEvent(EVENT_DOUBLE_SWIPE, 15 * IN_MILLISECONDS);
+            //events.ScheduleEvent(EVENT_EVADE_CHECK, 2000);
+            m_mBerserkEvents.ScheduleEvent(EVENT_BERSERK, 12 * MINUTE * IN_MILLISECONDS);
+
+            if (IsHeroic())
+                events.ScheduleEvent(EVENT_DIRE_CALL, 60 * IN_MILLISECONDS);
+            pInstance->SetBossState(DATA_HORRIDON, IN_PROGRESS);
+            pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+            if (Creature* pHorridonHelper = GetHorridonHelper())
+            {
+                if (CreatureAI* pHelperAI = pHorridonHelper->AI())
+                    pHelperAI->DoAction(ACTION_FIGHT_BEGIN);
+            }
+
+            DoZoneInCombat(me, 200.f);
+
+        }
+
+        void EnterEvadeModeIfRequired()
+        {
+            Position pos = me->GetHomePosition();
+            if (me->GetExactDist2d(&pos) > 190.f)
+            {
+                EnterEvadeMode(EVADE_REASON_BOUNDARY);
+                return;
+            }
+
+            events.ScheduleEvent(EVENT_EVADE_CHECK, 2000);
+        }
+
+        void DoAction(int32 iAction) override
+        {
+            switch (iAction)
+            {
+            case ACTION_INTRO:
+                me->GetMotionMaster()->MoveCharge(middlePosition.GetPositionX(), middlePosition.GetPositionY(), middlePosition.GetPositionZ(), 42.0f, MOTION_HORRIDON_CHARGE);
+                me->SetHomePosition(middlePosition);
+                break;
+            case ACTION_DOUBLE_SWIPE:
+                events.ScheduleEvent(EVENT_DOUBLE_SWIPE_ACTION, 1500, 0, 0);
+                break;
+            default:
+                break;
+            }
+        }
+
+        void DamageTaken(Unit* who, uint32& damage)
+        {
+            if (me->HealthBelowPct(30) && !bJalakCalled)
+            {
+                bJalakCalled = true;
+                events.ScheduleEvent(EVENT_CALL_JALAK, 1 * MINUTE * IN_MILLISECONDS);
+            }
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (!UpdateVictim())
+            {
+                me->ClearUnitState(UNIT_STATE_CANNOT_TURN);
+                return;
+            }
+            events.Update(uiDiff);
+            m_mBerserkEvents.Update(uiDiff);
+
+            switch (m_mBerserkEvents.ExecuteEvent())
+            {
+            case EVENT_BERSERK:
+                DoCast(me, SPELL_BERSERK, true);
+                break;
+            }
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if (me->HasUnitState(UNIT_STATE_CANNOT_TURN) && !me->HasAura(SPELL_HEADACHE))
+                me->ClearUnitState(UNIT_STATE_CANNOT_TURN);
+
+            while (uint32 uiEventId = events.ExecuteEvent())
+            {
+                switch (uiEventId)
+                {
+                case EVENT_CALL_JALAK:
+                    if (Creature* pJalak = GetJalak())
                     {
-                        door->ResetDoorOrButton();
-                        door->SetLootState(GO_READY);
+                        if (CreatureAI* pJalakAI = pJalak->AI())
+                            pJalakAI->DoAction(ACTION_ENTER_PHASE_TWO);
+                    }
+                    break;
+                case EVENT_TRIPLE_PUNCTURE:
+                    if (Unit* pVictim = me->GetVictim())
+                        DoCast(pVictim, SPELL_TRIPLE_PUNCTURE);
+                    events.ScheduleEvent(EVENT_TRIPLE_PUNCTURE, urand(10, 15) * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_DOUBLE_SWIPE:
+                {
+                    if (Unit* target = me->GetVictim())
+                    {
+                        me->SetReactState(REACT_PASSIVE);
+                        me->AttackStop();
+                        me->StopMoving();
+                        if (Creature* trigger = me->SummonCreature(60942, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), target->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 5000))
+                        {
+                            me->SetFacingToObject(trigger);
+                            me->AddThreat(trigger, 9.9999999f);
+                            me->CastSpell(trigger, SPELL_DOUBLE_SWIPE);
+                        }
+                        events.ScheduleEvent(EVENT_RETURN_TO_COMBAT, 4000);
+                        events.ScheduleEvent(EVENT_HORRIDON_CHARGE, 15000);
+                        break;
+                    }
+                }
+                case EVENT_DOUBLE_SWIPE_ACTION:
+                {
+                    if (Unit* target = me->GetVictim())
+                    {
+                        me->SetReactState(REACT_PASSIVE);
+                        me->AttackStop();
+                        me->StopMoving();
+                        if (Creature* trigger = me->SummonCreature(60942, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), target->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 5000))
+                        {
+                            me->SetFacingToObject(trigger);
+                            me->AddThreat(trigger, 9.9999999f);
+                            me->CastSpell(trigger, SPELL_DOUBLE_SWIPE);
+                        }
+                        events.ScheduleEvent(EVENT_RETURN_TO_COMBAT, 4000);
+                        break;
+                    }
+                }
+                case EVENT_RETURN_TO_COMBAT:
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    break;
+                case EVENT_HORRIDON_CHARGE:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 200.0f, true))
+                    {
+                        DoCast(pTarget, SPELL_CHARGE);
+                        Talk(EMOTE_CHARGE, pTarget);
+                    }
+                    events.ScheduleEvent(EVENT_DOUBLE_SWIPE, 15000);
+                    break;
+                case EVENT_DIRE_CALL:
+                    DoCastAOE(SPELL_DIRE_CALL);
+                    events.ScheduleEvent(EVENT_DIRE_CALL, 60 * IN_MILLISECONDS);
+                    break;
+                default:
+                    break;
+                }
+            }
+
+
+            DoMeleeAttackIfReady();
+        }
+
+        void JustDied(Unit* pKiller)
+        {
+            pInstance->SetBossState(DATA_HORRIDON, DONE);
+            if (Creature* pController = GetHorridonHelper())
+                pController->AI()->DoAction(ACTION_FIGHT_END);
+
+            pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+            DespawnDirehorns();
+            DespawnEffusions();
+            DespawnLivingPoisons();
+            DespawnWarGodJalak();
+            DespawnBombs();
+            RemovePhase();
+            KillTriggersandHelpers();
+        }
+
+        void MovementInform(uint32 uiMotionType, uint32 uiMovementId)
+        {
+            switch (uiMovementId)
+            {
+            case MOTION_HORRIDON_DOOR_CHARGE:
+                if (me->GetVictim())
+                    me->GetMotionMaster()->MoveChase(me->GetVictim());
+                DoCast(me, SPELL_HEADACHE, true);
+                pChargeDoor->SetGoState(GO_STATE_ACTIVE_ALTERNATIVE);
+                break;
+            case MOTION_HORRIDON_CHARGE:
+                me->SetReactState(REACT_AGGRESSIVE);
+                break;
+            case EVENT_CHARGE:
+                events.RescheduleEvent(EVENT_DOUBLE_SWIPE, 12000 + rand() % 8000);
+                DoCast(SPELL_DOUBLE_SWIPE);
+                const_orientation = me->GetOrientation();
+                me->SetFacingTo(const_orientation);
+                break;
+
+            default:
+                break;
+            }
+
+        }
+
+        void ChargeAtDoor(GameObject* pDoor)
+        {
+            if (!pDoor)
+                return;
+
+            pChargeDoor = pDoor;
+            float fX, fY;
+            events.DelayEvents(3000);
+            GetPositionWithDistInOrientation(me, me->GetDistance(pDoor) - 5.f, me->GetAngle(pDoor), fX, fY);
+            me->GetMotionMaster()->MovementExpired();
+            me->GetMotionMaster()->MoveCharge(fX, fY, 130.8f, 42.0f, MOTION_HORRIDON_DOOR_CHARGE);
+        }
+
+    private:
+        EventMap        events;
+        GameObject* pChargeDoor;
+        InstanceScript* pInstance;
+        bool            bJalakCalled;
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new boss_horridon_AI(pCreature);
+    }
+};
+
+typedef boss_horridon::boss_horridon_AI HorridonAI;
+
+void npc_horridon_event_helper::npc_horridon_event_helper_AI::ForceHorridonToEvade()
+{
+    if (Creature* pHorridon = GetHorridon())
+    {
+        pHorridon->ClearUnitState(UNIT_STATE_CANNOT_TURN);
+        pHorridon->ClearUnitState(UNIT_STATE_STUNNED);
+
+        if (HorridonAI* pAI = dynamic_cast<HorridonAI*>(pHorridon->AI()))
+            pAI->EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
+    }
+}
+// Jalak AI
+class mob_war_god_jalak : public CreatureScript
+{
+public:
+    mob_war_god_jalak() : CreatureScript("mob_war_god_jalak") { }
+
+    class mob_war_god_jalak_AI : public ScriptedAI
+    {
+    public:
+        mob_war_god_jalak_AI(Creature* pCreature) : ScriptedAI(pCreature), pInstance(pCreature->GetInstanceScript()), uiPhase(BOSS_PHASE_SUMMONS)
+        {
+        }
+
+        Creature* GetHorridonHelper()
+        {
+            return me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true);
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+        Creature* GetHorridon()
+        {
+            return me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true);
+        }
+
+
+        void Reset()
+        {
+            events.Reset();
+            uiPhase = BOSS_PHASE_SUMMONS;
+            me->SetUnitFlags(UNIT_FLAG_NOT_SELECTABLE);
+            if (Creature* pHorridonHelper = GetHorridonHelper())
+            {
+                if (CreatureAI* pHelperAI = pHorridonHelper->AI())
+                    pHelperAI->DoAction(ACTION_FIGHT_RESET);
+            }
+        }
+
+        void DoAction(int32 iAction) override
+        {
+            switch (iAction)
+            {
+            case ACTION_ENTER_PHASE_TWO:
+                if (uiPhase != BOSS_PHASE_JALAK)
+                {
+                    Talk(TALK_ENTER_PHASE_2);
+                    uiPhase = BOSS_PHASE_JALAK;
+                    me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                    if (Creature* pHorridon = GetHorridon())
+                    {
+                        Position toRelocate = *pHorridon;
+                        Position relocater = { frand(0.0f, 5.0f), frand(0.0f, 5.0f), 0.0f, 0.0f };
+                        toRelocate.RelocateOffset(relocater);
+                        me->GetMotionMaster()->MoveJump(toRelocate, 32.0f, 32.0f);
+                    }
+                }
+                break;
+            case ACTION_FORCE_RESET:
+                me->GetMotionMaster()->MovePoint(0, 5433.27f, 5674.01f, 192.23f, false);
+                break;
+            }
+        }
+
+        void MovementInform(uint32 uiMotionType, uint32 uiMovementId)
+        {
+            if (uiMotionType == EFFECT_MOTION_TYPE)
+            {
+                switch (uiMovementId)
+                {
+                case EVENT_JUMP:
+                {
+                    me->SetInCombatWithZone();
+                    std::list<Player*> playerList;
+
+                    GetPlayerListInGrid(playerList, me, 500.0f);
+                    playerList.sort([this](Player const* first, Player const* second) -> bool
+                        {
+                            return first->GetExactDist2d(this->me) < second->GetExactDist2d(this->me);
+                        });
+
+                    if (!playerList.empty() && playerList.front())
+                    {
+                        Player* pFirst = playerList.front();
+                        me->AddThreat(pFirst, 100000.0f);
+                        ScriptedAI::AttackStart(pFirst);
+                    }
+
+                    break;
+                }
+
+                default:
+                    break;
+                }
+            }
+        }
+
+        void EnterCombat(Unit* pVictim)
+        {
+            events.ScheduleEvent(EVENT_BESTIAL_CRY, 10 * IN_MILLISECONDS);
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (uiPhase == BOSS_PHASE_SUMMONS)
+                return;
+
+            if (!UpdateVictim())
+                return;
+
+            events.Update(uiDiff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 uiEventId = events.ExecuteEvent())
+            {
+                switch (uiEventId)
+                {
+                case EVENT_BESTIAL_CRY:
+                    DoCastAOE(SPELL_BESTIAL_CRY);
+                    events.ScheduleEvent(EVENT_BESTIAL_CRY, 15 * IN_MILLISECONDS);
+                    break;
+
+                default:
+                    break;
+                }
+            }
+
+            DoMeleeAttackIfReady();
+        }
+
+        void KilledUnit(Unit* pKilled)
+        {
+            Talk(TALK_ON_JALAK_KILLED_UNIT);
+        }
+
+        void JustDied(Unit* pKiller)
+        {
+            if (GetHorridon() && GetHorridon()->isDead())
+            {
+                pInstance->SetBossState(DATA_HORRIDON, DONE);
+                if (Creature* pController = GetHorridonHelper())
+                    pController->AI()->DoAction(ACTION_FIGHT_END);
+            }
+            else
+            {
+                if (Creature* pHorridon = GetHorridon())
+                    pHorridon->AddAura(SPELL_RAMPAGE, pHorridon);
+            }
+
+            Talk(TALK_ON_HORRIDON_KILLED_UNIT);
+        }
+
+    private:
+        EventMap        events;
+        InstanceScript* pInstance;
+        uint32          uiPhase;
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new mob_war_god_jalak_AI(pCreature);
+    }
+};
+
+
+// Trashs AI (does not include summons of spells)
+class mob_horridon_trashs : public CreatureScript
+{
+public:
+    mob_horridon_trashs() : CreatureScript("mob_horridon_trashs") { }
+
+    class mob_horridon_trashs_AI : public ScriptedAI
+    {
+    public:
+        mob_horridon_trashs_AI(Creature* pCreature) :
+            ScriptedAI(pCreature), pInstance(pCreature->GetInstanceScript()),
+            pRendingChargeTarget(NULL), uiChainLightningCount(0)
+        {
+            events.Reset();
+        }
+
+        void Reset() override
+        {
+            events.Reset();
+            pRendingChargeTarget = NULL;
+        }
+        Creature* GetHorridonHelper()
+        {
+            return me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true);
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+        Creature* GetHorridon()
+        {
+            return me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true);
+        }
+
+        void JustSummoned(Creature* pSummoned) override
+        {
+            if (Creature* Helper = GetHorridonHelper())
+            {
+                if (Helper->AI())
+                    Helper->AI()->JustSummoned(pSummoned);
+            }
+        }
+
+        void EnterEvadeMode(EvadeReason w) override
+        {
+            float x, y, z, o;
+
+            me->GetHomePosition(x, y, z, o);
+            me->NearTeleportTo(x, y, z, o);
+            me->SetFacingTo(o);
+
+            ScriptedAI::EnterEvadeMode();
+        }
+
+        void IsSummonedBy(Unit* pSummoner) override
+        {
+            DoZoneInCombat(me, 1000.f);
+
+            // Schedule events
+            switch (me->GetEntry())
+            {
+            case MOB_SUL_LITHUZ_STONEGAZER:
+                events.ScheduleEvent(EVENT_STONE_GAZE, 5 * IN_MILLISECONDS);
+                break;
+
+            case MOB_GURUBASHI_BLOODLORD:
+                events.ScheduleEvent(EVENT_RENDING_CHARGE, 5 * IN_MILLISECONDS);
+                break;
+
+            case MOB_RISEN_DRAKKARI_CHAMPION:
+            case MOB_RISEN_DRAKKARI_WARRIOR:
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_THREAT, true);
+                DoCast(me, SPELL_UNCONTROLLED_ABOMINATION);
+                events.ScheduleEvent(EVENT_SWITCH_TARGET, 10 * IN_MILLISECONDS);
+                break;
+
+            case MOB_AMANI_SHI_FLAME_CASTER:
+                events.ScheduleEvent(EVENT_FIREBALL, 5 * IN_MILLISECONDS);
+                break;
+
+            case MOB_AMANI_SHI_BEAST_SHAMAN:
+                events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 5 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_HEX_OF_CONFUSION, 10 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_SUMMON_LIGHTNING_NOVA_TOTEM, 15 * IN_MILLISECONDS);
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        void MovementInform(uint32 uiMotionType, uint32 uiMovementId) override
+        {
+            if (uiMovementId == MOTION_MAJOR_JUMP)
+            {
+                me->SetInCombatWithZone(); // Call it now to not bug the npcs around
+                switch (me->GetEntry())
+                {
+                case MOB_FARRAKI_WASTEWALKER:
+                    events.ScheduleEvent(EVENT_BLAZING_LIGHT, 10 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_SAND_TRAP, 5000 + rand() % 5000);
+                    break;
+
+                case MOB_GURUBASHI_VENOM_PRIEST:
+                    events.ScheduleEvent(EVENT_GURUBASHI_VENOM_BOLT_VOLLEY, 10 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_VENOMOUS_EFFUSION, 15 * IN_MILLISECONDS);
+                    break;
+
+                case MOB_DRAKKARI_FROZEN_WARLORD:
+                    events.ScheduleEvent(EVENT_MORTAL_STRIKE, 10 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_FROZEN_ORB, 15 * IN_MILLISECONDS);
+                    break;
+
+                case MOB_AMANI_WARBEAR:
+                    events.ScheduleEvent(EVENT_SWIPE, 10 * IN_MILLISECONDS);
+                    break;
+
+                default:
+                    break;
+                }
+
+                // Select target and move towards it
+                if (Creature* pHorridon = GetHorridon())
+                {
+                    if (CreatureAI* pHorridonAI = pHorridon->AI())
+                    {
+                        if (Unit* pTarget = pHorridonAI->SelectTarget(SELECT_TARGET_RANDOM))
+                        {
+                            me->SetInCombatWith(pTarget);
+                            ScriptedAI::AttackStart(pTarget);
+                        }
+                    }
+                }
+            }
+
+            //if (uiMovementId == EVENT_CHARGE)
+            //    DoCast(pRendingChargeTarget, SPELL_RENDING_CHARGE_DAMAGES);;
+        }
+
+        bool HasAuraOfType(Unit* pUnit)
+        {
+            return (pUnit->HasAuraType(SPELL_AURA_MOD_PACIFY_SILENCE) || pUnit->HasAura(SPELL_STONE_GAZE));
+        }
+
+        /* @ RAGELESS nu avem deloc asa ceva CastInterrupted
+        void CastInterrupted(SpellInfo const* spell) override
+        {
+            switch (spell->Id)
+            {
+            case SPELL_SUMMON_SAND_TRAP:
+                events.ScheduleEvent(EVENT_SUMMON_SAND_TRAP, 500);
+                break;
+            case SPELL_VENOM_BOLT_VOLLEY:
+                events.ScheduleEvent(EVENT_GURUBASHI_VENOM_BOLT_VOLLEY, 2000);
+                break;
+            case SPELL_BLAZING_SUNLIGHT:
+                events.ScheduleEvent(EVENT_BLAZING_LIGHT, 500);
+                break;
+            case SPELL_SUMMON_FROZEN_ORB:
+                events.ScheduleEvent(EVENT_SUMMON_FROZEN_ORB, 500);
+                break;
+            case SPELL_FIREBALL:
+                events.ScheduleEvent(EVENT_FIREBALL, 2400);
+                break;
+            case SPELL_HEX_OF_CONFUSION:
+                events.ScheduleEvent(EVENT_HEX_OF_CONFUSION, 4000);
+                break;
+            }
+        }
+        */
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (!UpdateVictim())
+                return;
+
+            events.Update(uiDiff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 uiEventId = events.ExecuteEvent())
+            {
+                switch (uiEventId)
+                {
+                    // Farraki
+                case EVENT_STONE_GAZE:
+                    if (Unit* pVictim = me->GetVictim())
+                    {
+                        if (!HasAuraOfType(pVictim))
+                        {
+                            DoCast(pVictim, SPELL_STONE_GAZE);
+                            events.ScheduleEvent(EVENT_STONE_GAZE, 15 * IN_MILLISECONDS);
+
+                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                                ScriptedAI::AttackStart(pTarget);
+
+                            return;
+                        }
+                        events.ScheduleEvent(EVENT_STONE_GAZE, 15000);
+                    }
+                    break;
+
+                case EVENT_BLAZING_LIGHT:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                        DoCast(pTarget, SPELL_BLAZING_SUNLIGHT);
+                    events.ScheduleEvent(EVENT_BLAZING_LIGHT, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_SUMMON_SAND_TRAP:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
+                        DoCast(pTarget, SPELL_SUMMON_SAND_TRAP);
+                    events.ScheduleEvent(EVENT_SUMMON_SAND_TRAP, 15000 + rand() % 10000);
+                    break;
+
+                    // Gurubashi
+                case EVENT_RENDING_CHARGE:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1))
+                    {
+                        pRendingChargeTarget = pTarget;
+                        DoCast(pTarget, SPELL_RENDING_CHARGE);
+                        DoCast(pTarget, SPELL_RENDING_CHARGE_DAMAGES);
+                    }
+                    events.ScheduleEvent(EVENT_RENDING_CHARGE, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_GURUBASHI_VENOM_BOLT_VOLLEY:
+                    DoCastAOE(SPELL_VENOM_BOLT_VOLLEY);
+                    events.ScheduleEvent(EVENT_GURUBASHI_VENOM_BOLT_VOLLEY, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_SUMMON_VENOMOUS_EFFUSION:
+                    DoCast(me, SPELL_SUMMON_VENOMOUS_EFFUSION);
+                    events.ScheduleEvent(EVENT_SUMMON_VENOMOUS_EFFUSION, 30 * IN_MILLISECONDS);
+                    break;
+
+                    // Drakkari
+                case EVENT_SWITCH_TARGET:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1))
+                    {
+                        DoResetThreat();
+                        me->AddThreat(pTarget, 100000.0f);
+                        ScriptedAI::AttackStart(pTarget);
+                    }
+                    events.ScheduleEvent(EVENT_SWITCH_TARGET, 7 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_MORTAL_STRIKE:
+                    if (Unit* pVictim = me->GetVictim())
+                        DoCast(pVictim, SPELL_MORTAL_STRIKE);
+                    events.ScheduleEvent(EVENT_MORTAL_STRIKE, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_SUMMON_FROZEN_ORB:
+                    DoCast(me, SPELL_SUMMON_FROZEN_ORB);
+                    events.ScheduleEvent(EVENT_SUMMON_FROZEN_ORB, 30 * IN_MILLISECONDS);
+                    break;
+
+                    // Amani
+                case EVENT_FIREBALL:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
+                        DoCast(pTarget, SPELL_FIREBALL);
+                    events.ScheduleEvent(EVENT_FIREBALL, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_SWIPE:
+                    DoCastAOE(SPELL_SWIPE);
+                    events.ScheduleEvent(EVENT_SWIPE, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_CHAIN_LIGHTNING:
+                    if (Unit* pPrimaryTarget = SelectTarget(SELECT_TARGET_RANDOM))
+                        DoCast(pPrimaryTarget, SPELL_CHAIN_LIGHTNING);
+                    events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_HEX_OF_CONFUSION:
+                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                        DoCast(pTarget, SPELL_HEX_OF_CONFUSION);
+                    events.ScheduleEvent(EVENT_HEX_OF_CONFUSION, 10 * IN_MILLISECONDS);
+                    break;
+
+                case EVENT_SUMMON_LIGHTNING_NOVA_TOTEM:
+                    DoCast(me, SPELL_SUMMON_LIGHTNING_NOVA_TOTEM);
+                    events.ScheduleEvent(EVENT_SUMMON_LIGHTNING_NOVA_TOTEM, 30 * IN_MILLISECONDS);
+                    break;
+
+                default:
+                    break;
+                }
+            }
+
+            DoMeleeAttackIfReady();
+        }
+
+        void JustDied(Unit* pKiller) override
+        {
+            if (me->GetEntry() == MOB_AMANI_WARBEAR)
+            {
+                me->SummonCreature(MOB_AMANI_SHI_BEAST_SHAMAN, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+            }
+        }
+
+        uint32 GetData(uint32 uiIndex) const
+        {
+            if (uiIndex == DATA_AMANI_BEAST_SHAMAN_LIGHTNING_COUNT)
+                return uiChainLightningCount;
+
+            return 0;
+        }
+
+        void SetData(uint32 uiIndex, uint32 uiValue) override
+        {
+            if (uiIndex == DATA_AMANI_BEAST_SHAMAN_LIGHTNING_COUNT)
+            {
+                if (++uiChainLightningCount == 3)
+                    uiChainLightningCount = 0;
+            }
+        }
+
+    private:
+        EventMap        events;
+        InstanceScript* pInstance;
+        Unit* pRendingChargeTarget;
+        uint32          uiChainLightningCount;
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new mob_horridon_trashs_AI(pCreature);
+    }
+};
+
+
+// Summons AI
+class mob_horridon_summons : public CreatureScript
+{
+public:
+    mob_horridon_summons() : CreatureScript("mob_horridon_summons") { }
+
+    class mob_horridon_summons_AI : public ScriptedAI
+    {
+    public:
+        mob_horridon_summons_AI(Creature* pCreature) :
+            ScriptedAI(pCreature), pInstance(pCreature->GetInstanceScript()) /*, fSandTrapRadius(0.0f) */
+        {
+            // me->SetReactState(REACT_PASSIVE);
+            events.Reset();
+        }
+
+        void IsSummonedBy(Unit* pSummoner)
+        {
+            me->SetInCombatWithZone();
+            switch (me->GetEntry())
+            {
+            case MOB_SAND_TRAP:
+                DoCast(me, SPELL_SAND_TRAP_PERIODIC);
+                break;
+
+            case MOB_FROZEN_ORB:
+                me->SetDisplayId(11686);
+                me->SetUnitFlags(UNIT_FLAG_NOT_SELECTABLE);
+                me->SetUnitFlags(UNIT_FLAG_NON_ATTACKABLE);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_THREAT, true);
+                me->SetReactState(REACT_PASSIVE);
+                me->ClearUnitState(UNIT_STATE_ROOT);
+                me->GetMotionMaster()->MoveRandom(15.f);
+                DoCast(me, SPELL_FROZEN_BOLT_PERIODIC);
+                break;
+
+            case MOB_LIGHTNING_NOVA_TOTEM:
+                DoCast(me, SPELL_LIGHTNING_NOVA_PERIODIC);
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (!UpdateVictim())
+                return;
+
+            events.Update(uiDiff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 uiEventId = events.ExecuteEvent())
+            {
+                switch (uiEventId)
+                {
+                case EVENT_EFFUSION_VENOM_BOLT_VOLLEY:
+                    DoCastAOE(SPELL_VENOM_BOLT_VOLLEY);
+                    events.ScheduleEvent(EVENT_EFFUSION_VENOM_BOLT_VOLLEY, 5 * IN_MILLISECONDS);
+                    break;
+
+                default:
+                    break;
+                }
+            }
+        }
+
+    private:
+        EventMap        events;
+        InstanceScript* pInstance;
+        // float           fSandTrapRadius;
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new mob_horridon_summons_AI(pCreature);
+    }
+};
+typedef mob_horridon_summons::mob_horridon_summons_AI HorridonSummonsAI;
+
+
+// Zandalari Dinomancer AI
+class mob_zandalari_dinomancer : public CreatureScript
+{
+public:
+    mob_zandalari_dinomancer() : CreatureScript("mob_zandalari_dinomancer") { }
+
+    class mob_zandalari_dinomancer_AI : public ScriptedAI
+    {
+    public:
+        mob_zandalari_dinomancer_AI(Creature* pCreature) :
+            ScriptedAI(pCreature), pInstance(pCreature->GetInstanceScript()),
+            bIsUnderFiftyPercent(false)
+        {
+            events.Reset();
+        }
+        Creature* GetHorridonHelper()
+        {
+            return me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true);
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+        Creature* GetHorridon()
+        {
+            return me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true);
+        }
+
+        void MovementInform(uint32 uiMotionType, uint32 uiMovementId)
+        {
+            if (uiMovementId == MOTION_DINOMANCER_JUMP)
+            {
+                me->SetInCombatWithZone();
+                if (Creature* pHorridon = GetHorridon())
+                {
+                    // me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                    DoCast(pHorridon, SPELL_DINO_MENDING);
+                    events.ScheduleEvent(EVENT_DINO_MENDING, 30 * IN_MILLISECONDS);
+                }
+            }
+        }
+
+        void CheckPrimaryTarget()
+        {
+            Unit* myTarget = me->GetVictim();
+            // if no target and this function is called it will crash the server, we don't want taht
+            if (!myTarget)
+                return;
+            // work only in combat
+            if (me->IsInCombat())
+                if (myTarget->IsPet() || myTarget->IsGuardian())
+                    me->Kill(myTarget);
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (!UpdateVictim())
+                return;
+
+            CheckPrimaryTarget();
+
+            events.Update(uiDiff);
+
+            if (HealthBelowPct(50) && !bIsUnderFiftyPercent)
+            {
+                bIsUnderFiftyPercent = true;
+
+                me->InterruptNonMeleeSpells(true);
+                me->InterruptSpell(CURRENT_CHANNELED_SPELL);
+
+                if (Creature* pHelper = GetHorridonHelper())
+                {
+                    if (HorridonHelperAI* pHelperAI = dynamic_cast<HorridonHelperAI*>(pHelper->AI()))
+                    {
+                        uint32 uiSummonSpellId = GetSummoningOrbSpellByPhase(pHelperAI->GetTrashPhase());
+                        DoCast(me, uiSummonSpellId);
+                        Talk(0);
                     }
                 }
 
-                phase = PHASE_NONE;
-                addWavesSummonedPhase = 0;
-
-                if (instance)
-                    instance->SetData(DATA_HORRIDON_EVENT, NOT_STARTED);
-
-                _Reset();
-
-                if (Creature* Jalak = me->SummonCreature(NPC_WAR_GOD_JALAK, jalakIntroPos, TEMPSUMMON_MANUAL_DESPAWN))
-                    Jalak->SetFacingTo(addOrientations[4]);
+                events.CancelEvent(EVENT_DINO_MENDING);
+                DoCast(me, SPELL_DINO_FORM);
             }
 
-            void MoveInLineOfSight(Unit* who)
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 uiEventId = events.ExecuteEvent())
             {
-                if (!introDone && me->IsWithinDistInMap(who, 50.0f, true) && who->GetTypeId() == TYPEID_PLAYER)
+                switch (uiEventId)
                 {
-                    me->SetReactState(REACT_DEFENSIVE);
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                    if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                        Jalak->AI()->DoAction(ACTION_START_INTRO);
-                    introDone = true;
+                case EVENT_DINO_MENDING:
+                    if (Creature* pHorridon = GetHorridon())
+                        DoCast(pHorridon, SPELL_DINO_MENDING);
+                    events.ScheduleEvent(EVENT_DINO_MENDING, 30 * IN_MILLISECONDS);
+                    break;
+
+                default:
+                    break;
                 }
             }
 
-            void EnterCombat(Unit* who)
+            DoMeleeAttackIfReady();
+        }
+
+    private:
+        EventMap        events;
+        InstanceScript* pInstance;
+        bool            bIsUnderFiftyPercent;
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new mob_zandalari_dinomancer_AI(pCreature);
+    }
+};
+
+// Direhorn Spirit AI
+class mob_direhorn_spirit : public CreatureScript
+{
+public:
+    mob_direhorn_spirit() : CreatureScript("mob_direhorn_spirit") { }
+
+    class mob_direhorn_spirit_AI : public ScriptedAI
+    {
+    public:
+        mob_direhorn_spirit_AI(Creature* pCreature) : ScriptedAI(pCreature)
+        {
+            me->SetSpeed(MOVE_WALK, 0.6f);
+            me->SetSpeed(MOVE_RUN, 0.6f);
+            me->AddAura(SPELL_WEAK_LINK, me);
+        }
+
+        EventMap events;
+        // REWORK
+        void IsSummonedBy(Unit* pSummoner)
+        {
+            events.ScheduleEvent(EVENT_TARGET_A_RANDOM_PLAYER, 500, 0, 0);
+            me->SetInCombatWithZone();
+            /*if (Player *pAsPlayer = pSummoner->ToPlayer())
             {
-                if (wiped)
-                    if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                        Jalak->AI()->Talk(SAY_INTRO_3);
+            me->SetPhaseMask(2, true);
+            pAsPlayer->SetPhaseMask(3, true);
+            pTarget = pAsPlayer;
 
-                phase = PHASE_FARRAKI;
+            DoCast(pTarget, SPELL_DIRE_FIXATION);
+            DoCast(me, SPELL_WEAK_LINK);
+            */
+        }
 
-				events.ScheduleEvent(EVENT_TRIPLE_PUNCTURE, TIMER_TRIPLE_PUNCTURE_F);
-				events.ScheduleEvent(EVENT_DOUBLE_SWIPE, TIMER_DOUBLE_SWIPE_F);
-				events.ScheduleEvent(EVENT_HORRIDON_CHARGE, TIMER_CHARGE_F);
+        //failsale?
+        void DamageTaken(Unit* who, uint32& damage)
+        {
+            me->CastSpell(me, 140949, true); //knockback spell
+        }
 
-                if (IsHeroic())
-				    events.ScheduleEvent(EVENT_DIRE_CALL, TIMER_DIRE_CALL);
+        void UpdateAI(uint32 diff)
+        {
+            events.Update(diff);
 
-				events.ScheduleEvent(EVENT_CALL_NEW_ADDS, TIMER_CALL_NEW_ADDS_F);
-				events.ScheduleEvent(EVENT_CALL_ADDS, TIMER_CALL_ADDS);
-
-				events.ScheduleEvent(EVENT_BERSERK, TIMER_BERSERK);
-
-                if (instance)
+            while (uint32 eventId = events.ExecuteEvent())
+            {
+                switch (eventId)
                 {
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-                    instance->SetData(DATA_HORRIDON_EVENT, IN_PROGRESS);
+                case EVENT_TARGET_A_RANDOM_PLAYER:
+                {
+                    /*if (Creature* horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
+                    {
+                    if (Unit* possibleTarget = horridon->GetVictim())
+                    continue;*/
+                    std::list<Unit*> targets;
+                    SelectTargetList(targets, 5, SELECT_TARGET_RANDOM, 500.0f, true);
+                    if (!targets.empty())
+                        if (targets.size() >= 1)
+                            targets.resize(1);
+
+                    for (std::list<Unit*>::iterator itr = targets.begin(); itr != targets.end(); ++itr)
+                    {
+                        me->AddAura(SPELL_DIRE_FIXATION, (*itr));
+                        me->AI()->AttackStart((*itr));
+                        me->AddThreat((*itr), 999999999.9f);
+                        events.ScheduleEvent(EVENT_DAMAGE_IF_NEARBY, 2000, 0, 0);
+                        break;
+                    }
+                    //}
                 }
+                case EVENT_DAMAGE_IF_NEARBY:
+                {
+                    Unit* playerNearby = me->GetVictim();
 
-                _EnterCombat();
+                    if (!playerNearby)
+                    {
+                        me->Kill(me);
+                        break;
+                    }
+
+                    if (me->GetDistance(playerNearby) < 2.0f)
+                    {
+                        me->Kill(playerNearby, false);
+                        playerNearby->RemoveAura(SPELL_DIRE_FIXATION);
+                        me->DespawnOrUnsummon(100);
+                    }
+
+                    events.ScheduleEvent(EVENT_DAMAGE_IF_NEARBY, 500, 0, 0);
+                    break;
+                }
+                }
             }
+        }
 
-			void EnterEvadeMode()
+        void JustDied(Unit* pKiller)
+        {
+            if (Unit* player = me->GetVictim())
             {
-                me->AddUnitState(UNIT_STATE_EVADE);
+                if (!player)
+                    return;
 
-                DespawnSummon(NPC_AMANI_SHI_BEAST_SHAMAN);
-                DespawnSummon(NPC_VENOMOUS_EFFUSION_HORR);
-                DespawnSummon(NPC_SAND_TRAP);
-                DespawnSummon(NPC_LIVING_POISON);
-                DespawnSummon(NPC_FROZEN_ORB_HORR);
-                DespawnSummon(NPC_LIGHTNING_NOVA_TOTEM);
+                player->RemoveAura(SPELL_DIRE_FIXATION);
+            }
+        }
 
-                DespawnGameObject(GO_ORB_OF_CONTROL_FARRAKI);
-                DespawnGameObject(GO_ORB_OF_CONTROL_GURUBASHI);
-                DespawnGameObject(GO_ORB_OF_CONTROL_DRAKKARI);
-                DespawnGameObject(GO_ORB_OF_CONTROL_AMANI);
+    private:
+        Player* pTarget;
+    };
 
-                wiped = true;
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new mob_direhorn_spirit_AI(pCreature);
+    }
+};
 
-                me->RemoveAllAuras();
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(true);
+class npc_living_poison : public CreatureScript
+{
+    enum eEvents : uint32
+    {
+        EVENT_NONE,
+        EVENT_MOVE
+    };
+
+public:
+    npc_living_poison() : CreatureScript("npc_living_poison") {}
+
+    struct npc_living_poisonAI : public ScriptedAI
+    {
+        npc_living_poisonAI(Creature* pCreature) : ScriptedAI(pCreature)
+        {
+        }
+
+        EventMap events;
+
+        void IsSummonedBy(Unit* pSummoner) override
+        {
+            me->SetSpeed(MOVE_RUN, 2.0f);
+            me->SetSpeed(MOVE_WALK, 2.0f);
+            me->SetReactState(REACT_PASSIVE);
+            me->SetFaction(7);
+            me->AddAura(SPELL_LIVING_POISON_PERIODIC, me);
+            //events.ScheduleEvent(EVENT_MOVE, 200 + rand() % 500);
+        }
+
+        // this AI should only move RANDOM so .. we make this simple
+        void Reset()
+        {
+            me->GetMotionMaster()->MoveRandom(20.0f);
+        }
+
+        // is this a joke or what? this doesn't even working correctly 8-| 
+        /*void DoAction(int32 iAction) override
+        {
+            if (iAction == ACTION_LIVING_POISON_DESPAWN)
+            {
+                events.CancelEvent(EVENT_MOVE);
                 me->GetMotionMaster()->MovementExpired();
-                me->GetMotionMaster()->MoveTargetedHome();
+                me->GetMotionMaster()->MoveRandom(30.f);
+            }
+        }
 
-                if (instance)
+        void Move()
+        {
+            if (Creature* pHorridon = GetHorridon(me))
+            {
+                if (Unit* pTarget = pHorridon->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
                 {
-                    instance->SetData(DATA_HORRIDON_EVENT, FAIL);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
-                }
+                    me->GetMotionMaster()->MovementExpired();
+                    me->GetMotionMaster()->MovePoint(2, *pTarget);
 
-                _EnterEvadeMode();
-
-                if (!me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                    if (Creature* Jalak = me->SummonCreature(NPC_WAR_GOD_JALAK, jalakIntroPos, TEMPSUMMON_MANUAL_DESPAWN))
-                        Jalak->SetFacingTo(addOrientations[4]);
-            }
-
-            void JustReachedHome()
-            {
-                me->ClearUnitState(UNIT_STATE_EVADE);
-
-                _JustReachedHome();
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-				summon->setActive(true);
-            }
-
-            void JustDied(Unit* killer)
-            {
-                summons.DespawnAll();
-
-                DespawnSummon(NPC_AMANI_SHI_BEAST_SHAMAN);
-                DespawnSummon(NPC_VENOMOUS_EFFUSION_HORR);
-                DespawnSummon(NPC_SAND_TRAP);
-                DespawnSummon(NPC_LIVING_POISON);
-                DespawnSummon(NPC_FROZEN_ORB_HORR);
-                DespawnSummon(NPC_LIGHTNING_NOVA_TOTEM);
-
-                DespawnGameObject(GO_ORB_OF_CONTROL_FARRAKI);
-                DespawnGameObject(GO_ORB_OF_CONTROL_GURUBASHI);
-                DespawnGameObject(GO_ORB_OF_CONTROL_DRAKKARI);
-                DespawnGameObject(GO_ORB_OF_CONTROL_AMANI);
-
-                if (instance)
-                {
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-                    instance->SetData(DATA_HORRIDON_EVENT, DONE);
-                }
-
-                _JustDied();
-            }
-
-            void DespawnSummon(uint32 entry)
-            {
-                std::list<Creature*> summonsList;
-                GetCreatureListWithEntryInGrid(summonsList, me, entry, 200.0f);
-                if (!summonsList.empty())
-                    for (std::list<Creature*>::iterator summs = summonsList.begin(); summs != summonsList.end(); summs++)
-                        (*summs)->DespawnOrUnsummon();
-            }
-
-            void DespawnGameObject(uint32 entry)
-            {
-                std::list<GameObject*> summonsList;
-                GetGameObjectListWithEntryInGrid(summonsList, me, entry, 200.0f);
-                if (!summonsList.empty())
-                    for (std::list<GameObject*>::iterator summs = summonsList.begin(); summs != summonsList.end(); summs++)
-                        (*summs)->RemoveFromWorld();
-            }
-
-            void SpellHit(Unit* caster, SpellInfo const* spell)
-            {
-                switch (spell->Id)
-                {
-                    case SPELL_ORB_OF_CONTROL_FARRAK:
-                        me->GetMotionMaster()->MoveCharge(chargePlace[0].GetPositionX(), chargePlace[0].GetPositionY(), chargePlace[0].GetPositionZ(), 30.0f);
-                        events.CancelEvent(EVENT_CALL_ADDS);
-                        events.ScheduleEvent(EVENT_BROKE_DOOR, TIMER_BROKE_DOOR);
-                        break;
-
-                    case SPELL_ORB_OF_CONTROL_GURUB:
-                        me->GetMotionMaster()->MoveCharge(chargePlace[1].GetPositionX(), chargePlace[1].GetPositionY(), chargePlace[1].GetPositionZ(), 30.0f);
-                        events.CancelEvent(EVENT_CALL_ADDS);
-                        events.ScheduleEvent(EVENT_BROKE_DOOR, TIMER_BROKE_DOOR);
-                        break;
-
-                    case SPELL_ORB_OF_CONTROL_DRAKK:
-                        me->GetMotionMaster()->MoveCharge(chargePlace[2].GetPositionX(), chargePlace[2].GetPositionY(), chargePlace[2].GetPositionZ(), 30.0f);
-                        events.CancelEvent(EVENT_CALL_ADDS);
-                        events.ScheduleEvent(EVENT_BROKE_DOOR, TIMER_BROKE_DOOR);
-                        break;
-
-                    case SPELL_ORB_OF_CONTROL_AMANI:
-                        me->GetMotionMaster()->MoveCharge(chargePlace[3].GetPositionX(), chargePlace[3].GetPositionY(), chargePlace[3].GetPositionZ(), 30.0f);
-                        events.CancelEvent(EVENT_CALL_ADDS);
-                        events.ScheduleEvent(EVENT_BROKE_DOOR, TIMER_BROKE_DOOR);
-                        break;
-
-                    default: break;
-                }
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || !CheckInRoom() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                if (instance && instance->IsWipe())
-                {
-                    EnterEvadeMode();
+                    events.ScheduleEvent(EVENT_MOVE, 5000 + rand() % 2000);
                     return;
                 }
+            }
+            else
+                me->GetMotionMaster()->MoveRandom(20.f);
+        }
 
-                events.Update(diff);
+        void MovementInform(uint32 uiType, uint32 uiPointId) override
+        {
+            if (uiType != POINT_MOTION_TYPE)
+                return;
 
-                while (uint32 eventId = events.ExecuteEvent())
+            if (uiPointId == 2)
+                events.RescheduleEvent(EVENT_MOVE, 200);
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            events.Update(uiDiff);
+
+            while (uint32 eventId = events.ExecuteEvent())
+            {
+                switch (eventId)
                 {
-                    switch (eventId)
+                case EVENT_MOVE:
+                    Move();
+                    break;
+                }
+            }
+        }*/
+
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new npc_living_poisonAI(pCreature);
+    }
+};
+
+class npc_venomous_effusion : public CreatureScript
+{
+    enum eEvents : uint32
+    {
+        EVENT_NONE,
+        EVENT_VOLLEY,
+    };
+
+public:
+    npc_venomous_effusion() : CreatureScript("npc_venomous_effusion") {}
+
+    struct ai_impl : public ScriptedAI
+    {
+        ai_impl(Creature* pCreature) : ScriptedAI(pCreature) {}
+
+        EventMap events;
+        Creature* GetHorridonHelper()
+        {
+            return me->FindNearestCreature(NPC_HORRIDON_EVENT_HELPER, 500.0f, true);
+        }
+
+        Creature* GetJalak()
+        {
+            return me->FindNearestCreature(MOB_WAR_GOD_JALAK, 500.0f, true);
+        }
+
+        Creature* GetHorridon()
+        {
+            return me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true);
+        }
+
+        void IsSummonedBy(Unit* pSummoner) override
+        {
+            events.ScheduleEvent(EVENT_VOLLEY, 3000 + rand() % 2000);
+
+            if (Creature* pHorridonHelper = GetHorridonHelper())
+            {
+                if (pHorridonHelper->AI())
+                    pHorridonHelper->AI()->JustSummoned(me);
+            }
+
+            DoZoneInCombat(me, 100.f);
+        }
+
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (!UpdateVictim())
+                return;
+
+            events.Update(uiDiff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            while (uint32 eventId = events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                case EVENT_VOLLEY:
+                    DoCast(SPELL_VENOM_BOLT_VOLLEY);
+                    events.ScheduleEvent(EVENT_VOLLEY, 4000 + rand() % 2000);
+                    break;
+                }
+            }
+
+            DoMeleeAttackIfReady();
+        }
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new ai_impl(pCreature);
+    }
+};
+
+class npc_amani_shi_warbear : public CreatureScript
+{
+public:
+    npc_amani_shi_warbear() : CreatureScript("npc_amani_shi_warbear") {}
+
+    struct ai_impl : public ScriptedAI
+    {
+        ai_impl(Creature* pCreature) : ScriptedAI(pCreature)
+        {
+            m_shamanGuid = 0;
+        }
+
+        EventMap events;
+        uint64 m_shamanGuid;
+
+        Creature* GetShaman() const
+        {
+            return me->FindNearestCreature(MOB_AMANI_SHI_BEAST_SHAMAN, 500.0f, true);
+        }
+
+        void EnterEvadeMode(EvadeReason w) override
+        {
+            float x, y, z, o;
+
+            me->GetHomePosition(x, y, z, o);
+            me->NearTeleportTo(x, y, z, o);
+            me->SetFacingTo(o);
+
+            ScriptedAI::EnterEvadeMode();
+        }
+
+        void Reset() override
+        {
+            events.Reset();
+            /*if (Creature* pShaman = GetShaman())
+            {
+                pShaman->DespawnOrUnsummon();
+                m_shamanGuid = 0;
+            }
+
+            if (Creature* pNewShaman = me->SummonCreature(MOB_AMANI_SHI_BEAST_SHAMAN, *me))
+            {
+                pNewShaman->EnterVehicle(me, 0);
+                pNewShaman->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                m_shamanGuid = pNewShaman->GetGUID();
+            }*/
+        }
+
+        void JustDied(Unit* pKiller) override
+        {
+            me->SummonCreature(MOB_AMANI_SHI_BEAST_SHAMAN, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+        }
+
+        void MovementInform(uint32 uiMotionType, uint32 uiMovementId) override
+        {
+            if (uiMovementId == MOTION_MAJOR_JUMP)
+            {
+                DoZoneInCombat(me, 200.f);
+                events.ScheduleEvent(EVENT_SWIPE, 6000 + rand() % 4000);
+
+                /*if (Creature *pHorridon = GetHorridon(me))
+                {
+                    if (CreatureAI *pHorridonAI = pHorridon->AI())
                     {
-                        case EVENT_TRIPLE_PUNCTURE:
-				            DoCast(me->getVictim(), SPELL_TRIPLE_PUNCTURE);
-				            events.ScheduleEvent(EVENT_TRIPLE_PUNCTURE, TIMER_TRIPLE_PUNCTURE_S);
-                            break;
-
-                        case EVENT_DOUBLE_SWIPE:
-				            DoCast(me, SPELL_DOUBLE_SWIPE);
-				            events.ScheduleEvent(EVENT_DOUBLE_SWIPE, TIMER_DOUBLE_SWIPE_S);
-                            break;
-
-                        case EVENT_HORRIDON_CHARGE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 100.0f, true))
-                                DoCast(target, SPELL_HORRIDON_CHARGE);
-				            events.ScheduleEvent(EVENT_HORRIDON_CHARGE, TIMER_CHARGE_S);
-				            events.ScheduleEvent(EVENT_DOUBLE_SWIPE_CHARGE, TIMER_DOUBLE_SWIPE_CHARGE);
-                            break;
-
-                        case EVENT_DOUBLE_SWIPE_CHARGE:
-                            DoCast(me, SPELL_DOUBLE_SWIPE_CHARGE);
-                            break;
-
-                        case EVENT_DIRE_CALL:
-				            DoCast(me, SPELL_DIRE_CALL);
-				            events.ScheduleEvent(EVENT_DIRE_CALL, TIMER_DIRE_CALL);
-                            break;
-
-                        case EVENT_CALL_NEW_ADDS:
-                            if (phase == PHASE_JALAK)
-                                break; // fail-safe.
-
-                            // increase phase.
-                            if (phase == PHASE_AMANI)
-                                phase = PHASE_JALAK;
-                            else if (phase == PHASE_DRAKKARI)
-                                phase = PHASE_AMANI;
-                            else if (phase == PHASE_GURUBASHI)
-                                phase = PHASE_DRAKKARI;
-                            else if (phase == PHASE_FARRAKI)
-                                phase = PHASE_GURUBASHI;
-
-                            addWavesSummonedPhase = 0;
-                            events.CancelEvent(EVENT_CALL_ADDS);
-
-                            if (phase != PHASE_AMANI)
-                            {
-				                events.ScheduleEvent(EVENT_CALL_ADDS, 100);
-				                events.ScheduleEvent(EVENT_CALL_NEW_ADDS, TIMER_CALL_NEW_ADDS_S);
-                            }
-                            else // Go to last phase with War-God Jalak!
-                            {
-				                events.ScheduleEvent(EVENT_CALL_ADDS, 100);
-				                events.ScheduleEvent(EVENT_CALL_JALAK, TIMER_CALL_JALAK);
-                            }
-                            break;
-
-                        case EVENT_CALL_ADDS:
+                        if (Unit *pTarget = pHorridonAI->SelectTarget(SELECT_TARGET_RANDOM))
                         {
-                            switch (phase)
-                            {
-                                case PHASE_FARRAKI:
-                                {
-                                    switch (addWavesSummonedPhase)
-                                    {
-                                        case 0: // 1 Stonegazer, 2 Skirmisher, 1 Wastewalker.
-                                            Talk(ANN_FARRAKI_ADDS);
-                                            if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                                                Jalak->AI()->Talk(SAY_FARRAKI);
-
-                                            if (Creature* gazer = me->SummonCreature(NPC_SUL_LITHUZ_STONEGAZER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                gazer->SetFacingTo(addOrientations[0]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* skirmisher = me->SummonCreature(NPC_FARRAKI_SKIRMISHER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    skirmisher->SetFacingTo(addOrientations[0]);
-                                            if (Creature* walker = me->SummonCreature(NPC_FARRAKI_WASTEWALKER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                walker->SetFacingTo(addOrientations[0]);
-                                            break;
-
-                                        case 1: // 1 Stonegazer, 1 Skirmisher, 2 Wastewalker.
-                                            if (Creature* gazer = me->SummonCreature(NPC_SUL_LITHUZ_STONEGAZER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                gazer->SetFacingTo(addOrientations[0]);
-                                            if (Creature* skirmisher = me->SummonCreature(NPC_FARRAKI_SKIRMISHER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                skirmisher->SetFacingTo(addOrientations[0]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* walker = me->SummonCreature(NPC_FARRAKI_WASTEWALKER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    walker->SetFacingTo(addOrientations[0]);
-                                            break;
-
-                                        case 2: // 1 Stonegazer, 2 Skirmisher, 1 Wastewalker, Dinomancer.
-                                            if (Creature* gazer = me->SummonCreature(NPC_SUL_LITHUZ_STONEGAZER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                gazer->SetFacingTo(addOrientations[0]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* skirmisher = me->SummonCreature(NPC_FARRAKI_SKIRMISHER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    skirmisher->SetFacingTo(addOrientations[0]);
-                                            if (Creature* walker = me->SummonCreature(NPC_FARRAKI_WASTEWALKER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                walker->SetFacingTo(addOrientations[0]);
-                                            if (Creature* dinomancer = me->SummonCreature(NPC_ZANDALARI_DINOMANCER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                dinomancer->SetFacingTo(addOrientations[0]);
-                                            break;
-
-                                        default: // Summon any of 0 / 1.
-                                            if (urand(0, 1) == 0)
-                                            {
-                                                if (Creature* gazer = me->SummonCreature(NPC_SUL_LITHUZ_STONEGAZER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    gazer->SetFacingTo(addOrientations[0]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* skirmisher = me->SummonCreature(NPC_FARRAKI_SKIRMISHER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        skirmisher->SetFacingTo(addOrientations[0]);
-                                                if (Creature* walker = me->SummonCreature(NPC_FARRAKI_WASTEWALKER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    walker->SetFacingTo(addOrientations[0]);
-                                            }
-                                            else // 1
-                                            {
-                                                if (Creature* gazer = me->SummonCreature(NPC_SUL_LITHUZ_STONEGAZER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    gazer->SetFacingTo(addOrientations[0]);
-                                                if (Creature* skirmisher = me->SummonCreature(NPC_FARRAKI_SKIRMISHER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    skirmisher->SetFacingTo(addOrientations[0]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* walker = me->SummonCreature(NPC_FARRAKI_WASTEWALKER, tribesmenSummonPlace[0], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        walker->SetFacingTo(addOrientations[0]);
-                                            }
-                                            break;
-                                    }
-
-                                    if (GameObject* door = me->FindNearestGameObject(GO_FARRAKI_DOOR, 500.0f))
-                                        door->UseDoorOrButton(0);
-                                    break;
-                                }
-
-                                case PHASE_GURUBASHI:
-                                {
-                                    switch (addWavesSummonedPhase)
-                                    {
-                                        case 0: // 2 Bloodlord, 1 Venom Priest.
-                                            Talk(ANN_GURUBASHI_ADDS);
-                                            if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                                                Jalak->AI()->Talk(SAY_GURUBASHI);
-
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* bloodlord = me->SummonCreature(NPC_GURUBASHI_BLOODLORD, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    bloodlord->SetFacingTo(addOrientations[1]);
-                                            if (Creature* priest = me->SummonCreature(NPC_GURUBASHI_VENOM_PRIEST, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                priest->SetFacingTo(addOrientations[1]);
-                                            break;
-
-                                        case 1: // 1 Bloodlord, 2 Venom Priest.
-                                            if (Creature* bloodlord = me->SummonCreature(NPC_GURUBASHI_BLOODLORD, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                bloodlord->SetFacingTo(addOrientations[1]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* priest = me->SummonCreature(NPC_GURUBASHI_VENOM_PRIEST, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    priest->SetFacingTo(addOrientations[1]);
-                                            break;
-
-                                        case 2: // 2 Bloodlord, 2 Venom Priest, Dinomancer.
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* bloodlord = me->SummonCreature(NPC_GURUBASHI_BLOODLORD, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    bloodlord->SetFacingTo(addOrientations[1]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* priest = me->SummonCreature(NPC_GURUBASHI_VENOM_PRIEST, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    priest->SetFacingTo(addOrientations[1]);
-                                            if (Creature* dinomancer = me->SummonCreature(NPC_ZANDALARI_DINOMANCER, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                dinomancer->SetFacingTo(addOrientations[1]);
-                                            break;
-
-                                        default: // Summon any of 0 / 1.
-                                            if (urand(0, 1) == 0)
-                                            {
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* bloodlord = me->SummonCreature(NPC_GURUBASHI_BLOODLORD, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        bloodlord->SetFacingTo(addOrientations[1]);
-                                                if (Creature* priest = me->SummonCreature(NPC_GURUBASHI_VENOM_PRIEST, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    priest->SetFacingTo(addOrientations[1]);
-                                            }
-                                            else // 1
-                                            {
-                                                if (Creature* bloodlord = me->SummonCreature(NPC_GURUBASHI_BLOODLORD, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    bloodlord->SetFacingTo(addOrientations[1]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* priest = me->SummonCreature(NPC_GURUBASHI_VENOM_PRIEST, tribesmenSummonPlace[1], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        priest->SetFacingTo(addOrientations[1]);
-                                            }
-                                            break;
-                                    }
-
-                                    if (GameObject* door = me->FindNearestGameObject(GO_GURUBASHI_DOOR, 500.0f))
-                                        door->UseDoorOrButton(0);
-                                    break;
-                                }
-
-                                case PHASE_DRAKKARI:
-                                {
-                                    switch (addWavesSummonedPhase)
-                                    {
-                                        case 0: // 1 Champion, 2 Warrior, 1 Warlord.
-                                            Talk(ANN_DRAKKARI_ADDS);
-                                            if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                                                Jalak->AI()->Talk(SAY_DRAKKARI);
-
-                                            if (Creature* champion = me->SummonCreature(NPC_RISEN_DRAKKARI_CHAMPION, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                champion->SetFacingTo(addOrientations[2]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* warrior = me->SummonCreature(NPC_RISEN_DRAKKARI_WARRIOR, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warrior->SetFacingTo(addOrientations[2]);
-                                            if (Creature* warlord = me->SummonCreature(NPC_DRAKKARI_FROZEN_WARLORD, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                warlord->SetFacingTo(addOrientations[2]);
-                                            break;
-
-                                        case 1: // 1 Champion, 1 Warrior, 2 Warlord.
-                                            if (Creature* champion = me->SummonCreature(NPC_RISEN_DRAKKARI_CHAMPION, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                champion->SetFacingTo(addOrientations[2]);
-                                            if (Creature* warrior = me->SummonCreature(NPC_RISEN_DRAKKARI_WARRIOR, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                warrior->SetFacingTo(addOrientations[2]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* warlord = me->SummonCreature(NPC_DRAKKARI_FROZEN_WARLORD, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warlord->SetFacingTo(addOrientations[2]);
-                                            break;
-
-                                        case 2: // 1 Champion, 2 Warrior, 1 Warlord, Dinomancer.
-                                            if (Creature* champion = me->SummonCreature(NPC_RISEN_DRAKKARI_CHAMPION, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                champion->SetFacingTo(addOrientations[2]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* warrior = me->SummonCreature(NPC_RISEN_DRAKKARI_WARRIOR, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warrior->SetFacingTo(addOrientations[2]);
-                                            if (Creature* warlord = me->SummonCreature(NPC_DRAKKARI_FROZEN_WARLORD, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                warlord->SetFacingTo(addOrientations[2]);
-                                            if (Creature* dinomancer = me->SummonCreature(NPC_ZANDALARI_DINOMANCER, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                dinomancer->SetFacingTo(addOrientations[2]);
-                                            break;
-
-                                        default: // Summon any of 0 / 1.
-                                            if (urand(0, 1) == 0)
-                                            {
-                                                if (Creature* champion = me->SummonCreature(NPC_RISEN_DRAKKARI_CHAMPION, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    champion->SetFacingTo(addOrientations[2]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* warrior = me->SummonCreature(NPC_RISEN_DRAKKARI_WARRIOR, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        warrior->SetFacingTo(addOrientations[2]);
-                                                if (Creature* warlord = me->SummonCreature(NPC_DRAKKARI_FROZEN_WARLORD, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warlord->SetFacingTo(addOrientations[2]);
-                                            }
-                                            else // 1
-                                            {
-                                                if (Creature* champion = me->SummonCreature(NPC_RISEN_DRAKKARI_CHAMPION, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    champion->SetFacingTo(addOrientations[2]);
-                                                if (Creature* warrior = me->SummonCreature(NPC_RISEN_DRAKKARI_WARRIOR, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warrior->SetFacingTo(addOrientations[2]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* warlord = me->SummonCreature(NPC_DRAKKARI_FROZEN_WARLORD, tribesmenSummonPlace[2], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        warlord->SetFacingTo(addOrientations[2]);
-                                            }
-                                            break;
-                                    }
-
-                                    if (GameObject* door = me->FindNearestGameObject(GO_DRAKKARI_DOOR, 500.0f))
-                                        door->UseDoorOrButton(0);
-                                    break;
-                                }
-
-                                case PHASE_AMANI:
-                                {
-                                    switch (addWavesSummonedPhase)
-                                    {
-                                        case 0: // 1 Flame Caster, 2 Protector, 1 Warbear.
-                                            Talk(ANN_AMANI_ADDS);
-                                            if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                                                Jalak->AI()->Talk(SAY_AMANI);
-
-                                            if (Creature* flamecaster = me->SummonCreature(NPC_AMANI_SHI_FLAME_CASTER, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                flamecaster->SetFacingTo(addOrientations[3]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* protector = me->SummonCreature(NPC_AMANI_SHI_PROTECTOR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    protector->SetFacingTo(addOrientations[3]);
-                                            if (Creature* warbear = me->SummonCreature(NPC_AMANI_WARBEAR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                warbear->SetFacingTo(addOrientations[3]);
-                                            break;
-
-                                        case 1: // 1 Flame Caster, 1 Protector, 2 Warbear.
-                                            if (Creature* flamecaster = me->SummonCreature(NPC_AMANI_SHI_FLAME_CASTER, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                flamecaster->SetFacingTo(addOrientations[3]);
-                                            if (Creature* protector = me->SummonCreature(NPC_AMANI_SHI_PROTECTOR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                protector->SetFacingTo(addOrientations[3]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* warbear = me->SummonCreature(NPC_AMANI_WARBEAR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warbear->SetFacingTo(addOrientations[3]);
-                                            break;
-
-                                        case 2: // 1 Flame Caster, 2 Protector, 1 Warbear, Dinomancer.
-                                            if (Creature* flamecaster = me->SummonCreature(NPC_AMANI_SHI_FLAME_CASTER, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                flamecaster->SetFacingTo(addOrientations[3]);
-                                            for (uint8 i = 0; i < 2; i++)
-                                                if (Creature* protector = me->SummonCreature(NPC_AMANI_SHI_PROTECTOR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    protector->SetFacingTo(addOrientations[3]);
-                                            if (Creature* warbear = me->SummonCreature(NPC_AMANI_WARBEAR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                warbear->SetFacingTo(addOrientations[3]);
-                                            if (Creature* dinomancer = me->SummonCreature(NPC_ZANDALARI_DINOMANCER, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                dinomancer->SetFacingTo(addOrientations[3]);
-                                            break;
-
-                                        default: // Summon any of 0 / 1.
-                                            if (urand(0, 1) == 0)
-                                            {
-                                                if (Creature* flamecaster = me->SummonCreature(NPC_AMANI_SHI_FLAME_CASTER, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    flamecaster->SetFacingTo(addOrientations[3]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* protector = me->SummonCreature(NPC_AMANI_SHI_PROTECTOR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        protector->SetFacingTo(addOrientations[3]);
-                                                if (Creature* warbear = me->SummonCreature(NPC_AMANI_WARBEAR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    warbear->SetFacingTo(addOrientations[3]);
-                                            }
-                                            else // 1
-                                            {
-                                                if (Creature* flamecaster = me->SummonCreature(NPC_AMANI_SHI_FLAME_CASTER, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    flamecaster->SetFacingTo(addOrientations[3]);
-                                                if (Creature* protector = me->SummonCreature(NPC_AMANI_SHI_PROTECTOR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                    protector->SetFacingTo(addOrientations[3]);
-                                                for (uint8 i = 0; i < 2; i++)
-                                                    if (Creature* warbear = me->SummonCreature(NPC_AMANI_WARBEAR, tribesmenSummonPlace[3], TEMPSUMMON_MANUAL_DESPAWN))
-                                                        warbear->SetFacingTo(addOrientations[3]);
-                                            }
-                                            break;
-                                    }
-
-                                    if (GameObject* door = me->FindNearestGameObject(GO_AMANI_DOOR, 500.0f))
-                                        door->UseDoorOrButton(0);
-                                    break;
-                                }
-
-                                default: break;
-                            }
-
-                            addWavesSummonedPhase++;
-				            events.ScheduleEvent(EVENT_CALL_ADDS, TIMER_CALL_ADDS);
-                            break;
-                        }
-
-                        case EVENT_CALL_JALAK:
-                            if (Creature* Jalak = me->FindNearestCreature(NPC_WAR_GOD_JALAK, 500.0f, true))
-                                Jalak->AI()->DoAction(ACTION_JUMP_AND_ENGAGE);
-                            break;
-
-                        case EVENT_BROKE_DOOR:
-                            // me->GetMotionMaster()->MovementExpired();
-                            me->RemoveAurasDueToSpell(SPELL_ORB_OF_CONTROL_FARRAK);
-                            me->RemoveAurasDueToSpell(SPELL_ORB_OF_CONTROL_GURUB);
-                            me->RemoveAurasDueToSpell(SPELL_ORB_OF_CONTROL_DRAKK);
-                            me->RemoveAurasDueToSpell(SPELL_ORB_OF_CONTROL_AMANI);
-                            DoCast(me, SPELL_HEADACHE);
-                            break;
-
-                        case EVENT_BERSERK:
-				            DoCast(me, SPELL_BERSERK);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_horridonAI(creature);
-        }
-};
-
-/*** Adds ***/
-
-// Direhorn Spirit (Heroic) 70688
-class npc_direhorn_spirit_horridon : public CreatureScript
-{
-    public:
-        npc_direhorn_spirit_horridon() : CreatureScript("npc_direhorn_spirit_horridon") { }
-
-        struct npc_direhorn_spirit_horridonAI : public ScriptedAI
-        {
-            npc_direhorn_spirit_horridonAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                me->AddAura(SPELL_WEAK_LINK, me);
-                me->SetReactState(REACT_PASSIVE);
-
-                if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 150.0f, true))
-                {
-                    target->AddAura(SPELL_DIRE_FIXATION, target);
-                    me->Attack(target, false);
-                    me->GetMotionMaster()->MoveChase(target);
-
-                    // Not tauntable.
-                    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
-                    me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
-                }
-            }
-
-            void Reset() { }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                me->getVictim()->RemoveAurasDueToSpell(SPELL_DIRE_FIXATION);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_direhorn_spirit_horridonAI(creature);
-        }
-};
-
-/*** Farraki tribe ***/
-
-// Farraki Skirmisher 69173, Amani'shi Protector 69169
-class npc_farraki_skirmisher_amani_protector : public CreatureScript
-{
-    public:
-        npc_farraki_skirmisher_amani_protector() : CreatureScript("npc_farraki_skirmisher_amani_protector") { }
-
-        struct npc_farraki_skirmisher_amani_protectorAI : public ScriptedAI
-        {
-            npc_farraki_skirmisher_amani_protectorAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_farraki_skirmisher_amani_protectorAI(creature);
-        }
-};
-
-// Sul'lithuz Stonegazer 69172
-class npc_sul_lithuz_stonegazer : public CreatureScript
-{
-    public:
-        npc_sul_lithuz_stonegazer() : CreatureScript("npc_sul_lithuz_stonegazer") { }
-
-        struct npc_sul_lithuz_stonegazerAI : public ScriptedAI
-        {
-            npc_sul_lithuz_stonegazerAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_STONE_GAZE, TIMER_STONE_GAZE_F);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_STONE_GAZE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 5.0f, true))
-                                DoCast(target, SPELL_STONE_GAZE);
-                            events.ScheduleEvent(EVENT_STONE_GAZE, TIMER_STONE_GAZE_S);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_sul_lithuz_stonegazerAI(creature);
-        }
-};
-
-// Farraki Wastewalker 69175
-class npc_farraki_wastewalker : public CreatureScript
-{
-    public:
-        npc_farraki_wastewalker() : CreatureScript("npc_farraki_wastewalker") { }
-
-        struct npc_farraki_wastewalkerAI : public ScriptedAI
-        {
-            npc_farraki_wastewalkerAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BLAZING_SUNLIGHT, TIMER_BLAZING_SUNLIGHT_F);
-                events.ScheduleEvent(EVENT_SAND_TRAP, TIMER_SAND_TRAP);
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_BLAZING_SUNLIGHT:
-                            DoCast(me, SPELL_BLAZING_SUNLIGHT);
-                            events.ScheduleEvent(EVENT_BLAZING_SUNLIGHT, TIMER_BLAZING_SUNLIGHT_S);
-                            break;
-
-                        case EVENT_SAND_TRAP:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                me->SummonCreature(NPC_SAND_TRAP, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0, TEMPSUMMON_MANUAL_DESPAWN);
-                            events.ScheduleEvent(EVENT_SAND_TRAP, TIMER_SAND_TRAP);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_farraki_wastewalkerAI(creature);
-        }
-};
-
-// Sand Trap 69346
-class npc_sand_trap : public CreatureScript
-{
-    public:
-        npc_sand_trap() : CreatureScript("npc_sand_trap") { }
-
-        struct npc_sand_trap_AI : public ScriptedAI
-        {
-            npc_sand_trap_AI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* /*summoner*/)
-            {
-                Reset();
-                me->AddAura(SPELL_SAND_TRAP, me);
-                me->DespawnOrUnsummon(60000);
-            }
-
-            void Reset()
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE);
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff) { }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_sand_trap_AI(creature);
-        }
-};
-
-/*** Gurubashi tribe ***/
-
-// Gurubashi Bloodlord 69167
-class npc_gurubashi_bloodlord : public CreatureScript
-{
-    public:
-        npc_gurubashi_bloodlord() : CreatureScript("npc_gurubashi_bloodlord") { }
-
-        struct npc_gurubashi_bloodlordAI : public ScriptedAI
-        {
-            npc_gurubashi_bloodlordAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_RENDING_CHARGE, TIMER_RENDING_CHARGE_F);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_RENDING_CHARGE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 60.0f, true))
-                                DoCast(target, SPELL_RENDING_CHARGE);
-                            events.ScheduleEvent(EVENT_RENDING_CHARGE, TIMER_RENDING_CHARGE_S);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_gurubashi_bloodlordAI(creature);
-        }
-};
-
-// Gurubashi Venom Priest 69164
-class npc_gurubashi_venom_priest : public CreatureScript
-{
-    public:
-        npc_gurubashi_venom_priest() : CreatureScript("npc_gurubashi_venom_priest") { }
-
-        struct npc_gurubashi_venom_priestAI : public ScriptedAI
-        {
-            npc_gurubashi_venom_priestAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_VENOM_BOLT_VOLLEY, TIMER_VENOM_BOLT_VOLLEY_F);
-                events.ScheduleEvent(EVENT_EFFUSION_AND_POISON, TIMER_EFFUSION_POISON_F);
-            }
-
-            void DoAction(int32 const action)
-            {
-                switch (action)
-                {
-                    case ACTION_VENOM_VOLLEY_REMOVED:
-                        events.CancelEvent(EVENT_VENOM_BOLT_VOLLEY);
-                        events.ScheduleEvent(EVENT_VENOM_BOLT_VOLLEY, TIMER_VENOM_BOLT_VOLLEY_I);
-                        break;
-
-                    default: break;
-                }
-            };
-
-            void JustSummoned(Creature* summon)
-            {
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_VENOM_BOLT_VOLLEY:
-                            DoCast(me, SPELL_VENOM_BOLT_VOLLEY);
-                            events.ScheduleEvent(EVENT_VENOM_BOLT_VOLLEY, TIMER_VENOM_BOLT_VOLLEY_S);
-                            break;
-
-                        case EVENT_EFFUSION_AND_POISON:
-                            me->SummonCreature(NPC_VENOMOUS_EFFUSION_HORR, me->GetPositionX() + 3.0f, me->GetPositionY(), me->GetPositionZ() + 0.1f, 0, TEMPSUMMON_MANUAL_DESPAWN);
-                            me->SummonCreature(NPC_LIVING_POISON, me->GetPositionX() + 3.0f, me->GetPositionY(), me->GetPositionZ() + 0.1f, 0, TEMPSUMMON_MANUAL_DESPAWN);
-                            events.ScheduleEvent(EVENT_EFFUSION_AND_POISON, TIMER_EFFUSION_POISON_S);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_gurubashi_venom_priestAI(creature);
-        }
-};
-
-// Venomous Effusion 69314
-class npc_venomous_effusion_horridon : public CreatureScript
-{
-    public:
-        npc_venomous_effusion_horridon() : CreatureScript("npc_venomous_effusion_horridon") { }
-
-        struct npc_venomous_effusion_horridonAI : public ScriptedAI
-        {
-            npc_venomous_effusion_horridonAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                me->AddAura(SPELL_VENOM_BOLT_VOLLEY, me);
-                me->GetMotionMaster()->MoveRandom(40.0f);
-            }
-
-            void Reset()
-            {
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff) { }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_venomous_effusion_horridonAI(creature);
-        }
-};
-
-// Living Poison 69313
-class npc_living_poison_horridon : public CreatureScript
-{
-    public:
-        npc_living_poison_horridon() : CreatureScript("npc_living_poison_horridon") { }
-
-        struct npc_living_poison_horridon_AI : public ScriptedAI
-        {
-            npc_living_poison_horridon_AI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* /*summoner*/)
-            {
-                Reset();
-                me->AddAura(SPELL_LIVING_POISON, me);
-                me->GetMotionMaster()->MoveRandom(40.0f);
-                me->DespawnOrUnsummon(60000);
-            }
-
-            void Reset()
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff) { }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_living_poison_horridon_AI(creature);
-        }
-};
-
-/*** Drakkari tribe ***/
-
-// Risen Drakkari Warrior 69184, Risen Drakkari Champion 69185
-class npc_risen_drakkari_warrior_champion : public CreatureScript
-{
-    public:
-        npc_risen_drakkari_warrior_champion() : CreatureScript("npc_risen_drakkari_warrior_champion") { }
-
-        struct npc_risen_drakkari_warrior_championAI : public ScriptedAI
-        {
-            npc_risen_drakkari_warrior_championAI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                me->AddAura(SPELL_UNCONTROLLED_ABOM, me);
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_risen_drakkari_warrior_championAI(creature);
-        }
-};
-
-// Drakkari Frozen Warlord 69178
-class npc_drakkari_frozen_warlord : public CreatureScript
-{
-    public:
-        npc_drakkari_frozen_warlord() : CreatureScript("npc_drakkari_frozen_warlord") { }
-
-        struct npc_drakkari_frozen_warlordAI : public ScriptedAI
-        {
-            npc_drakkari_frozen_warlordAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_MORTAL_STRIKE_W, TIMER_MORTAL_STRIKE_W_F);
-                events.ScheduleEvent(EVENT_FROZEN_ORB, TIMER_FROZEN_ORB);
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_MORTAL_STRIKE_W:
-                            DoCast(me->getVictim(), SPELL_MORTAL_STRIKE_W);
-                            events.ScheduleEvent(EVENT_MORTAL_STRIKE_W, TIMER_MORTAL_STRIKE_W_S);
-                            break;
-
-                        case EVENT_FROZEN_ORB:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                me->SummonCreature(NPC_FROZEN_ORB_HORR, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ() + 0.1f, 0, TEMPSUMMON_MANUAL_DESPAWN);
-                            events.ScheduleEvent(EVENT_FROZEN_ORB, TIMER_FROZEN_ORB);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_drakkari_frozen_warlordAI(creature);
-        }
-};
-
-// Frozen Orb 69268
-class npc_frozen_orb_horridon : public CreatureScript
-{
-    public:
-        npc_frozen_orb_horridon() : CreatureScript("npc_frozen_orb_horridon") { }
-
-        struct npc_frozen_orb_horridon_AI : public ScriptedAI
-        {
-            npc_frozen_orb_horridon_AI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* /*summoner*/)
-            {
-                Reset();
-                me->AddAura(SPELL_FROZEN_BOLT, me);
-                me->GetMotionMaster()->MoveRandom(40.0f);
-                me->DespawnOrUnsummon(60000);
-            }
-
-            void Reset()
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff) { }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_frozen_orb_horridon_AI(creature);
-        }
-};
-
-/*** Amani tribe ***/
-
-// Amani'shi Flame Caster 69168
-class npc_amani_shi_flame_caster_horridon : public CreatureScript
-{
-    public:
-        npc_amani_shi_flame_caster_horridon() : CreatureScript("npc_amani_shi_flame_caster_horridon") { }
-
-        struct npc_amani_shi_flame_caster_horridonAI : public ScriptedAI
-        {
-            npc_amani_shi_flame_caster_horridonAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_FIREBALL, TIMER_FIREBALL);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_FIREBALL:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                DoCast(target, SPELL_FIREBALL_FC);
-                            events.ScheduleEvent(EVENT_FIREBALL, TIMER_FIREBALL);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_amani_shi_flame_caster_horridonAI(creature);
-        }
-};
-
-// Amani Warbear 69177
-class npc_amani_warbear_horridon : public CreatureScript
-{
-    public:
-        npc_amani_warbear_horridon() : CreatureScript("npc_amani_warbear_horridon") { }
-
-        struct npc_amani_warbear_horridonAI : public ScriptedAI
-        {
-            npc_amani_warbear_horridonAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_SWIPE, TIMER_SWIPE);
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                me->SummonCreature(NPC_AMANI_SHI_BEAST_SHAMAN, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.1f, 0, TEMPSUMMON_MANUAL_DESPAWN);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_SWIPE:
-                            DoCast(me, SPELL_WARBEAR_SWIPE);
-                            events.ScheduleEvent(EVENT_SWIPE, TIMER_SWIPE);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_amani_warbear_horridonAI(creature);
-        }
-};
-
-// Amani'shi Beast Shaman 69176
-class npc_amani_shi_beast_shaman_horridon : public CreatureScript
-{
-    public:
-        npc_amani_shi_beast_shaman_horridon() : CreatureScript("npc_amani_shi_beast_shaman_horridon") { }
-
-        struct npc_amani_shi_beast_shaman_horridonAI : public ScriptedAI
-        {
-            npc_amani_shi_beast_shaman_horridonAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, TIMER_CHAIN_LIGHTNING);
-                events.ScheduleEvent(EVENT_HEX_OF_CONFUSION, TIMER_HEX_OF_CONFUSION_F);
-                events.ScheduleEvent(EVENT_LIGHTNING_NOVA_TOTEM, TIMER_LIGHTNING_NOVA_TOTEM);
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-				summon->setActive(true);
-
-				if (me->isInCombat())
-					summon->SetInCombatWithZone();
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
-                {
-                    switch (eventId)
-                    {
-                        case EVENT_CHAIN_LIGHTNING:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 40.0f, true))
-                                DoCast(target, SPELL_CHAIN_LIGHTNING);
-                            events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, TIMER_CHAIN_LIGHTNING);
-                            break;
-
-                        case EVENT_HEX_OF_CONFUSION:
-                            DoCast(me, SPELL_HEX_OF_CONFUSION);
-                            events.ScheduleEvent(EVENT_HEX_OF_CONFUSION, TIMER_HEX_OF_CONFUSION_S);
-                            break;
-
-                        case EVENT_LIGHTNING_NOVA_TOTEM:
-                            me->SummonCreature(NPC_LIGHTNING_NOVA_TOTEM, me->GetPositionX() + 5.0f, me->GetPositionY(), me->GetPositionZ() + 0.1f, 0, TEMPSUMMON_MANUAL_DESPAWN);
-                            events.ScheduleEvent(EVENT_LIGHTNING_NOVA_TOTEM, TIMER_LIGHTNING_NOVA_TOTEM);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_amani_shi_beast_shaman_horridonAI(creature);
-        }
-};
-
-// Lightning Nova Totem 69215
-class npc_lightning_nova_totem : public CreatureScript
-{
-    public:
-        npc_lightning_nova_totem() : CreatureScript("npc_lightning_nova_totem") { }
-
-        struct npc_lightning_nova_totem_AI : public ScriptedAI
-        {
-            npc_lightning_nova_totem_AI(Creature* creature) : ScriptedAI(creature) { }
-
-            void IsSummonedBy(Unit* /*summoner*/)
-            {
-                Reset();
-                me->AddAura(SPELL_LIGHTNING_NOVA, me);
-                me->DespawnOrUnsummon(60000);
-            }
-
-            void Reset()
-            {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff) { }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_lightning_nova_totem_AI(creature);
-        }
-};
-
-/*** Zandalari Dinomancer ***/
-
-// Zandalari Dinomancer 69221
-class npc_zandalari_dinomancer_horridon : public CreatureScript
-{
-    public:
-        npc_zandalari_dinomancer_horridon() : CreatureScript("npc_zandalari_dinomancer_horridon") { }
-
-        struct npc_zandalari_dinomancer_horridonAI : public ScriptedAI
-        {
-            npc_zandalari_dinomancer_horridonAI(Creature* creature) : ScriptedAI(creature) { }
-
-            EventMap events;
-            bool transformed;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                Reset();
-                DoZoneInCombat(me, 100.0f);
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                transformed = false;
-                if (me->GetPositionZ() > 160.0f)
-                    me->SetReactState(REACT_PASSIVE);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_DINO_MENDING, TIMER_DINO_MENDING_F);
-            }
-
-            void DoAction(int32 const action)
-            {
-                switch (action)
-                {
-                    case ACTION_MENDING_REMOVED:
-                        events.CancelEvent(EVENT_DINO_MENDING);
-                        events.ScheduleEvent(EVENT_DINO_MENDING, TIMER_DINO_MENDING_I);
-                        break;
-
-                    default: break;
-                }
-            };
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                if (!transformed && me->HealthBelowPct(51))
-                {
-                    if (Creature* Horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
-                    {
-                        switch (CAST_AI(boss_horridon::boss_horridonAI, Horridon->AI())->phase)
-                        {
-                            case PHASE_FARRAKI:
-                                me->getVictim()->SummonGameObject(GO_ORB_OF_CONTROL_FARRAKI, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, RESPAWN_IMMEDIATELY, 0);
-                                break;
-
-                            case PHASE_GURUBASHI:
-                                me->getVictim()->SummonGameObject(GO_ORB_OF_CONTROL_GURUBASHI, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, RESPAWN_IMMEDIATELY, 0);
-                                break;
-
-                            case PHASE_DRAKKARI:
-                                me->getVictim()->SummonGameObject(GO_ORB_OF_CONTROL_DRAKKARI, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, RESPAWN_IMMEDIATELY, 0);
-                                break;
-
-                            case PHASE_AMANI:
-                                me->getVictim()->SummonGameObject(GO_ORB_OF_CONTROL_AMANI, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, RESPAWN_IMMEDIATELY, 0);
-                                break;
-
-                            default: break;
+                            AttackStart(pTarget);
+                            if (GetShaman() && GetShaman()->AI())
+                                GetShaman()->AI()->AttackStart(pTarget);
                         }
                     }
+                }*/
+            }
+        }
 
-                    DoCast(me, SPELL_DINO_FORM);
-                    transformed = true;
-                }
+        void UpdateAI(uint32 uiDiff)
+        {
+            if (!UpdateVictim())
+                return;
 
-                events.Update(diff);
+            events.Update(uiDiff);
 
-                while (uint32 eventId = events.ExecuteEvent())
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            switch (events.ExecuteEvent())
+            {
+            case EVENT_SWIPE:
+                DoCastAOE(SPELL_SWIPE);
+                events.ScheduleEvent(EVENT_SWIPE, 10 * IN_MILLISECONDS);
+                break;
+            }
+
+            DoMeleeAttackIfReady();
+        }
+
+    };
+
+    CreatureAI* GetAI(Creature* pCreature) const
+    {
+        return new ai_impl(pCreature);
+    }
+};
+
+
+
+//////////////////////////////////////////////////////////////////////////
+// Spell Helpers
+// Helper for Double Swipe
+class DoubleSwipeTargetSelector
+{
+public:
+    DoubleSwipeTargetSelector(Unit* caster, bool front) :
+        pCaster(caster), bFront(front) { }
+
+    bool operator()(WorldObject const* object) const
+    {
+        if (object->GetTypeId() != TYPEID_PLAYER)
+            return false;
+
+        if (bFront)
+        {
+            return pCaster->HasInArc(35.0f, object);
+        }
+        else
+        {
+            bool bToReturn = false;
+
+            pCaster->SetOrientation(-pCaster->GetOrientation());
+            if (pCaster->HasInArc(35.0f, object))
+                bToReturn = true;
+            pCaster->SetOrientation(-pCaster->GetOrientation());
+
+            return bToReturn;
+        }
+    }
+
+private:
+    Unit* pCaster;
+    bool bFront;
+};
+
+class isValidDoubleStrikeTargetPredicate
+{
+private:
+    Unit* caster;
+    uint32 spellId;
+    float orientation;
+public:
+    isValidDoubleStrikeTargetPredicate(Unit* _caster, uint32 _spellId, float _orientation) : caster(_caster), spellId(_spellId), orientation(_orientation) {}
+
+    bool operator()(WorldObject* target) const
+    {
+        float arc = caster->NormalizeOrientation(spellId == SPELL_DOUBLE_SWIPE_FRONT ? (3.14f / 4.9f) : ((2.0f * 3.14f) - (3.14f / 4.9f)));
+
+        float angle = caster->GetAngle(target);
+        angle -= orientation;
+
+        // move angle to range -pi ... +pi
+        angle = caster->NormalizeOrientation(angle);
+        if (angle > 3.14f)
+            angle -= 2.0f * 3.14f;
+
+        float lborder = -1.0f * (arc / 2.0f);                        // in range -pi..0
+        float rborder = (arc / 2.0f);                             // in range 0..pi
+
+        if (spellId == SPELL_DOUBLE_SWIPE_FRONT)
+            return !((angle >= lborder) && (angle <= rborder));
+        else
+            return ((angle >= lborder) && (angle <= rborder));
+    }
+};
+
+// Target selection for Double Swipe
+class spell_horridon_double_swipe : public SpellScriptLoader
+{
+public:
+    spell_horridon_double_swipe() : SpellScriptLoader("spell_horridon_double_swipe") { }
+
+    class spell_horridon_double_swipe_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_horridon_double_swipe_SpellScript)
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+        {
+            if (Creature* pHorridon = GetCaster()->ToCreature())
+            {
+                if (HorridonAI* pAI = dynamic_cast<HorridonAI*>(pHorridon->AI()))
                 {
-                    switch (eventId)
+                    float ori = pAI->GetPretdeterminedOrientation();
+                    targets.remove_if(isValidDoubleStrikeTargetPredicate(pHorridon, GetSpellInfo()->Id, ori));
+                }
+            }
+        }
+
+        void Register()
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_horridon_double_swipe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_CONE_ENEMY_104);
+        }
+    };
+
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_horridon_double_swipe_SpellScript();
+    }
+};
+
+
+// Chain Lightning
+class spell_horridon_chain_lightning : public SpellScriptLoader
+{
+public:
+    spell_horridon_chain_lightning() : SpellScriptLoader("spell_horridon_chain_lightning") { }
+
+    class spell_horridon_chain_lightning_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_horridon_chain_lightning_SpellScript)
+
+            void HandleEffectHitTarget(SpellEffIndex effectIndex)
+        {
+            if (Unit* pHitUnit = GetHitUnit())
+            {
+                Unit* pCaster = GetOriginalCaster();
+                if (!pCaster)
+                    pCaster = GetCaster();
+
+                if (!pCaster)
+                    return;
+
+                if (UnitAI* pCasterAI = pCaster->GetAI())
+                {
+                    uint32 uiCount = pCasterAI->GetData(DATA_AMANI_BEAST_SHAMAN_LIGHTNING_COUNT);
+
+                    if (uiCount == 0 && pCaster == GetOriginalCaster())
+                        return;
+
+                    Unit* pNewTarget = NULL;
+                    uint32 uiLoopCount = 0; // Prevent infinite loop in case boss is being soloed
+
+                    do
                     {
-                        case EVENT_DINO_MENDING:
-                            if (Creature* Horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
-                                DoCast(Horridon, SPELL_DINO_MENDING);
-                            events.ScheduleEvent(EVENT_DINO_MENDING, TIMER_DINO_MENDING_S);
-                            break;
+                        pNewTarget = pCasterAI->SelectTarget(SELECT_TARGET_RANDOM);
+                        ++uiLoopCount;
+                    } while (pNewTarget == pHitUnit && uiLoopCount <= 10);
 
-                        default: break;
-                    }
+                    if (!pNewTarget || pNewTarget == pHitUnit)
+                        return;
+
+                    pHitUnit->CastSpell(pNewTarget, SPELL_CHAIN_LIGHTNING, false, NULL, NULL, pCaster->GetGUID());
+
+                    pCasterAI->SetData(DATA_AMANI_BEAST_SHAMAN_LIGHTNING_COUNT, 0);
                 }
-
-                DoMeleeAttackIfReady();
             }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_zandalari_dinomancer_horridonAI(creature);
         }
+
+        void Register()
+        {
+            //OnEffectHitTarget += SpellEffectFn(spell_horridon_chain_lightning_SpellScript::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        }
+    };
+
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_horridon_chain_lightning_SpellScript();
+    }
 };
 
-/*** War-God Jalak ***/
 
-class npc_war_god_jalak : public CreatureScript
+// Living Sand (radius calc)
+class spell_horridon_sand_trap : public SpellScriptLoader
 {
-    public:
-        npc_war_god_jalak() : CreatureScript("npc_war_god_jalak") { }
+public:
+    spell_horridon_sand_trap() : SpellScriptLoader("spell_horridon_sand_trap") {  }
 
-        struct npc_war_god_jalakAI : public ScriptedAI
+    class spell_horridon_sand_trap_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_horridon_sand_trap_SpellScript)
+
+            void HandleSelectTargets(std::list<WorldObject*>& targets)
         {
-            npc_war_god_jalakAI(Creature* creature) : ScriptedAI(creature) { }
+            if (!GetCaster())
+                return;
 
-            EventMap events;
-            bool introDone, engaged;
+            Creature* pCaster = GetCaster()->ToCreature();
+            float fRadius = 1.0f; // Basis
 
-            void IsSummonedBy(Unit* summoner)
+            // Recalc radius according to stack amount
+            if (Aura* pGrow = pCaster->GetAura(GetSpellInfo()->Id))
             {
-                Reset();
-                me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                uint8 uiCount = pGrow->GetStackAmount();
+                for (uint8 i = 0; i < uiCount; ++i)
+                    fRadius *= 1.0f;
             }
 
-            void Reset()
-            {
-                events.Reset();
-                introDone = false;
-                engaged = false;
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                Talk(SAY_AGGRO);
-                events.ScheduleEvent(EVENT_BESTIAL_CRY, TIMER_BESTIAL_CRY_F);
-            }
-
-            void DoAction(int32 const action)
-            {
-                switch (action)
+            // Remove target that are not in the radius
+            targets.remove_if([pCaster, fRadius](WorldObject const* pTarget) -> bool
                 {
-                    case ACTION_START_INTRO:
-                        events.ScheduleEvent(EVENT_INTRO_1, TIMER_INTRO_1);
-                        break;
+                    return pCaster->GetExactDist2d(pTarget) >= fRadius;
+                });
+        }
 
-                    case ACTION_JUMP_AND_ENGAGE:
-                        events.ScheduleEvent(EVENT_JALAK_JUMP, TIMER_JUMP);
-                        break;
+        void Register()
+        {
+            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_horridon_sand_trap_SpellScript::HandleSelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        }
+    };
 
-                    default: break;
-                }
-            };
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_horridon_sand_trap_SpellScript();
+    }
+};
 
-            void KilledUnit(Unit* victim)
+class spell_headache : public SpellScriptLoader
+{
+public:
+    spell_headache() : SpellScriptLoader("spell_headache") {}
+
+    class aura_impl : public AuraScript
+    {
+        PrepareAuraScript(aura_impl);
+
+        void HandleAuraRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+        {
+            if (Creature* Horridon = GetOwner()->ToCreature())
             {
-                if (victim->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SAY_KILL);
+                if (Horridon->GetVictim())
+                    Horridon->GetMotionMaster()->MoveChase(Horridon->GetVictim());
             }
+        }
 
-            void JustDied(Unit* /*killer*/)
+        void Register()
+        {
+            OnEffectRemove += AuraEffectRemoveFn(aura_impl::HandleAuraRemove, EFFECT_0, SPELL_EFFECT_APPLY_AURA, AURA_EFFECT_HANDLE_REAL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const
+    {
+        return new aura_impl();
+    }
+};
+
+class spell_double_swipe_aura : public SpellScriptLoader
+{
+public:
+    spell_double_swipe_aura() : SpellScriptLoader("spell_double_swipe_aura") {}
+
+    class aura_impl : public AuraScript
+    {
+        PrepareAuraScript(aura_impl);
+
+        void HandleOnApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+        {
+            if (Creature* owner = GetOwner()->ToCreature())
             {
-                Talk(SAY_DEATH);
-                if (Creature* Horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
-                    Horridon->AddAura(SPELL_RAMPAGE, Horridon);
-            }
+                //if (HorridonAI* pAI = dynamic_cast<HorridonAI*>(owner->AI()))
+               // {
+               //     owner->SetOrientation(pAI->GetPretdeterminedOrientation());
+              //  }
+                /*
+                std::list<Player*> potentials;
+                GetPlayerListInGrid(potentials, owner, 30.f);
 
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim() && introDone && engaged || me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                events.Update(diff);
-
-                while (uint32 eventId = events.ExecuteEvent())
+                if (!potentials.empty())
                 {
-                    switch (eventId)
-                    {
-                        case EVENT_INTRO_1:
-                            Talk(SAY_INTRO_1);
-                            events.ScheduleEvent(EVENT_INTRO_2, TIMER_INTRO_2);
-                            break;
+                    if (Player* pTarget = Trinity::Containers::SelectRandomContainerElement(potentials))
+                        owner->SetOrientation(owner->GetAngle(pTarget));
+                }*/
 
-                        case EVENT_INTRO_2:
-                            Talk(SAY_INTRO_2);
-                            events.ScheduleEvent(EVENT_INTRO_3, TIMER_INTRO_3);
-                            break;
-
-                        case EVENT_INTRO_3:
-                            Talk(SAY_INTRO_3);
-                            // Break Horridon door and send him to mid.
-                            if (Creature* Horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
-                                if (GameObject* door = Horridon->FindNearestGameObject(GO_START_DOOR, 500.0f))
-                                    door->UseDoorOrButton(0);
-                            events.ScheduleEvent(EVENT_HORRIDON_MOVE, TIMER_HORRIDON_MOVE);
-                            break;
-
-                        case EVENT_HORRIDON_MOVE:
-                            // Send Horridon to mid.
-                            if (Creature* Horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
-                            {
-								Horridon->SetHomePosition(midPos.GetPositionX(), midPos.GetPositionY(), midPos.GetPositionZ(), 0);
-                                Horridon->GetMotionMaster()->MoveCharge(midPos.GetPositionX(), midPos.GetPositionY(), midPos.GetPositionZ());
-                            }
-                            events.ScheduleEvent(EVENT_HORRIDON_ENGAGE, TIMER_HORRIDON_ENGAGE);
-                            break;
-
-                        case EVENT_HORRIDON_ENGAGE:
-                            // Engage Horridon in combat.
-                            if (Creature* Horridon = me->FindNearestCreature(BOSS_HORRIDON, 500.0f, true))
-                            {
-                                Horridon->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                                Horridon->SetReactState(REACT_AGGRESSIVE);
-                                Horridon->AI()->DoZoneInCombat(Horridon, 200.0f);
-                            }
-                            introDone = true;
-                            break;
-
-                        case EVENT_JALAK_JUMP:
-                            me->GetMotionMaster()->MoveJump(midPos.GetPositionX(), midPos.GetPositionY(), midPos.GetPositionZ(), 15.0f, 15.0f);
-                            events.ScheduleEvent(EVENT_ENGAGE, TIMER_ENGAGE);
-                            break;
-
-                        case EVENT_ENGAGE:
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            DoZoneInCombat(me, 200.0f);
-                            engaged = true;
-                            break;
-
-                        case EVENT_BESTIAL_CRY:
-                            if (!engaged)
-                                break;
-
-                            DoCast(me, SPELL_BESTIAL_CRY);
-                            events.ScheduleEvent(EVENT_BESTIAL_CRY, TIMER_BESTIAL_CRY_S);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
+                owner->SetControlled(true, UNIT_STATE_CANNOT_TURN);
             }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_war_god_jalakAI(creature);
         }
+
+        void HandleOnRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+        {
+            if (Unit* owner = GetOwner()->ToUnit())
+                owner->SetControlled(false, UNIT_STATE_CANNOT_TURN);
+        }
+
+        void Register()
+        {
+            OnEffectApply += AuraEffectApplyFn(aura_impl::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+            OnEffectRemove += AuraEffectRemoveFn(aura_impl::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const
+    {
+        return new aura_impl();
+    }
 };
 
-/*** Spells ***/
-
-// Rending Charge - 136653
-class spell_rending_charge_horridon : public SpellScriptLoader
+// Charge - 136769
+class bfa_spell_horridon_charge : public SpellScriptLoader
 {
-    public:
-        spell_rending_charge_horridon() : SpellScriptLoader("spell_rending_charge_horridon") { }
+public:
+    bfa_spell_horridon_charge() : SpellScriptLoader("bfa_spell_horridon_charge") {}
 
-        class spell_rending_charge_horridon_SpellScript : public SpellScript
+    class bfa_spell_horridon_charge_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(bfa_spell_horridon_charge_SpellScript);
+
+        void HandleAfterCast()
         {
-            PrepareSpellScript(spell_rending_charge_horridon_SpellScript);
+            Unit* caster = GetCaster();
 
-            void HandleCharge(SpellEffIndex /*effIndex*/)
-            {
-                Unit* caster = GetCaster();
-                Unit* target = GetHitUnit();
+            if (!caster)
+                return;
 
-                if (!caster || !target)
-                    return;
-
-                caster->CastSpell(target, SPELL_RENDING_CHARGE_DOT, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_rending_charge_horridon_SpellScript::HandleCharge, EFFECT_0, SPELL_EFFECT_CHARGE);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_rending_charge_horridon_SpellScript();
+            caster->AddAura(136769, caster);
         }
-};
 
-// Venom Bolt Volley 136587
-class spell_venom_bolt_volley_horridon : public SpellScriptLoader
-{
-    public:
-        spell_venom_bolt_volley_horridon() : SpellScriptLoader("spell_venom_bolt_volley_horridon") { }
-
-        class spell_venom_bolt_volley_horridon_AuraScript : public AuraScript
+        void Register()
         {
-            PrepareAuraScript(spell_venom_bolt_volley_horridon_AuraScript);
-
-            void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes mode)
-            {
-                if (!(mode & AURA_EFFECT_HANDLE_REAL))
-                    return;
-
-                if (GetOwner()->GetTypeId() != TYPEID_UNIT)
-                    return;
-
-                Unit* caster = GetCaster();
-
-                if (!caster || !GetTargetApplication())
-                    return;
-
-                if (!caster->ToCreature())
-                    return;
-
-                if (caster->ToCreature()->GetEntry() != NPC_GURUBASHI_VENOM_PRIEST)
-                    return;
-
-                // Only on removal by interrupt.
-                if (GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_EXPIRE || GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_DEATH)
-                    return;
- 
-                caster->ToCreature()->AI()->DoAction(ACTION_VENOM_VOLLEY_REMOVED);
-            }
-
-            void Register() 
-            {
-                OnEffectRemove += AuraEffectRemoveFn(spell_venom_bolt_volley_horridon_AuraScript::OnRemove, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
-            }
-        };
-
-        AuraScript* GetAuraScript() const 
-        {
-            return new spell_venom_bolt_volley_horridon_AuraScript();
+            AfterCast += SpellCastFn(bfa_spell_horridon_charge_SpellScript::HandleAfterCast);
         }
-};
+    };
 
-// Dino-Mending 136797
-class spell_dino_mending_horridon : public SpellScriptLoader
-{
-    public:
-        spell_dino_mending_horridon() : SpellScriptLoader("spell_dino_mending_horridon") { }
+    class bfa_spell_horridon_charge_AuraScript : public AuraScript
+    {
+        PrepareAuraScript(bfa_spell_horridon_charge_AuraScript);
 
-        class spell_dino_mending_horridon_AuraScript : public AuraScript
+        void HandleRemove(AuraEffect const* pAuraEffect, AuraEffectHandleModes eMode)
         {
-            PrepareAuraScript(spell_dino_mending_horridon_AuraScript);
+            Unit* caster = GetCaster();
 
-            void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes mode)
-            {
-                if (!(mode & AURA_EFFECT_HANDLE_REAL))
-                    return;
-
-                if (GetOwner()->GetTypeId() != TYPEID_UNIT)
-                    return;
-
-                Unit* caster = GetCaster();
-
-                if (!caster || !GetTargetApplication())
-                    return;
-
-                // Only on removal by interrupt.
-                if (GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_EXPIRE || GetTargetApplication()->GetRemoveMode() == AURA_REMOVE_BY_DEATH)
-                    return;
- 
-                caster->ToCreature()->AI()->DoAction(ACTION_MENDING_REMOVED);
-            }
-
-            void Register() 
-            {
-                OnEffectRemove += AuraEffectRemoveFn(spell_dino_mending_horridon_AuraScript::OnRemove, EFFECT_1, SPELL_AURA_OBS_MOD_HEALTH, AURA_EFFECT_HANDLE_REAL);
-            }
-        };
-
-        AuraScript* GetAuraScript() const 
-        {
-            return new spell_dino_mending_horridon_AuraScript();
+            if (!caster)
+                return;
+            if (caster->ToCreature() && caster->ToCreature()->AI())
+                caster->ToCreature()->AI()->DoAction(ACTION_DOUBLE_SWIPE);
+            //caster->CastSpell(caster, SPELL_DOUBLE_SWIPE);
         }
+
+        void Register()
+        {
+            OnEffectRemove += AuraEffectRemoveFn(bfa_spell_horridon_charge_AuraScript::HandleRemove, EFFECT_1, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        }
+    };
+
+    AuraScript* GetAuraScript() const
+    {
+        return new bfa_spell_horridon_charge_AuraScript();
+    }
+
+    SpellScript* GetSpellScript() const
+    {
+        return new bfa_spell_horridon_charge_SpellScript();
+    }       
 };
 
 void AddSC_boss_horridon()
 {
+    // boss / helpers  
+    new npc_horridon_event_helper();
+    new npc_horridon_rp_event_helper();
     new boss_horridon();
+    new mob_war_god_jalak();
 
-    new npc_direhorn_spirit_horridon();
-    new npc_farraki_skirmisher_amani_protector();
-    new npc_sul_lithuz_stonegazer();
-    new npc_farraki_wastewalker();
-    new npc_sand_trap();
-    new npc_gurubashi_bloodlord();
-    new npc_gurubashi_venom_priest();
-    new npc_venomous_effusion_horridon();
-    new npc_living_poison_horridon();
-    new npc_risen_drakkari_warrior_champion();
-    new npc_drakkari_frozen_warlord();
-    new npc_frozen_orb_horridon();
-    new npc_amani_shi_flame_caster_horridon();
-    new npc_amani_warbear_horridon();
-    new npc_amani_shi_beast_shaman_horridon();
-    new npc_lightning_nova_totem();
-    new npc_zandalari_dinomancer_horridon();
-    new npc_war_god_jalak();
+    // trash/mobs
+    new mob_horridon_trashs();
+    new mob_horridon_summons();
+    new mob_zandalari_dinomancer();
+    new mob_direhorn_spirit();
+    new npc_living_poison();
+    new npc_venomous_effusion();
+    new npc_amani_shi_warbear();
 
-    new spell_rending_charge_horridon();
-    new spell_venom_bolt_volley_horridon();
-    new spell_dino_mending_horridon();
+    // Spells
+    new spell_horridon_double_swipe();
+    new spell_horridon_chain_lightning();
+    new spell_horridon_sand_trap();
+    new spell_headache();
+    new spell_double_swipe_aura();
+    new bfa_spell_horridon_charge();
 }

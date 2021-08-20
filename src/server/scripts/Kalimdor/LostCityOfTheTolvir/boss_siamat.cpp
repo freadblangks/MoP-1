@@ -1,6 +1,25 @@
-#include "lost_city_of_the_tolvir.h"
-#include "ScriptPCH.h"
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "AchievementMgr.h"
+#include "lost_city_of_the_tolvir.h"
+#include "ScriptMgr.h"
+#include "Spell.h"
+#include "SpellAuras.h"
 
 enum eSpells
 {
@@ -43,12 +62,12 @@ enum eActions
 
 enum eTexts
 {
-    SAY_START_1                        = -1877011,
-    SAY_START_2                        = -1877027,
-    SAY_WAILING_WINDS_1                = -1877012,
-    SAY_WAILING_WINDS_2                = -1877026,
-    SAY_DEATH                          = -1877013,
-    SAY_KILL_PLAYER                    = -1877025,
+    SAY_START_1                        = 0,
+    SAY_START_2                        = 1,
+    SAY_WAILING_WINDS_1                = 2,
+    SAY_WAILING_WINDS_2                = 3,
+    SAY_DEATH                          = 4,
+    SAY_KILL_PLAYER                    = 5,
 };
 
 enum ePhases
@@ -95,7 +114,7 @@ class boss_siamat : public CreatureScript
 public:
     boss_siamat() : CreatureScript("boss_siamat") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new boss_siamatAI (creature);
     }
@@ -114,7 +133,7 @@ public:
         InstanceScript* instance;
         uint8 uiStaticShockId;
 
-        void Reset()
+        void Reset() override
         {
             if (instance)
                 instance->SetData(DATA_SIAMAT, NOT_STARTED);
@@ -122,12 +141,12 @@ public:
             events.Reset();
             lSummons.DespawnAll();
             uiStaticShockId = 0;
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+            me->AddUnitFlag(UNIT_FLAG_REMOVE_CLIENT_CONTROL);
         }
-        
-        void EnterCombat(Unit* /*who*/)
+
+        void EnterCombat(Unit* /*who*/) override
         {
-            DoScriptText(RAND(SAY_START_1, SAY_START_1), me);
+            Talk(RAND(SAY_START_1, SAY_START_1));
             events.SetPhase(PHASE_DEFLECTING_WINDS);
             events.ScheduleEvent(EVENT_STATIC_SHOCK, 2000, 0, PHASE_DEFLECTING_WINDS);
             events.ScheduleEvent(EVENT_DEFLECTING_WINDS, 5000, 0, PHASE_DEFLECTING_WINDS);
@@ -139,11 +158,11 @@ public:
                 instance->SetData(DATA_SIAMAT, IN_PROGRESS);
         }
 
-        void DoAction(const int32 action)
+        void DoAction(const int32 action) override
         {
             if (action == ACTION_SERVANT_DEATH)
             {
-                DoScriptText(RAND(SAY_WAILING_WINDS_1, SAY_WAILING_WINDS_2), me);
+                Talk(RAND(SAY_WAILING_WINDS_1, SAY_WAILING_WINDS_2));
                 me->RemoveAura(SPELL_DEFLECTING_WINDS);
                 me->CastSpell(me, SPELL_WAILING_WINDS_AURA, false);
                 events.SetPhase(PHASE_WAILING_WINDS);
@@ -152,25 +171,25 @@ public:
             }
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             lSummons.Summon(summoned);
         }
 
-        void KilledUnit(Unit* victim)
+        void KilledUnit(Unit* victim) override
         {
-            if (victim->GetTypeId() == TYPEID_PLAYER)
-                DoScriptText(SAY_KILL_PLAYER, me);
+            if (victim->IsPlayer())
+                Talk(SAY_KILL_PLAYER);
         }
 
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
             events.Reset();
             lSummons.DespawnAll();
-            DoScriptText(SAY_DEATH, me);
+            Talk(SAY_DEATH);
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -187,7 +206,7 @@ public:
                     case EVENT_STATIC_SHOCK:
                         {
                             uint8 dist = urand(5, 30);
-                            float angle = frand(0, M_PI);
+                            float angle = frand(0, float(M_PI));
                             float x, y;
                             me->GetNearPoint2D(x, y, (float)dist, angle);
                             me->CastSpell(x, y, FLOR_COORD_Z, StaticShock[uiStaticShockId], false);
@@ -203,7 +222,7 @@ public:
                     case EVENT_CALL_OF_SKY:
                         {
                             uint8 dist = urand(5, 30);
-                            float angle = frand(0, M_PI);
+                            float angle = frand(0, float(M_PI));
                             float x, y;
                             me->GetNearPoint2D(x, y, (float)dist, angle);
                             me->CastSpell(x, y, FLOR_COORD_Z, SPELL_CALL_OF_SKY, false);
@@ -235,8 +254,8 @@ public:
                             else
                             {
                                 events.SetPhase(PHASE_SIAMAT);
-                                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                                me->GetMotionMaster()->MoveChase(me->getVictim());
+                                me->RemoveUnitFlag(UNIT_FLAG_REMOVE_CLIENT_CONTROL);
+                                me->GetMotionMaster()->MoveChase(me->GetVictim());
                                 events.ScheduleEvent(EVENT_ABSORB_STORMS, 15000, 0, PHASE_SIAMAT);
                                 events.ScheduleEvent(EVENT_STORM_BOLT_S, urand(10000, 25000), 0, PHASE_SIAMAT);
                             }
@@ -275,7 +294,7 @@ class npc_servant_of_siamat : public CreatureScript
 public:
     npc_servant_of_siamat() : CreatureScript("npc_servant_of_siamat") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_servant_of_siamatAI (creature);
     }
@@ -292,19 +311,19 @@ public:
         InstanceScript* instance;
         bool LightningCharge;
 
-        void Reset()
+        void Reset() override
         {
             events.Reset();
             LightningCharge = false;
         }
 
-        void EnterCombat(Unit* /*who*/)
+        void EnterCombat(Unit* /*who*/) override
         {
             events.ScheduleEvent(EVENT_THUNDER_CRASH, 1000);
             events.ScheduleEvent(EVENT_LIGHTNING_NOVA, 5000);
         }
 
-        void DamageTaken(Unit* , uint32 &damage)
+        void DamageTaken(Unit* /*unit*/, uint32 &damage) override
         {
             if (!IsHeroic())
                 return;
@@ -317,7 +336,7 @@ public:
                 if (!LightningCharge)
                 {
                     if (instance)
-                        me->CastSpell(me, SPELL_LIGHTNING_CHARGE, false, NULL, NULL, instance->GetData64(DATA_SIAMAT));
+                        me->CastSpell(me, SPELL_LIGHTNING_CHARGE, false, nullptr, nullptr, instance->GetGuidData(DATA_SIAMAT));
 
                     LightningCharge = true;
                     me->SetReactState(REACT_PASSIVE);
@@ -328,7 +347,7 @@ public:
             }
         }
 
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
             if (me->GetEntry() == NPC_SETVANT_OF_SIAMAT)
                 if (instance)
@@ -336,7 +355,7 @@ public:
                         siamat->AI()->DoAction(ACTION_SERVANT_DEATH);
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -358,7 +377,7 @@ public:
                         events.ScheduleEvent(EVENT_THUNDER_CRASH, urand(7000, 15000));
                         break;
                     case EVENT_LIGHTNING_NOVA:
-                        me->CastSpell(me->getVictim(), SPELL_LIGHTNING_NOVA, false);
+                        me->CastSpell(me->GetVictim(), SPELL_LIGHTNING_NOVA, false);
                         events.ScheduleEvent(EVENT_LIGHTNING_NOVA, urand(7000, 15000));
                         break;
                 }
@@ -374,7 +393,7 @@ class npc_siamat_minion : public CreatureScript
 public:
     npc_siamat_minion() : CreatureScript("npc_siamat_minion") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_siamat_minionAI (creature);
     }
@@ -389,15 +408,15 @@ public:
         EventMap events;
         bool TempestStorm;
 
-        void Reset()
+        void Reset() override
         {
             events.Reset();
             events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 1000);
             TempestStorm = false;
             me->AddAura(84550, me);
         }
-        
-        void JustSummoned(Creature* summoned)
+
+        void JustSummoned(Creature* summoned) override
         {
             if (summoned->GetEntry() == NPC_TEMPEST_STORM)
             {
@@ -407,12 +426,12 @@ public:
                 InstanceScript* instance = me->GetInstanceScript();
 
                 if (instance)
-                    if (Creature* siamat = Unit::GetCreature(*me, instance->GetData64(DATA_SIAMAT)))
+                    if (Creature* siamat = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_SIAMAT)))
                         siamat->AI()->JustSummoned(summoned);
             }
         }
 
-        void SpellHit(Unit* /*caster*/, const SpellInfo* spell)
+        void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
         {
             if (spell->Id == SPELL_TEMPEST_STORM_TRANSFORM)
             {
@@ -421,7 +440,7 @@ public:
             }
         }
 
-        void DamageTaken(Unit* , uint32 &damage)
+        void DamageTaken(Unit* /*unit*/, uint32 &damage) override
         {
             if (damage >= me->GetHealth())
             {
@@ -436,13 +455,13 @@ public:
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
                     me->StopMoving();
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                    me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
                     me->CastSpell(me, SPELL_TEMPEST_STORM_TRANSFORM, false);
                 }
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -451,7 +470,7 @@ public:
 
             if (events.ExecuteEvent() == EVENT_CHAIN_LIGHTNING)
             {
-                me->CastSpell(me->getVictim(), SPELL_CHAIN_LIGHTNING, false);
+                me->CastSpell(me->GetVictim(), SPELL_CHAIN_LIGHTNING, false);
                 events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 2000);
             }
 
@@ -465,7 +484,7 @@ class npc_cloud_burst : public CreatureScript
 public:
     npc_cloud_burst() : CreatureScript("npc_cloud_burst") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_cloud_burstAI (creature);
     }
@@ -482,7 +501,7 @@ public:
         EventMap events;
         uint8 uiTickCount;
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             events.Update(diff);
 
@@ -500,7 +519,7 @@ public:
     };
 };
 
-class spell_wailing_winds : public SpellScriptLoader
+class spell_wailing_winds: public SpellScriptLoader
 {
     public:
         spell_wailing_winds() : SpellScriptLoader("spell_wailing_winds") { }
@@ -518,7 +537,7 @@ class spell_wailing_winds : public SpellScriptLoader
                     return;
 
                 uint8 roll = urand(0, 1);
-                float angle = frand(0, M_PI);
+                float angle = frand(0, float(M_PI));
                 float SpeedXY = frand(10.0f, 30.0f);
                 float SpeedZ = frand(10.0f, 15.0f);
                 float x, y;
@@ -537,19 +556,19 @@ class spell_wailing_winds : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_wailing_winds_SpellScript::RandomJump, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript *GetSpellScript() const override
         {
             return new spell_wailing_winds_SpellScript();
         }
 };
 
-class spell_gathered_storms : public SpellScriptLoader
+class spell_gathered_storms: public SpellScriptLoader
 {
     public:
         spell_gathered_storms() : SpellScriptLoader("spell_gathered_storms") { }
@@ -575,13 +594,13 @@ class spell_gathered_storms : public SpellScriptLoader
                     }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_gathered_storms_SpellScript::ApplyAura, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript *GetSpellScript() const override
         {
             return new spell_gathered_storms_SpellScript();
         }
@@ -592,9 +611,9 @@ class achievement_headed_south : public AchievementCriteriaScript
     public:
         achievement_headed_south() : AchievementCriteriaScript("achievement_headed_south") { }
 
-        bool OnCheck(Player* source, Unit* /*target*/)
+        bool OnCheck(Player* source, Unit* /*target*/) override
         {
-            if (AuraPtr aura = source->GetAura(SPELL_LIGHTNING_CHARGE_AURA))
+            if (Aura* aura = source->GetAura(SPELL_LIGHTNING_CHARGE_AURA))
                 if (aura->GetStackAmount() == 3)
                     return true;
 

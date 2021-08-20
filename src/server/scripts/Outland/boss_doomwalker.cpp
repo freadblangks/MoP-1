@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -57,9 +56,15 @@ class boss_doomwalker : public CreatureScript
         {
             boss_doomwalkerAI(Creature* creature) : ScriptedAI(creature)
             {
+                Initialize();
             }
 
-            void Reset()
+            void Initialize()
+            {
+                _inEnrage = false;
+            }
+
+            void Reset() override
             {
                 _events.Reset();
                 _events.ScheduleEvent(EVENT_ENRAGE, 0);
@@ -67,10 +72,10 @@ class boss_doomwalker : public CreatureScript
                 _events.ScheduleEvent(EVENT_CHAIN, urand(10000, 30000));
                 _events.ScheduleEvent(EVENT_QUAKE, urand(25000, 35000));
                 _events.ScheduleEvent(EVENT_OVERRUN, urand(30000, 45000));
-                _inEnrage = false;
+                Initialize();
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* victim) override
             {
                 victim->CastSpell(victim, SPELL_MARK_DEATH, 0);
 
@@ -80,24 +85,25 @@ class boss_doomwalker : public CreatureScript
                 Talk(SAY_SLAY);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 Talk(SAY_DEATH);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
             }
 
-            void MoveInLineOfSight(Unit* who)
+            void MoveInLineOfSight(Unit* who) override
+
             {
                 if (who && who->GetTypeId() == TYPEID_PLAYER && me->IsValidAttackTarget(who))
-                    if (who->HasAura(SPELL_MARK_DEATH, 0))
+                    if (who->HasAura(SPELL_MARK_DEATH))
                         who->CastSpell(who, SPELL_AURA_DEATH, 1);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -158,9 +164,9 @@ class boss_doomwalker : public CreatureScript
                 bool _inEnrage;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new boss_doomwalkerAI (creature);
+            return new boss_doomwalkerAI(creature);
         }
 };
 

@@ -1,323 +1,432 @@
-#include "ScriptPCH.h"
-#include "hour_of_twilight.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2010 - 2012 ProjectSkyfire <http://www.projectskyfire.org/>
+ *
+ * Copyright (C) 2011 - 2012 ArkCORE <http://www.arkania.net/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-enum ScriptTexts
-{
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_EVENT_1 = 2,
-    SAY_EVENT_2 = 3,
-    SAY_EVENT_3 = 4,
-    SAY_KILL    = 5,
-    SAY_SPELL   = 6,
-};
+#include"ScriptMgr.h"
+#include"SpellAuraEffects.h"
+#include"hour_of_twilight.h"
+#include "DynamicObject.h"
 
 enum Spells
 {
-    SPELL_MARK_OF_SILENCE           = 102726,
-    SPELL_THROW_KNIFE               = 103597,
-    SPELL_SILENCE                   = 103587,
-    SPELL_CHOKING_SMOKE_BOMB        = 103558,
-    SPELL_CHOKING_SMOKE_BOMB_DMG    = 103790,
-    SPELL_BLADE_BARRIER             = 103419,
-    SPELL_LESSER_BLADE_BARRIER      = 103562,
+    SPELL_CHOKING_SMOKE_MOB_INTERFERE   = 103790,
+    SPELL_MARK_OF_SILENCE               = 102726,
+    SPELL_BLADE_BARRIER                 = 103419,
+    SPELL_LESSER_BLADE_BARRIER          = 103562,
+    SPELL_ENGULFING_TWILIGHT            = 103762,
+    SPELL_CHOKING_SMOKE_BOMB            = 103558,
+    SPELL_THROW_KNIFE                   = 103597,
 };
 
 enum Events
 {
-    EVENT_MARK_OF_SILENCE       = 1,
-    EVENT_CHOKING_SMOKE_BOMB    = 2,
+    EVENT_MARK_OF_SILENCE = 1,
+    EVENT_CHOKING_SMOKE_BOMB,
+    EVENT_CHOKING_SMOKE_MOB_INTERFERE,
+    EVENT_BLADE_BARRIER,
+    EVENT_CHECK_PLAYER
+
 };
 
-enum Adds
-{
-
-};
 
 class boss_asira_dawnslayer : public CreatureScript
 {
-    public:
-        boss_asira_dawnslayer() : CreatureScript("boss_asira_dawnslayer") { }
+public:
+    boss_asira_dawnslayer() : CreatureScript("boss_asira_dawnslayer") { }
 
-        CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new boss_asira_dawnslayerAI (creature);
+    }
+
+    struct boss_asira_dawnslayerAI : public BossAI
+    {
+        boss_asira_dawnslayerAI(Creature* creature) : BossAI(creature, DATA_ASIRA_DAWNSLAYER_EVENT)
         {
-            return new boss_asira_dawnslayerAI(creature);
+            instance = creature->GetInstanceScript();
         }
 
-        struct boss_asira_dawnslayerAI : public BossAI
+        InstanceScript *instance;
+        EventMap events;
+        bool doneBarrier;
+        bool cooldownVictim;
+
+        void InitializeAI() override
         {
-            boss_asira_dawnslayerAI(Creature* creature) : BossAI(creature, DATA_ASIRA)
+            me->SetReactState(REACT_PASSIVE);
+            me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+            me->SetVisible(false);
+        }
+
+        void Reset() override
+        {
+            _Reset();
+            events.Reset();
+            if (instance)
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_SILENCE);
+            doneBarrier = false;
+            cooldownVictim = false;
+        }
+
+        void JustDied(Unit* /*Kill*/) override
+        {
+            if (instance)
             {
-				me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
-                bBarrier = false;
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MARK_OF_SILENCE);
+                instance->SetData(DATA_ASIRA_DAWNSLAYER_EVENT, DONE);
             }
-
-            void InitializeAI()
+            if (Creature* thrall = me->FindNearestCreature(NPC_THRALL_SECOND, 100.0f, true))
             {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HoTScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
+                thrall->AI()->DoAction(ACTION_THRALL_STOP_CAST);
             }
+        }
 
-            void Reset()
+        void EnterCombat(Unit* /*Ent*/) override
+        {
+            DoZoneInCombat();
+
+            if (instance)
+                instance->SetData(DATA_ASIRA_DAWNSLAYER_EVENT, IN_PROGRESS);
+
+            if (me->FindNearestCreature(NPC_THRALL_SECOND, 100.0f, true))
             {
-                _Reset();
-                bBarrier = false;
+                events.ScheduleEvent(EVENT_MARK_OF_SILENCE, 1000);
+                events.ScheduleEvent(EVENT_CHOKING_SMOKE_BOMB, 10000);
             }
+        }
 
-            void EnterCombat(Unit* /*who*/)
+        void DamageTaken(Unit* /*who*/, uint32& damage) override
+        {
+            if(damage > 0 && doneBarrier == false)
             {
-                Talk(SAY_AGGRO);
-
-                bBarrier = false;
-
-                events.ScheduleEvent(EVENT_MARK_OF_SILENCE, urand(2000, 3000));
-                events.ScheduleEvent(EVENT_CHOKING_SMOKE_BOMB, urand(10000, 12000));
-
-                instance->SetBossState(DATA_ASIRA, IN_PROGRESS);
-                DoZoneInCombat();
-            }
-
-            void KilledUnit(Unit* who)
-            {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SAY_KILL);
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                _JustDied();
-                Talk(SAY_DEATH);
-
-                me->SummonCreature(NPC_LIFE_WARDEN_2, drakePos);
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                if (me->HealthBelowPct(30) && !bBarrier)
+                if(me->HealthBelowPct(30))
                 {
-                    bBarrier = true;
-                    DoCast(me, SPELL_BLADE_BARRIER);
-                    return;
+                    events.ScheduleEvent(EVENT_BLADE_BARRIER, 500);
+                    doneBarrier = true;
                 }
+            }
+        }
 
-                if (uint32 eventId = events.ExecuteEvent())
+        void UpdateAI(uint32 diff) override
+
+        {
+            if (!UpdateVictim())
+                return;
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if (Creature* thrall = me->FindNearestCreature(NPC_THRALL_SECOND, 100.0f, true))
+            {
+                if (me->GetVictim() == thrall && cooldownVictim == false)
                 {
-                    switch (eventId)
+                    cooldownVictim = true;
+                    events.ScheduleEvent(EVENT_CHECK_PLAYER, 1000);
+                }
+            }
+
+            events.Update(diff);
+
+            while (uint32 eventId = events.ExecuteEvent())
+            {
+                switch (eventId)
+                {
+                    case EVENT_MARK_OF_SILENCE:
+                        if(Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                        {
+                            me->CastSpell(target, SPELL_MARK_OF_SILENCE, false);
+                        }
+                        break;
+                    case EVENT_CHOKING_SMOKE_BOMB:
+                        me->CastSpell(me, SPELL_CHOKING_SMOKE_BOMB, false);
+                        events.ScheduleEvent(EVENT_CHOKING_SMOKE_BOMB, 20000);
+                        break;
+                    case EVENT_BLADE_BARRIER:
+                        me->CastSpell(me, SPELL_BLADE_BARRIER, false);
+                        break;
+                    case EVENT_CHECK_PLAYER:
                     {
-                        case EVENT_MARK_OF_SILENCE:
-                            DoCastAOE(SPELL_MARK_OF_SILENCE);
-                            events.ScheduleEvent(EVENT_MARK_OF_SILENCE, urand(21000, 23000));
-                            break;
-                        case EVENT_CHOKING_SMOKE_BOMB:
-                            Talk(SAY_SPELL);
-                            DoCast(me, SPELL_CHOKING_SMOKE_BOMB);
-                            events.ScheduleEvent(EVENT_CHOKING_SMOKE_BOMB, urand(19000, 21000));
-                            break;
-                        default:
-                            break;
+                        std::list<Player*> targets;
+                        me->GetPlayerListInGrid(targets, 100.0f);
+                        if (targets.size() == 0)
+                        {
+                            if (Creature* thrall = me->FindNearestCreature(NPC_THRALL_SECOND, 100.0f, true))
+                            {
+                                me->SetReactState(REACT_PASSIVE);
+                                thrall->RemoveAura(SPELL_ENGULFING_TWILIGHT);
+                                thrall->SetReactState(REACT_PASSIVE);
+                                thrall->AI()->EnterEvadeMode();
+                                thrall->AI()->DoAction(ACTION_THRALL_STOP_CAST);
+
+                                if (instance)
+                                {
+                                    instance->SetData(DATA_ASIRA_DAWNSLAYER_EVENT, NOT_STARTED);
+                                    instance->SetBossState(DATA_ASIRA_DAWNSLAYER, NOT_STARTED);
+                                }
+                                EnterEvadeMode();
+
+
+                                Reset();
+                                me->SetReactState(REACT_AGGRESSIVE);
+                            }
+                        }
+                        cooldownVictim = false;
+                        break;
                     }
                 }
-
-                DoMeleeAttackIfReady();
             }
 
-        private:
-            bool bBarrier;
-        };   
+            DoMeleeAttackIfReady();
+        }
+    };
 };
 
-class spell_asira_dawnslayer_blade_barrier : public SpellScriptLoader
+class TypeCheck
 {
     public:
-        spell_asira_dawnslayer_blade_barrier() : SpellScriptLoader("spell_asira_dawnslayer_blade_barrier") { }
+        explicit TypeCheck(Unit* caster) : _victim(caster->GetVictim()) { }
 
-        class spell_asira_dawnslayer_blade_barrier_AuraScript : public AuraScript
+        bool operator() (WorldObject* unit) const
         {
-            PrepareAuraScript(spell_asira_dawnslayer_blade_barrier_AuraScript);
-
-            void CalculateAmount(constAuraEffectPtr /*aurEff*/, int32 & amount, bool& /*canBeRecalculated*/)
-            {
-                amount = -1;
-            }
-
-            void Absorb(AuraEffectPtr aurEff, DamageInfo & dmgInfo, uint32 & absorbAmount)
-            {
-                if (dmgInfo.GetDamage() < (uint32)GetSpellInfo()->Effects[EFFECT_0].BasePoints)
-                    absorbAmount = dmgInfo.GetDamage() - 1;
-                else
-                    GetAura()->Remove();
-            }
-
-            void HandleAfterRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-            {
-                if (GetCaster())
-                    GetCaster()->CastSpell(GetCaster(), SPELL_LESSER_BLADE_BARRIER, true);
-            }
-
-            void Register()
-            {
-                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_asira_dawnslayer_blade_barrier_AuraScript::CalculateAmount, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB);
-                 OnEffectAbsorb += AuraEffectAbsorbFn(spell_asira_dawnslayer_blade_barrier_AuraScript::Absorb, EFFECT_0);
-                 if (m_scriptSpellId == SPELL_BLADE_BARRIER)
-                     AfterEffectRemove += AuraEffectRemoveFn(spell_asira_dawnslayer_blade_barrier_AuraScript::HandleAfterRemove, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB, AURA_EFFECT_HANDLE_REAL);
-            }
-        };
-
-        AuraScript* GetAuraScript() const
-        {
-            return new spell_asira_dawnslayer_blade_barrier_AuraScript();
+            if (!unit->ToPlayer() || unit == _victim)
+                return true;
+            return false;
         }
+
+        Unit* _victim;
 };
 
-class spell_asira_dawnslayer_throw_knife : public SpellScriptLoader
-{ 
+class spell_mark_of_silence : public SpellScriptLoader
+{
     public:
-        spell_asira_dawnslayer_throw_knife() : SpellScriptLoader("spell_asira_dawnslayer_throw_knife") { }
+        spell_mark_of_silence() : SpellScriptLoader("spell_mark_of_silence") { }
 
-        class spell_asira_dawnslayer_throw_knife_SpellScript : public SpellScript
+        class spell_mark_of_silence_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_asira_dawnslayer_throw_knife_SpellScript);
+            PrepareSpellScript(spell_mark_of_silence_SpellScript);
+
+            bool Load() override
+            {
+                return GetCaster()->GetTypeId() == TYPEID_UNIT;
+            }
 
             void FilterTargets(std::list<WorldObject*>& targets)
             {
-                if (!GetCaster())
-                    return;
+                if (targets.size() != 1)
+                {
+                    targets.remove_if(TypeCheck(GetCaster()));
+                }
 
-                if (targets.size() <= 1)
-                    return;
-
-                Unit* pPlayer = GetExplTargetUnit();
-                if (!pPlayer)
-                    return;
-
-                WorldObject* objTarget = NULL;
-                for (std::list<WorldObject*>::const_iterator itr = targets.begin(); itr != targets.end(); ++itr)
-                    if ((*itr)->IsInBetween(GetCaster(), pPlayer, 1.0f))
-                        if (!objTarget || (GetCaster()->GetDistance(objTarget) > GetCaster()->GetDistance((*itr))))
-                            objTarget = (*itr);
-
-                if (!objTarget)
-                    objTarget = pPlayer;
-
-                targets.clear();
-                targets.push_back(objTarget);
+                Trinity::Containers::RandomResize(targets, 1);
             }
 
-            void HandleDamage(SpellEffIndex /*effIndex*/)
+            void Register() override
             {
-                if (!GetCaster() || !GetHitUnit())
-                    return;
-
-                if (GetHitUnit()->HasAura(SPELL_MARK_OF_SILENCE))
-                    GetCaster()->CastSpell(GetHitUnit(), SPELL_SILENCE, true);
-            }
-        
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_asira_dawnslayer_throw_knife_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_CONE_ENEMY_24);
-                OnEffectHitTarget += SpellEffectFn(spell_asira_dawnslayer_throw_knife_SpellScript::HandleDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_mark_of_silence_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
         };
-       
-        SpellScript* GetSpellScript() const
+
+        class spell_mark_of_silence_AuraScript : public AuraScript
         {
-            return new spell_asira_dawnslayer_throw_knife_SpellScript();
-        }
-};
+            PrepareAuraScript(spell_mark_of_silence_AuraScript);
 
-class spell_asira_dawnslayer_mark_of_silence : public SpellScriptLoader
-{ 
-    public:
-        spell_asira_dawnslayer_mark_of_silence() : SpellScriptLoader("spell_asira_dawnslayer_mark_of_silence") { }
-
-        class spell_asira_dawnslayer_mark_of_silence_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_asira_dawnslayer_mark_of_silence_SpellScript);
-
-            void FilterTargets(std::list<WorldObject*>& targets)
+            void OnProc(AuraEffect* aurEff, ProcEventInfo& /*eventInfo*/)
             {
-                if (!GetCaster())
-                    return;
+                PreventDefaultAction();
 
-                if (targets.empty())
-                    return;
-
-                targets.remove_if(CastersCheck());
-            }
-
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_asira_dawnslayer_mark_of_silence_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            }
-
-        private:
-
-            class CastersCheck
-            {
-                public:
-                    CastersCheck() {}
-            
-                    bool operator()(WorldObject* unit)
+                if(Unit* caster = aurEff->GetCaster())
+                {
+                    if(Unit* owner = aurEff->GetBase()->GetUnitOwner())
                     {
-                        if (unit->GetTypeId() != TYPEID_PLAYER)
-                            return true;
-                        
-                        switch (unit->ToPlayer()->getClass())
-                        {
-                            case CLASS_WARRIOR:
-                            case CLASS_DEATH_KNIGHT:
-                            case CLASS_ROGUE:
-                            case CLASS_HUNTER:
-                                return true;
-                            case CLASS_DRUID:
-                                if (unit->ToPlayer()->GetPrimaryTalentTree(unit->ToPlayer()->GetActiveSpec()) == TALENT_TREE_DRUID_FERAL_COMBAT)
-                                    return true;
-                                return false;
-                            case CLASS_PALADIN:
-                                if (unit->ToPlayer()->GetPrimaryTalentTree(unit->ToPlayer()->GetActiveSpec()) == TALENT_TREE_PALADIN_HOLY)
-                                    return false;
-                                return true;
-                            default:
-                                return false;
-                        }
+                        std::list<Player*> betweeners;
+                        std::list<Player*> targets;
+                        caster->GetPlayerListInGrid(targets, 100.0f);
 
-                        return false;
+                        for (std::list<Player*>::const_iterator iter = targets.begin(); iter != targets.end(); ++iter)
+                        {
+                            if((*iter)->ToPlayer())
+                            {
+                                if((*iter)->IsInBetween(caster, owner, 4.0f))
+                                {
+                                    betweeners.push_back((*iter));
+                                }
+                            }
+                        }
+                        if(betweeners.size() > 0)
+                        {
+                            betweeners.sort(Trinity::ObjectDistanceOrderPred(caster));
+
+                            if(Unit* target = betweeners.front())
+                            {
+                                caster->CastSpell(target, SPELL_THROW_KNIFE, false);
+                            }
+                        }
+                        else
+                        {
+                            caster->CastSpell(owner, SPELL_THROW_KNIFE, false);
+                        }
                     }
-            };
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectProc += AuraEffectProcFn(spell_mark_of_silence_AuraScript::OnProc, EFFECT_0, SPELL_AURA_PROC_TRIGGER_SPELL);
+
+            }
         };
-       
-        SpellScript* GetSpellScript() const
+
+        SpellScript* GetSpellScript() const override
         {
-            return new spell_asira_dawnslayer_mark_of_silence_SpellScript();
+            return new spell_mark_of_silence_SpellScript();
+        }
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_mark_of_silence_AuraScript();
+        }
+};
+
+class spell_choking_smoke_bomb : public SpellScriptLoader
+{
+    public:
+        spell_choking_smoke_bomb() : SpellScriptLoader("spell_choking_smoke_bomb") { }
+
+        class spell_choking_smoke_bomb_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_choking_smoke_bomb_AuraScript);
+
+            void HandlePeriodicTick(AuraEffect const* /*aurEff*/)
+            {
+                PreventDefaultAction();
+                if(Unit* caster = GetCaster())
+                {
+                    if (DynamicObject* dynObj = caster->GetDynObject(SPELL_CHOKING_SMOKE_BOMB))
+                    {
+                        // Casts aoe interfere targetting aura
+                        caster->CastSpell(dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ(), SPELL_CHOKING_SMOKE_MOB_INTERFERE, true);
+                    }
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_choking_smoke_bomb_AuraScript::HandlePeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_choking_smoke_bomb_AuraScript();
+        }
+};
+
+class spell_throw_knife : public SpellScriptLoader
+{
+    public:
+        spell_throw_knife() : SpellScriptLoader("spell_throw_knife") { }
+
+        class spell_throw_knife_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_throw_knife_SpellScript);
+
+            void HandleDummy(SpellEffIndex effIndex)
+            {
+                if(Unit* target = GetHitUnit())
+                {
+                    if(target->HasAura(SPELL_MARK_OF_SILENCE))
+                    {
+                        target->CastSpell(target, GetSpellInfo()->GetEffect(effIndex)->BasePoints, true);
+                    }
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_throw_knife_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_throw_knife_SpellScript();
+        }
+};
+
+class spell_blade_barrier : public SpellScriptLoader
+{
+    public:
+        spell_blade_barrier() : SpellScriptLoader("spell_blade_barrier") { }
+
+        class spell_blade_barrier_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_blade_barrier_AuraScript);
+
+            void HandleOnEffectAbsorb(AuraEffect* aurEff, DamageInfo & dmgInfo, uint32 & absorbAmount)
+            {
+                if(Unit* caster = aurEff->GetCaster())
+                {
+                    if(aurEff->GetId() == SPELL_BLADE_BARRIER)
+                    {
+                        if(dmgInfo.GetDamage() > 40000 && dmgInfo.GetAttacker()->ToPlayer())
+                        {
+                            caster->RemoveAura(SPELL_BLADE_BARRIER);
+                            caster->CastSpell(caster, SPELL_LESSER_BLADE_BARRIER, false);
+                        }
+                        else
+                        {
+                            absorbAmount = dmgInfo.GetDamage();
+                        }
+                    }
+                    else
+                    {
+                        if (dmgInfo.GetDamage() > 30000 && dmgInfo.GetAttacker()->ToPlayer())
+                        {
+                            caster->RemoveAura(SPELL_LESSER_BLADE_BARRIER);
+                        }
+                        else
+                        {
+                            absorbAmount = dmgInfo.GetDamage();
+                        }
+                    }
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectAbsorb += AuraEffectAbsorbFn(spell_blade_barrier_AuraScript::HandleOnEffectAbsorb, EFFECT_0);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_blade_barrier_AuraScript();
         }
 };
 
 void AddSC_boss_asira_dawnslayer()
 {
     new boss_asira_dawnslayer();
-    new spell_asira_dawnslayer_blade_barrier();
-    new spell_asira_dawnslayer_throw_knife();
-    new spell_asira_dawnslayer_mark_of_silence();
+    new spell_mark_of_silence();
+    new spell_choking_smoke_bomb();
+    new spell_throw_knife();
+    new spell_blade_barrier();
 }

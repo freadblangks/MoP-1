@@ -1,6 +1,23 @@
-#include "ScriptPCH.h"
-#include "AccountMgr.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include "firelands.h"
+#include "GameObject.h"
+#include "ScriptMgr.h"
 
 // areatrigger
 // 6929 - quest1
@@ -8,17 +25,16 @@
 
 #define MAX_ENCOUNTER 7
 
-static const DoorData doordata[] = 
+static const DoorData doordata[] =
 {
-    {GO_BRIDGE_OF_RHYOLITH,  DATA_RHYOLITH,  DOOR_TYPE_ROOM,        BOUNDARY_NONE},
-    {GO_FIRE_WALL_BALEROC,   DATA_BALEROC,   DOOR_TYPE_ROOM,        BOUNDARY_NONE},
-    {GO_RAID_BRIDGE_FORMING, DATA_BALEROC,   DOOR_TYPE_PASSAGE,     BOUNDARY_NONE},
-    {GO_STICKY_WEB,          DATA_BETHTILAC, DOOR_TYPE_ROOM,        BOUNDARY_NONE},
-    {GO_BRIDGE_OF_RHYOLITH,  DATA_RHYOLITH,  DOOR_TYPE_SPAWN_HOLE,  BOUNDARY_NONE},
-    {GO_FIRE_WALL_FANDRAL_1, DATA_STAGHELM,  DOOR_TYPE_PASSAGE,     BOUNDARY_NONE},
-    {GO_FIRE_WALL_FANDRAL_2, DATA_STAGHELM,  DOOR_TYPE_PASSAGE,     BOUNDARY_NONE},
-    {GO_SULFURON_KEEP,       DATA_RAGNAROS,  DOOR_TYPE_ROOM,        BOUNDARY_NONE},
-    {0, 0, DOOR_TYPE_ROOM, BOUNDARY_NONE},
+    { GO_BRIDGE_OF_RHYOLITH,    DATA_RHYOLITH,  DOOR_TYPE_ROOM          },
+    { GO_FIRE_WALL_BALEROC,     DATA_BALEROC,   DOOR_TYPE_ROOM          },
+    { GO_RAID_BRIDGE_FORMING,   DATA_BALEROC,   DOOR_TYPE_PASSAGE       },
+    { GO_STICKY_WEB,            DATA_BETHTILAC, DOOR_TYPE_ROOM          },
+    { GO_BRIDGE_OF_RHYOLITH,    DATA_RHYOLITH,  DOOR_TYPE_SPAWN_HOLE    },
+    { GO_FIRE_WALL_FENDRAL,     DATA_STAGHELM,  DOOR_TYPE_PASSAGE       },
+    { GO_DOOR_RAGNAROS,         DATA_RAGNAROS,  DOOR_TYPE_ROOM          },
+    { 0,                        0,              DOOR_TYPE_ROOM          },
 };
 
 class instance_firelands : public InstanceMapScript
@@ -26,39 +42,34 @@ class instance_firelands : public InstanceMapScript
     public:
         instance_firelands() : InstanceMapScript("instance_firelands", 720) { }
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
             return new instance_firelands_InstanceMapScript(map);
         }
 
         struct instance_firelands_InstanceMapScript : public InstanceScript
         {
-            instance_firelands_InstanceMapScript(Map* map) : InstanceScript(map)
+            instance_firelands_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
                 SetBossNumber(MAX_ENCOUNTER);
                 LoadDoorData(doordata);
-                uiShannoxGUID = 0;
-                uiRiplimbGUID = 0;
-                uiRagefaceGUID = 0;
-                uiRhyolithGUID = 0;
-                uiRagnarosGUID = 0;
-                uiRhyolithHealth = 0;
-                uiRagnarosFloor = 0;
-                uiRagnarosCache10 = 0;
-                uiRagnarosCache25 = 0;
-                uiTimer = 0;
-                bEvent = false;
+
+                uiRhyolithHealth        = 0;
+                uiTimer                 = 0;
+                bEvent                  = false;
+                AEvent                  = EVENT_MAJORDOMO_NOT_DONE;
+
                 creaturePortals.clear();
                 gameobjectPortals.clear();
             }
 
-            void BeforePlayerEnter(Player* pPlayer)
+            void OnPlayerEnter(Player* pPlayer) override
             {
                 if (!uiTeamInInstance)
-				    uiTeamInInstance = pPlayer->GetTeam();
+                    uiTeamInInstance = pPlayer->GetTeam();
             }
 
-            void OnCreatureCreate(Creature* pCreature)
+            void OnCreatureCreate(Creature* pCreature) override
             {
                 switch (pCreature->GetEntry())
                 {
@@ -75,12 +86,13 @@ class instance_firelands : public InstanceMapScript
                         creaturePortals.push_back(pCreature);
                         if (uiEvent == DONE)
                         {
-                            pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                            pCreature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_SPELLCLICK);
+                            pCreature->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                            pCreature->AddUnitFlag(UnitFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_SPELLCLICK));
                         }
                         break;
-                    case NPC_RHYOLITH:
-                        uiRhyolithGUID = pCreature->GetGUID();
+                    case NPC_SMOULDERING_HATCHLING:
+                        // Cannot directly start attacking here as the creature is not yet on map
+                        pCreature->m_Events.AddEvent(new DelayedAttackStartEvent(pCreature), pCreature->m_Events.CalculateTime(500));
                         break;
                     case NPC_RAGNAROS:
                         uiRagnarosGUID = pCreature->GetGUID();
@@ -88,39 +100,47 @@ class instance_firelands : public InstanceMapScript
                     default:
                         break;
                 }
-		    }
+            }
 
-            void OnGameObjectCreate(GameObject* pGo)
+            void OnGameObjectCreate(GameObject* pGo) override
             {
                 switch (pGo->GetEntry())
                 {
                     case GO_FIRE_WALL_BALEROC:
+                    {
+                        BalerocDoorGUID = pGo->GetGUID();
+
+                        if (GetBossState(DATA_SHANNOX) == DONE && GetBossState(NPC_BETHTILAC) == DONE && GetBossState(NPC_RHYOLITH) == DONE && GetBossState(NPC_ALYSRAZOR) == DONE)
+                            HandleGameObject(BalerocDoorGUID, true, pGo);
+
+                        break;
+                    }
                     case GO_STICKY_WEB:
                     case GO_RAID_BRIDGE_FORMING:
                     case GO_BRIDGE_OF_RHYOLITH:
-                    case GO_FIRE_WALL_FANDRAL_1:
-                    case GO_FIRE_WALL_FANDRAL_2:
-                    case GO_SULFURON_KEEP:
+                    case GO_FIRE_WALL_FENDRAL:
+                    case GO_DOOR_RAGNAROS:
                         AddDoor(pGo, true);
-                        break;
-                    case GO_RAGNAROS_FLOOR:
-                        uiRagnarosFloor = pGo->GetGUID();
                         break;
                     case GO_CIRCLE_OF_THORNS_PORTAL3:
                         gameobjectPortals.push_back(pGo);
                         if (uiEvent == DONE)
                             HandleGameObject(pGo->GetGUID(), true, pGo);
                         break;
-                    case GO_CACHE_OF_THE_FIRELORD_10:
-                        uiRagnarosCache10 = pGo->GetGUID();
+                    case GO_SULFURON_BRIDGE:
+                    {
+                        uiSulfuronBrideGUID = pGo->GetGUID();
+                        pGo->SetDestructibleState(GetBossState(DATA_BALEROC) == DONE ? GO_DESTRUCTIBLE_DESTROYED: GO_DESTRUCTIBLE_INTACT);
                         break;
-                    case GO_CACHE_OF_THE_FIRELORD_25:
-                        uiRagnarosCache25 = pGo->GetGUID();
+                    }
+                    case GO_PLATFORM_RAGN:
+                        uiRagnarosPlatformGUID = pGo->GetGUID();
                         break;
-                }
-		    }
 
-            void SetData(uint32 type, uint32 data)
+                }
+            }
+
+            void SetData(uint32 type, uint32 data) override
             {
                 if (type == DATA_RHYOLITH_HEALTH_SHARED)
                     uiRhyolithHealth = data;
@@ -141,75 +161,91 @@ class instance_firelands : public InstanceMapScript
                             for (std::list<Creature*>::const_iterator itr = creaturePortals.begin(); itr != creaturePortals.end(); ++itr)
                                 if (Creature* pCreature = (*itr)->ToCreature())
                                 {
-                                    pCreature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                                    pCreature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_SPELLCLICK);
+                                    pCreature->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                                    pCreature->AddUnitFlag(UnitFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_SPELLCLICK));
                                 }
                         }
 
                         SaveToDB();
                     }
                 }
-		    }
-
-            uint32 GetData(uint32 type)
-            {
-                if (type == DATA_RHYOLITH_HEALTH_SHARED)
-                    return uiRhyolithHealth;
-                else if (type == DATA_EVENT)
-                    return uiEvent;
-			    return 0;
+                else if (type == DATA_MAJORDOMO_ALYSRAZOR)
+                {
+                    AEvent = data;
+                }
             }
 
-            uint64 GetData64(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 switch (type)
                 {
-                    case DATA_SHANNOX: return uiShannoxGUID;
-                    case DATA_RIPLIMB: return uiRiplimbGUID;
-                    case DATA_RAGEFACE: return uiRagefaceGUID;
-                    case DATA_RHYOLITH: return uiRhyolithGUID;
-                    case DATA_RAGNAROS: return uiRagnarosGUID;
-                    case DATA_RAGNAROS_FLOOR: return uiRagnarosFloor;
-                    case DATA_RAGNAROS_CACHE_10: return uiRagnarosCache10;
-                    case DATA_RAGNAROS_CACHE_25: return uiRagnarosCache25;
-                    default: return 0;
+                    case DATA_RHYOLITH_HEALTH_SHARED:   return uiRhyolithHealth;
+                    case DATA_EVENT:                    return uiEvent;
+                    case DATA_MAJORDOMO_ALYSRAZOR:      return AEvent;
+                    case DATA_TEAM:                     return uiTeamInInstance;
                 }
+
                 return 0;
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            ObjectGuid GetGuidData(uint32 type) const override
             {
-			    if (!InstanceScript::SetBossState(type, state))
-				    return false;
+                switch (type)
+                {
+                    case DATA_SHANNOX:              return uiShannoxGUID;
+                    case DATA_RIPLIMB:              return uiRiplimbGUID;
+                    case DATA_RAGEFACE:             return uiRagefaceGUID;
+                    case GO_SULFURON_BRIDGE:        return uiSulfuronBrideGUID;
+                    case DATA_RAGNAROS_PLATFORM:    return uiRagnarosPlatformGUID;
+                    case NPC_RAGNAROS:              return uiRagnarosGUID;
+                    default: return ObjectGuid::Empty;
+                }
 
-			    return true;
+                return ObjectGuid::Empty;
             }
 
-            bool CheckRequiredBosses(uint32 bossId, Player const* player = NULL) const
+            bool SetBossState(uint32 type, EncounterState state) override
             {
-                if (player && AccountMgr::IsGMAccount(player->GetSession()->GetSecurity()))
-                    return true;
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
 
+                switch (type)
+                {
+                    case DATA_SHANNOX:
+                    case DATA_RHYOLITH:
+                    case DATA_BETHTILAC:
+                    case DATA_ALYSRAZOR:
+                    {
+                        if (state == DONE)
+                        {
+                            if (GetBossState(DATA_SHANNOX) == DONE && GetBossState(DATA_BETHTILAC) == DONE && GetBossState(DATA_RHYOLITH) == DONE && GetBossState(DATA_ALYSRAZOR) == DONE)
+                            {
+                                //on ouvre la porte de baleroc
+                                HandleGameObject(BalerocDoorGUID, true);
+                            }
+                        }
+                        break;
+                    }
+                    case DATA_BALEROC:
+                    {
+                        if (GameObject* bridge = instance->GetGameObject(GetGuidData(GO_SULFURON_BRIDGE)))
+                            bridge->SetDestructibleState(state == DONE ? GO_DESTRUCTIBLE_DESTROYED: GO_DESTRUCTIBLE_INTACT);
+                        break;
+                    }
+                    case DATA_STAGHELM:
+                    case DATA_RAGNAROS:
+                        break;
+                }
+
+                return true;
+            }
+
+            bool CheckRequiredBosses(uint32 bossId, Player const* /*player = nullptr*/) const override
+            {
                 switch (bossId)
                 {
-                    case DATA_RAGNAROS:
-                        if (GetBossState(DATA_STAGHELM) != DONE)
-                            return false;
-                        break;
-                    case DATA_STAGHELM:
-                        if (GetBossState(DATA_BALEROC) != DONE)
-                            return false;
-                        break;
                     case DATA_BALEROC:
-                        if (GetBossState(DATA_SHANNOX) != DONE)
-                            return false;
-                        if (GetBossState(DATA_ALYSRAZOR) != DONE)
-                            return false;
-                        if (GetBossState(DATA_BETHTILAC) != DONE)
-                            return false;
-                        if (GetBossState(DATA_RHYOLITH) != DONE)
-                            return false;
-                        break;
+                        return GetBossState(DATA_SHANNOX) == DONE && GetBossState(NPC_BETHTILAC) == DONE && GetBossState(NPC_RHYOLITH) == DONE && GetBossState(NPC_ALYSRAZOR) == DONE;
                     default:
                         break;
                 }
@@ -217,11 +253,12 @@ class instance_firelands : public InstanceMapScript
                 return true;
             }
 
-            void ProcessEvent(WorldObject* /*source*/, uint32 eventId)
+            void ProcessEvent(WorldObject* /*source*/, uint32 eventId) override
             {
                 switch (eventId)
                 {
                     case EVENT_PORTALS:
+                    {
                         if ((uiEvent == DONE) || bEvent)
                             return;
                         bEvent = true;
@@ -231,10 +268,11 @@ class instance_firelands : public InstanceMapScript
                                 if (Creature* pCreature = (*itr)->ToCreature())
                                     pCreature->CastSpell(pCreature, SPELL_LEGENDARY_PORTAL_OPENING);
                         break;
+                    }
                 }
             }
 
-            void Update(uint32 diff)
+            void Update(uint32 diff) override
             {
                 if (bEvent)
                 {
@@ -248,72 +286,22 @@ class instance_firelands : public InstanceMapScript
                 }
             }
 
-            std::string GetSaveData()
-            {
-                OUT_SAVE_INST_DATA;
-
-                std::string str_data;
-
-                std::ostringstream saveStream;
-                saveStream << "F L " << GetBossSaveData() << uiEvent << ' ';
-
-                str_data = saveStream.str();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return str_data;
-            }
-
-            void Load(const char* in)
-            {
-                if (!in)
-                {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
-                }
-
-                OUT_LOAD_INST_DATA(in);
-
-                char dataHead1, dataHead2;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2;
-
-                if (dataHead1 == 'F' && dataHead2 == 'L')
-                {
-                    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-				    {
-					    uint32 tmpState;
-					    loadStream >> tmpState;
-					    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-						    tmpState = NOT_STARTED;
-					    SetBossState(i, EncounterState(tmpState));
-				    }
-
-                    uint32 tempEvent = 0;
-                    loadStream >> tempEvent;
-                    uiEvent = (tempEvent != DONE ? 0 : DONE);
-
-                } else OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
-            }
-
             private:
                 uint32 uiTeamInInstance;
                 uint32 uiRhyolithHealth;
                 uint32 uiEvent;
                 uint32 uiTimer;
                 bool bEvent;
-                uint64 uiShannoxGUID;
-                uint64 uiRiplimbGUID;
-                uint64 uiRagefaceGUID;
-                uint64 uiRagnarosGUID;
-                uint64 uiRhyolithGUID;
-                uint64 uiRagnarosFloor;
-                uint64 uiRagnarosCache10;
-                uint64 uiRagnarosCache25;
+                ObjectGuid uiShannoxGUID;
+                ObjectGuid uiRiplimbGUID;
+                ObjectGuid uiRagefaceGUID;
+                ObjectGuid uiSulfuronBrideGUID;
+                ObjectGuid uiRagnarosGUID;
+                ObjectGuid uiRagnarosPlatformGUID;
+                ObjectGuid BalerocDoorGUID;
                 std::list<GameObject*> gameobjectPortals;
                 std::list<Creature*> creaturePortals;
+                uint32 AEvent;
         };
 };
 

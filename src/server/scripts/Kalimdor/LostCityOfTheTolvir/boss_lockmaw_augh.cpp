@@ -1,5 +1,22 @@
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include "lost_city_of_the_tolvir.h"
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
 
 enum eSpells
 {
@@ -32,16 +49,16 @@ enum eCreatures
 
 enum eTexts
 {
-    AUGH_SAY_INTRO_1                    = -1877007,
-    AUGH_SAY_INTRO_2                    = -1877008,
-    LOCKMAW_EMOTE_FRENZI                = -1877009,
-    AUGH_EMOTE_KILL_CROCK               = -1877014,
-    AUGH_SAY_HOW_YOU_KILL_CROCK         = -1877015,
-    AUGH_SAY_AUGH_SMART                 = -1877016,
-    AUGH_SAY_AUGH_BOSS                  = -1877017,
-    AUGH_SAY_AUGH_STEAL                 = -1877018,
-    AUGH_SAY_AUGH_BAD                   = -1877019,
-    AUGH_SAY_AAA                        = -1877020,
+    AUGH_SAY_INTRO_1                    = 0,
+    AUGH_SAY_INTRO_2                    = 1,
+    LOCKMAW_EMOTE_FRENZI                = 2,
+    AUGH_EMOTE_KILL_CROCK               = 3,
+    AUGH_SAY_HOW_YOU_KILL_CROCK         = 4,
+    AUGH_SAY_AUGH_SMART                 = 5,
+    AUGH_SAY_AUGH_BOSS                  = 6,
+    AUGH_SAY_AUGH_STEAL                 = 7,
+    AUGH_SAY_AUGH_BAD                   = 8,
+    AUGH_SAY_AAA                        = 9,
 };
 
 enum ePhases
@@ -96,7 +113,7 @@ class boss_lockmaw : public CreatureScript
 public:
     boss_lockmaw() : CreatureScript("boss_lockmaw") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new boss_lockmawAI (creature);
     }
@@ -115,8 +132,8 @@ public:
         InstanceScript* instance;
         uint8 uiPrevAughId;
         bool Rage;
-        
-        void Reset()
+
+        void Reset() override
         {
             lSummons.DespawnAll();
             events.Reset();
@@ -127,7 +144,7 @@ public:
                 instance->SetData(DATA_LOCKMAW, NOT_STARTED);
         }
 
-        void EnterCombat(Unit* /*pWho*/)
+        void EnterCombat(Unit* /*pWho*/) override
         {
             if (instance)
                 instance->SetData(DATA_LOCKMAW, IN_PROGRESS);
@@ -137,7 +154,7 @@ public:
             events.ScheduleEvent(EVENT_SUMMON_CROCOLISK, urand(5000, 20000));
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             if (summoned->GetEntry() == NPC_DUST_FLAIL)
             {
@@ -151,7 +168,7 @@ public:
             lSummons.Summon(summoned);
         }
 
-        void JustDied(Unit* /*Killer*/)
+        void JustDied(Unit* /*Killer*/) override
         {
             lSummons.DespawnAll();
             events.Reset();
@@ -160,7 +177,7 @@ public:
             {
                 instance->SetData(DATA_LOCKMAW, DONE);
 
-                if (Creature* augh = Unit::GetCreature(*me, instance->GetData64(DATA_AUGH)))
+                if (Creature* augh = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_AUGH)))
                     augh->AI()->DoAction(ACTION_LOCKMAW_IS_DONE);
             }
         }
@@ -169,8 +186,8 @@ public:
         {
             if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
             {
-                                
-                uint8 roll = urand(0, 3);
+
+                uint8 roll = urand(0, 2);
 
                 while (roll == uiPrevAughId)
                     roll = urand(0, 2);
@@ -185,7 +202,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -194,7 +211,7 @@ public:
             {
                 Rage = true;
                 DoCast(SPELL_VENOMOUS_RAGE);
-                DoScriptText(LOCKMAW_EMOTE_FRENZI, me);
+                Talk(LOCKMAW_EMOTE_FRENZI);
             }
 
             events.Update(diff);
@@ -238,7 +255,7 @@ public:
                                 if (itr == lStalkers.end())
                                     itr = lStalkers.begin();
 
-                                if ((*itr) && (*itr)->isAlive())
+                                if ((*itr) && (*itr)->IsAlive())
                                     (*itr)->CastSpell((*itr), 84242, false);
 
                                 ++itr;
@@ -266,7 +283,7 @@ class npc_frenzied_croc : public CreatureScript
 public:
     npc_frenzied_croc() : CreatureScript("npc_frenzied_croc") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_frenzied_crocAI (creature);
     }
@@ -283,7 +300,7 @@ public:
             InstanceScript* instance = creature->GetInstanceScript();
 
             if (instance)
-                if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
+                if (Creature* lockmaw = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_LOCKMAW)))
                     lockmaw->AI()->JustSummoned(me);
         }
 
@@ -297,24 +314,16 @@ public:
                 return;
 
             for(Map::PlayerList::const_iterator itr = lPlayers.begin(); itr != lPlayers.end(); ++itr)
-                if(Player* player = itr->getSource())
+                if(Player* player = itr->GetSource())
                 {
                     if (player->HasAura(DUNGEON_MODE(SPELL_SCENT_OF_BLOOD_NORMAL, SPELL_SCENT_OF_BLOOD_HEROIC)))
-                        me->AddThreat(player, 100500.0f);
+                        AddThreat(player, 100500.0f);
                     else
-                        me->getThreatManager().modifyThreatPercent(player, -10);
+                        ModifyThreatByPercent(player, -10);
                 }
         }
 
-        void JustDied(Unit* /*Killer*/)
-        {
-            InstanceScript* instance = me->GetInstanceScript();
-
-            if (instance)
-                instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_CREATURE, 43658);
-        }
-
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -333,7 +342,7 @@ public:
                         break;
                     case EVENT_VICIOUS_CROC_VICIOUS_BITE:
                         events.ScheduleEvent(EVENT_VICIOUS_CROC_VICIOUS_BITE, urand(5000, 10000));
-                        me->CastSpell(me->getVictim(), SPELL_VICIOUS_BITE, false);
+                        me->CastSpell(me->GetVictim(), SPELL_VICIOUS_BITE, false);
                         break;
                 }
             }
@@ -348,7 +357,7 @@ class npc_augh_intro : public CreatureScript
 public:
     npc_augh_intro() : CreatureScript("npc_augh_intro") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_augh_introAI (creature);
     }
@@ -364,13 +373,13 @@ public:
         InstanceScript* instance;
         bool Active;
 
-        void EnterCombat(Unit* /*pWho*/)
+        void EnterCombat(Unit* /*pWho*/) override
         {
             if (Active)
-                DoScriptText(AUGH_SAY_INTRO_1, me);
+                Talk(AUGH_SAY_INTRO_1);
         }
 
-        void UpdateAI(const uint32 /*diff*/)
+        void UpdateAI(uint32 /*diff*/) override
         {
             if (!UpdateVictim())
                 return;
@@ -379,12 +388,12 @@ public:
                 if (me->GetHealthPct() <= 90)
                 {
                     Active = false;
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                     me->SetReactState(REACT_PASSIVE);
                     me->CombatStop();
                     me->SetControlled(true, UNIT_STATE_ROOT);
                     me->CastSpell(me, SPELL_SMOKE_BOMB, false);
-                    DoScriptText(AUGH_SAY_INTRO_2, me);
+                    Talk(AUGH_SAY_INTRO_2);
                     me->DespawnOrUnsummon(2000);
                 }
 
@@ -398,14 +407,14 @@ class npc_augh_blow_dart : public CreatureScript
 public:
     npc_augh_blow_dart() : CreatureScript("npc_augh_blow_dart") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_augh_blow_dartAI (creature);
     }
 
-    struct npc_augh_blow_dartAI : public CasterAI
+    struct npc_augh_blow_dartAI : public ScriptedAI
     {
-        npc_augh_blow_dartAI(Creature* creature) : CasterAI(creature)
+        npc_augh_blow_dartAI(Creature* creature) : ScriptedAI(creature)
         {
             me->AddAura(SPELL_STEALTHED, me);
             me->SetInCombatWithZone();
@@ -413,11 +422,11 @@ public:
             uiPhase = AUGH_PHASE_ACTIVE;
             instance = creature->GetInstanceScript();
 
-            if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+            if (Unit* target = SelectTarget(SELECT_TARGET_MINDISTANCE, 0, 100.0f, true))
                 AttackStart(target);
 
             if (instance)
-                if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
+                if (Creature* lockmaw = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_LOCKMAW)))
                     lockmaw->AI()->JustSummoned(me);
         }
 
@@ -425,7 +434,7 @@ public:
         uint32 uiEventTimer;
         uint8 uiPhase;
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -438,7 +447,7 @@ public:
                     {
                         case AUGH_PHASE_ACTIVE:
                             me->SetControlled(true, UNIT_STATE_ROOT);
-                            me->CastSpell(me->getVictim(), SPELL_PARALYTIC_BLOW_DART, false);
+                            me->CastSpell(me->GetVictim(), SPELL_PARALYTIC_BLOW_DART, false);
                             me->CastSpell(me, SPELL_SMOKE_BOMB, false);
                             uiPhase = AUGH_PHASE_STEALTHED;
                             uiEventTimer = 1500;
@@ -462,7 +471,7 @@ class npc_augh_whirlwind : public CreatureScript
 public:
     npc_augh_whirlwind() : CreatureScript("npc_augh_whirlwind") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_augh_whirlwindAI (creature);
     }
@@ -477,14 +486,14 @@ public:
             uiPhase = AUGH_PHASE_NONE;
             instance = creature->GetInstanceScript();
 
-            if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+            if (Unit* target = SelectTarget(SELECT_TARGET_MINDISTANCE, 0, 100.0f, true))
             {
                 AttackStart(target);
                 me->CastSpell(target, 50231, false);
             }
 
             if (instance)
-                if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
+                if (Creature* lockmaw = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_LOCKMAW)))
                     lockmaw->AI()->JustSummoned(me);
         }
 
@@ -492,7 +501,7 @@ public:
         uint32 uiEventTimer;
         uint8 uiPhase;
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -504,22 +513,25 @@ public:
                     switch (uiPhase)
                     {
                         case AUGH_PHASE_NONE:
+                        {
                             uiPhase = AUGH_PHASE_ACTIVE;
                             me->RemoveAura(SPELL_STEALTHED);
                             me->AddAura(SPELL_WHITLWIND, me);
                             uiEventTimer = 20000;
                             break;
+                        }
                         case AUGH_PHASE_ACTIVE:
-                            {
-                                uiPhase = AUGH_PHASE_DESPAWNED;
-                                me->SetReactState(REACT_PASSIVE);
-                                me->AttackStop();
-                                me->DespawnOrUnsummon(2000);
+                        {
+                            uiPhase = AUGH_PHASE_DESPAWNED;
+                            me->SetReactState(REACT_PASSIVE);
+                            me->AttackStop();
+                            me->DespawnOrUnsummon(2000);
 
-                                if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
-                                    me->GetMotionMaster()->MoveChase(stalker);
-                            }
+                            if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
+                                me->GetMotionMaster()->MoveChase(stalker);
+
                             break;
+                        }
                     }
                 }
                 else
@@ -534,7 +546,7 @@ class npc_augh_dragons_breath : public CreatureScript
 public:
     npc_augh_dragons_breath() : CreatureScript("npc_augh_dragons_breath") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_augh_dragons_breathAI (creature);
     }
@@ -549,7 +561,7 @@ public:
             instance = creature->GetInstanceScript();
 
             if (instance)
-                if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
+                if (Creature* lockmaw = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_LOCKMAW)))
                 {
                     lockmaw->AI()->JustSummoned(me);
 
@@ -565,7 +577,7 @@ public:
         uint32 uiEventTimer;
         uint8 uiPhase;
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -580,7 +592,7 @@ public:
                             uiPhase = AUGH_PHASE_ACTIVE;
 
                             if (Creature* crock = me->GetVehicleCreatureBase())
-                                if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+                                if (Unit* target = SelectTarget(SELECT_TARGET_MINDISTANCE, 0, 100.0f, true))
                                 {
                                     AttackStart(target);
                                     crock->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
@@ -602,7 +614,7 @@ public:
                     case AUGH_PHASE_DISMOUNTED:
                         uiPhase = AUGH_PHASE_DESPAWNED;
                         uiEventTimer = 2500;
-                        me->CastSpell(me->getVictim(), 83776, false);
+                        me->CastSpell(me->GetVictim(), 83776, false);
                         me->CastSpell(me, SPELL_SMOKE_BOMB, false);
                         break;
                     case AUGH_PHASE_DESPAWNED:
@@ -621,7 +633,7 @@ class boss_augh : public CreatureScript
 public:
     boss_augh() : CreatureScript("boss_augh") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new boss_aughAI (creature);
     }
@@ -641,13 +653,13 @@ public:
         uint8 uiIntroPhase;
         bool Intro;
 
-        void Reset()
+        void Reset() override
         {
             events.Reset();
             uiIntroTimer = 1000;
             uiIntroPhase = 1;
             me->SetReactState(REACT_PASSIVE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+            me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
 
             if (instance)
             {
@@ -666,21 +678,21 @@ public:
             }
         }
 
-        void DoAction(const int32 action)
+        void DoAction(const int32 action) override
         {
             if (action == ACTION_LOCKMAW_IS_DONE)
             {
                 uiIntroPhase = 0;
                 Intro = true;
-                DoScriptText(AUGH_EMOTE_KILL_CROCK, me);
-                me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
+                Talk(AUGH_EMOTE_KILL_CROCK);
+                me->SetEmoteState(EMOTE_ONESHOT_NONE);
                 me->SetVisible(true);
                 me->SetHomePosition(AughPos);
                 me->GetMotionMaster()->MoveTargetedHome();
             }
         }
 
-        void JustDied(Unit* /*Killer*/)
+        void JustDied(Unit* /*Killer*/) override
         {
             events.Reset();
 
@@ -688,7 +700,7 @@ public:
                 instance->SetData(DATA_AUGH, DONE);
         }
 
-        void EnterCombat(Unit* /*pWho*/)
+        void EnterCombat(Unit* /*pWho*/) override
         {
             if (instance)
                 instance->SetData(DATA_AUGH, IN_PROGRESS);
@@ -702,7 +714,7 @@ public:
             events.ScheduleEvent(EVENT_SAY_AAA, urand(15000, 35000));
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (Intro)
             {
@@ -712,30 +724,30 @@ public:
                     {
                         case 0:
                             uiIntroTimer = 5000;
-                            DoScriptText(AUGH_SAY_HOW_YOU_KILL_CROCK, me);
+                            Talk(AUGH_SAY_HOW_YOU_KILL_CROCK);
                             break;
                         case 1:
-                            DoScriptText(AUGH_SAY_AUGH_SMART, me);
+                            Talk(AUGH_SAY_AUGH_SMART);
                             uiIntroTimer = 9000;
                             break;
                         case 2:
-                            {
-                                DoScriptText(AUGH_SAY_AUGH_BOSS, me);
-                                uiIntroTimer = 5000;
+                        {
+                            Talk(AUGH_SAY_AUGH_BOSS);
+                            uiIntroTimer = 5000;
 
-                                if (IsHeroic())
-                                {
-                                    me->SetReactState(REACT_AGGRESSIVE);
-                                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                                }
+                            if (IsHeroic())
+                            {
+                                me->SetReactState(REACT_AGGRESSIVE);
+                                me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                             }
                             break;
+                        }
                         case 3:
-                            DoScriptText(AUGH_SAY_AUGH_STEAL, me);
+                            Talk(AUGH_SAY_AUGH_STEAL);
                             uiIntroTimer = 7000;
                             break;
                         case 4:
-                            DoScriptText(AUGH_SAY_AUGH_BAD, me);
+                            Talk(AUGH_SAY_AUGH_BAD);
                             Intro = false;
                             break;
                     }
@@ -772,12 +784,12 @@ public:
                     }
                     case EVENT_BLOW_DART:
                         if (SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                            me->CastSpell(me->getVictim(), SPELL_PARALYTIC_BLOW_DART, false);
+                            me->CastSpell(me->GetVictim(), SPELL_PARALYTIC_BLOW_DART, false);
 
                         events.ScheduleEvent(EVENT_BLOW_DART, urand(5000, 10000));
                         break;
                     case EVENT_DRAGONS_BREATH:
-                        me->CastSpell(me->getVictim(), 83776, false);
+                        me->CastSpell(me->GetVictim(), 83776, false);
                         events.ScheduleEvent(EVENT_DRAGONS_BREATH, urand(5000, 10000));
                         break;
                     case EVENT_SMOKE_BOMB:
@@ -785,7 +797,7 @@ public:
                         events.ScheduleEvent(EVENT_SMOKE_BOMB, urand(7000, 15000));
                         break;
                     case EVENT_SAY_AAA:
-                        DoScriptText(AUGH_SAY_AAA, me);
+                        Talk(AUGH_SAY_AAA);
                         events.ScheduleEvent(EVENT_SAY_AAA, urand(15000, 35000));
                         break;
                 }
@@ -796,29 +808,29 @@ public:
     };
 };
 
-class spell_dust_flail : public SpellScriptLoader
+class spell_dust_flail: public SpellScriptLoader
 {
     public:
         spell_dust_flail() : SpellScriptLoader("spell_dust_flail") { }
 
         class spell_dust_flail_AuraScript : public AuraScript
         {
-            PrepareAuraScript(spell_dust_flail_AuraScript)
+            PrepareAuraScript(spell_dust_flail_AuraScript);
 
-            void ExtraEffectRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void ExtraEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* caster = GetCaster())
                     if (Creature* lockmaw = caster->ToCreature())
                         lockmaw->SetReactState(REACT_AGGRESSIVE);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectRemove += AuraEffectRemoveFn(spell_dust_flail_AuraScript::ExtraEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_dust_flail_AuraScript();
         }
@@ -833,6 +845,6 @@ void AddSC_boss_lockmaw_augh()
     new npc_augh_whirlwind();
     new npc_augh_dragons_breath();
     new boss_augh();
-    
+
     new spell_dust_flail();
 }

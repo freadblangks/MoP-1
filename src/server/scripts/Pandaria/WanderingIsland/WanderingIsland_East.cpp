@@ -90,7 +90,7 @@ public:
                 return;
             }
 
-            JadeCore::Containers::RandomResizeList(poleList, 1);
+            MoPCore::Containers::RandomResizeList(poleList, 1);
 
             for (auto creature: poleList)
                 me->EnterVehicle(creature);
@@ -107,53 +107,53 @@ public:
 };
 
 // Rock Jump - 103069 / 103070 / 103077
-class spell_rock_jump: public SpellScriptLoader
+class spell_rock_jump : public SpellScriptLoader
 {
-    public:
-        spell_rock_jump() : SpellScriptLoader("spell_rock_jump") { }
+public:
+    spell_rock_jump() : SpellScriptLoader("spell_rock_jump") { }
 
-        class spell_rock_jump_SpellScript : public SpellScript
+    class spell_rock_jump_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_rock_jump_SpellScript);
+
+        void HandleScriptEffect(SpellEffIndex /*effIndex*/)
         {
-            PrepareSpellScript(spell_rock_jump_SpellScript);
-
-            void HandleScriptEffect(SpellEffIndex effIndex)
+            if (Unit* caster = GetCaster())
             {
-                if (Unit* caster = GetCaster())
+                if (caster->GetPositionZ() < 90.0f)
+                    caster->GetMotionMaster()->MoveJump(1045.36f, 2848.47f, 91.38f, 10.0f, 10.0f);
+                else if (caster->GetPositionZ() < 92.0f)
+                    caster->GetMotionMaster()->MoveJump(1054.42f, 2842.65f, 92.96f, 10.0f, 10.0f);
+                else if (caster->GetPositionZ() < 94.0f)
+                    caster->GetMotionMaster()->MoveJump(1063.66f, 2843.49f, 95.50f, 10.0f, 10.0f);
+                else
                 {
-                    if (caster->GetPositionZ() < 90.0f)
-                        caster->GetMotionMaster()->MoveJump(1045.36f, 2848.47f, 91.38f, 10.0f, 10.0f);
-                    else if (caster->GetPositionZ() < 92.0f)
-                        caster->GetMotionMaster()->MoveJump(1054.42f, 2842.65f, 92.96f, 10.0f, 10.0f);
-                    else if (caster->GetPositionZ() < 94.0f)
-                        caster->GetMotionMaster()->MoveJump(1063.66f, 2843.49f, 95.50f, 10.0f, 10.0f);
-                    else
-                    {
-                        caster->GetMotionMaster()->MoveJump(1078.42f, 2845.07f, 95.16f, 10.0f, 10.0f);
+                    caster->GetMotionMaster()->MoveJump(1078.42f, 2845.07f, 95.16f, 10.0f, 10.0f);
 
-                        if (caster->ToPlayer())
-                            caster->ToPlayer()->KilledMonsterCredit(57476);
-                    }
+                    if (caster->ToPlayer())
+                        caster->ToPlayer()->KilledMonsterCredit(57476);
                 }
             }
-
-            void Register()
-            {
-                OnEffectLaunch += SpellEffectFn(spell_rock_jump_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_JUMP_DEST);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_rock_jump_SpellScript();
         }
+
+        void Register()
+        {
+            OnEffectLaunch += SpellEffectFn(spell_rock_jump_SpellScript::HandleScriptEffect, EFFECT_0, SPELL_EFFECT_JUMP_DEST);
+        }
+    };
+
+    SpellScript* GetSpellScript() const
+    {
+        return new spell_rock_jump_SpellScript();
+    }
 };
 
 Position rocksPos[4] =
 {
-    {1102.05f, 2882.11f, 94.32f, 0.11f},
-    {1120.01f, 2883.20f, 96.44f, 4.17f},
-    {1128.09f, 2859.44f, 97.64f, 2.51f},
-    {1111.52f, 2849.84f, 94.84f, 1.94f}
+    { 1102.05f, 2882.11f, 94.32f, 0.11f },
+    { 1120.01f, 2883.20f, 96.44f, 4.17f },
+    { 1128.09f, 2859.44f, 97.64f, 2.51f },
+    { 1111.52f, 2849.84f, 94.84f, 1.94f }
 };
 
 class mob_shu_water_spirit : public CreatureScript
@@ -177,19 +177,19 @@ public:
 
         enum eShuSpells
         {
-            SPELL_WATER_SPOUT_SUMMON    = 116810,
-            SPELL_WATER_SPOUT_WARNING   = 116695,
-            SPELL_WATER_SPOUT_EJECT     = 116696,
-            SPELL_WATER_SPOUT_VISUAL    = 117057
+            SPELL_WATER_SPOUT_SUMMON = 116810,
+            SPELL_WATER_SPOUT_WARNING = 116695,
+            SPELL_WATER_SPOUT_EJECT = 116696,
+            SPELL_WATER_SPOUT_VISUAL = 117057
         };
 
         enum eEvents
         {
-            EVENT_CHANGE_PLACE          = 1,
-            EVENT_SUMMON_WATER_SPOUT    = 2,
-            EVENT_WATER_SPOUT_VISUAL    = 3,
-            EVENT_WATER_SPOUT_EJECT     = 4,
-            EVENT_WATER_SPOUT_DESPAWN   = 5
+            EVENT_CHANGE_PLACE = 1,
+            EVENT_SUMMON_WATER_SPOUT = 2,
+            EVENT_WATER_SPOUT_VISUAL = 3,
+            EVENT_WATER_SPOUT_EJECT = 4,
+            EVENT_WATER_SPOUT_DESPAWN = 5
         };
 
         void Reset()
@@ -231,65 +231,64 @@ public:
 
             switch (_events.ExecuteEvent())
             {
-                case EVENT_CHANGE_PLACE:
+            case EVENT_CHANGE_PLACE:
+            {
+                uint8 newPlace = 0;
+
+                do
                 {
-                    uint8 newPlace = 0;
+                    newPlace = urand(0, 3);
+                } while (newPlace == actualPlace);
 
-                    do
-                    {
-                        newPlace = urand(0, 3);
-                    }
-                    while (newPlace == actualPlace);
+                me->GetMotionMaster()->MoveJump(rocksPos[newPlace].GetPositionX(), rocksPos[newPlace].GetPositionY(), rocksPos[newPlace].GetPositionZ(), 10.0f, 10.0f, 1);
+                me->AddAura(SPELL_WATER_SPOUT_WARNING, me); // Just visual
+                actualPlace = newPlace;
+                break;
+            }
+            case EVENT_SUMMON_WATER_SPOUT:
+            {
+                float x = 0.0f, y = 0.0f;
+                GetPositionWithDistInOrientation(me, 5.0f, me->GetOrientation() + frand(-M_PI, M_PI), x, y);
+                waterSpoutGUID = 0;
 
-                    me->GetMotionMaster()->MoveJump(rocksPos[newPlace].GetPositionX(), rocksPos[newPlace].GetPositionY(), rocksPos[newPlace].GetPositionZ(), 10.0f, 10.0f, 1);
-                    me->AddAura(SPELL_WATER_SPOUT_WARNING, me); // Just visual
-                    actualPlace = newPlace;
-                    break;
-                }
-                case EVENT_SUMMON_WATER_SPOUT:
+                if (Creature* waterSpout = me->SummonCreature(60488, x, y, 92.189629f))
+                    waterSpoutGUID = waterSpout->GetGUID();
+
+                _events.ScheduleEvent(EVENT_WATER_SPOUT_VISUAL, 500);
+                _events.ScheduleEvent(EVENT_WATER_SPOUT_EJECT, 7500);
+                break;
+            }
+            case EVENT_WATER_SPOUT_VISUAL:
+            {
+                if (Creature* waterSpout = getWaterSpout())
+                    waterSpout->CastSpell(waterSpout, SPELL_WATER_SPOUT_WARNING, true);
+                break;
+            }
+            case EVENT_WATER_SPOUT_EJECT:
+            {
+                if (Creature* waterSpout = getWaterSpout())
                 {
-                    float x = 0.0f, y = 0.0f;
-                    GetPositionWithDistInOrientation(me, 5.0f, me->GetOrientation() + frand(-M_PI, M_PI), x, y);
-                    waterSpoutGUID = 0;
+                    std::list<Player*> playerList;
+                    GetPlayerListInGrid(playerList, waterSpout, 1.0f);
 
-                    if (Creature* waterSpout = me->SummonCreature(60488, x, y, 92.189629f))
-                        waterSpoutGUID = waterSpout->GetGUID();
+                    for (auto player : playerList)
+                        player->CastSpell(player, SPELL_WATER_SPOUT_EJECT, true);
 
-                    _events.ScheduleEvent(EVENT_WATER_SPOUT_VISUAL, 500);
-                    _events.ScheduleEvent(EVENT_WATER_SPOUT_EJECT, 7500);
-                    break;
+                    waterSpout->CastSpell(waterSpout, SPELL_WATER_SPOUT_VISUAL, true);
                 }
-                case EVENT_WATER_SPOUT_VISUAL:
-                {
-                    if (Creature* waterSpout = getWaterSpout())
-                        waterSpout->CastSpell(waterSpout, SPELL_WATER_SPOUT_WARNING, true);
-                    break;
-                }
-                case EVENT_WATER_SPOUT_EJECT:
-                {
-                    if (Creature* waterSpout = getWaterSpout())
-                    {
-                        std::list<Player*> playerList;
-                        GetPlayerListInGrid(playerList, waterSpout, 1.0f);
+                _events.ScheduleEvent(EVENT_WATER_SPOUT_DESPAWN, 3000);
+                break;
+            }
+            case EVENT_WATER_SPOUT_DESPAWN:
+            {
+                if (Creature* waterSpout = getWaterSpout())
+                    waterSpout->DespawnOrUnsummon();
 
-                        for (auto player: playerList)
-                            player->CastSpell(player, SPELL_WATER_SPOUT_EJECT, true);
+                waterSpoutGUID = 0;
 
-                        waterSpout->CastSpell(waterSpout, SPELL_WATER_SPOUT_VISUAL, true);
-                    }
-                    _events.ScheduleEvent(EVENT_WATER_SPOUT_DESPAWN, 3000);
-                    break;
-                }
-                case EVENT_WATER_SPOUT_DESPAWN:
-                {
-                    if (Creature* waterSpout = getWaterSpout())
-                        waterSpout->DespawnOrUnsummon();
-
-                    waterSpoutGUID = 0;
-
-                    _events.ScheduleEvent(EVENT_CHANGE_PLACE, 2000);
-                    break;
-                }
+                _events.ScheduleEvent(EVENT_CHANGE_PLACE, 2000);
+                break;
+            }
             }
         }
     };
@@ -430,7 +429,7 @@ public:
         {
             uint8 waypointToEject = 100;
 
-            if (me->IsSummon())
+            if (me->isSummon())
             {
                 IntroTimer = 2500;
 
@@ -564,7 +563,7 @@ public:
                 case 3:
                     if (Creature* wugou = GetClosestCreatureWithEntry(me, 60916, 20.0f))
                         me->SetFacingToObject(wugou);
-                    me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_READYUNARMED);
+                    me->HandleEmote(EMOTE_STATE_READYUNARMED);
                     eventTimer = 2000;
                     ++eventProgress;
                     break;
@@ -596,7 +595,7 @@ public:
                         case 3:
                             if (Creature* wugou = GetClosestCreatureWithEntry(me, 60916, 20.0f))
                                 wugou->CastSpell(wugou, 118027, false);
-                            me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_ONESHOT_NONE);
+                            me->ClearEmotes();
                             eventTimer = 3000;
                             ++eventProgress;
                             break;

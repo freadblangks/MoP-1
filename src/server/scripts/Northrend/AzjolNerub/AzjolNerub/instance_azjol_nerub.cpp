@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -15,383 +15,124 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
+#include "AreaBoundary.h"
 #include "azjol_nerub.h"
+#include "Creature.h"
+#include "CreatureAI.h"
+#include "InstanceScript.h"
 
-#define MAX_ENCOUNTER     3
+DoorData const doorData[] =
+{
+    { GO_KRIKTHIR_DOOR,     DATA_KRIKTHIR,                  DOOR_TYPE_PASSAGE },
+    { GO_ANUBARAK_DOOR_1,   DATA_ANUBARAK,                  DOOR_TYPE_ROOM    },
+    { GO_ANUBARAK_DOOR_2,   DATA_ANUBARAK,                  DOOR_TYPE_ROOM    },
+    { GO_ANUBARAK_DOOR_3,   DATA_ANUBARAK,                  DOOR_TYPE_ROOM    },
+    { 0,                    0,                              DOOR_TYPE_ROOM    } // END
+};
 
-/* Azjol Nerub encounters:
-0 - Krik'thir the Gatewatcher
-1 - Hadronox
-2 - Anub'arak
-*/
+ObjectData const creatureData[] =
+{
+    { NPC_KRIKTHIR,        DATA_KRIKTHIR        },
+    { NPC_HADRONOX,        DATA_HADRONOX        },
+    { NPC_ANUBARAK,        DATA_ANUBARAK        },
+    { NPC_WATCHER_NARJIL,  DATA_WATCHER_GASHRA  },
+    { NPC_WATCHER_GASHRA,  DATA_WATCHER_SILTHIK },
+    { NPC_WATCHER_SILTHIK, DATA_WATCHER_NARJIL  },
+    { 0,                   0                    } // END
+};
+
+ObjectData const gameobjectData[] =
+{
+    { GO_ANUBARAK_DOOR_1, DATA_ANUBARAK_WALL   },
+    { GO_ANUBARAK_DOOR_3, DATA_ANUBARAK_WALL_2 },
+    { 0,                  0                    } // END
+};
+
+BossBoundaryData const boundaries =
+{
+    { DATA_KRIKTHIR, new RectangleBoundary(400.0f, 580.0f, 623.5f, 810.0f)     },
+    { DATA_HADRONOX, new ZRangeBoundary(666.0f, 776.0f)                        },
+    { DATA_ANUBARAK, new CircleBoundary(Position(550.6178f, 253.5917f), 26.0f) }
+};
 
 class instance_azjol_nerub : public InstanceMapScript
 {
-public:
-    instance_azjol_nerub() : InstanceMapScript("instance_azjol_nerub", 601) { }
+    public:
+        instance_azjol_nerub() : InstanceMapScript(AzjolNerubScriptName, 601) { }
 
-    struct instance_azjol_nerub_InstanceScript : public InstanceScript
-    {
-        instance_azjol_nerub_InstanceScript(Map* map) : InstanceScript(map) {}
-
-        uint64 uiKrikthir;
-        uint64 uiHadronox;
-        uint64 uiAnubarak;
-        uint64 uiWatcherGashra;
-        uint64 uiWatcherSilthik;
-        uint64 uiWatcherNarjil;
-        uint64 uiAnubarakDoor[3];
-        uint64 uiAnubarCrusher;
-
-        uint64 uiKrikthirDoor;
-
-        uint32 auiEncounter[MAX_ENCOUNTER];
-
-        bool bDoorSwitch;
-
-        uint32 uiDoorTimer;
-        uint32 uiEngageTimer;
-        std::set<uint64> WatcherTrashGUIDs;
-
-        void Initialize()
+        struct instance_azjol_nerub_InstanceScript : public InstanceScript
         {
-            memset(&auiEncounter, 0, sizeof(auiEncounter));
-            memset(&uiAnubarakDoor, 0, sizeof(uiAnubarakDoor));
-
-            uiKrikthir = 0;
-            uiHadronox = 0;
-            uiAnubarak = 0;
-            uiWatcherGashra = 0;
-            uiWatcherSilthik = 0;
-            uiWatcherNarjil = 0;
-            uiKrikthirDoor = 0;
-            uiAnubarCrusher = 0;
-
-            bDoorSwitch = false;
-            uiDoorTimer = 5*IN_MILLISECONDS;
-            uiEngageTimer = 45*IN_MILLISECONDS;
-            WatcherTrashGUIDs.clear();
-        }
-
-        bool IsEncounterInProgress() const
-        {
-            for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-                if (auiEncounter[i] == IN_PROGRESS) return true;
-
-            return false;
-        }
-
-        void OnCreatureCreate(Creature* creature)
-        {
-            switch (creature->GetEntry())
+            instance_azjol_nerub_InstanceScript(InstanceMap* map) : InstanceScript(map)
             {
-                case 28684:    uiKrikthir = creature->GetGUID();        break;
-                case 28921:    uiHadronox = creature->GetGUID();        break;
-                case 29120:    uiAnubarak = creature->GetGUID();        break;
-                case 28730:    uiWatcherGashra = creature->GetGUID();   break;
-                case 28731:    uiWatcherSilthik = creature->GetGUID();  break;
-                case 28729:    uiWatcherNarjil = creature->GetGUID();   break;
-                case 28922:    uiAnubarCrusher = creature->GetGUID();   break;
-            }
-            // bad way to handle trash respawn
-            switch (creature->GetDBTableGUIDLow())
-            {
-                case 127231:
-                case 127236:
-                    creature->setFaction(14); // prevent chain aggro
-                    WatcherTrashGUIDs.insert(creature->GetGUID());
-                    break;
-                case 127228:
-                case 127232:
-                case 127233:
-                case 127234:
-                    WatcherTrashGUIDs.insert(creature->GetGUID());
-                    break;
-            }
-        }
-
-        void OnGameObjectCreate(GameObject* go)
-        {
-            switch (go->GetEntry())
-            {
-                case 192395:
-                    uiKrikthirDoor = go->GetGUID();
-                    if (auiEncounter[0] == DONE)
-                        HandleGameObject(0, true, go);
-                    break;
-                case 192396:
-                    uiAnubarakDoor[0] = go->GetGUID();
-                    break;
-                case 192397:
-                    uiAnubarakDoor[1] = go->GetGUID();
-                    break;
-                case 192398:
-                    uiAnubarakDoor[2] = go->GetGUID();
-                    break;
-            }
-        }
-
-        uint64 GetData64(uint32 identifier)
-        {
-            switch (identifier)
-            {
-                case DATA_KRIKTHIR_THE_GATEWATCHER:     return uiKrikthir;
-                case DATA_HADRONOX:                     return uiHadronox;
-                case DATA_ANUBARAK:                     return uiAnubarak;
-                case DATA_WATCHER_GASHRA:               return uiWatcherGashra;
-                case DATA_WATCHER_SILTHIK:              return uiWatcherSilthik;
-                case DATA_WATCHER_NARJIL:               return uiWatcherNarjil;
+                SetHeaders(DataHeader);
+                SetBossNumber(EncounterCount);
+                LoadBossBoundaries(boundaries);
+                LoadDoorData(doorData);
+                LoadObjectData(creatureData, gameobjectData);
+                GateWatcherGreet = 0;
             }
 
-            return 0;
-        }
-
-        void SetData(uint32 type, uint32 data)
-        {
-            switch (type)
+            void OnUnitDeath(Unit* who) override
             {
-            case DATA_KRIKTHIR_THE_GATEWATCHER_EVENT:
-                // if encounter already done ignore event
-                if (auiEncounter[0] == DONE)
-                    break;
+                InstanceScript::OnUnitDeath(who);
 
-                auiEncounter[0] = data;
+                if (who->GetTypeId() != TYPEID_UNIT || GetBossState(DATA_KRIKTHIR) == DONE)
+                    return;
 
-                if (data == NOT_STARTED)
-                    HandleWatcher(true);
-                else if (data == SPECIAL || data == IN_PROGRESS)
-                    HandleWatcher(false);
-                else if (data == DONE)
-                    HandleGameObject(uiKrikthirDoor, true);
-                break;
-            case DATA_HADRONOX_EVENT:
-                // if encounter already done ignore event
-                if (auiEncounter[1] == DONE)
-                    break;
+                Creature* creature = who->ToCreature();
+                if (creature->IsCritter() || creature->IsCharmedOwnedByPlayerOrPlayer())
+                    return;
 
-                auiEncounter[1] = data;
+                if (Creature* gatewatcher = GetCreature(DATA_KRIKTHIR))
+                    gatewatcher->AI()->DoAction(-ACTION_GATEWATCHER_GREET);
+            }
 
-                if (data == NOT_STARTED)
-                    HandleHadronox(true);
-                else if (data == IN_PROGRESS)
-                    HandleHadronox(false);
-                break;
-            case DATA_ANUBARAK_EVENT:
-                auiEncounter[2] = data;
-                if (data == IN_PROGRESS)
+            bool CheckRequiredBosses(uint32 bossId, Player const* player) const override
+            {
+                if (_SkipCheckRequiredBosses(player))
+                    return true;
+
+                if (bossId > DATA_KRIKTHIR && GetBossState(DATA_KRIKTHIR) != DONE)
+                    return false;
+
+                return true;
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                switch (type)
                 {
-                    bDoorSwitch = true;
-                    uiDoorTimer = 5*IN_MILLISECONDS;
-                }
-                else if (data == NOT_STARTED || data == DONE)
-                {
-                    bDoorSwitch = false;
-                    for (uint8 i = 0; i < 3; ++i)
-                        HandleGameObject(uiAnubarakDoor[i], true);
-                }
-                break;
-            }
-
-            if (data == DONE)
-            {
-                SaveToDB();
-            }
-        }
-
-        uint32 GetData(uint32 type)
-        {
-            switch (type)
-            {
-                case DATA_KRIKTHIR_THE_GATEWATCHER_EVENT:   return auiEncounter[0];
-                case DATA_HADRONOX_EVENT:                   return auiEncounter[1];
-                case DATA_ANUBARAK_EVENT:                   return auiEncounter[2];
-            }
-
-            return 0;
-        }
-
-        std::string GetSaveData()
-        {
-            OUT_SAVE_INST_DATA;
-
-            std::ostringstream saveStream;
-            saveStream << "A N " << auiEncounter[0] << ' ' << auiEncounter[1] << ' '
-                << auiEncounter[2];
-
-            OUT_SAVE_INST_DATA_COMPLETE;
-            return saveStream.str();
-        }
-
-        void Load(const char* in)
-        {
-            if (!in)
-            {
-                OUT_LOAD_INST_DATA_FAIL;
-                return;
-            }
-
-            OUT_LOAD_INST_DATA(in);
-
-            char dataHead1, dataHead2;
-            uint16 data0, data1, data2;
-
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2 >> data0 >> data1 >> data2;
-
-            if (dataHead1 == 'A' && dataHead2 == 'N')
-            {
-                auiEncounter[0] = data0;
-                auiEncounter[1] = data1;
-                auiEncounter[2] = data2;
-
-                for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-                    if (auiEncounter[i] == IN_PROGRESS)
-                        auiEncounter[i] = NOT_STARTED;
-
-            } else OUT_LOAD_INST_DATA_FAIL;
-
-            OUT_LOAD_INST_DATA_COMPLETE;
-        }
-
-        void HandleHadronox(bool reset)
-        {
-            Creature *pCrusher = instance->GetCreature(uiAnubarCrusher);
-            Creature *pHadronox = instance->GetCreature(uiHadronox);
-
-            if (pCrusher && pHadronox)
-            {
-                if (reset)
-                {
-                    if (pHadronox->isAlive())
-                    {
-                        pHadronox->AI()->EnterEvadeMode();
-                        pHadronox->setFaction(35);
-                        pHadronox->SetVisible(false);
-                    }
-                    if (pCrusher->isAlive())
-                        pCrusher->AI()->EnterEvadeMode();
-                    else
-                        pCrusher->Respawn();
-                }
-                else
-                {
-                    if (pHadronox->isAlive())
-                    {
-                        pHadronox->RestoreFaction();
-                        pHadronox->SetVisible(true);
-                    }
+                    case DATA_GATEWATCHER_GREET:
+                        return GateWatcherGreet;
+                    default:
+                        return 0;
                 }
             }
-        }
 
-        void HandleWatcher(bool reset)
-        {
-            Creature *pGashra = instance->GetCreature(uiWatcherGashra);
-            Creature *pSilthik = instance->GetCreature(uiWatcherSilthik);
-            Creature *pNarjil = instance->GetCreature(uiWatcherNarjil);
-            Creature *pKrikthir = instance->GetCreature(uiKrikthir);
-
-            if (pGashra && pSilthik && pNarjil && pKrikthir)
+            void SetData(uint32 type, uint32 data) override
             {
-                if (reset)
+                switch (type)
                 {
-                    // only respawn if boss is still alive
-                    if (pKrikthir->isAlive())
-                    {
-                        if (!pGashra->isAlive())
-                            pGashra->Respawn();
-
-                        if (!pSilthik->isAlive())
-                            pSilthik->Respawn();
-
-                        if (!pNarjil->isAlive())
-                            pNarjil->Respawn();
-
-                        pGashra->AI()->EnterEvadeMode();
-                        pSilthik->AI()->EnterEvadeMode();
-                        pNarjil->AI()->EnterEvadeMode();
-                        pKrikthir->AI()->EnterEvadeMode();
-
-                        // trash
-                        if (!WatcherTrashGUIDs.empty())
-                            for (std::set<uint64>::const_iterator itr = WatcherTrashGUIDs.begin(); itr != WatcherTrashGUIDs.end(); ++itr)
-                            {
-                                Creature* pTemp = instance->GetCreature(*itr);
-                                if (pTemp)
-                                {
-                                    if (!pTemp->isAlive())
-                                        pTemp->Respawn();
-
-                                    pTemp->AI()->EnterEvadeMode();
-                                }
-                            }
-                    }
-                }
-                else
-                {
-                    // if boss is pulled set adds in combat if still alive
-                    if (pKrikthir->isAlive() && pKrikthir->isInCombat())
-                    {
-                        if (pGashra->isAlive() && !pGashra->isInCombat())
-                            pGashra->SetInCombatWithZone();
-                        if (pSilthik->isAlive() && !pSilthik->isInCombat())
-                            pSilthik->SetInCombatWithZone();
-                        if (pNarjil->isAlive() && !pNarjil->isInCombat())
-                            pNarjil->SetInCombatWithZone();
-
-                        if (auiEncounter[0] == SPECIAL)
-                            auiEncounter[0] = IN_PROGRESS;
-                    }
-                    uiEngageTimer = 45*IN_MILLISECONDS;
+                    case DATA_GATEWATCHER_GREET:
+                        GateWatcherGreet = data;
+                        break;
+                    default:
+                        break;
                 }
             }
-        }
 
-        void Update(uint32 diff)
+        protected:
+            uint8 GateWatcherGreet;
+        };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
-            if (auiEncounter[0] == SPECIAL)
-                if (uiEngageTimer <= diff)
-                {
-                    Creature *pGashra = instance->GetCreature(uiWatcherGashra);
-                    Creature *pSilthik = instance->GetCreature(uiWatcherSilthik);
-                    Creature *pNarjil = instance->GetCreature(uiWatcherNarjil);
-                    Creature *pKrikthir = instance->GetCreature(uiKrikthir);
-
-                    if (pGashra && pSilthik && pNarjil && pKrikthir)
-                    {
-                        if (pGashra->isAlive() && !pGashra->isInCombat())
-                            pGashra->SetInCombatWithZone();
-                        else if (pSilthik->isAlive() && !pSilthik->isInCombat())
-                            pSilthik->SetInCombatWithZone();
-                        else if (pNarjil->isAlive() && !pNarjil->isInCombat())
-                            pNarjil->SetInCombatWithZone();
-                        else if (pKrikthir->isAlive() && !pKrikthir->isInCombat())
-                            pKrikthir->SetInCombatWithZone();
-
-                        uiEngageTimer = 45*IN_MILLISECONDS;
-                    }
-                } else uiEngageTimer -= diff;
-
-            if (bDoorSwitch)
-            {
-                if (uiDoorTimer <= diff)
-                {
-                    bDoorSwitch = false;
-                    for (uint8 i = 0; i < 3; ++i)
-                        HandleGameObject(uiAnubarakDoor[i], false);
-                } else uiDoorTimer -= diff;
-            }
+            return new instance_azjol_nerub_InstanceScript(map);
         }
-    };
-
-    InstanceScript* GetInstanceScript(InstanceMap* map) const
-    {
-        return new instance_azjol_nerub_InstanceScript(map);
-    }
 };
 
 void AddSC_instance_azjol_nerub()
 {
-    new instance_azjol_nerub;
+   new instance_azjol_nerub();
 }

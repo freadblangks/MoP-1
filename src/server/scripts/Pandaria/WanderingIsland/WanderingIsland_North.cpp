@@ -7,89 +7,87 @@
 
 class mob_master_shang_xi : public CreatureScript
 {
-    public:
-        mob_master_shang_xi() : CreatureScript("mob_master_shang_xi") { }
+    enum master_shang
+    {
+        SPELL_MASTERS_FLAME             = 114610,
+        SPELL_CREATE_MASTERS_FLAME      = 114611,
+        SPELL_SNATCH_MASTERS_FLAME      = 114746,
 
-        bool OnQuestAccept(Player* player, Creature* creature, Quest const* quest)
+        ITEM_MASTERS_FLAME              = 80212,
+
+        QUEST_LESSONS_OF_BURNING_SCROLL = 29408,
+    };
+
+public:
+    mob_master_shang_xi() : CreatureScript("mob_master_shang_xi") { }
+
+    bool OnQuestAccept(Player* /*player*/, Creature* creature, Quest const* quest)
+    {
+        if (quest->GetQuestId() == QUEST_LESSONS_OF_BURNING_SCROLL) // The Lesson of the Burning Scroll
         {
-            if (quest->GetQuestId() == 29408) // La lecon du parchemin brulant
-            {
-                creature->AddAura(114610, creature);
-                creature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
-                creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-            }
-
-            return true;
+            creature->AddAura(SPELL_MASTERS_FLAME, creature);
+            creature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
         }
 
-        CreatureAI* GetAI(Creature* creature) const
+        return true;
+    }
+
+    CreatureAI* GetAI(Creature* creature) const
+    {
+        return new mob_master_shang_xi_AI(creature);
+    }
+
+    struct mob_master_shang_xi_AI : public ScriptedAI
+    {
+        mob_master_shang_xi_AI(Creature* creature) : ScriptedAI(creature)
         {
-            return new mob_master_shang_xi_AI(creature);
+            resetTimer = 10000;
         }
 
-        struct mob_master_shang_xi_AI : public ScriptedAI
+        uint32 resetTimer;
+
+        void SpellHit(Unit* caster, const SpellInfo* pSpell)
         {
-            mob_master_shang_xi_AI(Creature* creature) : ScriptedAI(creature)
+            if (pSpell->Id == SPELL_SNATCH_MASTERS_FLAME) // Snatch Master's Flame
             {
-                checkPlayersTime = 2000;
-                creature->SetFlag(UNIT_FIELD_BYTES_1, UNIT_STAND_STATE_SIT_MEDIUM_CHAIR);
-            }
-
-            uint32 checkPlayersTime;
-
-            void SpellHit(Unit* caster, const SpellInfo* pSpell)
-            {
-                if (pSpell->Id == 114746) // Attraper la flamme
+                if (caster->GetTypeId() == TYPEID_PLAYER)
                 {
-                    if (caster->GetTypeId() == TYPEID_PLAYER)
+                    if (caster->ToPlayer()->GetQuestStatus(QUEST_LESSONS_OF_BURNING_SCROLL) == QUEST_STATUS_INCOMPLETE)
                     {
-                        if (caster->ToPlayer()->GetQuestStatus(29408) == QUEST_STATUS_INCOMPLETE)
-                        {
-                            me->CastSpell(caster, 114611, true);
-                            me->RemoveAurasDueToSpell(114610);
-                            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
-                            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                        }
-                    }
-                }
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (me->GetPositionX() != 1462.0f && me->GetPositionY() != 3465.590088f && me->GetPositionZ() != 181.597f)
-                    me->RemoveFlag(UNIT_FIELD_BYTES_1, UNIT_STAND_STATE_SIT_MEDIUM_CHAIR);
-
-                if (checkPlayersTime <= diff)
-                {
-                    std::list<Player*> playerList;
-                    GetPlayerListInGrid(playerList, me, 5.0f);
-
-                    bool playerWithQuestNear = false;
-
-                    for (auto player: playerList)
-                        if (player->GetQuestStatus(29408) == QUEST_STATUS_INCOMPLETE)
-                            if (!player->HasItemCount(80212))// Flamme du maitre
-                                playerWithQuestNear = true;
-
-                    if (playerWithQuestNear && !me->HasAura(114610))
-                    {
-                        me->AddAura(114610, me);
-                        me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
-                        me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                    }
-                    else if (!playerWithQuestNear && me->HasAura(114610))
-                    {
-                        me->RemoveAurasDueToSpell(114610);
+                        me->CastSpell(caster, SPELL_CREATE_MASTERS_FLAME, true);
+                        me->RemoveAurasDueToSpell(SPELL_MASTERS_FLAME);
                         me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
-                        me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                        Talk(0);
                     }
-
-                    checkPlayersTime = 2000;
                 }
-                else
-                    checkPlayersTime -= diff;
             }
-        };
+        }
+
+        void MoveInLineOfSight(Unit * who)
+        {
+            Player * const player = who->ToPlayer();
+            if (!player)
+                return;
+
+            if (player->GetQuestStatus(QUEST_LESSONS_OF_BURNING_SCROLL) == QUEST_STATUS_INCOMPLETE && !player->HasItemCount(ITEM_MASTERS_FLAME) && !me->HasAura(SPELL_MASTERS_FLAME))
+                me->AddAura(SPELL_MASTERS_FLAME, me);
+        }
+
+        void UpdateAI(uint32 const diff)
+        {
+            // In case noone used spellclick - reset questgiver flag in periodic way
+            if (me->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER))
+                return;
+
+            if (resetTimer <= diff)
+            {
+                me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+                resetTimer = 10000;
+            }
+            else
+                resetTimer -= diff;
+        }
+    };
 };
 
 class go_wandering_weapon_rack : public GameObjectScript
@@ -173,11 +171,11 @@ class mob_tushui_trainee : public CreatureScript
 
         struct mob_tushui_trainee_AI : public ScriptedAI
         {
-            mob_tushui_trainee_AI(Creature* creature) : ScriptedAI(creature)
-            {
-            }
+            mob_tushui_trainee_AI(Creature* creature) : ScriptedAI(creature) { }
 
+            EventMap events;
             bool isInCombat;
+            bool outOfCombatEmotes;
             uint64 playerGUID;
             uint32 punch1;
             uint32 punch2;
@@ -185,11 +183,13 @@ class mob_tushui_trainee : public CreatureScript
 
             void Reset()
             {
+                events.Reset();
                 punch1 = 1000;
                 punch2 = 3500;
                 punch3 = 6000;
                 playerGUID = 0;
                 isInCombat = false;
+                outOfCombatEmotes = true;
                 me->SetReactState(REACT_DEFENSIVE);
                 me->setFaction(7);
                 me->SetFullHealth();
@@ -204,18 +204,19 @@ class mob_tushui_trainee : public CreatureScript
                     if(attacker && attacker->GetTypeId() == TYPEID_PLAYER)
                         attacker->ToPlayer()->KilledMonsterCredit(54586, 0);
 
+                    me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_NONE);
                     damage = 0;
                     me->CombatStop();
                     isInCombat = false;
-                    me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
-                    Talk(urand(0, 7));
-                    me->GetMotionMaster()->MovePoint(0, 1446.322876f, 3389.027588f, 173.782471f);
+                    outOfCombatEmotes = false;
+                    events.ScheduleEvent(1, 1 * IN_MILLISECONDS);
                 }
             }
 
             void EnterCombat(Unit* unit)
             {
                 isInCombat = true;
+                outOfCombatEmotes = false;
             }
 
             void JustRespawned()
@@ -230,11 +231,12 @@ class mob_tushui_trainee : public CreatureScript
                     DoMeleeAttackIfReady();
                     return;
                 }
-                else
+
+                if (outOfCombatEmotes)
                 {
                     if (punch1 <= diff)
                     {
-                        me->HandleEmoteCommand(35);
+                        me->HandleEmote(35);
                         punch1 = 7500;
                     }
                     else
@@ -242,7 +244,7 @@ class mob_tushui_trainee : public CreatureScript
 
                     if (punch2 <= diff)
                     {
-                        me->HandleEmoteCommand(36);
+                        me->HandleEmote(36);
                         punch2 = 7500;
                     }
                     else
@@ -250,15 +252,137 @@ class mob_tushui_trainee : public CreatureScript
 
                     if (punch3 <= diff)
                     {
-                        me->HandleEmoteCommand(37);
+                        me->HandleEmote(37);
                         punch3 = 7500;
                     }
                     else
                         punch3 -= diff;
                 }
 
-                if (me->GetPositionX() == 1446.322876f && me->GetPositionY() == 3389.027588f && me->GetPositionZ() == 173.782471f)
-                    me->ForcedDespawn(1000);
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case 1:
+                            me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
+                            events.ScheduleEvent(2, 4 * IN_MILLISECONDS);
+                        break;
+                        case 2:
+                            Talk(urand(0, 7));
+                            events.ScheduleEvent(3, 3 * IN_MILLISECONDS);
+                        break;
+                        case 3:
+                            me->ForcedDespawn(2000);
+                            me->GetMotionMaster()->MovePoint(0, 1446.322876f, 3389.027588f, 173.782471f);
+                        break;
+                    }
+                }
+            }
+        };
+};
+
+class mob_huojin_trainee : public CreatureScript
+{
+    public:
+        mob_huojin_trainee() : CreatureScript("mob_huojin_trainee") { }
+
+        CreatureAI* GetAI(Creature* creature) const
+        {
+            return new mob_huojin_traineeAI(creature);
+        }
+
+        struct mob_huojin_traineeAI : public ScriptedAI
+        {
+            mob_huojin_traineeAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+            uint8 punch;
+            uint64 playerGUID;
+            bool isInCombat;
+            bool outOfCombatEmote;
+
+            void Reset()
+            {
+                events.Reset();
+                punch = urand(500, 3000);
+                playerGUID = 0;
+                isInCombat = false;
+                outOfCombatEmote = true;
+                me->SetReactState(REACT_DEFENSIVE);
+                me->setFaction(7);
+                me->SetFullHealth();
+            }
+
+            void DamageTaken(Unit* attacker, uint32& damage)
+            {
+                if (me->HealthBelowPctDamaged(16.67f, damage))
+                {
+                    me->setFaction(35);
+
+                    if(attacker && attacker->GetTypeId() == TYPEID_PLAYER)
+                        attacker->ToPlayer()->KilledMonsterCredit(54586, 0);
+
+                    me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_NONE);
+                    damage = 0;
+                    me->CombatStop();
+                    isInCombat = false;
+                    outOfCombatEmote = false;
+                    events.ScheduleEvent(1, 1 * IN_MILLISECONDS);
+                }
+            }
+
+            void EnterCombat(Unit* unit)
+            {
+                isInCombat = true;
+                outOfCombatEmote = false;
+            }
+
+            void JustRespawned()
+            {
+                Reset();
+            }
+
+            void UpdateAI(const uint32 diff)
+            {
+                if (isInCombat)
+                {
+                    DoMeleeAttackIfReady();
+                    return;
+                }
+
+                if (outOfCombatEmote)
+                {
+                    if (punch <= diff)
+                    {
+                        me->HandleEmote(35);
+                        punch = urand(500, 3000);
+                    }
+                    else
+                        punch -= diff;
+                }
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case 1:
+                            me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
+                            events.ScheduleEvent(2, 4 * IN_MILLISECONDS);
+                        break;
+                        case 2:
+                            Talk(urand(0, 7));
+                            events.ScheduleEvent(3, 3 * IN_MILLISECONDS);
+                        break;
+                        case 3:
+                            me->ForcedDespawn(2000);
+                            me->GetMotionMaster()->MovePoint(0, 1446.322876f, 3389.027588f, 173.782471f);
+                        break;
+                    }
+                }
             }
         };
 };
@@ -336,7 +460,7 @@ public:
                 me->CombatStop();
                 me->setFaction(35);
                 me->SetFullHealth();
-                me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
+                me->HandleEmote(EMOTE_ONESHOT_SALUTE);
                 events.Reset();
                 events.ScheduleEvent(EVENT_RESET, 5000);
                 damage = 0;
@@ -440,7 +564,7 @@ public:
                 guidMob[i] = 0;
 
             ResetMobs();
-            me->HandleEmoteCommand(EMOTE_STATE_READY2H);
+            me->HandleEmote(EMOTE_STATE_READY2H);
         }
         
         void DamageTaken(Unit* pDoneBy, uint32 &uiDamage)
@@ -459,7 +583,7 @@ public:
                 {
                     if (Unit* unit = sObjectAccessor->FindUnit(guidMob[i]))
                     {
-                        if(unit->isAlive())
+                        if(unit->IsAlive())
                             HasRemainingAttacker = true;
                     }
                     else
@@ -473,7 +597,7 @@ public:
         void ResetMobs()
         {
             events.ScheduleEvent(EVENT_CHECK_MOBS, 1000);
-            me->HandleEmoteCommand(EMOTE_STATE_READY2H);
+            me->HandleEmote(EMOTE_STATE_READY2H);
 
             for(int i = 0; i < 4; i++)
             {
@@ -488,7 +612,7 @@ public:
                 {
                     guidMob[i] = temp->GetGUID();
                     temp->SetFacingToObject(me);
-                    temp->HandleEmoteCommand(EMOTE_STATE_READY2H);
+                    temp->HandleEmote(EMOTE_STATE_READY2H);
                     temp->GetMotionMaster()->Clear(false);
                     temp->GetMotionMaster()->MoveChase(me);
                     temp->Attack(me, true);
@@ -522,7 +646,7 @@ public:
                     {
                         if(VerifyMobs()) // No more mobs, objective completed
                         {
-                    	    me->HandleEmoteCommand(EMOTE_STATE_STAND);
+                    	    me->HandleEmote(EMOTE_STATE_STAND);
                     	    me->MonsterYell("Thank you!", LANG_UNIVERSAL, 0);
                         
                             std::list<Player*> PlayerList;
@@ -1029,7 +1153,7 @@ public:
                 me->RemoveAura(AURA_BLESSING_OF_THE_BLUE_FLAME);
                 me->RemoveAura(AURA_BLESSING_OF_THE_RED_FLAME);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
-                me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
+                me->HandleEmote(EMOTE_ONESHOT_SALUTE);
                 me->DespawnOrUnsummon(2000);
 
                 if (attacker->GetTypeId() == TYPEID_PLAYER)
@@ -1070,7 +1194,7 @@ public:
                         GetPlayerListInGrid(playerList, me, 30.0f);
                         for (auto player: playerList)
                         {
-                            if (!player->isAlive())
+                            if (!player->IsAlive())
                             {
                                 me->DespawnOrUnsummon(1000);
                                 playerGuid = 0;
@@ -1300,7 +1424,7 @@ public:
         {
             if (punch1 <= diff)
             {
-                me->HandleEmoteCommand(35);
+                me->HandleEmote(35);
                 punch1 = 7500;
             }
             else
@@ -1308,7 +1432,7 @@ public:
 
             if (punch2 <= diff)
             {
-                me->HandleEmoteCommand(36);
+                me->HandleEmote(36);
                 punch2 = 7500;
             }
             else
@@ -1316,7 +1440,7 @@ public:
 
             if (punch3 <= diff)
             {
-                me->HandleEmoteCommand(37);
+                me->HandleEmote(37);
                 punch3 = 7500;
             }
             else
@@ -1356,7 +1480,7 @@ public:
         {
             if (punch1 <= diff)
             {
-                me->HandleEmoteCommand(35);
+                me->HandleEmote(35);
                 punch1 = 7500;
             }
             else
@@ -1364,7 +1488,7 @@ public:
 
             if (punch2 <= diff)
             {
-                me->HandleEmoteCommand(36);
+                me->HandleEmote(36);
                 punch2 = 7500;
             }
             else
@@ -1372,92 +1496,13 @@ public:
 
             if (punch3 <= diff)
             {
-                me->HandleEmoteCommand(37);
+                me->HandleEmote(37);
                 punch3 = 7500;
             }
             else
                 punch3 -= diff;
         }
     };
-};
-
-class mob_huojin_trainee : public CreatureScript
-{
-    public:
-        mob_huojin_trainee() : CreatureScript("mob_huojin_trainee") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new mob_huojin_traineeAI(creature);
-        }
-
-        struct mob_huojin_traineeAI : public ScriptedAI
-        {
-            mob_huojin_traineeAI(Creature* creature) : ScriptedAI(creature)
-            {
-            }
-
-            uint8 punch;
-            bool isInCombat;
-
-            void Reset()
-            {
-                punch = urand(500, 3000);
-                me->SetReactState(REACT_DEFENSIVE);
-                me->SetFullHealth();
-                me->setFaction(7);
-                isInCombat = false;
-            }
-
-            void DamageTaken(Unit* attacker, uint32& damage)
-            {
-                if (me->HealthBelowPctDamaged(16.67f, damage))
-                {
-                    damage = 0;
-                    if(attacker && attacker->GetTypeId() == TYPEID_PLAYER)
-                        attacker->ToPlayer()->KilledMonsterCredit(54586, 0);
-                    me->CombatStop();
-                    me->setFaction(35);
-                    isInCombat = false;
-                    me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
-                    Talk(urand(0, 7));
-                    me->GetMotionMaster()->MovePoint(0, 1446.322876f, 3389.027588f, 173.782471f);
-                }
-            }
-
-            void EnterCombat(Unit* unit)
-            {
-                isInCombat = true;
-            }
-
-            void JustRespawned()
-            {
-                Reset();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (isInCombat)
-                {
-                    DoMeleeAttackIfReady();
-                    return;
-                }
-
-                else
-                {
-                    if (punch <= diff)
-                    {
-                        me->HandleEmoteCommand(35);
-                        punch = urand(500, 3000);
-                    }
-                    else
-                        punch -= diff;
-                }
-
-                if (me->GetPositionX() == 1446.322876f && me->GetPositionY() == 3389.027588f && me->GetPositionZ() == 173.782471f)
-                    me->ForcedDespawn(1000);
-            }
-        };
 };
 
 class npc_merchant_lorvo : public CreatureScript

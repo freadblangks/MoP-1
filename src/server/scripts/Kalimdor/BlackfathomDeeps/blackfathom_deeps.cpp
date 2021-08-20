@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,10 +16,15 @@
  */
 
 #include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "ScriptedGossip.h"
 #include "blackfathom_deeps.h"
+#include "GameObject.h"
+#include "InstanceScript.h"
+#include "GameObject.h"
+#include "GameObjectAI.h"
+#include "Player.h"
 #include "ScriptedEscortAI.h"
+#include "ScriptedGossip.h"
+#include "SpellScript.h"
 
 enum Spells
 {
@@ -30,8 +35,6 @@ enum Spells
     SPELL_TELEPORT_DARNASSUS                                = 9268
 };
 
-#define GOSSIP_ITEM_MORRIDUNE "Please port me to Darnassus"
-
 const Position HomePosition = {-815.817f, -145.299f, -25.870f, 0};
 
 class go_blackfathom_altar : public GameObjectScript
@@ -39,7 +42,7 @@ class go_blackfathom_altar : public GameObjectScript
 public:
     go_blackfathom_altar() : GameObjectScript("go_blackfathom_altar") { }
 
-    bool OnGossipHello(Player* player, GameObject* /*go*/)
+    bool OnGossipHello(Player* player, GameObject* /*go*/) override
     {
         if (!player->HasAura(SPELL_BLESSING_OF_BLACKFATHOM))
             player->AddAura(SPELL_BLESSING_OF_BLACKFATHOM, player);
@@ -52,14 +55,14 @@ class go_blackfathom_fire : public GameObjectScript
 public:
     go_blackfathom_fire() : GameObjectScript("go_blackfathom_fire") { }
 
-    bool OnGossipHello(Player* /*player*/, GameObject* go)
+    bool OnGossipHello(Player* /*player*/, GameObject* go) override
     {
         InstanceScript* instance = go->GetInstanceScript();
 
         if (instance)
         {
             go->SetGoState(GO_STATE_ACTIVE);
-            go->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+            go->AddFlag(GO_FLAG_NOT_SELECTABLE);
             instance->SetData(DATA_FIRE, instance->GetData(DATA_FIRE) + 1);
             return true;
         }
@@ -72,22 +75,29 @@ class npc_blackfathom_deeps_event : public CreatureScript
 public:
     npc_blackfathom_deeps_event() : CreatureScript("npc_blackfathom_deeps_event") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
-        return new npc_blackfathom_deeps_eventAI (creature);
+        return GetBlackfathomDeepsAI<npc_blackfathom_deeps_eventAI>(creature);
     }
 
     struct npc_blackfathom_deeps_eventAI : public ScriptedAI
     {
         npc_blackfathom_deeps_eventAI(Creature* creature) : ScriptedAI(creature)
         {
+            Initialize();
             if (creature->IsSummon())
-            {
                 creature->SetHomePosition(HomePosition);
-                AttackPlayer();
-            }
 
             instance = creature->GetInstanceScript();
+        }
+
+        void Initialize()
+        {
+            Flee = false;
+
+            ravageTimer = urand(5000, 8000);
+            frostNovaTimer = urand(9000, 12000);
+            frostBoltVolleyTimer = urand(2000, 4000);
         }
 
         InstanceScript* instance;
@@ -98,40 +108,17 @@ public:
 
         bool Flee;
 
-        void Reset()
+        void Reset() override
         {
-            Flee = false;
-
-            ravageTimer           = urand(5000, 8000);
-            frostNovaTimer        = urand(9000, 12000);
-            frostBoltVolleyTimer  = urand(2000, 4000);
+            Initialize();
         }
 
-        void AttackPlayer()
+        void IsSummonedBy(Unit*) override
         {
-            Map::PlayerList const &PlList = me->GetMap()->GetPlayers();
-
-            if (PlList.isEmpty())
-                return;
-
-            for (Map::PlayerList::const_iterator i = PlList.begin(); i != PlList.end(); ++i)
-            {
-                if (Player* player = i->getSource())
-                {
-                    if (player->isGameMaster())
-                        continue;
-
-                    if (player->isAlive())
-                    {
-                        me->SetInCombatWith(player);
-                        player->SetInCombatWith(me);
-                        me->AddThreat(player, 0.0f);
-                    }
-                }
-            }
+            DoZoneInCombat();
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -144,9 +131,7 @@ public:
                     {
                         DoCastVictim(SPELL_RAVAGE);
                         ravageTimer = urand(9000, 14000);
-                    }
-                    else
-                        ravageTimer -= diff;
+                    } else ravageTimer -= diff;
                     break;
                 }
                 case NPC_MURKSHALLOW_SOFTSHELL:
@@ -167,16 +152,14 @@ public:
                             DoCast(target, SPELL_FROST_BOLT_VOLLEY);
                         frostBoltVolleyTimer = urand(5000, 8000);
                     }
-                    else
-                        frostBoltVolleyTimer -= diff;
+                    else frostBoltVolleyTimer -= diff;
 
                     if (frostNovaTimer <= diff)
                     {
                         DoCastAOE(SPELL_FROST_NOVA, false);
                         frostNovaTimer = urand(25000, 30000);
                     }
-                    else
-                        frostNovaTimer -= diff;
+                    else frostNovaTimer -= diff;
                     break;
                 }
             }
@@ -184,19 +167,18 @@ public:
             DoMeleeAttackIfReady();
         }
 
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
             if (me->IsSummon()) //we are not a normal spawn.
-                if (instance)
-                    instance->SetData(DATA_EVENT, instance->GetData(DATA_EVENT) + 1);
+                instance->SetData(DATA_EVENT, instance->GetData(DATA_EVENT) + 1);
         }
     };
 };
 
 enum Morridune
 {
-    SAY_MORRIDUNE_1 = -1048003,
-    SAY_MORRIDUNE_2 = -1048004
+    SAY_MORRIDUNE_1 = 0,
+    SAY_MORRIDUNE_2 = 1
 };
 
 class npc_morridune : public CreatureScript
@@ -204,55 +186,68 @@ class npc_morridune : public CreatureScript
 public:
     npc_morridune() : CreatureScript("npc_morridune") { }
 
-    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action)
+    struct npc_morriduneAI : public EscortAI
     {
-        player->PlayerTalkClass->ClearMenus();
-        switch (action)
+        npc_morriduneAI(Creature* creature) : EscortAI(creature)
         {
-            case GOSSIP_ACTION_INFO_DEF + 1:
-                player->TeleportTo(1, 9952.239f, 2284.277f, 1341.394f, 1.595f);
-                player->CLOSE_GOSSIP_MENU();
-                break;
-        }
-        return true;
-    }
-
-    bool OnGossipHello(Player* player, Creature* creature)
-    {
-        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_ITEM_MORRIDUNE, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-
-        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_morriduneAI (creature);
-    }
-
-    struct npc_morriduneAI : public npc_escortAI
-    {
-        npc_morriduneAI(Creature* creature) : npc_escortAI(creature)
-        {
-            DoScriptText(SAY_MORRIDUNE_1, creature);
-            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-            Start(false, false, 0);
+            Talk(SAY_MORRIDUNE_1);
+            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+            Start(false);
         }
 
-        void WaypointReached(uint32 waypointId)
+        void WaypointReached(uint32 waypointId, uint32 /*pathId*/) override
         {
             switch (waypointId)
             {
                 case 4:
                     SetEscortPaused(true);
-                    me->SetOrientation(1.775791f);
-                    me->SendMovementFlagUpdate();
-                    me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-                    DoScriptText(SAY_MORRIDUNE_2, me);
+                    me->SetFacingTo(1.775791f, true);
+                    me->AddNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+                    Talk(SAY_MORRIDUNE_2);
                     break;
             }
         }
+
+        bool GossipSelect(Player* player, uint32 /*menuId*/, uint32 /*gossipListId*/) override
+        {
+            DoCast(player, SPELL_TELEPORT_DARNASSUS);
+            return false;
+        }
     };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return GetBlackfathomDeepsAI<npc_morriduneAI>(creature);
+    }
+};
+
+// 151159 - Darkness Calls
+class spell_subjugator_korul_darkness_calls : public SpellScriptLoader
+{
+public:
+    spell_subjugator_korul_darkness_calls() : SpellScriptLoader("spell_subjugator_korul_darkness_calls") { }
+
+    class spell_subjugator_korul_darkness_calls_SpellScript : public SpellScript
+    {
+        PrepareSpellScript(spell_subjugator_korul_darkness_calls_SpellScript);
+
+        void HandleScript(SpellEffIndex /*effIndex*/)
+        {
+            if (Unit* hitUnit = GetHitUnit())
+                GetCaster()->CastSpell(hitUnit, uint32(GetEffectValue()), true);
+        }
+
+        void Register() override
+        {
+            OnEffectHitTarget += SpellEffectFn(spell_subjugator_korul_darkness_calls_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
+            OnEffectHitTarget += SpellEffectFn(spell_subjugator_korul_darkness_calls_SpellScript::HandleScript, EFFECT_1, SPELL_EFFECT_DUMMY);
+        }
+    };
+
+    SpellScript* GetSpellScript() const override
+    {
+        return new spell_subjugator_korul_darkness_calls_SpellScript();
+    }
 };
 
 void AddSC_blackfathom_deeps()
@@ -261,4 +256,5 @@ void AddSC_blackfathom_deeps()
     new go_blackfathom_fire();
     new npc_blackfathom_deeps_event();
     new npc_morridune();
+    new spell_subjugator_korul_darkness_calls();
 }

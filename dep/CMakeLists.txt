@@ -1,4 +1,4 @@
-# Copyright (C) 2020 LatinCoreTeam
+# This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
 #
 # This file is free software; as a special exception the author gives
 # unlimited permission to copy and/or distribute it, with or without
@@ -34,6 +34,5 @@ if(SERVERS)
 endif()
 
 if(TOOLS)
-  add_subdirectory(bzip2)
   add_subdirectory(CascLib)
 endif()

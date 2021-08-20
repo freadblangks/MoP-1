@@ -1,4 +1,21 @@
-#include "ScriptPCH.h"
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "ScriptMgr.h"
 #include "lost_city_of_the_tolvir.h"
 #include "Vehicle.h"
 
@@ -54,12 +71,12 @@ enum ePhases
 
 enum Texts
 {
-    SAY_FINISH                                     = -1877000,
-    SAY_START                                      = -1877001,
-    SAY_CAST_SHOCKVAWE_1                           = -1877002,
-    SAY_CAST_SHOCKVAWE_2                           = -1877003,
-	YELL_KILL_PLAYER_1                             = -1877021,
-	YELL_TREAD_LIGHTLY                             = -1877022,
+    SAY_FINISH                                     = 0,
+    SAY_START                                      = 1,
+    SAY_CAST_SHOCKVAWE_1                           = 2,
+    SAY_CAST_SHOCKVAWE_2                           = 3,
+    YELL_KILL_PLAYER_1                             = 4,
+    YELL_TREAD_LIGHTLY                             = 5,
 };
 
 class boss_general_husam : public CreatureScript
@@ -67,7 +84,7 @@ class boss_general_husam : public CreatureScript
 public:
     boss_general_husam() : CreatureScript("boss_general_husam") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new boss_general_husamAI (creature);
     }
@@ -86,7 +103,7 @@ public:
         uint8 uiHammerFistCount;
         EventMap events;
 
-        void Reset()
+        void Reset() override
         {
             if (Vehicle* vehicle = me->GetVehicleKit())
                 vehicle->RemoveAllPassengers();
@@ -99,18 +116,18 @@ public:
             uiHammerFistCount = 0;
         }
 
-        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply)
+        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply) override
         {
             if (apply)
                 me->CastSpell(who, SPELL_HURL_SCRIPT, false);
         }
 
-        void EnterCombat(Unit* /*who*/)
+        void EnterCombat(Unit* /*who*/) override
         {
             if (instance)
                 instance->SetData(DATA_GENERAL_HUSAM, IN_PROGRESS);
 
-            DoScriptText(SAY_START, me);
+            Talk(SAY_START);
             events.ScheduleEvent(EVENT_SUMMON_LAND_MINES, 3000);
             // To do: fix client crash
             //events.ScheduleEvent(EVENT_SUMMON_SHOCKWAVE, urand(12000, 17000));
@@ -121,40 +138,37 @@ public:
                 events.ScheduleEvent(EVENT_COUNTDOWN_LAND_MINES, 15000);
         }
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             if (summoned->GetEntry() == 44798)
             {
                 float x, y, z;
                 summoned->GetPosition(x, y, z);
-                
+
                 if (Creature* mine = me->SummonCreature(44796, x, y, z))
-                {
                     mine->EnterVehicle(summoned);
-                    mine->ClearUnitState(UNIT_STATE_ONVEHICLE);
-                }
             }
 
             lSummons.Summon(summoned);
         }
 
-		void KilledUnit(Unit* victim)
-		{
-			if (victim->GetTypeId() == TYPEID_PLAYER)
-				DoScriptText(YELL_KILL_PLAYER_1, me);
-		}
+        void KilledUnit(Unit* victim) override
+        {
+            if (victim->IsPlayer())
+                Talk(YELL_KILL_PLAYER_1);
+        }
 
-        void JustDied(Unit* /*killer*/)
+        void JustDied(Unit* /*killer*/) override
         {
             if (instance)
                 instance->SetData(DATA_GENERAL_HUSAM, DONE);
 
-            DoScriptText(SAY_FINISH, me);
+            Talk(SAY_FINISH);
             lSummons.DespawnAll();
             events.Reset();
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (!UpdateVictim())
                 return;
@@ -169,7 +183,7 @@ public:
                 switch (eventId)
                 {
                     case EVENT_COUNTDOWN_LAND_MINES:
-						DoScriptText(YELL_TREAD_LIGHTLY, me);
+                        Talk(YELL_TREAD_LIGHTLY);
                         events.ScheduleEvent(EVENT_COUNTDOWN_LAND_MINES, 15000);
                         me->CastSpell(me, SPELL_DETONATE_TRAPS, false);
                         break;
@@ -191,8 +205,8 @@ public:
                         {
                             me->SetReactState(REACT_PASSIVE);
                             me->AttackStop();
-                            DoScriptText(SAY_CAST_SHOCKVAWE_1, me);
-                            DoScriptText(SAY_CAST_SHOCKVAWE_2, me);
+                            Talk(SAY_CAST_SHOCKVAWE_1);
+                            Talk(SAY_CAST_SHOCKVAWE_2);
 
                             float _x, _y, x, y, z, o;
                             me->GetPosition(x, y, z, o);
@@ -202,7 +216,7 @@ public:
                                 _x = x + 3.0f * cos(o);
                                 _y = y + 3.0f * sin(o);
                                 me->SummonCreature(44711, _x, _y, z, o);
-                                o += M_PI / 2;
+                                o += float(M_PI) / 2;
                             }
 
                             me->CastSpell(me, SPELL_SHOCKWAVE, false);
@@ -216,7 +230,7 @@ public:
                     case EVENT_HAMMER_FIST:
                         {
                             ++uiHammerFistCount;
-                            me->CastSpell(me->getVictim(), SPELL_HAMMER_FIST, false);
+                            me->CastSpell(me->GetVictim(), SPELL_HAMMER_FIST, false);
 
                             if (uiHammerFistCount < 4)
                                 events.ScheduleEvent(EVENT_HAMMER_FIST, 500);
@@ -248,7 +262,7 @@ class npc_land_mine : public CreatureScript
 public:
     npc_land_mine() : CreatureScript("npc_land_mine") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_land_mineAI (creature);
     }
@@ -263,7 +277,7 @@ public:
             uiCountdownTimer = urand(20000, 35000);
             me->SetInCombatWithZone();
         }
-        
+
         uint32 uiActivationTimer;
         uint32 uiCountdownTimer;
         uint32 uiDespawnTimer;
@@ -295,13 +309,13 @@ public:
             uiDespawnTimer = 5500;
         }
 
-        void SpellHit(Unit* /*caster*/, const SpellInfo* spell)
+        void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
         {
             if (spell->Id == SPELL_DETONATE_TRAPS)
                 StartCountDown();
         }
 
-        void SpellHitTarget(Unit* target, const SpellInfo* spell, uint32 /*hitCount*/)
+        void SpellHitTarget(Unit* target, SpellInfo const* spell) override
         {
             if (spell->Id == 83112)
             {
@@ -324,7 +338,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (HasMineState(LAND_MINE_STATE_JUSTADDED))
             {
@@ -368,7 +382,7 @@ class npc_shockwave_stalker : public CreatureScript
 public:
     npc_shockwave_stalker() : CreatureScript("npc_shockwave_stalker") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_shockwave_stalkerAI (creature);
     }
@@ -394,38 +408,37 @@ public:
         }
 
         InstanceScript* instance;
-        std::list<uint64> lSummonedGUID;
+        std::list<ObjectGuid> lSummonedGUID;
         Position pos;
         uint32 uiCheckTimer;
         bool CanCheck;
 
-        void JustSummoned(Creature* summoned)
+        void JustSummoned(Creature* summoned) override
         {
             summoned->SetReactState(REACT_PASSIVE);
             summoned->SetInCombatWithZone();
             summoned->AddAura(SPELL_SHOCKWAVE_STALKER_VISUAL, summoned);
 
             if (instance)
-                if (Creature* husam = Unit::GetCreature(*me, instance->GetData64(DATA_GENERAL_HUSAM)))
+                if (Creature* husam = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_GENERAL_HUSAM)))
                     husam->AI()->JustSummoned(summoned);
 
-            if (uint64 uiGUID = summoned->GetGUID())
-                lSummonedGUID.push_back(uiGUID);
+            lSummonedGUID.push_back(summoned->GetGUID());
         }
 
-        void SpellHit(Unit* caster, const SpellInfo* spell)
+        void SpellHit(Unit* caster, const SpellInfo* spell) override
         {
             if (spell->Id == SPELL_SHOCKWAVE || spell->Id == 91257)
             {
                 caster->CastSpell(me, SPELL_SHOCKWAVE_VISUAL, true);
                 me->RemoveAllAuras();
                 CanCheck = false;
-                
+
                 if (lSummonedGUID.empty())
                     return;
 
-                for (std::list<uint64>::const_iterator itr = lSummonedGUID.begin(); itr != lSummonedGUID.end(); ++itr)
-                    if (Creature* shockwave = Unit::GetCreature(*me, (*itr)))
+                for (std::list<ObjectGuid>::const_iterator itr = lSummonedGUID.begin(); itr != lSummonedGUID.end(); ++itr)
+                    if (Creature* shockwave = ObjectAccessor::GetCreature(*me, (*itr)))
                     {
                         shockwave->CastSpell(shockwave, SPELL_SHOCKWAVE_DAMAGE, true);
                         shockwave->RemoveAllAuras();
@@ -433,7 +446,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (CanCheck)
             {
@@ -463,7 +476,7 @@ class npc_bad_intentios_target : public CreatureScript
 public:
     npc_bad_intentios_target() : CreatureScript("npc_bad_intentios_target") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_bad_intentios_targetAI (creature);
     }
@@ -475,7 +488,7 @@ public:
         uint32 uiExitTimer;
         bool Passenger;
 
-        void Reset()
+        void Reset() override
         {
             uiExitTimer = 1000;
             Passenger = false;
@@ -484,7 +497,7 @@ public:
                 vehicle->RemoveAllPassengers();
         }
 
-        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply)
+        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply) override
         {
             if (apply)
             {
@@ -493,7 +506,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (Passenger)
             {
@@ -506,14 +519,14 @@ public:
     };
 };
 
-class spell_bad_intentions : public SpellScriptLoader
+class spell_bad_intentions: public SpellScriptLoader
 {
     public:
         spell_bad_intentions() : SpellScriptLoader("spell_bad_intentions") { }
 
         class spell_bad_intentions_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_bad_intentions_SpellScript)
+            PrepareSpellScript(spell_bad_intentions_SpellScript);
 
             void HandleScript(SpellEffIndex /*effect*/)
             {
@@ -526,26 +539,26 @@ class spell_bad_intentions : public SpellScriptLoader
                 target->CastSpell(caster, SPELL_RIDE_VEHICLE_HARDCODED, false);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_bad_intentions_SpellScript::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_bad_intentions_SpellScript();
         }
 };
 
-class spell_hurl : public SpellScriptLoader
+class spell_hurl: public SpellScriptLoader
 {
     public:
         spell_hurl() : SpellScriptLoader("spell_hurl") { }
 
         class spell_hurl_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_hurl_SpellScript)
+            PrepareSpellScript(spell_hurl_SpellScript);
 
             void HandleScript(SpellEffIndex /*effect*/)
             {
@@ -560,13 +573,13 @@ class spell_hurl : public SpellScriptLoader
                 target->CastSpell(target, SPELL_HURL_RIDE, false);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_hurl_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_hurl_SpellScript();
         }

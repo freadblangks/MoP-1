@@ -1,4 +1,22 @@
-#include "ScriptPCH.h"
+/*
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+*
+* This program is free software; you can redistribute it and/or modify it
+* under the terms of the GNU General Public License as published by the
+* Free Software Foundation; either version 2 of the License, or (at your
+* option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT
+* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+* more details.
+*
+* You should have received a copy of the GNU General Public License along
+* with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#include "ScriptMgr.h"
+#include "SpellAuras.h"
 #include "lost_city_of_the_tolvir.h"
 #include "Vehicle.h"
 
@@ -15,14 +33,14 @@ enum Spells
 
 const Position RopeBeamPos[8]=
 {
-    {-11095.3f, -1357.22f, 11.5751f, 0.0f},
-    {-11093.6f, -1356.25f, 17.2975f, 0.0f},
-    {-11097.3f, -1347.20f, 17.1596f, 0.0f},
-    {-11099.0f, -1347.01f, 11.4107f, 0.0f},
-    {-11087.8f, -1379.89f, 11.4035f, 0.0f},
-    {-11086.9f, -1378.05f, 17.2635f, 0.0f},
-    {-11090.6f, -1369.01f, 17.2757f, 0.0f},
-    {-11092.2f, -1367.89f, 11.1261f, 0.0f},
+    {-11095.3f, -1357.22f, 11.5751f, 0.0f },
+    {-11093.6f, -1356.25f, 17.2975f, 0.0f },
+    {-11097.3f, -1347.20f, 17.1596f, 0.0f },
+    {-11099.0f, -1347.01f, 11.4107f, 0.0f },
+    {-11087.8f, -1379.89f, 11.4035f, 0.0f },
+    {-11086.9f, -1378.05f, 17.2635f, 0.0f },
+    {-11090.6f, -1369.01f, 17.2757f, 0.0f },
+    {-11092.2f, -1367.89f, 11.1261f, 0.0f },
 };
 
 const uint32 SpellRopBeam[4] = {84168, 84167, 84171, 84172};
@@ -32,7 +50,7 @@ class npc_enslaved_bandit_tv : public CreatureScript
 public:
     npc_enslaved_bandit_tv() : CreatureScript("npc_enslaved_bandit_tv") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_enslaved_bandit_tvAI (creature);
     }
@@ -44,7 +62,7 @@ public:
             RopeBeam();
         }
 
-        void Reset()
+        void Reset() override
         {
         }
 
@@ -55,7 +73,7 @@ public:
                 me->SetCanFly(true);
                 me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
 
                 for (int i = 0; i < 4; ++i)
                     if (Creature* beam = me->SummonCreature(37231, RopeBeamPos[i]))
@@ -70,7 +88,7 @@ public:
                 me->SetCanFly(true);
                 me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
 
                 for (int i = 4; i < 8; ++i)
                     if (Creature* beam = me->SummonCreature(37231, RopeBeamPos[i]))
@@ -84,7 +102,7 @@ public:
             ScriptedAI::EnterEvadeMode();
         }
 
-        void UpdateAI(const uint32 /*diff*/)
+        void UpdateAI(uint32 /*diff*/) override
         {
             if (!UpdateVictim())
                 return;
@@ -99,7 +117,7 @@ class npc_pygmy_brute_tv : public CreatureScript
 public:
     npc_pygmy_brute_tv() : CreatureScript("npc_pygmy_brute_tv") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_pygmy_brute_tvAI (creature);
     }
@@ -113,7 +131,7 @@ public:
         uint32 uiShockwaveTimer;
         uint8 uiSummonMask;
 
-        void Reset()
+        void Reset() override
         {
             uiSummonTimer = 500;
             uiImpaleTimer = urand(3000, 7000);
@@ -121,7 +139,7 @@ public:
             uiSummonMask = 1;
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (uiSummonMask)
             {
@@ -136,25 +154,26 @@ public:
                         switch (uiSummonMask)
                         {
                             case 1:
-                                {
-                                    ++uiSummonMask;
+                            {
+                                ++uiSummonMask;
 
-                                    if (!vehicle->GetPassenger(0))
-                                        if (TempSummon* pygmy = me->SummonCreature(44897, x, y, z, 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 30000))
-                                            pygmy->EnterVehicle(me);
-                                }
+                                if (!vehicle->GetPassenger(0))
+                                    if (TempSummon* pygmy = me->SummonCreature(44897, x, y, z, 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 30000))
+                                        pygmy->EnterVehicle(me);
+
                                 break;
+                            }
                             case 2:
-                                {
-                                    uiSummonMask = 0;
+                            {
+                                uiSummonMask = 0;
 
-                                    if (Unit* passenger = vehicle->GetPassenger(0))
-                                        if (Vehicle* veh_pygmy = passenger->GetVehicleKit())
-                                            if (!veh_pygmy->GetPassenger(0))
-                                                if (Creature* pygmy = me->SummonCreature(44898, x, y, z, 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 30000))
-                                                    pygmy->EnterVehicle(passenger);
-                                }
+                                if (Unit* passenger = vehicle->GetPassenger(0))
+                                    if (Vehicle* veh_pygmy = passenger->GetVehicleKit())
+                                        if (!veh_pygmy->GetPassenger(0))
+                                            if (Creature* pygmy = me->SummonCreature(44898, x, y, z, 0.0f, TEMPSUMMON_CORPSE_DESPAWN, 30000))
+                                                pygmy->EnterVehicle(passenger);
                                 break;
+                            }
                         }
                     }
                 }
@@ -168,7 +187,7 @@ public:
             if (uiImpaleTimer <= diff)
             {
                 uiImpaleTimer = urand(10000, 25000);
-                me->CastSpell(me->getVictim(), 83783, false);
+                me->CastSpell(me->GetVictim(), 83783, false);
             }
             else
                 uiImpaleTimer -= diff;
@@ -188,7 +207,7 @@ public:
 
 struct SlipstreamPlayer
 {
-    uint64 uiPlayerGUID;
+    ObjectGuid uiPlayerGUID;
     uint32 uiPersonalTimer;
 };
 
@@ -197,7 +216,7 @@ class npc_wind_tunnel : public CreatureScript
 public:
     npc_wind_tunnel() : CreatureScript("npc_wind_tunnel") { }
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new npc_wind_tunnelAI (creature);
     }
@@ -214,7 +233,7 @@ public:
         std::list<SlipstreamPlayer> lPlayers;
         uint8 uiIdentifier;
 
-        void Reset()
+        void Reset() override
         {
             if (instance)
             {
@@ -225,9 +244,9 @@ public:
             }
         }
 
-        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply)
+        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply) override
         {
-            if (apply && who->GetTypeId() == TYPEID_PLAYER)
+            if (apply && who->IsPlayer())
             {
                 SlipstreamPlayer new_player;
                 new_player.uiPlayerGUID = who->GetGUID();
@@ -236,7 +255,7 @@ public:
             }
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (lPlayers.empty())
                 return;
@@ -245,14 +264,14 @@ public:
             {
                 if ((*itr).uiPersonalTimer <= diff)
                 {
-                    if (Player* player = Unit::GetPlayer(*me, (*itr).uiPlayerGUID))
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, (*itr).uiPlayerGUID))
                         if (Creature* Landing = me->FindNearestCreature(48097, 100.0f))
                         {
                             player->ExitVehicle();
                             player->CastSpell(player, SPELL_SLIPSTREAM, true);
                             player->CastSpell(Landing, 46598, true);
 
-                            if (AuraPtr aura = Landing->GetAura(46598, (*itr).uiPlayerGUID))
+                            if (Aura* aura = Landing->GetAura(46598, (*itr).uiPlayerGUID))
                                 aura->SetDuration(1000);
                         }
 

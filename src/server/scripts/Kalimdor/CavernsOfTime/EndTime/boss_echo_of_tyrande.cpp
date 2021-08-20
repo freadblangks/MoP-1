@@ -1,114 +1,79 @@
-#include "ScriptPCH.h"
-#include "end_time.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-enum Yells
-{
-    SAY_AGGRO       = 0,
-    SAY_80          = 1,
-    SAY_80_EMOTE    = 2,
-    SAY_55          = 3,
-    SAY_30          = 4,
-    SAY_30_EMOTE    = 5,
-    SAY_DEATH       = 6,
-    SAY_INTRO_1     = 7,
-    SAY_INTRO_2     = 8,
-    SAY_INTRO_3     = 9,
-    SAY_INTRO_4     = 10,
-    SAY_INTRO_5     = 11,
-    SAY_KILL        = 12,
-    SAY_EYES        = 13,
-    SAY_MOONLANCE   = 14,
-    SAY_LIGHT_1     = 15,
-    SAY_LIGHT_2     = 16,
-    SAY_LIGHT_3     = 17,
-    SAY_LIGHT_4     = 18,
-    SAY_LIGHT_5     = 19,
-    SAY_LIGHT_6     = 20,
-    SAY_LIGHT_LEFT  = 21,
-};
+/* ScriptData
+SDName: boss_echo_of_tyrande
+SD%Complete:
+SDComment:
+EndScriptData */
+
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "end_time.h"
+#include "SpellAuraEffects.h"
+#include "SpellInfo.h"
+#include "MotionMaster.h"
+#include "MovementPackets.h"
+#include "MoveSplineInit.h"
+#include <G3D/Vector3.h>
 
 enum Spells
 {
+    // Tyrande
     SPELL_MOONBOLT                      = 102193,
-    SPELL_DARK_MOONLIGHT                = 102414,
-    SPELL_MOONLIGHT_COSMETIC            = 108642,
     SPELL_STARDUST                      = 102173,
-    SPELL_MOONLANCE_AURA                = 102150,
-    SPELL_MOONLANCE_DMG                 = 102149,
-    SPELL_MOONLANCE_SUMMON_1            = 102151,
-    SPELL_MOONLANCE_SUMMON_2            = 102152,
+    SPELL_MOONLANCE                     = 102151,
     SPELL_LUNAR_GUIDANCE                = 102472,
     SPELL_TEARS_OF_ELUNE                = 102241,
-    SPELL_TEARS_OF_ELUNE_SCRIPT         = 102242,
-    SPELL_TEARS_OF_ELUNE_MISSILE        = 102243,
-    SPELL_TEARS_OF_ELUNE_DMG            = 102244,
-    SPELL_EYES_OF_GODDESS               = 102181,
-    SPELL_EYES_OF_GODDESS_STUN          = 102248,
+    SPELL_TEARS_OF_ELUNE_AOE            = 102243,
+    SPELL_DARK_MOONLIGHT                = 102414,
+    SPELL_EYES_OF_THE_GODDESS           = 102181,
 
-    SPELL_PIERCING_GAZE_OF_ELUNE_AURA   = 102182,
-    SPELL_PIERCING_GAZE_OF_ELUNE_DMG    = 102183,
+    // Misc
+    SPELL_MOONLANCE_AOE                 = 102150,
+    SPELL_MOONLANCE_FORK_SUMMON         = 102152,
+    SPELL_PIERCING_GAZE_OF_ELUNE        = 102182,
 
-    // event
-    SPELL_IN_SHADOW                     = 101841,
-    SPELL_MOONLIGHT                     = 101946,
-    SPELL_SHRINK                        = 102002,
-
-    SPELL_ACHIEVEMENT_CHECK             = 102491,
-    SPELL_ACHIEVEMENT_FAIL              = 102539,
-    SPELL_ACHIEVEMENT                   = 102542,
 };
 
 enum Events
 {
-    EVENT_MOONBOLT          = 1,
-    EVENT_MOONLANCE         = 2,
-    EVENT_STARDUST          = 3,
-    EVENT_EYES_OF_GODDESS   = 4,
+    EVENT_MOONBOLT                     = 1,
+    EVENT_STARDUST,
+    EVENT_MOONLANCE,
+    EVENT_LUNAR_GUIDANCE,
+    EVENT_TEARS_OF_ELUNE,
+    EVENT_TEARS_OF_ELUNE_AOE,
+    EVENT_EYES_OF_THE_GODDESS,
 
-    EVENT_START_EVENT       = 5,
-    EVENT_CHECK_PLAYERS     = 6,
-    EVENT_SUMMON_ADDS       = 7,
-    EVENT_SUMMON_POOL       = 8,
-    EVENT_STOP_EVENT        = 9,
-    EVENT_STOP_EVENT_1      = 10,
 };
 
-enum Adds
+enum Misc
 {
-    NPC_MOONLANCE_1                 = 54574,
-    NPC_MOONLANCE_2_1               = 54580,
-    NPC_MOONLANCE_2_2               = 54581,
-    NPC_MOONLANCE_2_3               = 54582,
-    NPC_EYE_OF_ELUNE_1              = 54939,
-    NPC_EYE_OF_ELUNE_2              = 54940,
-    NPC_EYE_OF_ELUNE_3              = 54941,
-    NPC_EYE_OF_ELUNE_4              = 54942,
-
-    // for aura
-    NPC_STALKER                     = 45979,
-
-    // event
-    NPC_POOL_OF_MOONLIGHT           = 54508,
-    NPC_TIME_TWISTED_SENTINEL       = 54512,
-    NPC_TIME_TWISTED_HUNTRESS       = 54701,
-    NPC_TIME_TWISTED_NIGHTSABER_1   = 54688,
-    NPC_TIME_TWISTED_NIGHTSABER_2   = 54699,
-    NPC_TIME_TWISTED_NIGHTSABER_3   = 54700,
-};
-
-enum Other
-{
-    POINT_MOONLANCE     = 1,
-    ACTION_START_EVENT  = 2,
-};
-
-const Position poolPos[5] = 
-{
-    {2903.26f, 63.1788f, 3.2449f, 0.0f},
-    {2862.83f, 131.462f, 3.18436f, 0.0f},
-    {2756.57f, 129.971f, 5.58215f, 0.0f},
-    {2695.44f, 28.7969f, 1.2324f, 0.0f},
-    {2792.82f, 1.93924f, 2.46328f, 0.0f}
+    NPC_TYRANDE_ENTRY                   = 54544,
+    NPC_MOONLANCE_TRIPLE_FIRST          = 54580,
+    NPC_MOONLANCE_TRIPLE_SECOND         = 54582,
+    NPC_MOONLANCE_TRIPLE_THIRD          = 54581,
+    NPC_EYES_OF_THE_GODDESS_FIRST       = 54594,
+    NPC_EYES_OF_THE_GODDESS_SECOND      = 54597,
 };
 
 class boss_echo_of_tyrande : public CreatureScript
@@ -116,484 +81,332 @@ class boss_echo_of_tyrande : public CreatureScript
     public:
         boss_echo_of_tyrande() : CreatureScript("boss_echo_of_tyrande") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_echo_of_tyrandeAI(pCreature);
-        }
-
         struct boss_echo_of_tyrandeAI : public BossAI
         {
-            boss_echo_of_tyrandeAI(Creature* creature) : BossAI(creature, DATA_ECHO_OF_TYRANDE)
+            boss_echo_of_tyrandeAI(Creature* creature) : BossAI(creature, DATA_TYRANDE), Summons(me)
             {
-				me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
-                phase = 0;
-                eventphase = 0;
-                curPool = NULL;
-                me->SetUInt32Value(UNIT_FIELD_BYTES_1, 8);
-                me->AddAura(SPELL_IN_SHADOW, me);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                instance = creature->GetInstanceScript();
+                SetCombatMovement(false);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
+            InstanceScript* instance;
+            EventMap events;
+            SummonList Summons;
+            uint8 PhaseCount;
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+                events.Reset();
 
-                moonlanceGUID = 0LL;
-                phase = 0;
-
-                if (instance->GetData(DATA_TYRANDE_EVENT) == DONE)
-                {
-                    me->SetUInt32Value(UNIT_FIELD_BYTES_1, 0);
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                    me->RemoveAura(SPELL_IN_SHADOW);
-                    if (Creature* pStalker = me->SummonCreature(NPC_STALKER, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f))
-                    {
-                        pStalker->RemoveAllAuras();
-                        pStalker->CastSpell(pStalker, SPELL_MOONLIGHT_COSMETIC, true);
-                    }
-                }
+                Summons.DespawnAll();
             }
 
-            void JustDied(Unit* killer)
+            void EnterCombat(Unit* /*who*/) override
             {
-                _JustDied();
-                Talk(SAY_DEATH);
+                _EnterCombat();
 
-                // Quest
-                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
-                if (!PlayerList.isEmpty())
-                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_TYRANDE, true);
-            }
+                PhaseCount = 0;
 
-            void JustSummoned(Creature* summon)
-            {
-                if (summon->GetEntry() != NPC_STALKER)
-                    BossAI::JustSummoned(summon);
-
-                if (summon->GetEntry() == NPC_MOONLANCE_1)
-                {
-                    Player* target = ObjectAccessor::GetPlayer(*me, moonlanceGUID);
-                    if (!target)
-                        summon->DespawnOrUnsummon();
-
-                    summon->SetOrientation(me->GetAngle(target));
-                    Position pos;
-                    summon->GetNearPosition(pos, 15.0f, 0.0f);
-                    summon->GetMotionMaster()->MovePoint(POINT_MOONLANCE, pos);
-                }
-            }
-
-            void SpellHit(Unit* caster, SpellInfo const* spell)
-            {
-                if (spell->HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
-                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
-                        if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_MOONBOLT)
-                            me->InterruptSpell(CURRENT_GENERIC_SPELL);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                Talk(SAY_AGGRO);
-                
-                phase = 0;
-
-                DoCast(me, SPELL_DARK_MOONLIGHT, true);
+                me->SetFacingToObject(me->GetVictim());
 
                 events.ScheduleEvent(EVENT_MOONBOLT, 1000);
-                events.ScheduleEvent(EVENT_MOONLANCE, urand(12000, 13000));
-                events.ScheduleEvent(EVENT_STARDUST, urand(7000, 8000));
-                events.ScheduleEvent(EVENT_EYES_OF_GODDESS, urand(30000, 33000));
-
-                instance->SetBossState(DATA_ECHO_OF_TYRANDE, IN_PROGRESS);
-                DoZoneInCombat();
+                events.ScheduleEvent(EVENT_STARDUST, 15000);
+                events.ScheduleEvent(EVENT_MOONLANCE, 5000);
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void InitializeAI() override
             {
-                BossAI::SummonedCreatureDespawn(summon);
-                if (summon->GetEntry() == NPC_POOL_OF_MOONLIGHT)
-                    Talk(SAY_LIGHT_LEFT);
+                // ToDo:
+                // Trash event!
+                DoAction(ACTION_TYRANDE_START);
             }
 
-            void AttackStart(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                if (who)
-                    me->Attack(who, false);
             }
 
-            void DoAction(const int32 action)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (action == ACTION_START_EVENT)
+                _JustDied();
+                instance->SetData(DATA_BOSS_COUNT, 1);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                Summons.Summon(summon);
+            }
+
+            void DoAction(int32 action) override
+            {
+                switch (action)
                 {
-                    eventphase = 1;
-                    summons.DespawnAll();
-                    events.ScheduleEvent(EVENT_START_EVENT, 10000);
+                case ACTION_TYRANDE_START:
+                    me->setActive(true);
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                    me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+                    break;
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
+
             {
-                if (!UpdateVictim() && !eventphase)
+                if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
+                if ((me->HealthBelowPct(80) && PhaseCount == 0) || (me->HealthBelowPct(55) && PhaseCount == 1))
+                {
+                    events.Reset();
+                    events.ScheduleEvent(EVENT_LUNAR_GUIDANCE, 1000);
+                    events.ScheduleEvent(EVENT_EYES_OF_THE_GODDESS, 5000);
+                    PhaseCount++;
+                }
+
+                if (me->HealthBelowPct(30) && PhaseCount == 2)
+                {
+                    events.Reset();
+                    events.ScheduleEvent(EVENT_TEARS_OF_ELUNE, 1000);
+                    PhaseCount++;
+                }
+
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
-
-                if (phase == 0 && me->HealthBelowPct(80))
-                {
-                    phase = 1;
-                    Talk(SAY_80);
-                    DoCast(me, SPELL_LUNAR_GUIDANCE);
-                    return;
-                }
-                else if (phase == 1 && me->HealthBelowPct(55))
-                {
-                    phase = 2;
-                    Talk(SAY_55);
-                    DoCast(me, SPELL_LUNAR_GUIDANCE);
-                    return;
-                }
-                else if (phase == 2 && me->HealthBelowPct(30))
-                {
-                    phase = 3;
-                    Talk(SAY_30);
-                    DoCast(me, SPELL_TEARS_OF_ELUNE);
-                    return;
-                }
 
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
-                        case EVENT_START_EVENT:
-                            events.ScheduleEvent(EVENT_SUMMON_POOL, 2000);
-                            events.ScheduleEvent(EVENT_SUMMON_ADDS, 5000);
-                            events.ScheduleEvent(EVENT_CHECK_PLAYERS, 5000);
-                            break;
-                        case EVENT_SUMMON_POOL:
-                            switch (eventphase)
-                            {
-                                case 1: Talk(SAY_LIGHT_1); break;
-                                case 2: Talk(SAY_LIGHT_2); break;
-                                case 3: Talk(SAY_LIGHT_3); break;
-                                case 4: Talk(SAY_LIGHT_4); break;
-                                case 5: Talk(SAY_LIGHT_5); break;
-                                default: break;
-                            }
-                            curPool = NULL;
-                            curPool = me->SummonCreature(NPC_POOL_OF_MOONLIGHT, poolPos[eventphase - 1], TEMPSUMMON_TIMED_DESPAWN, 40000);
-                            if (eventphase < 5)
-                            {
-                                switch (eventphase)
-                                {
-                                    case 2: Talk(SAY_INTRO_2); break;
-                                    case 3: Talk(SAY_INTRO_3); break;
-                                    case 4: Talk(SAY_INTRO_4); break;
-                                    default: break;
-                                }
-                                eventphase++;
-                                events.ScheduleEvent(EVENT_SUMMON_POOL, 45000);
-                            }
-                            else
-                            {
-                                Talk(SAY_INTRO_5);
-                                events.ScheduleEvent(EVENT_STOP_EVENT, 30000);
-                                events.ScheduleEvent(EVENT_STOP_EVENT_1, 40000);
-                            }
-                            break;
-                        case EVENT_SUMMON_ADDS:
-                        {
-                            if (Player* pPlayer = me->FindNearestPlayer(500.0f))
-                            {
-                                Position pos;
-                                pPlayer->GetRandomNearPosition(pos, frand(15.0f, 20.0f));
-                                uint32 entry = NPC_TIME_TWISTED_NIGHTSABER_1;
-                                switch (urand(1, eventphase))
-                                {
-                                    case 1: entry = NPC_TIME_TWISTED_NIGHTSABER_1; break;
-                                    case 2: entry = NPC_TIME_TWISTED_NIGHTSABER_2; break;
-                                    case 3: entry = NPC_TIME_TWISTED_NIGHTSABER_3; break;
-                                    case 4: entry = NPC_TIME_TWISTED_SENTINEL; break;
-                                    case 5: entry = NPC_TIME_TWISTED_HUNTRESS; break;
-                                }
-                                if (Creature* pCreature = me->SummonCreature(entry, pos))
-                                    pCreature->AI()->AttackStart(pPlayer);
-                            }
-                            
-                            events.ScheduleEvent(EVENT_SUMMON_ADDS, urand(5000, 10000));
-                            break;
-                        }
-                        case EVENT_CHECK_PLAYERS:
-                        {
-                            uint8 num = 0;
-                            Map::PlayerList const &playerList = instance->instance->GetPlayers();
-                            if (!playerList.isEmpty())
-                                for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
-                                    if (Player* pPlayer = itr->getSource())
-                                        if (pPlayer->GetAreaId() == AREA_EMERALD && pPlayer->isAlive())
-                                            num++;
-                            
-                            if (!num)
-                            {
-                                summons.DespawnAll();
-                                events.CancelEvent(EVENT_SUMMON_ADDS);
-                                events.CancelEvent(EVENT_SUMMON_POOL);
-                                events.CancelEvent(EVENT_CHECK_PLAYERS);
-                                events.CancelEvent(EVENT_STOP_EVENT);
-                                events.CancelEvent(EVENT_STOP_EVENT_1);
-                                eventphase = 0;
-                                instance->SetData(DATA_TYRANDE_EVENT, NOT_STARTED);
-                            }
-                            else
-                                events.ScheduleEvent(EVENT_CHECK_PLAYERS, 5000);
-                            break;
-                        }
-                        case EVENT_STOP_EVENT:
-                            events.CancelEvent(EVENT_SUMMON_ADDS);
-                            events.CancelEvent(EVENT_SUMMON_POOL);
-                            break;
-                        case EVENT_STOP_EVENT_1:
-                            Talk(SAY_LIGHT_6);
-                            DoCastAOE(SPELL_ACHIEVEMENT);
-                            events.CancelEvent(EVENT_CHECK_PLAYERS);
-                            me->SetUInt32Value(UNIT_FIELD_BYTES_1, 0);
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                            me->RemoveAura(SPELL_IN_SHADOW);
-                            if (Creature* pStalker = me->SummonCreature(NPC_STALKER, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f))
-                            {
-                                pStalker->RemoveAllAuras();
-                                pStalker->CastSpell(pStalker, SPELL_MOONLIGHT_COSMETIC, true);
-                            }
-                            instance->SetData(DATA_TYRANDE_EVENT, DONE);
-                            break;
-                        case EVENT_MOONBOLT:
-                            DoCastVictim(SPELL_MOONBOLT);
-                            events.ScheduleEvent(EVENT_MOONBOLT, 3000);
-                            break;
-                        case EVENT_MOONLANCE:
-                        {
-                            Unit* pTarget;
-                            pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, -10.0f, true);
-                            if (!pTarget)
-                                pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true);
-                            if (pTarget)
-                            {
-                                if (roll_chance_i(20))
-                                    Talk(SAY_MOONLANCE);
-                                moonlanceGUID = pTarget->GetGUID();
-                                DoCast(pTarget, SPELL_MOONLANCE_SUMMON_1);
-                            }
-                            events.ScheduleEvent(EVENT_MOONLANCE, urand(12000, 13000));
-                            break;
-                        }
-                        case EVENT_STARDUST:
-                            DoCastAOE(SPELL_STARDUST);
-                            events.ScheduleEvent(EVENT_STARDUST, urand(7000, 8000));
-                            break;
-                        case EVENT_EYES_OF_GODDESS:
-                            Talk(SAY_EYES);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-        private:
-            uint8 phase; 
-            uint64 moonlanceGUID;
-            uint8 eventphase;
-            Unit* curPool;
-        };
-};
-
-class npc_echo_of_tyrande_moonlance : public CreatureScript
-{
-    public:
-        npc_echo_of_tyrande_moonlance() : CreatureScript("npc_echo_of_tyrande_moonlance") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_echo_of_tyrande_moonlanceAI(pCreature);
-        }
-
-        struct npc_echo_of_tyrande_moonlanceAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_tyrande_moonlanceAI(Creature*  pCreature) : Scripted_NoMovementAI(pCreature)
-            {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetSpeed(MOVE_RUN, (me->GetEntry() == NPC_MOONLANCE_1 ? 0.6f : 0.9f), true);
-            }
-
-            void AttackStart(Unit* /*who*/) { return; }
-
-            void MovementInform(uint32 type, uint32 data)
-            {
-                if (type != POINT_MOTION_TYPE)
-                    return;
-
-                if (data == POINT_MOONLANCE)
-                {
-                    if (me->GetEntry() == NPC_MOONLANCE_1)
+                    case EVENT_MOONBOLT:
+                        DoCastVictim(SPELL_MOONBOLT);
+                        events.ScheduleEvent(EVENT_MOONBOLT, urand(1000, 3000));
+                        break;
+                    case EVENT_STARDUST:
                     {
-                        Position pos1_1, pos1_2, pos2_1, pos2_2, pos3_1, pos3_2;
-                        me->GetNearPosition(pos1_1, 3.0f, -(M_PI / 4.0f));
-                        me->GetNearPosition(pos1_2, 30.0f, -(M_PI / 4.0f)); 
-                        me->GetNearPosition(pos2_1, 3.0f, 0.0f); 
-                        me->GetNearPosition(pos2_2, 30.0f, 0.0f); 
-                        me->GetNearPosition(pos3_1, 3.0f, (M_PI / 4.0f)); 
-                        me->GetNearPosition(pos3_2, 30.0f, (M_PI / 4.0f));
-                        if (Creature* pLance1 = me->SummonCreature(NPC_MOONLANCE_2_1, pos1_1, TEMPSUMMON_TIMED_DESPAWN, 30000))
-                            pLance1->GetMotionMaster()->MovePoint(POINT_MOONLANCE, pos1_2);
-                        if (Creature* pLance2 = me->SummonCreature(NPC_MOONLANCE_2_2, pos2_1, TEMPSUMMON_TIMED_DESPAWN, 30000))
-                            pLance2->GetMotionMaster()->MovePoint(POINT_MOONLANCE, pos2_2);
-                        if (Creature* pLance3 = me->SummonCreature(NPC_MOONLANCE_2_3, pos3_1, TEMPSUMMON_TIMED_DESPAWN, 30000))
-                            pLance3->GetMotionMaster()->MovePoint(POINT_MOONLANCE, pos3_2);
+                        ThreatContainer::StorageType threatlist = me->GetThreatManager().getThreatList();
+                        for (ThreatContainer::StorageType::const_iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
+                        {
+                            if (Unit* unit = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid()))
+                                if (unit->IsPlayer())
+                                    me->CastSpell(unit, SPELL_STARDUST, false);
+                        }
+                        events.ScheduleEvent(EVENT_STARDUST, urand(8000, 12000));
+                        break;
                     }
-
-                    me->DespawnOrUnsummon(500);
+                    case EVENT_MOONLANCE:
+                        if (SelectTarget(SELECT_TARGET_MAXDISTANCE, 0, 100.0f, true))
+                        {
+                            DoCastAOE(SPELL_MOONLANCE);
+                            events.ScheduleEvent(EVENT_MOONLANCE, urand(4000, 8000));
+                        }
+                        break;
+                    case EVENT_LUNAR_GUIDANCE:
+                        DoCastAOE(SPELL_LUNAR_GUIDANCE);
+                        events.ScheduleEvent(EVENT_MOONBOLT, urand(1000, 3000));
+                        events.ScheduleEvent(EVENT_STARDUST, urand(8000, 12000));
+                        events.ScheduleEvent(EVENT_MOONLANCE, urand(9000, 12000));
+                        break;
+                    case EVENT_TEARS_OF_ELUNE:
+                        DoCastAOE(SPELL_TEARS_OF_ELUNE);
+                        events.ScheduleEvent(EVENT_TEARS_OF_ELUNE_AOE, 500);
+                        events.ScheduleEvent(EVENT_MOONBOLT, urand(1000, 3000));
+                        events.ScheduleEvent(EVENT_STARDUST, urand(8000, 12000));
+                        events.ScheduleEvent(EVENT_MOONLANCE, urand(9000, 12000));
+                        break;
+                    case EVENT_TEARS_OF_ELUNE_AOE:
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                            DoCast(target, SPELL_TEARS_OF_ELUNE_AOE, true);
+                        events.ScheduleEvent(EVENT_TEARS_OF_ELUNE_AOE, 500);
+                    case EVENT_EYES_OF_THE_GODDESS:
+                        if (PhaseCount > 2)
+                            return;
+                        DoCastAOE(SPELL_EYES_OF_THE_GODDESS);
+                        events.ScheduleEvent(EVENT_EYES_OF_THE_GODDESS, 22000);
+                        break;
+                    }
                 }
             }
         };
-};
 
-class npc_echo_of_tyrande_pool_of_moonlight : public CreatureScript
-{
-    public:
-        npc_echo_of_tyrande_pool_of_moonlight() : CreatureScript("npc_echo_of_tyrande_pool_of_moonlight") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_echo_of_tyrande_pool_of_moonlightAI(pCreature);
-        }
-
-        struct npc_echo_of_tyrande_pool_of_moonlightAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_tyrande_pool_of_moonlightAI(Creature*  pCreature) : Scripted_NoMovementAI(pCreature)
-            {
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            uint32 uiShrinkTimer;
-            uint32 uiDespawnTimer;
-
-            void Reset()
-            {
-                uiShrinkTimer = 5000;
-                uiDespawnTimer = 60000;
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (uiDespawnTimer <= diff)
-                {
-                    uiDespawnTimer = 60000;
-                    me->DespawnOrUnsummon(500);
-                }
-                else
-                    uiDespawnTimer -= diff;
-
-                if (uiShrinkTimer <= diff)
-                {
-                    uiShrinkTimer = 2000;
-                    DoCast(me, SPELL_SHRINK, true);
-                }
-                else
-                    uiShrinkTimer -= diff;
-            }
-        };
-};
-
-class spell_echo_of_tyrande_tears_of_elune_script : public SpellScriptLoader
-{
-    public:
-        spell_echo_of_tyrande_tears_of_elune_script() : SpellScriptLoader("spell_echo_of_tyrande_tears_of_elune_script") { }
-
-        class spell_echo_of_tyrande_tears_of_elune_script_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_echo_of_tyrande_tears_of_elune_script_SpellScript);
-
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
-
-                if (roll_chance_i(50))
-                    GetCaster()->CastSpell(GetHitUnit(), SPELL_TEARS_OF_ELUNE_MISSILE, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_echo_of_tyrande_tears_of_elune_script_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_echo_of_tyrande_tears_of_elune_script_SpellScript();
+            return new boss_echo_of_tyrandeAI(creature);
         }
 };
 
-class at_et_tyrande : public AreaTriggerScript
+class npc_moonlance_single : public CreatureScript
 {
     public:
-        at_et_tyrande() : AreaTriggerScript("at_et_tyrande") { }
+        npc_moonlance_single() : CreatureScript("npc_moonlance_single") { }
 
-        bool OnTrigger(Player* pPlayer, const AreaTriggerEntry* /*pAt*/)
+        struct npc_moonlance_singleAI : public ScriptedAI
         {
-            if (!pPlayer)
-                return true;
-
-            if (pPlayer->IsBeingTeleported() || pPlayer->isBeingLoaded())
-                return true;
-
-            if (InstanceScript* pInstance = pPlayer->GetInstanceScript())
+            npc_moonlance_singleAI(Creature* creature) : ScriptedAI(creature)
             {
-                if (pInstance->GetData(DATA_TYRANDE_EVENT) != IN_PROGRESS && 
-                    pInstance->GetData(DATA_TYRANDE_EVENT) != DONE)
+                _instance = creature->GetInstanceScript();
+            }
+
+            void Reset() override
+            {
+                me->SetSpeed(MOVE_RUN, 1.5f);
+                me->CastSpell(me, SPELL_MOONLANCE_AOE, true);
+                if (Creature* tyrande = GetClosestCreatureWithEntry(me, NPC_TYRANDE_ENTRY, 75.0f))
                 {
-                    if (Creature* pTyrande = ObjectAccessor::GetCreature(*pPlayer, pInstance->GetData64(DATA_ECHO_OF_TYRANDE)))
+                    if (Unit* target = tyrande->AI()->SelectTarget(SELECT_TARGET_MAXDISTANCE, 0, 100.0f, true))
                     {
-                        pTyrande->AI()->Talk(SAY_INTRO_1);
-                        pTyrande->AI()->DoAction(ACTION_START_EVENT);
-                        pInstance->SetData(DATA_TYRANDE_EVENT, IN_PROGRESS);
+                        float targetPosX = tyrande->GetPositionX();
+                        float targetPosY = tyrande->GetPositionY();
+                        float targetPosZ = tyrande->GetPositionZ();
+                        me->SetFacingToObject(target);
+                        float targetOrie = tyrande->GetOrientation();
+
+                        float dist = 100.0f;
+                        me->GetMotionMaster()->Clear();
+                        me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+                        me->SetReactState(REACT_PASSIVE);
+                        me->GetMotionMaster()->MovePoint(0, targetPosX + dist * cos(targetOrie), targetPosY + dist * sin(targetOrie), targetPosZ);
+                    }
+                }
+
+                if (AuraEffect* aurEff = me->GetAuraEffect(102150, EFFECT_0))
+                    aurEff->SetPeriodicTimer(1000);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                uint32 count = 0;
+                switch (summon->GetEntry())
+                {
+                    case NPC_MOONLANCE_TRIPLE_FIRST:
+                        count = 0;
+                        break;
+                    case NPC_MOONLANCE_TRIPLE_SECOND:
+                        count = 1;
+                        break;
+                    case NPC_MOONLANCE_TRIPLE_THIRD:
+                        count = 2;
+                        break;
+                    default:
+                        break;
+                }
+
+                me->SetSpeed(MOVE_RUN, 1.5f);
+                summon->SetReactState(REACT_PASSIVE);
+                summon->CastSpell(summon, SPELL_MOONLANCE_AOE, true);
+                if (AuraEffect* aurEff = summon->GetAuraEffect(102150, EFFECT_0))
+                    aurEff->SetPeriodicTimer(1000);
+                float dir =(me->GetOrientation() - (0.52f) + count * (0.52f));
+                if (dir >6.28f)
+                    dir-=6.28f;
+                summon->GetMotionMaster()->MovePoint(0, me->GetPositionX() + 120  * cos(dir), me->GetPositionY() + 120  * sin(dir), me->GetPositionZ());
+            }
+
+            void UpdateAI(uint32 /*diff*/) override
+            {
+                if (Creature* tyrande = GetClosestCreatureWithEntry(me, NPC_TYRANDE_ENTRY, 75.0f))
+                {
+                    if (me->GetDistance2d(tyrande) > 10.0f)
+                    {
+                        DoCast(SPELL_MOONLANCE_FORK_SUMMON);
+                        me->DespawnOrUnsummon();
                     }
                 }
             }
 
-            return true;
+            private:
+            InstanceScript* _instance;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetEndTimelAI<npc_moonlance_singleAI>(creature);
+        }
+};
+
+class npc_eye_of_the_goddess : public CreatureScript
+{
+    public:
+        npc_eye_of_the_goddess() : CreatureScript("npc_eye_of_the_goddess") { }
+
+        struct npc_eye_of_the_goddessAI : public ScriptedAI
+        {
+            npc_eye_of_the_goddessAI(Creature* creature) : ScriptedAI(creature)
+            {
+                _instance = creature->GetInstanceScript();
+            }
+
+            bool rotationStart;
+
+            void FillCirclePath(Position const& centerPos, float radius, float z, Movement::PointsArray& path, bool clockwise)
+            {
+                float step = clockwise ? -M_PI / 8.0f : M_PI / 8.0f;
+                float angle = centerPos.GetAngle(me->GetPositionX(), me->GetPositionY());
+
+                for (uint8 i = 0; i < 16; angle += step, ++i)
+                {
+                    G3D::Vector3 point;
+                    point.x = centerPos.GetPositionX() + radius * cosf(angle);
+                    point.y = centerPos.GetPositionY() + radius * sinf(angle);
+                    point.z = z; // Don't use any height getters unless all bugs are fixed.
+                    path.push_back(point);
+                }
+            }
+
+            void InitializeAI() override
+            {
+                rotationStart = false;
+
+                me->GetMotionMaster()->Clear();
+                me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+                me->SetReactState(REACT_PASSIVE);
+
+                if (me->GetEntry() == NPC_EYES_OF_THE_GODDESS_FIRST)
+                    me->GetMotionMaster()->MoveCharge(2839.03f, 28.3f, me->GetPositionZ(), 5.5f);
+
+                if (me->GetEntry() == NPC_EYES_OF_THE_GODDESS_SECOND)
+                    me->GetMotionMaster()->MoveCharge(2819.51f, 79.67f, me->GetPositionZ(), 5.5f);
+
+                DoCastAOE(SPELL_PIERCING_GAZE_OF_ELUNE);
+                if (Aura* aur = me->GetAura(SPELL_PIERCING_GAZE_OF_ELUNE))
+                    aur->SetDuration(25000);
+            }
+
+            void UpdateAI(uint32 /*diff*/) override
+            {
+                if (Creature* tyrande = GetClosestCreatureWithEntry(me, NPC_TYRANDE_ENTRY, 75.0f))
+                {
+                    if (me->GetDistance2d(tyrande) > 20.0f && !rotationStart)
+                    {
+                        Position pos = tyrande->GetPosition();
+                        rotationStart = true;
+                        me->GetMotionMaster()->Clear();
+
+                        Movement::MoveSplineInit init(me);
+                        FillCirclePath(pos, 20.0f, me->GetPositionZ() + 0.1f, init.Path(), true);
+                        init.SetFly();
+                        init.SetCyclic();
+                        init.SetVelocity(8.5f);
+                        init.Launch();
+                    }
+                }
+            }
+
+            private:
+            InstanceScript* _instance;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetEndTimelAI<npc_eye_of_the_goddessAI>(creature);
         }
 };
 
 void AddSC_boss_echo_of_tyrande()
 {
     new boss_echo_of_tyrande();
-    new npc_echo_of_tyrande_moonlance();
-    new npc_echo_of_tyrande_pool_of_moonlight();
-    new spell_echo_of_tyrande_tears_of_elune_script();
-    new at_et_tyrande();
+    new npc_moonlance_single();
+    new npc_eye_of_the_goddess();
 }

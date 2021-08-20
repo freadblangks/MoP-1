@@ -1,316 +1,430 @@
-#include "ScriptPCH.h"
+#include "ScriptMgr.h"
 #include "halls_of_origination.h"
-
-enum ScriptTexts
-{
-    SAY_DEATH                = 0,
-    SAY_AGGRO                = 1,
-    SAY_GROWTH               = 2,
-    SAY_KILL                 = 3,
-};
+#include "Vehicle.h"
+#include "SpellAuras.h"
 
 enum Spells
 {
-    //Ammunae
-    SPELL_WITHER                            = 76043,
-    SPELL_CONSUME_LIFE_MANA                 = 75718,
-    SPELL_CONSUME_LIFE_FOCUS                = 80968,
-    SPELL_CONSUME_LIFE_FOCUS_H              = 94958,
-    SPELL_CONSUME_LIFE_ENERGY               = 79766,
-    SPELL_CONSUME_LIFE_ENERGY_H             = 94961,
-    SPELL_CONSUME_LIFE_RUNIC                = 79768,
-    SPELL_CONSUME_LIFE_RUNIC_H              = 94959,
-    SPELL_CONSUME_LIFE_RAGE                 = 79767,
-    SPELL_CONSUME_LIFE_RAGE_H               = 94960,
-    SPELL_CONSUME_LIFE_SELF                 = 75665,
-    SPELL_ZERO_POWER						= 72242,
-    SPELL_RAMPANT_GROWTH                    = 75790,
-    SPELL_RAMPANT_GROWTH_H                  = 89888,
+    SPELL_WITHER                    = 76043,
+    SPELL_CONSUME_LIFE_ENERGY       = 75665,
+    SPELL_CONSUME_ENERGY            = 79766,
+    SPELL_CONSUME_RAGE              = 79767,
+    SPELL_CONSUME_RUNIC_POWER       = 79768,
+    SPELL_CONSUME_MANA              = 75718,
+    SPELL_CONSUME_FOCUS             = 80968,
+    SPELL_SUMMON_SPORE              = 75866,
+    SPELL_RAMPANT_GROWTH            = 75790,
 
-    // Seedling Pod
-    SPELL_ENERGIZE                          = 75657,
-    SPELL_ENERGIZING_GROWTH                 = 89123,   
-    SPELL_SEEDLING_POD                      = 96278,
-
-    // Bloodpetal
-    SPELL_THORN_SLASH                       = 76044,
-
-    // Spore
-    SPELL_SPORE_CLOUD                       = 75701,
-    SPELL_NOXIOUS_SPORE                     = 75702,
-    SPELL_NOXIOUS_SPORE_H                   = 89889,
+    SPELL_SPORE_BLAST               = 75153,
+    SPELL_SPORE_CLOUD               = 75701,
 };
 
 enum Events
 {
-    EVENT_WITHER                = 1,
-    EVENT_CONSUME_LIFE          = 2,
-    EVENT_RAMPANT_GROWTH        = 3,
-    EVENT_SUMMON_POD            = 4,
-    EVENT_SUMMON_SPORE          = 5,
-    EVENT_ENERGIZE              = 6,
+    EVENT_WITHER                    = 1,
+    EVENT_CONSUME_LIFE,
+    EVENT_SUMMON_POD,
+    EVENT_SUMMON_SPORE,
+
+    EVENT_SPORE_BLAST,
+    EVENT_SPORE_CLOUD,
 };
 
-enum Adds
+enum Misc
 {
-    NPC_SEEDLING_POD            = 40550, // 75624
-    NPC_BLOODPETAL_BLOSSOM      = 40622, // 75770
-    NPC_BLOODPETAL_BLOSSOM_2    = 40620,
-    NPC_SPORE                   = 40585,
-    NPC_SEEDLING_POD_2          = 40716, // 96278
-    NPC_BUDDING_SPORE           = 40669, // 75867
-    NPC_BLOODPETAL_SPROUT       = 40630, // 76486
-    NPC_SEEDLING_POD_3          = 40592, // 75687
+    NPC_SEEDLING_POD                = 51329,
+    DATA_RAMPANT_GROWTH             = 1
+};
+
+enum Quotes
+{
+    SAY_AGGRO,
+    SAY_DEATH,
+    SAY_SLAY,
+    SAY_RAMPANT_GROWTH
 };
 
 class boss_ammunae : public CreatureScript
 {
-    public:
-        boss_ammunae() : CreatureScript("boss_ammunae") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
+    struct boss_ammunaeAI : public BossAI
+    {
+        boss_ammunaeAI(Creature * creature) : BossAI(creature, DATA_AMMUNAE)
         {
-            return new boss_ammunaeAI(pCreature);
+            me->ApplySpellImmune(0, IMMUNITY_ID, 89889, true); // Noxious Spores
         }
 
-        struct boss_ammunaeAI : public BossAI
+        void Reset() override
         {
-            boss_ammunaeAI(Creature* pCreature) : BossAI(pCreature, DATA_AMMUNAE)
+            _Reset();
+            me->SetPower(POWER_ENERGY, 0);
+        }
+
+        void EnterCombat(Unit* /*who*/) override
+        {
+            Talk(SAY_AGGRO);
+            _EnterCombat();
+            events.ScheduleEvent(EVENT_WITHER, urand(5000, 7000));
+            events.ScheduleEvent(EVENT_CONSUME_LIFE, urand(10000, 12000));
+            events.ScheduleEvent(EVENT_SUMMON_POD, urand(10000, 12000));
+            events.ScheduleEvent(EVENT_SUMMON_SPORE, urand(15000, 20000));
+        }
+
+        void KilledUnit(Unit* victim) override
+        {
+            if(victim->GetTypeId() == TYPEID_PLAYER)
+                Talk(SAY_SLAY);
+        }
+
+        void JustDied(Unit* /*killer*/) override
+        {
+            Talk(SAY_DEATH);
+            _JustDied();
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if(!UpdateVictim())
+                return;
+
+            events.Update(diff);
+
+            if(me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if(me->GetPower(POWER_ENERGY) == 100)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                DoCast(SPELL_RAMPANT_GROWTH);
+                std::list<Creature*> cList;
+                me->GetCreatureListWithEntryInGrid(cList, NPC_SEEDLING_POD, 100.0f);
+                if(!cList.empty())
+                    for(std::list<Creature *>::const_iterator itr = cList.begin(); itr != cList.end(); ++itr)
+                        (*itr)->AI()->SetData(DATA_RAMPANT_GROWTH, 1);
+                return;
             }
 
-            void InitializeAI()
+            if(uint32 eventId = events.ExecuteEvent())
             {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HOScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
+                switch(eventId)
+                {
+                case EVENT_WITHER:
+                    DoCast(SelectTarget(SELECT_TARGET_RANDOM, 0), SPELL_WITHER);
+                    events.ScheduleEvent(EVENT_WITHER, urand(10000, 15000));
+                    break;
+                case EVENT_CONSUME_LIFE:
+                    if (Unit * target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                    {
+                        uint32 spellId = 0;
+                        switch(target->GetPowerType())
+                        {
+                        case POWER_MANA:
+                            spellId = SPELL_CONSUME_MANA;
+                            break;
+                        case POWER_RAGE:
+                            spellId = SPELL_CONSUME_RAGE;
+                            break;
+                        case POWER_ENERGY:
+                            spellId = SPELL_CONSUME_ENERGY;
+                            break;
+                        case POWER_FOCUS:
+                            spellId = SPELL_CONSUME_FOCUS;
+                            break;
+                        case POWER_RUNIC_POWER:
+                            spellId = SPELL_CONSUME_RUNIC_POWER;
+                            break;
+                        default:
+                            break;
+                        }
+
+                        if(spellId)
+                        {
+                            DoCast(me, SPELL_CONSUME_LIFE_ENERGY, true);
+                            DoCast(target, spellId, false);
+                        }
+                    }
+                    events.ScheduleEvent(EVENT_CONSUME_LIFE, urand(18000, 20000));
+                    break;
+                case EVENT_SUMMON_POD:
+                    {
+                        Position pos;
+                        pos = me->GetRandomNearPosition(20.0f);
+                        me->SummonCreature(NPC_BLOODPETAL_BLOSSOM, pos);
+                    }
+                    events.ScheduleEvent(EVENT_SUMMON_POD, urand(10000, 12000));
+                    break;
+                case EVENT_SUMMON_SPORE:
+                    DoCast(SPELL_SUMMON_SPORE);
+                    events.ScheduleEvent(EVENT_SUMMON_SPORE, urand(20000, 25000));
+                    break;
+                }
             }
 
-            void Reset()
-            {
-                _Reset();
+            DoMeleeAttackIfReady();
 
-                DoCast(me, SPELL_ZERO_POWER);
-                me->setPowerType(POWER_ENERGY);
-                me->SetMaxPower(POWER_ENERGY, 100);
-                me->SetPower(POWER_ENERGY, 0);
+            //EnterEvadeIfOutOfCombatArea(diff);
+        }
+    };
+public:
+    boss_ammunae() : CreatureScript("boss_ammunae") {}
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new boss_ammunaeAI(creature);
+    }
+};
+
+class npc_bloodpetal_blossom : public CreatureScript
+{
+    enum
+    {
+        SPELL_SEEDLING_VISUAL           = 96278,
+        SPELL_SPAWN_VISUAL              = 75687,
+        SPELL_THORN_SLASH               = 76044,
+        SPELL_BLOSSOM_VISUAL            = 75768,
+        SPELL_ENERGIZE                  = 75657,
+        SPELL_ENERGIZE_HC               = 89123,
+    };
+
+    struct npc_bloodpetal_blossomAI : public ScriptedAI
+    {
+        npc_bloodpetal_blossomAI(Creature * creature) : ScriptedAI(creature)
+        {
+            done = false;
+            me->UpdateEntry(NPC_SEEDLING_POD);
+            me->SetReactState(REACT_PASSIVE);
+        }
+
+        void Reset() override
+        {
+            DoCast(SPELL_SPAWN_VISUAL);
+            if(IsHeroic())
+                DoCast(SPELL_ENERGIZE_HC);
+            actionTimer = urand(15000, 18000);
+        }
+
+        void IsSummonedBy(Unit* summoner) override
+        {
+            if(Aura* aur = summoner->GetAura(SPELL_ENERGIZE))
+                aur->ModStackAmount(1);
+            else
+                summoner->AddAura(SPELL_ENERGIZE, summoner);
+        }
+
+        void JustDied(Unit* /*killer*/) override
+        {
+            if (TempSummon* summon = me->ToTempSummon())
+                if (Unit* summoner = summon->GetSummoner())
+                    summoner->RemoveAuraFromStack(SPELL_ENERGIZE);
+        }
+
+        void SetData(uint32 type, uint32) override
+        {
+            if(!done && type == DATA_RAMPANT_GROWTH)
+                actionTimer = 100;
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if(!done)
+            {
+                if(actionTimer <= diff)
+                {
+                    done = true;
+                    me->RemoveAurasDueToSpell(SPELL_SEEDLING_VISUAL);
+                    me->RemoveAurasDueToSpell(SPELL_ENERGIZE);
+                    me->RemoveAurasDueToSpell(SPELL_ENERGIZE_HC);
+                    me->UpdateEntry(NPC_BLOODPETAL_BLOSSOM);
+                    DoCast(SPELL_BLOSSOM_VISUAL);
+                    me->SetHealth(me->GetMaxHealth());
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    DoZoneInCombat();
+                    actionTimer = urand(5000, 8000);
+                }else actionTimer -= diff;
             }
-
-            void KilledUnit(Unit* /*Killed*/)
+            else
             {
-                Talk(SAY_KILL);
-            }
-
-            void JustDied(Unit* /*Kill*/)
-            {
-                _JustDied();
-                Talk(SAY_DEATH);
-            }
-
-            void EnterCombat(Unit* /*Ent*/)
-            {
-                Talk(SAY_AGGRO);
-
-                events.ScheduleEvent(EVENT_WITHER, urand(3000, 6000));
-                events.ScheduleEvent(EVENT_CONSUME_LIFE, urand(8000, 12000));
-                events.ScheduleEvent(EVENT_SUMMON_POD, urand(7000, 14000));
-                events.ScheduleEvent(EVENT_SUMMON_SPORE, urand(14000, 16000));
-
-                DoZoneInCombat();
-                instance->SetBossState(DATA_AMMUNAE, IN_PROGRESS);
-            }
-
-            void JustReachedHome()
-		    {
-			    _JustReachedHome();
-		    }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
+                if(!UpdateVictim())
                     return;
 
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
-
-                 if (me->GetPower(POWER_ENERGY) > 99)
-                 {
-                     Talk(SAY_GROWTH);
-                     DoCastAOE(SPELL_RAMPANT_GROWTH);
-                     return;
-                 }
-
-			    while (uint32 eventId = events.ExecuteEvent())
+                if(actionTimer <= diff)
                 {
-                    switch (eventId)
-                    {
-                        case EVENT_WITHER:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_WITHER);
-                            events.ScheduleEvent(EVENT_WITHER, urand(15000, 20000));
-                            break;
-                        case EVENT_SUMMON_SPORE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                me->SummonCreature(NPC_SPORE, pTarget->GetPositionX() + rand()%10, pTarget->GetPositionY() + rand()%10, pTarget->GetPositionZ(), 0.0f);
-                            events.ScheduleEvent(EVENT_SUMMON_SPORE, urand(20000, 23000));
-                            break;
-                        case EVENT_SUMMON_POD:
-                            me->SummonCreature(NPC_SEEDLING_POD, me->GetPositionX() + rand()%10, me->GetPositionY() + rand()%10, me->GetPositionZ(), 0.0f);
-                            events.ScheduleEvent(EVENT_SUMMON_POD, urand(15000, 23000));
-                            break;
-                        case EVENT_CONSUME_LIFE:
-                            DoCast(me, SPELL_CONSUME_LIFE_SELF, true);
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                            {
-                                switch (pTarget->getPowerType())
-                                {
-                                    case POWER_FOCUS:
-                                        DoCast(pTarget, SPELL_CONSUME_LIFE_FOCUS);
-                                        break;
-                                    case POWER_ENERGY:
-                                        DoCast(pTarget, SPELL_CONSUME_LIFE_ENERGY);
-                                        break;
-                                    case POWER_RUNIC_POWER:
-                                        DoCast(pTarget, SPELL_CONSUME_LIFE_RUNIC);
-                                        break;
-                                    case POWER_RAGE:
-                                        DoCast(pTarget, SPELL_CONSUME_LIFE_RAGE);
-                                        break;
-                                    default:
-                                        DoCast(pTarget, SPELL_CONSUME_LIFE_MANA);
-                                        break;
-                                }
-                            }
-                            events.ScheduleEvent(EVENT_CONSUME_LIFE, urand(18000, 20000));
-                            break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
+                    DoCastVictim(SPELL_THORN_SLASH);
+                    actionTimer = urand(5000, 7500);
+                }else actionTimer -= diff;
             }
-        };
-};
-
-class npc_ammunae_seedling_pod : public CreatureScript
-{
-    public:
-        npc_ammunae_seedling_pod() : CreatureScript("npc_ammunae_seedling_pod") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_ammunae_seedling_podAI(pCreature);
         }
+    private:
+        bool done;
+        uint32 actionTimer;
+    };
 
-        struct npc_ammunae_seedling_podAI : public Scripted_NoMovementAI
-        {
-            npc_ammunae_seedling_podAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-            }
+public:
+    npc_bloodpetal_blossom() : CreatureScript("npc_bloodpetal_blossom") {}
 
-            void Reset()
-            {
-                me->SetReactState(REACT_PASSIVE);
-                DoCast(me, SPELL_SEEDLING_POD, true);
-                if (Creature* pAmmunae = me->FindNearestCreature(NPC_AMMUNAE, 100.0f, true))
-                    DoCast(pAmmunae, SPELL_ENERGIZE);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                me->DespawnOrUnsummon();
-            }
-        };
-
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_bloodpetal_blossomAI(creature);
+    }
 };
+
 
 class npc_ammunae_spore : public CreatureScript
 {
-    public:
-        npc_ammunae_spore() : CreatureScript("npc_ammunae_spore") { }
+    enum
+    {
+        SPELL_SPORE_CLOUD               = 75701
+    };
 
-        CreatureAI* GetAI(Creature* pCreature) const
+    struct npc_ammunae_sporeAI : public ScriptedAI
+    {
+        npc_ammunae_sporeAI(Creature * creature) : ScriptedAI(creature) {}
+
+        void DamageTaken(Unit* /*done_by*/, uint32& damage) override
         {
-            return new npc_ammunae_sporeAI(pCreature);
+            if(damage >= me->GetHealth())
+            {
+                damage = 0;
+                me->RemoveAllAuras();
+                me->StopMoving();
+                me->SetReactState(REACT_PASSIVE);
+                me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+                DoCast(SPELL_SPORE_CLOUD);
+                me->SetHealth(0);
+            }
+        }
+    };
+
+public:
+    npc_ammunae_spore() : CreatureScript("npc_ammunae_spore") {}
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_ammunae_sporeAI(creature);
+    }
+};
+
+class npc_living_vine : public CreatureScript
+{
+public:
+    npc_living_vine() : CreatureScript("npc_living_vine") { }
+
+    struct npc_living_vineAI : public ScriptedAI
+    {
+        npc_living_vineAI(Creature* creature) : ScriptedAI(creature)
+        {
+            SetCombatMovement(false);
+            me->ApplySpellImmune(0, IMMUNITY_ID, 75701, true); // Noxious Spores
         }
 
-        struct npc_ammunae_sporeAI : public ScriptedAI
+        void Reset() override
         {
-            npc_ammunae_sporeAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->SetReactState(REACT_PASSIVE);
-            }
+            events.Reset();
 
-            void Reset()
+            if(Unit* passenger = me->GetVehicleKit()->GetPassenger(1))
+               passenger->AddUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE));
+        }
+
+        void EnterCombat(Unit* /*who*/) override
+        {
+            events.ScheduleEvent(EVENT_SPORE_BLAST, 2000);
+        }
+
+        void JustDied(Unit* /*killer*/) override
+        {
+            if(Unit* passenger = me->GetVehicleKit()->GetPassenger(1))
+               passenger->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE));
+            me->DespawnOrUnsummon(100);
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if(!UpdateVictim())
+                return;
+
+            events.Update(diff);
+
+            if(me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if(uint32 eventId = events.ExecuteEvent())
             {
-                me->GetMotionMaster()->MoveRandom(15.0f);
-            }
-            
-            void DamageTaken(Unit* /*who*/, uint32& damage)
-            {
-                if (damage >= me->GetHealth())
+                switch(eventId)
                 {
-					damage = 0;
-					me->GetMotionMaster()->Clear();
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE);
-                    me->SetStandState(UNIT_STAND_STATE_DEAD);
-                    me->SetHealth(me->GetMaxHealth());
-                    me->RemoveAllAuras();
-					DoCast(me, SPELL_SPORE_CLOUD); 
+                case EVENT_SPORE_BLAST:
+                    DoCastRandom(SPELL_SPORE_BLAST, 40.0f);
+                    events.ScheduleEvent(EVENT_SPORE_BLAST, 5000);
+                    break;
                 }
             }
+            DoMeleeAttackIfReady();
+        }
+    private:
+        EventMap events;
+    };
 
-            void UpdateAI(uint32 const diff)
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_living_vineAI (creature);
+    }
+};
+
+class mob_spore : public CreatureScript
+{
+public:
+    mob_spore() : CreatureScript("mob_spore") { }
+
+    struct mob_sporeAI : public ScriptedAI
+    {
+        mob_sporeAI(Creature* creature) : ScriptedAI(creature)
+        {
+            me->ApplySpellImmune(0, IMMUNITY_ID, 75701, true); // Noxious Spores
+        }
+
+        void Reset() override
+        {
+            events.Reset();
+        }
+
+        void EnterCombat(Unit* /*who*/) override
+        {
+            events.ScheduleEvent(EVENT_SPORE_CLOUD, 2000);
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if(!UpdateVictim())
+                return;
+
+            events.Update(diff);
+
+            if(me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if(uint32 eventId = events.ExecuteEvent())
             {
+                switch(eventId)
+                {
+                case EVENT_SPORE_CLOUD:
+                    DoCastAOE(SPELL_SPORE_CLOUD);
+                    events.ScheduleEvent(EVENT_SPORE_CLOUD, 10000);
+                    break;
+                }
             }
-        };
+        }
+    private:
+        EventMap events;
+    };
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new mob_sporeAI (creature);
+    }
 };
 
 void AddSC_boss_ammunae()
 {
     new boss_ammunae();
-    new npc_ammunae_seedling_pod();
+    new npc_bloodpetal_blossom();
     new npc_ammunae_spore();
-}
+    new npc_living_vine();
+    new mob_spore();
+};

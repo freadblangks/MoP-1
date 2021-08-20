@@ -1,41 +1,63 @@
-#include "ScriptPCH.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2014-2018 RoG_WoW Source <http://wow.rog.snet>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "ScriptMgr.h"
 #include "dragon_soul.h"
+#include "GameObject.h"
 
 #define MAX_ENCOUNTER 8
+
+enum Spells
+{
+    SPELL_TWILIGHT_SHIFT                        = 106368,
+    SPELL_HEROIC_WILL_AOE                       = 105554,
+    SPELL_HEROIC_WILL                           = 106108,
+    SPELL_LAST_DEFENDER_OF_AZEROTH_DRUID        = 106224,
+    SPELL_LAST_DEFENDER_OF_AZEROTH_PALADIN      = 106226,
+    SPELL_LAST_DEFENDER_OF_AZEROTH_DK           = 106227,
+    SPELL_LAST_DEFENDER_OF_AZEROTH_WARRIOR      = 106080,
+    SPELL_LAST_DEFENDER_OF_AZEROTH_MONK         = 129873,
+    SPELL_GIFT_OF_LIVE_AURA                     = 105896,
+    SPELL_ESSENCE_OF_DREAMS_AURA                = 105900,
+    SPELL_YSERA_PRESENCE                        = 106456,
+    SPELL_YSERA_PRESENCE_AURA                   = 106457,
+    SPELL_THE_DREAMER                           = 106463,
+    SPELL_ENTER_THE_DREAM                       = 106464,
+    SPELL_SOURCE_OF_MAGIC_AURA                  = 105903,
+    SPELL_TIMELOOP                              = 105984,
+    SPELL_DREAM                                 = 106466,
+};
 
 class instance_dragon_soul : public InstanceMapScript
 {
     public:
         instance_dragon_soul() : InstanceMapScript("instance_dragon_soul", 967) { }
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
             return new instance_dragon_soul_InstanceMapScript(map);
         }
 
         struct instance_dragon_soul_InstanceMapScript : public InstanceScript
         {
-            instance_dragon_soul_InstanceMapScript(Map* map) : InstanceScript(map)
+            instance_dragon_soul_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
                 SetBossNumber(MAX_ENCOUNTER);
-
-                uiMorchokGUID = 0;
-                uiKohcromGUID = 0;
-                uiYorsahjGUID = 0;
-                uiZonozzGUID = 0;
-                uiHagaraGUID = 0;
-                uiUltraxionGUID = 0;
-                uiBlackhornGUID = 0;
-                uiAllianceShipGUID = 0;
-                uiSwayzeGUID = 0;
-                uiReevsGUID = 0;
-                uiDeckGUID = 0;
-                uiMaelstormGUID = 0;
-                uiDeathwingGUID = 0;
-                uiAlexstraszaDragonGUID = 0;
-                uiNozdormuDragonGUID = 0;
-                uiYseraDragonGUID = 0;
-                uiKalecgosDragonGUID = 0;
 
                 memset(uiLesserCacheofTheAspects, 0, sizeof(uiLesserCacheofTheAspects));
                 memset(uiBackPlates, 0, sizeof(uiBackPlates));
@@ -46,13 +68,55 @@ class instance_dragon_soul : public InstanceMapScript
                 isHeroicFailed = 0;
             }
 
-            void BeforePlayerEnter(Player* pPlayer)
+            void OnPlayerEnter(Player* pPlayer) override
             {
                 if (!uiTeamInInstance)
                     uiTeamInInstance = pPlayer->GetTeam();
+
+                if (GetBossState(BOSS_ULTRAXION) != DONE)
+                {
+                    StartEventWyrmrest(pPlayer, NPC_HARBRINGER_OF_TWILIGHT);
+                    StartEventWyrmrest(pPlayer, NPC_HARBRINGER_OF_DESTRUCTION);
+                    StartEventWyrmrest(pPlayer, NPC_FORCE_OF_DESTRUCTION);
+                    StartEventWyrmrest(pPlayer, NPC_PORTENT_OF_TWILIGHT);
+                    StartEventWyrmrest(pPlayer, NPC_ARCANE_WARDEN);
+                    StartEventWyrmrest(pPlayer, NPC_CHAMPION_OF_MAGIC);
+                    StartEventWyrmrest(pPlayer, NPC_CHAMPION_OF_LIFE);
+                    StartEventWyrmrest(pPlayer, NPC_CHAMPION_OF_TIME);
+                    StartEventWyrmrest(pPlayer, NPC_CHAMPION_OF_EMERALD_DREAM);
+                    StartEventWyrmrest(pPlayer, NPC_DEATHWING_TOWER);
+                }
+
+                if (GetBossState(DATA_ZONOZZ) != IN_PROGRESS || GetBossState(DATA_YORSAHJ) != IN_PROGRESS)
+                {
+                    std::list<Creature*> portalEternity;
+                    std::list<Creature*> portalBase;
+                    GetCreatureListWithEntryInGrid(portalEternity, pPlayer, NPC_TRAVEL_TO_EYE_OF_ETERNITY, 2000.0f);
+                    GetCreatureListWithEntryInGrid(portalBase, pPlayer, NPC_TRAVEL_TO_WYRMREST_BASE, 2000.0f);
+                    if (portalEternity.empty())
+                        return;
+                    if (portalBase.empty())
+                        return;
+
+                    for (std::list<Creature*>::iterator itr = portalEternity.begin(); itr != portalEternity.end(); ++itr)
+                    {
+                        (*itr)->RemoveAura(SPELL_TELEPORT_VISUAL_DISABLED);
+                        (*itr)->CastSpell((*itr), SPELL_TELEPORT_VISUAL_ACTIVE, true);
+                    }
+
+                    for (std::list<Creature*>::iterator itr = portalBase.begin(); itr != portalBase.end(); ++itr)
+                    {
+                        (*itr)->RemoveAura(SPELL_TELEPORT_VISUAL_DISABLED);
+                        (*itr)->CastSpell((*itr), SPELL_TELEPORT_VISUAL_ACTIVE, true);
+                    }
+                }
+
+                if (pPlayer->HasSpell(SPELL_DREAM))
+                    pPlayer->RemoveAurasDueToSpell(SPELL_DREAM);
+                RemoveEncounterAuras();
             }
 
-            void OnCreatureCreate(Creature* pCreature)
+            void OnCreatureCreate(Creature* pCreature) override
             {
                 switch (pCreature->GetEntry())
                 {
@@ -112,6 +176,9 @@ class instance_dragon_soul : public InstanceMapScript
                     case NPC_KALECGOS_DRAGON:
                         uiKalecgosDragonGUID = pCreature->GetGUID();
                         break;
+                    case NPC_THRALL_2:
+                        uiTrallMaelstrom = pCreature->GetGUID();
+                        break;
                     case NPC_TRAVEL_TO_WYRMREST_TEMPLE:
                     case NPC_TRAVEL_TO_EYE_OF_ETERNITY:
                     case NPC_TRAVEL_TO_WYRMREST_BASE:
@@ -141,35 +208,35 @@ class instance_dragon_soul : public InstanceMapScript
                 }
             }
 
-            void OnCreatureRemove(Creature* pCreature)
+            void OnCreatureRemove(Creature* pCreature) override
             {
                 switch (pCreature->GetEntry())
                 {
                     case NPC_ULTRAXION:
-                        uiUltraxionGUID = 0;
+                        uiUltraxionGUID = ObjectGuid::Empty;
                         break;
                     case NPC_BLACKHORN:
-                        uiBlackhornGUID = 0;
+                        uiBlackhornGUID = ObjectGuid::Empty;
                         break;
                     case NPC_DEATHWING:
-                        uiDeathwingGUID = 0;
+                        uiDeathwingGUID = ObjectGuid::Empty;
                         break;
                     case NPC_ALEXSTRASZA_DRAGON:
-                        uiAlexstraszaDragonGUID = 0;
+                        uiAlexstraszaDragonGUID = ObjectGuid::Empty;
                         break;
                     case NPC_NOZDORMU_DRAGON:
-                        uiNozdormuDragonGUID = 0;
+                        uiNozdormuDragonGUID = ObjectGuid::Empty;
                         break;
                     case NPC_YSERA_DRAGON:
-                        uiYseraDragonGUID = 0;
+                        uiYseraDragonGUID = ObjectGuid::Empty;
                         break;
                     case NPC_KALECGOS_DRAGON:
-                        uiKalecgosDragonGUID = 0;
+                        uiKalecgosDragonGUID = ObjectGuid::Empty;
                         break;
                 }
             }
 
-            void OnGameObjectCreate(GameObject* pGo)
+            void OnGameObjectCreate(GameObject* pGo) override
             {
                 switch (pGo->GetEntry())
                 {
@@ -188,7 +255,7 @@ class instance_dragon_soul : public InstanceMapScript
                     case GO_ALLIANCE_SHIP:
                         uiAllianceShipGUID = pGo->GetGUID();
                         if (GetBossState(DATA_ULTRAXION) == DONE)
-                            pGo->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_DESTROYED);
+                            pGo->RemoveFlag(GO_FLAG_DESTROYED);
                         pGo->UpdateObjectVisibility();
                         break;
                     case GO_DEATHWING_BACK_PLATE_1:
@@ -229,7 +296,7 @@ class instance_dragon_soul : public InstanceMapScript
                 }
             }
 
-            uint64 GetData64(uint32 type)
+            ObjectGuid GetGuidData(uint32 type) const override
             {
                 switch (type)
                 {
@@ -251,6 +318,7 @@ class instance_dragon_soul : public InstanceMapScript
                     case DATA_NOZDORMU_DRAGON: return uiNozdormuDragonGUID;
                     case DATA_YSERA_DRAGON: return uiYseraDragonGUID;
                     case DATA_KALECGOS_DRAGON: return uiKalecgosDragonGUID;
+                    case DATA_TRALL_MAELSTROM: return uiTrallMaelstrom;
                     case DATA_ALLIANCE_SHIP: return uiAllianceShipGUID;
                     case DATA_BACK_PLATE_1: return uiBackPlates[0];
                     case DATA_BACK_PLATE_2: return uiBackPlates[1];
@@ -263,22 +331,33 @@ class instance_dragon_soul : public InstanceMapScript
                     case DATA_ELEMENTIUM_FRAGMENT_25N: return uiElementiumFragment[1];
                     case DATA_ELEMENTIUM_FRAGMENT_10H: return uiElementiumFragment[2];
                     case DATA_ELEMENTIUM_FRAGMENT_25H: return uiElementiumFragment[3];
-                    default: return 0;
+                    default: break;
                 }
-                return 0;
+                return ObjectGuid::Empty;
             }
 
-            void SetData(uint32 type, uint32 data)
-            {   
+            void SetData(uint32 type, uint32 data) override
+            {
                 if (type == DATA_HAGARA_EVENT)
                 {
                     bHagaraEvent = data;
                     SaveToDB();
                 }
+
+                switch (type)
+                {
+                    case DATA_MORCHOK:
+                    {
+                        MorchokEvent = data;
+                        break;
+                    }
+                }
             }
-            
-            uint32 GetData(uint32 type)
+
+            uint32 GetData(uint32 type) const override
             {
+                if (type == DATA_MORCHOK)
+                    return MorchokEvent;
                 if (type == DATA_HAGARA_EVENT)
                     return bHagaraEvent;
                 else if (type == DATA_ALL_HEROIC)
@@ -287,11 +366,11 @@ class instance_dragon_soul : public InstanceMapScript
                 return 0;
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
-                
+
                 if (type == DATA_BLACKHORN)
                     if (Creature* pDeck = instance->GetCreature(uiDeckGUID))
                         pDeck->SetVisible(state == DONE ? true : false);
@@ -311,7 +390,7 @@ class instance_dragon_soul : public InstanceMapScript
                 if (state == IN_PROGRESS)
                 {
                     if (!teleportGUIDs.empty())
-                        for (std::vector<uint64>::const_iterator itr = teleportGUIDs.begin(); itr != teleportGUIDs.end(); ++itr)
+                        for (std::vector<ObjectGuid>::const_iterator itr = teleportGUIDs.begin(); itr != teleportGUIDs.end(); ++itr)
                             if (Creature* pTeleport = instance->GetCreature((*itr)))
                             {
                                 pTeleport->RemoveAura(SPELL_TELEPORT_VISUAL_ACTIVE);
@@ -321,7 +400,7 @@ class instance_dragon_soul : public InstanceMapScript
                 else
                 {
                     if (!teleportGUIDs.empty())
-                        for (std::vector<uint64>::const_iterator itr = teleportGUIDs.begin(); itr != teleportGUIDs.end(); ++itr)
+                        for (std::vector<ObjectGuid>::const_iterator itr = teleportGUIDs.begin(); itr != teleportGUIDs.end(); ++itr)
                             if (Creature* pTeleport = instance->GetCreature((*itr)))
                             {
                                 pTeleport->RemoveAura(SPELL_TELEPORT_VISUAL_DISABLED);
@@ -333,93 +412,169 @@ class instance_dragon_soul : public InstanceMapScript
                 return true;
             }
 
-            std::string GetSaveData()
+            void TrownRock(uint32 entry)
             {
-                OUT_SAVE_INST_DATA;
+                std::list<Creature*> targetRock;
+                Creature* morchok = instance->GetCreature(uiMorchokGUID);
+                GetCreatureListWithEntryInGrid(targetRock, morchok, entry, 200.0f);
+                if (targetRock.empty())
+                    return;
 
-                std::string str_data;
+                targetRock.remove_if([&morchok](Creature* c) {return !morchok->IsWithinLOSInMap(c); });
 
-                std::ostringstream saveStream;
-                saveStream << "D S " << GetBossSaveData() << bHagaraEvent << " " << isHeroicFailed << " ";
-
-                str_data = saveStream.str();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return str_data;
+                if (targetRock.size() > 1)
+                {
+                    Trinity::Containers::RandomResize(targetRock, 1);
+                    if (Creature* target = targetRock.front())
+                    {
+                        morchok->CastSpell(target, SPELL_MORCHOK_SIEGE_MISSILE_2, true);
+                    }
+                }
             }
 
-            void Load(const char* in)
+            void RemoveEncounterAuras()
             {
-                if (!in)
+                if (GetBossState(BOSS_ULTRAXION) == NOT_STARTED)
                 {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_TWILIGHT_SHIFT);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_HEROIC_WILL_AOE);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_HEROIC_WILL);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_GIFT_OF_LIVE_AURA);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_ESSENCE_OF_DREAMS_AURA);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_SOURCE_OF_MAGIC_AURA);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_TIMELOOP);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_LAST_DEFENDER_OF_AZEROTH_DK);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_LAST_DEFENDER_OF_AZEROTH_PALADIN);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_LAST_DEFENDER_OF_AZEROTH_DRUID);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_LAST_DEFENDER_OF_AZEROTH_WARRIOR);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_LAST_DEFENDER_OF_AZEROTH_MONK);
                 }
-
-                OUT_LOAD_INST_DATA(in);
-
-                char dataHead1, dataHead2;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2;
-
-                if (dataHead1 == 'D' && dataHead2 == 'S')
+                if (GetBossState(DATA_SPINE) == DONE && GetBossState(DATA_MADNESS) != DONE)
                 {
-                    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_YSERA_PRESENCE);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_YSERA_PRESENCE_AURA);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_THE_DREAMER);
+                    DoRemoveAurasDueToSpellOnPlayers(SPELL_ENTER_THE_DREAM);
+                }
+            }
+
+            void StartEventWyrmrest(Player* player, uint32 entry)
+            {
+                std::list<Creature*> dragon;
+                GetCreatureListWithEntryInGrid(dragon, player, entry, 1000.0f);
+
+                if (dragon.empty())
+                    return;
+
+                for (std::list<Creature*>::iterator itr = dragon.begin(); itr != dragon.end(); ++itr)
+                    (*itr)->AI()->DoAction(ACTION_START_WYRMREST_EVENT);
+            }
+
+            void ExitBlistering(Player* player) //Hack for evite the blistering all time in the limb of madness
+            {
+                std::list<Creature*> dragon;
+                GetCreatureListWithEntryInGrid(dragon, player, 56188, 1000.0f); //Blistering Tentacle, Madness of Deathwing
+
+                if (dragon.empty())
+                    return;
+
+                for (std::list<Creature*>::iterator itr = dragon.begin(); itr != dragon.end(); ++itr)
+                    (*itr)->AI()->Reset();
+            }
+
+            void Update(uint32 diff) override
+            {
+                if (playerTimer <= diff)
+                {
+                    for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
                     {
-                        uint32 tmpState;
-                        loadStream >> tmpState;
-                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                            tmpState = NOT_STARTED;
-                        SetBossState(i, EncounterState(tmpState));
+                        if (Player* pPlayer = i->GetSource())
+                        {
+                            if (GetBossState(BOSS_MORCHOK) != DONE)
+                                if (pPlayer->GetPositionZ() < 50.0f && !pPlayer->IsBeingTeleported())
+                                    pPlayer->NearTeleportTo(morchokPos.GetPositionX(), morchokPos.GetPositionY(), morchokPos.GetPositionZ(), morchokPos.GetOrientation());
+
+                            if (GetBossState(BOSS_ULTRAXION) == IN_PROGRESS)
+                                if (pPlayer->GetPositionZ() < 310.0f && !pPlayer->IsBeingTeleported())
+                                    pPlayer->NearTeleportTo(-1761.76f, -2388.99f, 341.59f, 0);
+
+                            if (GetBossState(DATA_BLACKHORN) == DONE && GetBossState(DATA_SPINE) == NOT_STARTED)
+                                if (pPlayer->isDead())
+                                    pPlayer->NearTeleportTo(skyfirePos.GetPositionX(), skyfirePos.GetPositionY(), skyfirePos.GetPositionZ(), skyfirePos.GetOrientation());
+
+                            if (GetBossState(BOSS_MORCHOK) == DONE && GetBossState(DATA_ZONOZZ) != DONE)
+                                if (pPlayer->GetPositionZ() < -250.0f && !pPlayer->IsBeingTeleported())
+                                    pPlayer->NearTeleportTo(-1769.329956f, -1916.869995f, -226.28f, 0.0f);
+
+                            if (GetBossState(DATA_SPINE) == DONE && GetBossState(DATA_MADNESS) == NOT_STARTED)
+                                if (pPlayer->isDead())
+                                    ExitBlistering(pPlayer);
+
+                            if (GetBossState(DATA_MADNESS) == DONE || GetBossState(DATA_MADNESS) == NOT_STARTED)
+                                if (pPlayer->HasSpell(SPELL_DREAM))
+                                    pPlayer->RemoveAurasDueToSpell(SPELL_DREAM);
+
+                            if (GetBossState(DATA_MADNESS) == NOT_STARTED && GetBossState(DATA_SPINE) == DONE)
+                                if (Creature* trall = instance->GetCreature(uiTrallMaelstrom))
+                                    if (trall->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP))
+                                        trall->AI()->DoAction(ACTION_RESET_BATTLE);
+                        }
                     }
-                    
-                    uint32 tmpEvent;
-                    loadStream >> tmpEvent;
-                    if (tmpEvent != DONE) 
-                        tmpEvent = NOT_STARTED;
-                    bHagaraEvent = tmpEvent;
+                    playerTimer = 2000;
+                }
+                else
+                    playerTimer -= diff;
 
-                    loadStream >> tmpEvent;
-                    if (tmpEvent != 1)
-                        tmpEvent = 0;
-                    isHeroicFailed = tmpEvent;
+                if (trownStoneTimer <= diff)
+                {
+                    if (GetBossState(BOSS_MORCHOK) == NOT_STARTED)
+                        if (Creature* morchok = instance->GetCreature(uiMorchokGUID))
+                            for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
+                            {
+                                morchok->CastSpell(morchok, SPELL_MORCHOK_SIEGE_MISSILE_1, true);
+                                TrownRock(NPC_TARGET_DUMMY);
+                            }
 
-                } else OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
+                    trownStoneTimer = 7000;
+                }
+                else
+                    trownStoneTimer -= diff;
             }
 
             private:
                 uint32 uiTeamInInstance;
+                uint32 playerTimer;
+                uint32 trownStoneTimer;
+                ObjectGuid uiMorchokGUID;
+                ObjectGuid uiKohcromGUID;
+                ObjectGuid uiYorsahjGUID;
+                ObjectGuid uiZonozzGUID;
+                ObjectGuid uiHagaraGUID;
+                ObjectGuid uiUltraxionGUID;
+                ObjectGuid uiBlackhornGUID;
+                ObjectGuid uiAllianceShipGUID;
+                ObjectGuid uiSwayzeGUID;
+                ObjectGuid uiReevsGUID;
+                ObjectGuid uiDeckGUID;
+                ObjectGuid uiMaelstormGUID;
+                ObjectGuid uiDeathwingGUID;
+                ObjectGuid uiAlexstraszaDragonGUID;
+                ObjectGuid uiNozdormuDragonGUID;
+                ObjectGuid uiYseraDragonGUID;
+                ObjectGuid uiKalecgosDragonGUID;
+                ObjectGuid uiTrallMaelstrom;
 
-                uint64 uiMorchokGUID;
-                uint64 uiKohcromGUID;
-                uint64 uiYorsahjGUID;
-                uint64 uiZonozzGUID;
-                uint64 uiHagaraGUID;
-                uint64 uiUltraxionGUID;
-                uint64 uiBlackhornGUID;
-                uint64 uiAllianceShipGUID;
-                uint64 uiSwayzeGUID;
-                uint64 uiReevsGUID;
-                uint64 uiDeckGUID;
-                uint64 uiMaelstormGUID;
-                uint64 uiDeathwingGUID;
-                uint64 uiAlexstraszaDragonGUID;
-                uint64 uiNozdormuDragonGUID;
-                uint64 uiYseraDragonGUID;
-                uint64 uiKalecgosDragonGUID;
+                ObjectGuid uiLesserCacheofTheAspects[4];
+                ObjectGuid uiBackPlates[3];
+                ObjectGuid uiGreaterCacheofTheAspects[4];
+                ObjectGuid uiElementiumFragment[4];
 
-                uint64 uiLesserCacheofTheAspects[4];
-                uint64 uiBackPlates[3];
-                uint64 uiGreaterCacheofTheAspects[4];
-                uint64 uiElementiumFragment[4];
-
-                std::vector<uint64> teleportGUIDs;
+                std::vector<ObjectGuid> teleportGUIDs;
 
                 uint32 bHagaraEvent;
-                uint32 isHeroicFailed;               
+                uint32 isHeroicFailed;
+                uint32 MorchokEvent;
+                Map::PlayerList const &plrList = instance->GetPlayers();
         };
 };
 

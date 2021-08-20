@@ -1,40 +1,69 @@
-#include "ScriptPCH.h"
-#include "end_time.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-enum Yells
-{
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_INTRO   = 2,
-    SAY_KILL    = 3,
-    SAY_SPELL   = 4,
-};
+/* ScriptData
+SDName: boss_echo_of_baine
+SD%Complete:
+SDComment:
+EndScriptData */
+
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "end_time.h"
+#include "SpellInfo.h"
+#include "GameObject.h"
+#include "PassiveAI.h"
 
 enum Spells
 {
-    SPELL_BAINE_VISUALS     = 101624,
+    SPELL_THROW_TOTEM               = 101615,
+    SPELL_PULVERIZE                 = 101625,
+    SPELL_DESTROY_PLATFORM          = 101627,
+    SPELL_MOLTEN_AXE_CHECK          = 101834,
+    SPELL_MOLTEN_AXE                = 101836,
 
-    SPELL_THROW_TOTEM       = 101615,
-    SPELL_PULVERIZE         = 101626, 
-    SPELL_PULVERIZE_DMG     = 101627, 
-    SPELL_PULVERIZE_AOE     = 101625,
-    SPELL_MOLTEN_AXE        = 101836,
-    SPELL_MOLTEN_FIST       = 101866,
-    SPELL_THROW_TOTEM_BACK  = 101602,
-    SPELL_THROW_TOTEM_AURA  = 107837,
+    SPELL_THROW_TOTEM_BACK_AIM      = 101601,
+    SPELL_THROW_TOTEM_BACK          = 101603,
+    SPELL_MOLTEN_BLAST              = 101840,
+
+    SPELL_MOLTEN_FISTS              = 101866,
+    SPELL_MAGMA                     = 101819,
+
+
+
 };
 
 enum Events
 {
-    EVENT_PULVERIZE     = 1,
-    EVENT_THROW_TOTEM   = 2,
-    EVENT_CHECK_SELF    = 3,
+    EVENT_THROW_TOTEM = 1,
+    EVENT_PULVERIZE,
+    EVENT_DESTROY_PLATFORM
 };
 
-enum Adds
+enum Misc
 {
-    NPC_ROCK_ISLAND     = 54496,
-    NPC_BAINES_TOTEM    = 54434,
+    NPC_ROCK_ISLAND = 54496
 };
 
 class boss_echo_of_baine : public CreatureScript
@@ -42,262 +71,224 @@ class boss_echo_of_baine : public CreatureScript
     public:
         boss_echo_of_baine() : CreatureScript("boss_echo_of_baine") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_echo_of_baineAI(pCreature);
-        }
-
         struct boss_echo_of_baineAI : public BossAI
         {
-            boss_echo_of_baineAI(Creature* pCreature) : BossAI(pCreature, DATA_ECHO_OF_BAINE)
+            boss_echo_of_baineAI(Creature* creature) : BossAI(creature, DATA_BAINE), Summons(me)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
-                bIntroDone = false;
+                instance = creature->GetInstanceScript();
             }
 
-            bool bIntroDone;
+            InstanceScript* instance;
+            EventMap events;
+            SummonList Summons;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
+            bool lavaContact;
+            uint32 moltenBlastTimer;
 
-            void Reset()
+            void Reset() override
             {
+                lavaContact = false;
+                moltenBlastTimer = 1000;
+
                 _Reset();
-                me->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, 5.0f);
-                me->SetFloatValue(UNIT_FIELD_COMBATREACH, 5.0f);
+                events.Reset();
+
+                Summons.DespawnAll();
+
+                std::list<GameObject*> platformList;
+                Trinity::GameObjectInRangeCheck check(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 100.0f);
+                Trinity::GameObjectListSearcher<Trinity::GameObjectInRangeCheck> searcher(me, platformList, check);
+                Cell::VisitGridObjects(me, searcher, 100.0f);
+                for (std::list<GameObject*>::const_iterator itr = platformList.begin(); itr != platformList.end(); ++itr)
+                {
+                    if ((*itr)->GetDestructibleState() == GO_DESTRUCTIBLE_DESTROYED)
+                        (*itr)->SetDestructibleState(GO_DESTRUCTIBLE_REBUILDING);
+                }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
-                Talk(SAY_AGGRO);
+                _EnterCombat();
+                me->SetSpeed(MOVE_WALK, 2.0f);
+                me->SetSpeed(MOVE_RUN, 2.0f);
 
-                events.ScheduleEvent(EVENT_PULVERIZE, 60000);
-                events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
-                events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
-                events.ScheduleEvent(EVENT_CHECK_SELF, 1000);
-
-                instance->SetBossState(DATA_ECHO_OF_BAINE, IN_PROGRESS);
                 DoZoneInCombat();
+                DoCast(me, SPELL_MOLTEN_AXE_CHECK);
+
+                events.ScheduleEvent(EVENT_PULVERIZE, 30000);
+                events.ScheduleEvent(EVENT_THROW_TOTEM, 10000);
             }
 
-            void EnterEvadeMode()
+            void KilledUnit(Unit* /*victim*/) override
             {
-                instance->SetData(DATA_PLATFORMS, NOT_STARTED);
-                BossAI::EnterEvadeMode();
             }
 
-            void MoveInLineOfSight(Unit* who)
-            {
-                if (bIntroDone)
-                    return;
-
-                if (who->GetTypeId() != TYPEID_PLAYER)
-                    return;
-
-                if (!me->IsWithinDistInMap(who, 100.0f, false))
-                    return;
-
-                Talk(SAY_INTRO);
-                bIntroDone = true;
-            }
-
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-                Talk(SAY_DEATH);
-
-                // Quest
-                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
-                if (!PlayerList.isEmpty())
-                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_BAINE, true);
+                instance->SetData(DATA_BOSS_COUNT, 1);
             }
 
-            void KilledUnit(Unit * /*victim*/)
+            void JustSummoned(Creature* summon) override
             {
-                Talk(SAY_KILL);
+                Summons.Summon(summon);
             }
 
-            void MovementInform(uint32 type, uint32 data)
-            {
-                if (type == EFFECT_MOTION_TYPE)
-                    if (data == EVENT_JUMP)
-                        DoCastAOE(SPELL_PULVERIZE_DMG);
-            }
+            void UpdateAI(uint32 diff) override
 
-            void UpdateAI(const uint32 diff)
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
-                        case EVENT_CHECK_SELF:
-                            //if (me->HasUnitMovementFlag(MOVEMENTFLAG_SWIMMING) && !me->HasAura(SPELL_MOLTEN_AXE))
-                                //DoCast(me, SPELL_MOLTEN_AXE);
-                            if (me->GetPositionY() < 1398.0f)
+                        case EVENT_THROW_TOTEM:
+                            if(Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
                             {
-                                EnterEvadeMode();
-                                return;
+                                Summons.DespawnAll();
+                                DoCast(target, SPELL_THROW_TOTEM);
+                                events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
                             }
-                            events.ScheduleEvent(EVENT_CHECK_SELF, 1000);
                             break;
                         case EVENT_PULVERIZE:
-                            Talk(SAY_SPELL);
-                            DoCastAOE(SPELL_PULVERIZE_AOE);
-                            events.ScheduleEvent(EVENT_PULVERIZE, 60000);
-                            events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
-                            events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_MAXDISTANCE, 0))
+                            {
+                                DoCast(target, SPELL_PULVERIZE);
+                                events.ScheduleEvent(EVENT_PULVERIZE, 40000);
+                                events.ScheduleEvent(EVENT_DESTROY_PLATFORM, 3000);
+                            }
                             break;
-                        case EVENT_THROW_TOTEM:
-                        {
-                            Unit* pTarget = NULL;
-                            pTarget = SelectTarget(SELECT_TARGET_FARTHEST, 1, PositionSelector());
-                            if (!pTarget)
-                                pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector());
-                            if (pTarget)
-                                DoCast(pTarget, SPELL_THROW_TOTEM);
+                        case EVENT_DESTROY_PLATFORM:
+                            me->CastSpell(me, SPELL_DESTROY_PLATFORM, false);
                             break;
-                        }
                     }
                 }
 
                 DoMeleeAttackIfReady();
-            }
-        private:
-            struct PositionSelector : public std::unary_function<Unit*, bool>
-            {
-                public:
-                    
-                    //PositionSelector(bool b) : _b(b) {}
 
-                    bool operator()(Unit const* target) const
-                    {
-                        if (target->GetTypeId() != TYPEID_PLAYER)
-                            return false;
+                if (me->GetDistance(me->GetHomePosition()) > 82.0f)
+                    EnterEvadeMode();
 
-                        if (target->GetAreaId() != AREA_OBSIDIAN)
-                            return false;
-
-                        if (target->IsInWater())
-                            return false;
-
-                        return true;
-                    }
-                private:
-                    bool _b;
-            };
-        };      
-};
-
-class npc_echo_of_baine_baines_totem : public CreatureScript
-{
-    public:
-        npc_echo_of_baine_baines_totem() : CreatureScript("npc_echo_of_baine_baines_totem") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_echo_of_baine_baines_totemAI(pCreature);
-        }
-
-        struct npc_echo_of_baine_baines_totemAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_baine_baines_totemAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {
-                me->SetReactState(REACT_PASSIVE);
-                bDespawn = false;
-            }
-
-            bool bDespawn;
-
-            void OnSpellClick(Unit* /*who*/)
-            {
-                if (!bDespawn)
+                if (GameObject* platform = me->FindNearestGameObjectOfType(GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING, 50.0f))
                 {
-                    bDespawn = true;
-                    me->DespawnOrUnsummon();
+                    if (me->GetPositionZ() < 129.932f || me->GetDistance2d(platform) > 6.0f)
+                        lavaContact = true;
+                    else
+                        lavaContact = false;
                 }
-            }
-        };      
-};
 
-class spell_echo_of_baine_pulverize_aoe : public SpellScriptLoader
-{
-    public:
-        spell_echo_of_baine_pulverize_aoe() : SpellScriptLoader("spell_echo_of_baine_pulverize_aoe") { }
+                if (lavaContact && !me->HasUnitState(UNIT_STATE_STUNNED))
+                {
+                    if (moltenBlastTimer < diff)
+                    {
+                        DoCastVictim(SPELL_MOLTEN_BLAST);
+                        moltenBlastTimer = 2500;
+                    }
+                    else
+                        moltenBlastTimer -= diff;
+                }
 
-        class spell_echo_of_baine_pulverize_aoe_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_echo_of_baine_pulverize_aoe_SpellScript);
+                if (Map* map = me->GetMap())
+                {
+                    std::list<Player*> PlayerList;
+                    Map::PlayerList const& Players = map->GetPlayers();
+                    for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                    {
+                        if (Player* player = itr->GetSource())
+                        {
+                            if (player->HasAura(SPELL_MAGMA) && !player->HasAura(SPELL_MOLTEN_FISTS))
+                                player->AddAura(SPELL_MOLTEN_FISTS, player);
+                        }
+                    }
+                }
 
-            void FilterTargets(std::list<WorldObject*>& targets)
-            {
-                if (!GetCaster() || !GetCaster()->getVictim())
-                    return;
 
-                std::list<WorldObject*> tempList;
-                for (std::list<WorldObject*>::const_iterator itr = targets.begin(); itr != targets.end(); ++itr)
-                    if ((*itr)->ToUnit() && !(*itr)->ToUnit()->IsInWater())
-                        tempList.push_back((*itr));
-
-                if (tempList.size() > 1)
-                    tempList.remove(GetCaster()->getVictim());
-
-                targets.clear();
-                if (!tempList.empty())
-                    targets.push_back(JadeCore::Containers::SelectRandomContainerElement(tempList));
-            }
-
-            void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
-                if (!GetCaster() || !GetHitUnit())
-                    return;
-
-                GetCaster()->CastSpell(GetHitUnit(), SPELL_PULVERIZE, true);
-            }
-
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_echo_of_baine_pulverize_aoe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-                OnEffectHitTarget += SpellEffectFn(spell_echo_of_baine_pulverize_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new spell_echo_of_baine_pulverize_aoe_SpellScript();
+            return new boss_echo_of_baineAI(creature);
+        }
+};
+
+class DistanceCheck
+{
+    public:
+        explicit DistanceCheck(Unit* _caster) : caster(_caster) { }
+
+        bool operator() (WorldObject* unit) const
+        {
+            if (caster->GetExactDist2d(unit) <= 20.0f || !unit->ToPlayer())
+                return true;
+            return false;
+        }
+
+        Unit* caster;
+};
+
+class spell_pulverize : public SpellScriptLoader
+{
+    public:
+        spell_pulverize() : SpellScriptLoader("spell_pulverize") { }
+
+        class spell_pulverize_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_pulverize_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                if(Unit* caster = GetCaster())
+                {
+                    targets.remove_if(DistanceCheck(caster));
+                    if (!targets.empty())
+                        Trinity::Containers::SelectRandomContainerElement(targets);
+                }
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_pulverize_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_pulverize_SpellScript();
+        }
+};
+
+class npc_baine_totem : public CreatureScript
+{
+    public:
+        npc_baine_totem() : CreatureScript("npc_baine_totem") { }
+
+        struct npc_baine_totemAI : public PassiveAI
+        {
+            npc_baine_totemAI(Creature* creature) : PassiveAI(creature) { }
+
+            void OnSpellClick(Unit* clicker, bool& /*result*/) override
+            {
+                if (Creature* baine = GetClosestCreatureWithEntry(me, 54431, 75.0f))
+                    clicker->CastSpell(baine, 101603, true);
+
+                me->DespawnOrUnsummon();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_baine_totemAI(creature);
         }
 };
 
 void AddSC_boss_echo_of_baine()
 {
     new boss_echo_of_baine();
-    new npc_echo_of_baine_baines_totem();
-    new spell_echo_of_baine_pulverize_aoe();
+    new spell_pulverize();
+    new npc_baine_totem();
 }

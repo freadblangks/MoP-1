@@ -1,433 +1,378 @@
-#include "ScriptPCH.h"
+#include "ObjectMgr.h"
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "SpellScript.h"
+#include "SpellAuraEffects.h"
+#include "GridNotifiers.h"
+#include "Player.h"
+#include "ObjectAccessor.h"
 #include "halls_of_origination.h"
-
-enum Texts
-{
-    SAY_DEATH   = 0,
-    SAY_AGGRO   = 1,
-    SAY_KILL    = 2,
-};
 
 enum Spells
 {
-    // Setesh
+    SPELL_CHAOS_PORTAL_CHANNEL  = 76784,
     SPELL_CHAOS_BOLT            = 77069,
-    //SPELL_REIGN_OF_CHAOS      = 77026,
-    //SPELL_CHAOS_BLAST         = 76681,
-    //SPELL_SEED_OF_CHAOS       = 76870,
-    //SPELL_SUMMON_CHAOS_SEED   = 76888,
-    
-    // Void Sentinel
-    SPELL_VOID_BARRIER          = 76959,
-    SPELL_CHARGED_FISTS         = 77238,
-
-    // Void Seeker
-    SPELL_ANTI_MAGIC_PRISON     = 76903,
-    SPELL_SHADOW_BOLT_VOLLEY    = 76146, //r
-    SPELL_SHADOW_BOLT_VOLLEY_H  = 89846, //r
+    SPELL_REIGN_OF_CHAOS        = 77023,
+    SPELL_CHAOS_BLAST_SUMMON    = 76674,
+    SPELL_CHAOS_BLAST_MISSILE   = 76676,
+    SPELL_CHAOS_BLAST_DAMAGE    = 76681
 };
 
-enum NPCs
+enum Entities
 {
-    NPC_VOID_SENTINEL       = 41208,
-    NPC_VOID_SEEKER         = 41371,
-    NPC_VOID_WURM           = 41374,
-    NPC_CHAOS_PORTAL        = 41055,
-    NPC_REIGN_OF_CHAOS      = 41168, // 77026
-    NPC_VOID_LORD           = 41364, // 77458
+    NPC_CHAOS_SEED              = 41126,
+    NPC_CHAOS_PORTAL            = 41055,
 };
 
 enum Events
 {
     EVENT_CHAOS_BOLT            = 1,
-    EVENT_SUMMON_CHAOS_PORTAL   = 2,
-
-    EVENT_SUMMON_6              = 3,
-    EVENT_SUMMON_10             = 4,
-    EVENT_SUMMON_12             = 5,
-    EVENT_SUMMON_15             = 6,
-
-    EVENT_ANTI_MAGIC_PRISON     = 7,
-    EVENT_SHADOW_BOLT_VOLLEY    = 8,
-
-    EVENT_VOID_BARRIER          = 9,
-    EVENT_CHARGED_FISTS         = 10,
-
-    EVENT_MOVE                  = 11,
+    EVENT_SEED_OF_CHAOS,
+    EVENT_REIGN_OF_CHAOS,
+    EVENT_CHAOS_BLAST,
+    EVENT_CHAOS_PORTAL_MOVE,
+    EVENT_CHAOS_PORTAL,
+    EVENT_CHAOS_PORTAL_RESET,
 };
 
-enum SeteshSummonTypes
+enum Phases
 {
-    SETESH_SUMMON_WURM      = 1,
-    SETESH_SUMMON_SENTINEL  = 2,
-    SETESH_SUMMON_SEEKER    = 3,
+    PHASE_NORMAL                = 1,
+    PHASE_CHAOS_PORTAL
 };
 
-const Position movepos[9] =
+enum MISC
 {
-    {-481.55f, 14.15f, 343.92f, 2.07f},
-    {-490.31f, 25.55f, 343.93f, 2.56f},
-    {-508.35f, 30.95f, 343.94f, 3.08f},
-    {-524.62f, 30.30f, 343.93f, 3.35f},
-    {-534.63f, 22.76f, 343.92f, 4.08f},
-    {-539.40f, 9.067f, 343.92f, 4.67f},
-    {-537.78f, -3.28f, 343.92f, 5.11f},
-    {-528.39f, -16.43f, 343.93f, 5.85f},
-    {-513.85f, -19.04f, 343.93f, 6.15f}
+    POINT_CHAOS_PORTAL          = 1,
+    DATA_CHAOS_PORTAL           = 1,
+    DATA_RESET_PORTAL           = 2,
+};
+
+enum Quotes
+{
+    SAY_AGGRO,
+    SAY_DEATH,
+    SAY_SLAY
 };
 
 class boss_setesh : public CreatureScript
 {
-    public:
-        boss_setesh() : CreatureScript("boss_setesh") { }
-
-        CreatureAI* GetAI(Creature* creature) const
+    struct boss_seteshAI : public BossAI
+    {
+        boss_seteshAI(Creature* creature) : BossAI(creature, DATA_SETESH)
         {
-            return new boss_seteshAI(creature);
+            memset(&Portals, 0, sizeof(Portals));
         }
 
-        struct boss_seteshAI : public BossAI
+        void Reset() override
         {
-            boss_seteshAI(Creature* creature) : BossAI(creature, DATA_SETESH)
+            portal = 0;
+            _Reset();
+            me->SetReactState(REACT_AGGRESSIVE);
+            events.SetPhase(PHASE_NORMAL);
+            ResetPortals();
+        }
+
+        void KilledUnit(Unit* victim) override
+        {
+            if(victim->GetTypeId() == TYPEID_PLAYER)
+                Talk(SAY_SLAY);
+        }
+
+        void JustDied(Unit* /*killer*/) override
+        {
+            Talk(SAY_DEATH);
+            ResetPortals();
+            _JustDied();
+        }
+
+        void ResetPortals()
+        {
+            for (int i = 0; i < 5; ++i)
+                if (Creature* c = ObjectAccessor::GetCreature(*me, Portals[i]))
+                    c->AI()->SetData(DATA_RESET_PORTAL, 1);
+        }
+
+        void FillPortals()
+        {
+            std::list<Creature*> cList;
+            me->GetCreatureListWithEntryInGrid(cList, NPC_CHAOS_PORTAL, 200.0f);
+
+            if (!cList.empty())
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                //std::random_shuffle(cList.begin(), cList.end());
+                uint8 i = 0;
+                for (std::list<Creature *>::const_iterator itr = cList.begin(); itr != cList.end(); ++itr, ++i)
+                    if (i < 5)
+                        Portals[i] = (*itr)->GetGUID();
+                    //lPortals.push_back((*itr)->GetGUID());
             }
+        }
 
-            void Reset()
+        void SpellHitTarget(Unit* victim, const SpellInfo* spell) override
+        {
+            if (spell->Id == SPELL_CHAOS_BLAST_MISSILE)
             {
-                _Reset();
+                victim->CastSpell(victim, SPELL_CHAOS_BLAST_DAMAGE, true);
+                victim->ToCreature()->DespawnOrUnsummon(15000);
             }
+        }
 
-            void EnterCombat(Unit* /*who*/)
+        void MovementInform(uint32 /*type*/, uint32 id) override
+        {
+            if (id == POINT_CHAOS_PORTAL)
+                events.ScheduleEvent(EVENT_CHAOS_PORTAL, 500, 0, PHASE_CHAOS_PORTAL);
+        }
+
+        void EnterCombat(Unit* who) override
+        {
+            BossAI::EnterCombat(who);
+            events.ScheduleEvent(EVENT_CHAOS_BLAST, urand(10000, 12000), 0, PHASE_NORMAL);
+            events.ScheduleEvent(EVENT_CHAOS_BOLT, 1000, 0, PHASE_NORMAL);
+            events.ScheduleEvent(EVENT_REIGN_OF_CHAOS, urand(20000, 25000), 0, PHASE_NORMAL);
+            events.ScheduleEvent(EVENT_SEED_OF_CHAOS, urand(30000, 35000), 0, PHASE_NORMAL);
+            events.ScheduleEvent(EVENT_CHAOS_PORTAL_MOVE, urand(15000, 20000), 0, PHASE_NORMAL);
+
+            me->SetReactState(REACT_PASSIVE);
+            me->GetMotionMaster()->Clear();
+            me->GetMotionMaster()->MoveIdle();
+            FillPortals();
+            Talk(SAY_AGGRO);
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            if (!UpdateVictim())
+                return;
+
+            events.Update(diff);
+
+            if (me->HasUnitState(UNIT_STATE_CASTING))
+                return;
+
+            if (uint32 eventId = events.ExecuteEvent())
             {
-                Talk (SAY_AGGRO);
-                events.ScheduleEvent(EVENT_CHAOS_BOLT, 10000);
-                events.ScheduleEvent(EVENT_SUMMON_CHAOS_PORTAL, 20000);
-                events.ScheduleEvent(EVENT_MOVE, 2000);
-
-                me->SetReactState(REACT_PASSIVE);
-
-                DoZoneInCombat();
-                instance->SetBossState(DATA_SETESH, IN_PROGRESS);
-            }
-
-            void MovementInform(uint32 type, uint32 id)
-		    {
-			    if (type == POINT_MOTION_TYPE)
-			    {
-				    switch (id)
-				    {
-                        case 1:
-                            events.ScheduleEvent(EVENT_MOVE, 1000);
-                            break;
-                    }
-			    }
-		    }
-
-            void KilledUnit(Unit* who)
-            {
-                Talk(SAY_KILL);
-            }
-
-            void JustDied(Unit* /*who*/)
-            {
-                _JustDied();
-
-                Talk(SAY_DEATH);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
+                switch (eventId)
                 {
-                    switch(eventId)
+                case EVENT_CHAOS_BLAST:
+                    DoCast(SPELL_CHAOS_BLAST_SUMMON);
+                    DoCast(SPELL_CHAOS_BLAST_MISSILE);
+                    events.ScheduleEvent(EVENT_CHAOS_BLAST, urand(18000, 20000), 0, PHASE_NORMAL);
+                    break;
+                case EVENT_CHAOS_BOLT:
+                    DoCast(SelectTarget(SELECT_TARGET_RANDOM, 0), SPELL_CHAOS_BOLT);
+                    events.ScheduleEvent(EVENT_CHAOS_BOLT, 2000, 0, PHASE_NORMAL);
+                    break;
+                case EVENT_REIGN_OF_CHAOS:
+                    DoCast(me, SPELL_REIGN_OF_CHAOS, false);
+                    events.ScheduleEvent(EVENT_REIGN_OF_CHAOS, urand(20000, 25000), 0, PHASE_NORMAL);
+                    break;
+                case EVENT_SEED_OF_CHAOS:
+                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                        if (Creature* seed = me->SummonCreature(NPC_CHAOS_SEED, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ() + 30.0f))
+                            seed->GetMotionMaster()->MovePoint(1, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+                    events.ScheduleEvent(EVENT_SEED_OF_CHAOS, urand(30000, 35000), 0, PHASE_NORMAL);
+                    break;
+                case EVENT_CHAOS_PORTAL_MOVE:
                     {
-                        case EVENT_CHAOS_BOLT:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_CHAOS_BOLT);
-                            events.ScheduleEvent(EVENT_CHAOS_BOLT, urand(5000, 10000));
-                            break;
-                        case EVENT_SUMMON_CHAOS_PORTAL:
-                            me->SummonCreature(NPC_CHAOS_PORTAL,
-                                me->GetPositionX(),
-                                me->GetPositionY(),
-                                me->GetPositionZ(),
-                                me->GetOrientation(),
-                                IsHeroic()? TEMPSUMMON_DEAD_DESPAWN: TEMPSUMMON_TIMED_DESPAWN,
-                                IsHeroic()? 0: 35000);
-                            events.ScheduleEvent(EVENT_SUMMON_CHAOS_PORTAL, urand(40000, 45000));
-                            break;
-                        case EVENT_MOVE:
-                            me->GetMotionMaster()->MovePoint(1, movepos[urand(0, 8)]);
-                            break;
+                        events.SetPhase(PHASE_CHAOS_PORTAL);
+                        if (portal > 4)
+                            portal = 0;
+                        float x,y,z;
+                        if (Creature* chaosPortal = ObjectAccessor::GetCreature(*me, Portals[portal]))
+                        {
+                            chaosPortal->GetNearPoint(NULL, x, y, z, 0.0f, 15.0f, chaosPortal->GetAngle(me));
+                            me->GetMotionMaster()->MovePoint(POINT_CHAOS_PORTAL, x, y, z);
+                        }
                     }
+                    break;
+                case EVENT_CHAOS_PORTAL:
+                    if (Creature* chaosPortal = ObjectAccessor::GetCreature(*me, Portals[portal]))
+                    {
+                        if (!chaosPortal->IsAlive())
+                            chaosPortal->Respawn();
+                        chaosPortal->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE));
+                        chaosPortal->AI()->SetData(DATA_CHAOS_PORTAL, 1);
+                        DoCast(chaosPortal, SPELL_CHAOS_PORTAL_CHANNEL, false);
+                    }
+                    ++portal;
+                    events.ScheduleEvent(EVENT_CHAOS_PORTAL_MOVE, urand(20000, 25000), 0, PHASE_NORMAL);
+                    events.ScheduleEvent(EVENT_CHAOS_PORTAL_RESET, 2000, 0, PHASE_CHAOS_PORTAL);
+                    break;
+                case EVENT_CHAOS_PORTAL_RESET:
+                    events.SetPhase(PHASE_NORMAL);
+                    events.RescheduleEvent(EVENT_CHAOS_BOLT, 2000, 0, PHASE_NORMAL);
+                    break;
                 }
             }
-        };
+        }
+    private:
+        ObjectGuid Portals[5];
+        //std::list<uint64> lPortals;
+        int8 portal;
+    };
+
+public:
+    boss_setesh() : CreatureScript("boss_setesh") {}
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new boss_seteshAI(creature);
+    }
 };
 
-class npc_setesh_chaos_portal : public CreatureScript
+class npc_chaos_seed : public CreatureScript
 {
-    public:
-        npc_setesh_chaos_portal() : CreatureScript("npc_setesh_chaos_portal") { }
+    enum
+    {
+        SPELL_SEED_OF_CHAOS             = 76870
+    };
 
-        CreatureAI* GetAI(Creature* creature) const
+    struct npc_chaos_seedAI : public ScriptedAI
+    {
+        npc_chaos_seedAI(Creature* creature) : ScriptedAI(creature) {}
+
+        void MovementInform(uint32 /*type*/, uint32 id) override
         {
-            return new npc_setesh_chaos_portalAI(creature);
+            if (id == 1)
+            {
+                DoCast(me, SPELL_SEED_OF_CHAOS, true);
+                me->DespawnOrUnsummon(2000);
+            }
         }
+    };
 
-        struct npc_setesh_chaos_portalAI : public Scripted_NoMovementAI
-        {
-            npc_setesh_chaos_portalAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {
-                pInstance = pCreature->GetInstanceScript();
-            }
+public:
+    npc_chaos_seed() : CreatureScript("npc_chaos_seed") {}
 
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void SeteshSummon(SeteshSummonTypes type)
-            {
-                if (!pInstance)
-                    return;
-
-                if (Creature* pSetesh = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SETESH)))
-                {    
-                    switch (type)
-                    {
-                        case SETESH_SUMMON_WURM:
-                            pSetesh->SummonCreature(NPC_VOID_WURM,
-                                me->GetPositionX(),
-                                me->GetPositionY(),
-                                me->GetPositionZ(),
-                                me->GetOrientation());
-                            pSetesh->SummonCreature(NPC_VOID_WURM,
-                                me->GetPositionX(),
-                                me->GetPositionY(),
-                                me->GetPositionZ(),
-                                me->GetOrientation());
-                            break;
-                        case SETESH_SUMMON_SENTINEL:
-                            pSetesh->SummonCreature(NPC_VOID_SENTINEL,
-                                me->GetPositionX(),
-                                me->GetPositionY(),
-                                me->GetPositionZ(),
-                                me->GetOrientation());
-                            break;
-                        case SETESH_SUMMON_SEEKER:
-                            pSetesh->SummonCreature(NPC_VOID_SEEKER,
-                                me->GetPositionX(),
-                                me->GetPositionY(),
-                                me->GetPositionZ(),
-                                me->GetOrientation());
-                            break;
-                    }
-                }
-            }
-
-            void Reset()
-            {
-                me->SetReactState(REACT_PASSIVE);
-
-                if (!IsHeroic())
-                {
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED);
-                    SeteshSummon(SETESH_SUMMON_WURM);
-                    events.ScheduleEvent(EVENT_SUMMON_12, 12000);
-                }
-                else
-                {
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED);
-                    SeteshSummon(SETESH_SUMMON_SENTINEL);
-                    events.ScheduleEvent(EVENT_SUMMON_6, 12000);
-                }
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                events.Update(diff);
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_SUMMON_6:
-                            SeteshSummon(SETESH_SUMMON_WURM);
-                            events.ScheduleEvent(EVENT_SUMMON_10, 10000);
-                            break;
-                        case EVENT_SUMMON_10:
-                            SeteshSummon(SETESH_SUMMON_SEEKER);
-                            events.ScheduleEvent(EVENT_SUMMON_15, 15000);
-                            break;
-                        case EVENT_SUMMON_12:
-                            SeteshSummon(SETESH_SUMMON_SEEKER);
-                            events.ScheduleEvent(EVENT_SUMMON_15, 15000);   
-                            break;
-                        case EVENT_SUMMON_15:
-                            if (IsHeroic())
-                            {
-                                if (urand(0, 1))
-                                    SeteshSummon(SETESH_SUMMON_WURM);
-                                else
-                                    SeteshSummon(SETESH_SUMMON_SENTINEL);
-                                events.ScheduleEvent(EVENT_SUMMON_15, 15000);
-                            }
-                            else
-                            {
-                                SeteshSummon(SETESH_SUMMON_SENTINEL);
-                                me->DespawnOrUnsummon();
-                            }
-                            break;
-                    }
-                }
-            }
-        };
-
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_chaos_seedAI(creature);
+    }
 };
 
-class npc_setesh_void_sentinel : public CreatureScript
+class npc_chaos_portal : public CreatureScript
 {
-    public:
-        npc_setesh_void_sentinel() : CreatureScript("npc_setesh_void_sentinel") { }
+    enum
+    {
+        NPC_VOID_SEEKER             = 41148,
+        NPC_VOID_SENTINEL           = 41208,
+        NPC_VOID_WURM               = 41212,
 
-        CreatureAI* GetAI(Creature* creature) const
+        SPELL_PORTAL_VISUAL         = 76714,
+
+        EVENT_ENABLE_VISUAL         = 1,
+        EVENT_SUMMON_WURMS,
+        EVENT_SUMMON_SENTINEL,
+        EVENT_SUMMON_SEEKER,
+        EVENT_DESPAWN,
+    };
+
+    struct npc_chaos_portalAI : public ScriptedAI
+    {
+        npc_chaos_portalAI(Creature* creature) : ScriptedAI(creature), summons(me) {}
+
+        void Reset() override
         {
-            return new npc_setesh_void_sentinelAI(creature);
+            done = false;
+            me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+            events.Reset();
+            me->SetObjectScale(1.0f);
+            me->SetReactState(REACT_PASSIVE);
         }
 
-        struct npc_setesh_void_sentinelAI : public ScriptedAI
+        void SetData(uint32 type, uint32 /*value*/) override
         {
-            npc_setesh_void_sentinelAI(Creature* pCreature) : ScriptedAI(pCreature)
+            if (type == DATA_CHAOS_PORTAL)
             {
-                pInstance = pCreature->GetInstanceScript();
-            }
+                events.ScheduleEvent(EVENT_ENABLE_VISUAL, 2000);
 
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim())
-                    return;
-                
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
+                if (IsHeroic())
                 {
-                    switch(eventId)
-                    {
-                        case EVENT_CHARGED_FISTS:
-                            DoCast(me, SPELL_CHARGED_FISTS);
-                            events.ScheduleEvent(EVENT_CHARGED_FISTS, urand(18000, 22000));
-                            break;
-                        case EVENT_VOID_BARRIER:
-                            DoCast(me, SPELL_VOID_BARRIER);
-                            break;
-                    }
+                    events.ScheduleEvent(EVENT_SUMMON_SENTINEL, 3000);
+                    events.ScheduleEvent(EVENT_SUMMON_WURMS, 9000);
+                    events.ScheduleEvent(EVENT_SUMMON_SEEKER, 19000);
+                }else
+                {
+                    events.ScheduleEvent(EVENT_SUMMON_WURMS, 3000);
+                    events.ScheduleEvent(EVENT_SUMMON_SEEKER, 15000);
+                    events.ScheduleEvent(EVENT_SUMMON_SENTINEL, 30000);
+                    events.ScheduleEvent(EVENT_DESPAWN, 32000);
                 }
-
-                DoMeleeAttackIfReady();
             }
-        };
-
-};
-
-class npc_setesh_void_seeker : public CreatureScript
-{
-    public:
-        npc_setesh_void_seeker() : CreatureScript("npc_setesh_void_seeker") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_setesh_void_seekerAI(creature);
+            else if (type == DATA_RESET_PORTAL)
+            {
+                EnterEvadeMode();
+                summons.DespawnAll();
+            }
         }
 
-        struct npc_setesh_void_seekerAI : public ScriptedAI
+        void JustSummoned(Creature* summon) override
         {
-            npc_setesh_void_seekerAI(Creature* pCreature) : ScriptedAI(pCreature)
+            summon->SetInCombatWithZone();
+            summons.Summon(summon);
+        }
+
+        void JustDied(Unit* ) override
+        {
+        }
+
+        void UpdateAI(uint32 diff) override
+        {
+            events.Update(diff);
+
+            if (uint32 eventId = events.ExecuteEvent())
             {
-                pInstance = pCreature->GetInstanceScript();
-            }
-
-            InstanceScript* pInstance;
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* who)
-            {
-                if (urand(0, 1))
-                    events.ScheduleEvent(EVENT_ANTI_MAGIC_PRISON, urand(3000, 5000));
-                else
-                    events.ScheduleEvent(EVENT_SHADOW_BOLT_VOLLEY, urand(3000, 5000));
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim())
-                    return;
-                    
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
+                switch(eventId)
                 {
-                    switch(eventId)
+                case EVENT_ENABLE_VISUAL:
+                    DoCast(SPELL_PORTAL_VISUAL);
+                    me->SetObjectScale(3.0f);
+                    //me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE));
+                    break;
+                case EVENT_SUMMON_WURMS:
+                    for (uint8 i = 0; i < 2; ++i)
+                        me->SummonCreature(NPC_VOID_WURM, 0.0f, 0.0f, 0.0f, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 500);
+                    if (done)
+                        events.ScheduleEvent(urand(EVENT_SUMMON_WURMS, EVENT_SUMMON_SENTINEL), 15000);
+                    break;
+                case EVENT_SUMMON_SENTINEL:
+                    me->SummonCreature(NPC_VOID_SENTINEL, 0.0f, 0.0f, 0.0f, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 500);
+                    if (done)
+                        events.ScheduleEvent(urand(EVENT_SUMMON_WURMS, EVENT_SUMMON_SENTINEL), 15000);
+                    break;
+                case EVENT_SUMMON_SEEKER:
+                    me->SummonCreature(NPC_VOID_SEEKER, 0.0f, 0.0f, 0.0f, 0.0f, TEMPSUMMON_DEAD_DESPAWN, 500);
+                    if (IsHeroic())
                     {
-                    case EVENT_ANTI_MAGIC_PRISON:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                            DoCast(pTarget, SPELL_ANTI_MAGIC_PRISON);
-                        events.ScheduleEvent(EVENT_ANTI_MAGIC_PRISON, urand(31000, 33000));
-                        break;
-                    case EVENT_SHADOW_BOLT_VOLLEY:
-                        DoCastAOE(SPELL_SHADOW_BOLT_VOLLEY);
-                        events.ScheduleEvent(EVENT_SHADOW_BOLT_VOLLEY, urand(9000, 13000));
-                        break;
+                        done = true;
+                        events.ScheduleEvent(urand(EVENT_SUMMON_WURMS, EVENT_SUMMON_SENTINEL), 15000);
                     }
+                    break;
+                case EVENT_DESPAWN:
+                    EnterEvadeMode();
+                    break;
                 }
-
-                DoMeleeAttackIfReady();
             }
-        };
+        }
+    private:
+        EventMap events;
+        SummonList summons;
+        bool done;
+    };
 
+public:
+    npc_chaos_portal() : CreatureScript("npc_chaos_portal") {}
+
+    CreatureAI* GetAI(Creature* creature) const override
+    {
+        return new npc_chaos_portalAI(creature);
+    }
 };
 
 void AddSC_boss_setesh()
 {
     new boss_setesh();
-    new npc_setesh_chaos_portal();
-    new npc_setesh_void_sentinel();
-    new npc_setesh_void_seeker();
-}
+    new npc_chaos_seed();
+    new npc_chaos_portal();
+};

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -18,51 +18,57 @@
 #ifndef DEF_NEXUS_H
 #define DEF_NEXUS_H
 
-#define NexusScriptName     "instance_nexus"
+#include "CreatureAIImpl.h"
 
-#define MAX_ENCOUNTER      4
+#define NexusScriptName "instance_nexus"
+#define DataHeader "NEX"
 
-enum DataTypes
+uint32 const EncounterCount = 5;
+
+enum NEXDataTypes
 {
-    DATA_GRAND_MAGUS_TELESTRA           = 0,
-    DATA_ANOMALUS                       = 1,
-    DATA_ORMOROK                        = 2,
-    DATA_KERISTRASZA                    = 3,
-    DATA_COMMANDER                      = 4,
+    DATA_COMMANDER                    = 0,
+    DATA_MAGUS_TELESTRA               = 1,
+    DATA_ANOMALUS                     = 2,
+    DATA_ORMOROK                      = 3,
+    DATA_KERISTRASZA                  = 4,
 
-    DATA_ANOMALUS_CONTAINMET_SPHERE     = 5,
-    DATA_ORMOROKS_CONTAINMET_SPHERE     = 6,
-    DATA_TELESTRAS_CONTAINMET_SPHERE    = 7,
-    
-    DATA_CHAOS_THEORY                   = 8
+    ANOMALUS_CONTAINMET_SPHERE        = 5,
+    ORMOROKS_CONTAINMET_SPHERE        = 6,
+    TELESTRAS_CONTAINMET_SPHERE       = 7
 };
 
-enum CreatureIds
+enum NEXCreatureIds
 {
-    MOB_CHAOTIC_RIFT                    = 26918,
-    MOB_CRAZED_MANA_WRAITH              = 26746,
-    
-    NPC_ANOMALUS                        = 26763,
-    NPC_GRAND_MAGUS_TELESTRA            = 26731,
-    NPC_ORMOROK                         = 26794,
-    NPC_KERISTRASZA                     = 26723,
-    NPC_ALLIANCE_BERSERKER              = 26800,
-    NPC_HORDE_BERSERKER                 = 26799,
-    NPC_ALLIANCE_RANGER                 = 26802,
-    NPC_HORDE_RANGER                    = 26801,
-    NPC_ALLIANCE_CLERIC                 = 26805,
-    NPC_HORDE_CLERIC                    = 26803,
-    NPC_ALLIANCE_COMMANDER              = 27949,
-    NPC_HORDE_COMMANDER                 = 27947,
-    NPC_COMMANDER_STOUTBEARD            = 26796,
-    NPC_COMMANDER_KOLURG                = 26798,
+    NPC_ANOMALUS                      = 26763,
+    NPC_KERISTRASZA                   = 26723,
+
+    // Alliance
+    NPC_ALLIANCE_BERSERKER            = 26800,
+    NPC_ALLIANCE_RANGER               = 26802,
+    NPC_ALLIANCE_CLERIC               = 26805,
+    NPC_ALLIANCE_COMMANDER            = 27949,
+    NPC_COMMANDER_STOUTBEARD          = 26796,
+
+    // Horde
+    NPC_HORDE_BERSERKER               = 26799,
+    NPC_HORDE_RANGER                  = 26801,
+    NPC_HORDE_CLERIC                  = 26803,
+    NPC_HORDE_COMMANDER               = 27947,
+    NPC_COMMANDER_KOLURG              = 26798
 };
 
-enum GameObjectIds
+enum NEXGameObjectIds
 {
-    GO_TELESTRAS_CONTAINMENT_SPHERE     = 188526,
-    GO_ANOMALUS_CONTAINMENT_SPHERE      = 188527,
-    GO_ORMOROKS_CONTAINMENT_SPHERE      = 188528,
+    GO_ANOMALUS_CONTAINMET_SPHERE     = 188527,
+    GO_ORMOROKS_CONTAINMET_SPHERE     = 188528,
+    GO_TELESTRAS_CONTAINMET_SPHERE    = 188526
 };
+
+template<typename AI>
+inline AI* GetNexusAI(Creature* obj)
+{
+    return GetInstanceAI<AI>(obj, NexusScriptName);
+}
 
 #endif

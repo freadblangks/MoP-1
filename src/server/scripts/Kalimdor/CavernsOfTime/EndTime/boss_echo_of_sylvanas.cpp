@@ -1,86 +1,104 @@
-#include "ScriptPCH.h"
-#include "end_time.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-enum ScriptTexts
-{
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_KILL    = 3,
-    SAY_WIPE    = 2,
-    SAY_SPELL   = 4,
-};
+/* ScriptData
+SDName: boss_echo_of_sylvanas
+SD%Complete:
+SDComment:
+EndScriptData */
+
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "end_time.h"
+#include "SpellInfo.h"
+#include "GridNotifiers.h"
+#include "CellImpl.h"
+#include "GridNotifiersImpl.h"
+
+#define SAY_AGGRO       "Another band of Deathwing's converts? I'll be sure your death is especially painful."
+#define SOU_AGGRO       25966
+#define SAY_IMMUNITY    "Watch, heathens, as death surrounds you!"
+#define SOU_IMMUNITY    25970
+#define SAY_DEATH       "This... isn't how it's supposed to... end!"
+#define SOU_DEATH       25967
 
 enum Spells
 {
-    SPELL_SHRIEK_OF_THE_HIGHBORNE       = 101412,
-    SPELL_UNHOLY_SHOT                   = 101411,
-    SPELL_BLACK_ARROW                   = 101404,
-    SPELL_WRACKING_PAIN_ANY             = 100865,
-    //                                = 100862,
-    SPELL_WRACKING_PAIN_AURA            = 101258,
-    SPELL_WRACKING_PAIN_DMG             = 101257,
-    SPELL_DEATH_GRIP_AOE                = 101397,
-    SPELL_DEATH_GRIP                    = 101987,
-    SPELL_SUMMON_GHOULS                 = 102603, // before combat
-    SPELL_TELEPORT                      = 101398, 
-    SPELL_CALL_OF_THE_HIGHBORNE         = 100686, // immune
-    SPELL_CALL_OF_THE_HIGHBORNE_1       = 100867, // visual spawn ghouls
-    SPELL_CALL_OF_THE_HIGHBORNE_2       = 105766, // visual back ghouls
-    SPELL_CALL_OF_THE_HIGHBORNE_3       = 102581, // visual ?
-    SPELL_SPAWN_GHOUL                   = 101200,
-    SPELL_SEEPING_SHADOWS_DUMMY         = 103175,
-    SPELL_SEEPING_SHADOWS_AURA          = 103182,
-    SPELL_SACRIFICE                     = 101348,
-    SPELL_DWINDLE                       = 101259,
-    SPELL_JUMP                          = 101517,
-    SPELL_JUMP_SCRIPT                   = 101527,
-    SPELL_JUMP_VEHICLE                  = 101528,
-    SPELL_PERMANENT_FEIGH_DEATH         = 96733,
-    SPELL_SHRINK                        = 101318,
+    SPELL_SUMMON_GHOUL_N            = 100894,
+    SPELL_SUMMON_GHOUL_NE           = 100917,
+    SPELL_SUMMON_GHOUL_NW           = 100918,
+    SPELL_SUMMON_GHOUL_E            = 100919,
+    SPELL_SUMMON_GHOUL_W            = 100920,
+    SPELL_SUMMON_GHOUL_S            = 100921,
+    SPELL_SUMMON_GHOUL_SE           = 100923,
+    SPELL_SUMMON_GHOUL_SW           = 100924,
+    SPELL_SUMMON_GHOUL              = 101200,
+    SPELL_WRACKING_PAIN_LINK        = 100862,
+    SPELL_WRACKING_PAIN_DMG         = 101221,
+    SPELL_TELEPORT                  = 101398,
+    SPELL_DEATH_GRIP                = 101397,
+    SPELL_GHOUL_CIRCLE              = 100867,
+    SPELL_CALLING_IMMUNITY          = 100686,
+    SPELL_CALLING_SHADOWS           = 105766,
+    SPELL_JUMP                      = 101528,
+    SPELL_SACRIFICE                 = 101348,
+    SPELL_SHRIEK_HIGHBORNE          = 101412,
+    SPELL_BLACK_ARROW               = 101404,
+    SPELL_UNHOLY_SHOT               = 101411,
+    SPELL_BLIGHTED_ARROWS_VISUAL    = 101552,
+    SPELL_BLIGHTED_ARROWS_EXPLOSION = 100763
 };
 
 enum Events
 {
-    EVENT_SHRIEK_OF_THE_HIGHBORNE   = 1,
-    EVENT_UNHOLY_SHOT               = 2,
-    EVENT_BLACK_ARROW               = 3,
-    EVENT_DEATH_GRIP                = 4,
-    EVENT_TELEPORT                  = 5,
-    EVENT_TELEPORT_1                = 6,
-    EVENT_SPAWN_GHOUL               = 7,
-    EVENT_MOVE_GHOUL                = 8,
-    EVENT_FALL                      = 0,
-    EVENT_START                     = 10,
+    // SYLVANAS EVENTS
+    EVENT_TELEPORT = 1,
+    EVENT_DEATH_GRIP,
+    EVENT_SACRIFICE,
+    EVENT_SHRIEK_HIGHBORNE,
+    EVENT_BLACK_ARROW,
+    EVENT_UNHOLY_SHOT,
+    EVENT_BLIGHTED_ARROW,
+    EVENT_BLIGHTED_JUMP,
+
+    // ADD EVENTS
+    EVENT_WRACKING_PAIN_LINK,
+    EVENT_SUMMON_GHOUL,
+    EVENT_CALLING_SHADOWS,
+    EVENT_MOVE,
+    EVENT_FOLLOW,
+    EVENT_BEHIND,
+    EVENT_EXPLODE,
+    EVENT_DESPAWN
 };
 
-enum Adds
+enum Misc
 {
-    NPC_GHOUL_1         = 54197,
-    NPC_BRITTLE_GHOUL   = 54952,
-    NPC_RISEN_GHOUL     = 54191,
-    NPC_JUMP            = 54385,
+    NPC_GHOUL_SUMMONER              = 54197,
+    NPC_RISEN_GHOUL                 = 54191
 };
 
-enum Others
+const float TelePoint [4] =
 {
-    DATA_GUID           = 1,
-    POINT_GHOUL         = 2,
-    ACTION_GHOUL        = 3,
-    ACTION_KILL_GHOUL   = 4,
-};
-
-const Position centerPos = {3845.51f, 909.318f, 56.1463f, 1.309f};
-
-const Position ghoulPos[8] =
-{
-    {3810.03f, 914.043f, 55.3974f, 0.0f},
-    {3818.82f, 892.83f, 56.0076f, 0.7854f},
-    {3840.03f, 884.043f, 56.0712f, 1.5708f},
-    {3861.24f, 892.83f, 56.0712f, 2.35619f},
-    {3870.03f, 914.043f, 56.0277f, 3.14159f},
-    {3861.24f, 935.256f, 55.9664f, 3.92699f},
-    {3840.03f, 944.043f, 55.9664f, 4.71239f},
-    {3818.82f, 935.256f, 56.0161f, 5.49779f}
+    3845.41f, 911.09f, 56.0422f, 0.4015f
 };
 
 class boss_echo_of_sylvanas : public CreatureScript
@@ -88,114 +106,65 @@ class boss_echo_of_sylvanas : public CreatureScript
     public:
         boss_echo_of_sylvanas() : CreatureScript("boss_echo_of_sylvanas") { }
 
-         CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_echo_of_sylvanasAI(creature);
-        }
-
         struct boss_echo_of_sylvanasAI : public BossAI
         {
-            boss_echo_of_sylvanasAI(Creature* creature) : BossAI(creature, DATA_ECHO_OF_SYLVANAS)
+            boss_echo_of_sylvanasAI(Creature* creature) : BossAI(creature, DATA_SYLVANAS), Summons(me)
             {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
-                me->CastSpell(me, SPELL_SUMMON_GHOULS, true);
+                instance = creature->GetInstanceScript();
             }
 
-            uint8 ghouls;
-            uint8 deadghouls;
+            InstanceScript* instance;
+            EventMap events;
+            SummonList Summons;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
-                me->SetReactState(REACT_AGGRESSIVE);
-                me->SetDisableGravity(false);
-                me->SetCanFly(false);
-                ghouls = 0;
-                deadghouls = 0;
+                me->SetReactState(REACT_DEFENSIVE);
             }
 
-            void JustDied(Unit* killer)
+            void InitializeAI() override
+            {
+                me->SetReactState(REACT_DEFENSIVE);
+                JustReachedHome();
+            }
+
+            void JustReachedHome() override
+            {
+                _JustReachedHome();
+                DoCast(me, SPELL_CALLING_IMMUNITY);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                me->setActive(true);
+                DoZoneInCombat();
+
+                events.Reset();
+                me->RemoveUnitFlag(UNIT_FLAG_IMMUNE_TO_PC);
+
+                me->RemoveAurasDueToSpell(SPELL_CALLING_IMMUNITY);
+                events.ScheduleEvent(EVENT_SHRIEK_HIGHBORNE, urand(6000,10000));
+                events.ScheduleEvent(EVENT_BLACK_ARROW, urand(2000,6000));
+                events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(2000,6000));
+                events.ScheduleEvent(EVENT_TELEPORT, 40000);
+                //events.ScheduleEvent(EVENT_BLIGHTED_JUMP, 12000);
+
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->Yell(SAY_AGGRO, LANG_UNIVERSAL);
+                DoPlaySoundToSet(me, SOU_AGGRO);
+            }
+
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-                Talk(SAY_DEATH);
-
-                // Quest
-                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
-                if (!PlayerList.isEmpty())
-                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_SYLVANAS, true);
+                me->Yell(SAY_DEATH, LANG_UNIVERSAL);
+                DoPlaySoundToSet(me, SOU_DEATH);
+                instance->SetData(DATA_BOSS_COUNT, 1);
             }
 
-            void EnterCombat(Unit* /*who*/)
-            {
-                Talk(SAY_AGGRO);
-                events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(5000, 20000));
-                events.ScheduleEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE, urand(5000, 20000));
-                events.ScheduleEvent(EVENT_TELEPORT, 40000);
-                me->RemoveAura(SPELL_SUMMON_GHOULS);
-                summons.DespawnEntry(NPC_BRITTLE_GHOUL);
-                deadghouls = 0;
-                DoZoneInCombat();
-                instance->SetBossState(DATA_ECHO_OF_SYLVANAS, IN_PROGRESS);
-            }
+            void UpdateAI(uint32 diff) override
 
-            void KilledUnit(Unit* who)
-            {
-                if (who->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SAY_KILL);
-            }
-
-            void DoAction(const int32 action)
-            {
-                if (action == ACTION_GHOUL)
-                {
-                    ghouls++;
-                    if (ghouls >= 1)
-                    {
-                        DoCastAOE(SPELL_SACRIFICE);
-                        summons.DespawnEntry(NPC_RISEN_GHOUL);
-                        events.ScheduleEvent(EVENT_START, 2000);
-                        ghouls = 0;
-                    }
-                }
-                else if (action == ACTION_KILL_GHOUL)
-                    deadghouls++;
-            }
-
-            void JustReachedHome()
-            {
-                Talk(SAY_WIPE);
-                DoCast(me, SPELL_SUMMON_GHOULS, true);
-            }
-
-            bool AllowAchieve()
-            {
-                return deadghouls >= 2; 
-            }
-
-            void UpdateAI(const uint32 diff)
             {
                 if (!UpdateVictim())
                     return;
@@ -209,71 +178,97 @@ class boss_echo_of_sylvanas : public CreatureScript
                 {
                     switch (eventId)
                     {
-                        case EVENT_UNHOLY_SHOT:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_UNHOLY_SHOT);
-                            events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(10000, 20000));
-                            break;
-                        case EVENT_SHRIEK_OF_THE_HIGHBORNE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_SHRIEK_OF_THE_HIGHBORNE);
-                            events.ScheduleEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE, urand(15000, 21000));
-                            break;
                         case EVENT_TELEPORT:
-                            events.CancelEvent(EVENT_UNHOLY_SHOT);
-                            events.CancelEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE);
+                            // She teleport herself and she stops the melee attacks
+                            events.Reset();
+                            DoStopAttack();
+                            me->Relocate(TelePoint[0], TelePoint[1], TelePoint[2], 0.0f);
+
                             me->SetReactState(REACT_PASSIVE);
-                            me->AttackStop();
-                            me->InterruptNonMeleeSpells(false);
-                            DoCast(me, SPELL_TELEPORT, true);
-                            events.ScheduleEvent(EVENT_TELEPORT_1, 2000);
-                            break;
-                        case EVENT_TELEPORT_1:
-                            Talk(SAY_SPELL);
-                            DoCast(me, SPELL_CALL_OF_THE_HIGHBORNE, true);
-                            for (uint8 i = 0; i < 8; ++i)
-                                me->SummonCreature(NPC_GHOUL_1, ghoulPos[i]);
-                            events.ScheduleEvent(EVENT_DEATH_GRIP, 3000);
-                            events.ScheduleEvent(EVENT_SPAWN_GHOUL, 3000);
+
+                            DoCast(me, SPELL_TELEPORT);
+                            DoCast(me, SPELL_CALLING_IMMUNITY);
+
+                            events.ScheduleEvent(EVENT_DEATH_GRIP, 2000);
+                            me->Yell(SAY_IMMUNITY, LANG_UNIVERSAL);
+                            DoPlaySoundToSet(me, SOU_IMMUNITY);
                             break;
                         case EVENT_DEATH_GRIP:
-                            DoCastAOE(SPELL_DEATH_GRIP_AOE);
+                            // She summons ghoul summoners
+                            DoCast(me, SPELL_SUMMON_GHOUL_N);
+                            DoCast(me, SPELL_SUMMON_GHOUL_NE);
+                            DoCast(me, SPELL_SUMMON_GHOUL_E);
+                            DoCast(me, SPELL_SUMMON_GHOUL_SE);
+                            DoCast(me, SPELL_SUMMON_GHOUL_S);
+                            DoCast(me, SPELL_SUMMON_GHOUL_SW);
+                            DoCast(me, SPELL_SUMMON_GHOUL_W);
+                            DoCast(me, SPELL_SUMMON_GHOUL_NW);
+
+                            // She grips all players to her position
+                            DoCastAOE(SPELL_DEATH_GRIP);
+
+                            events.ScheduleEvent(EVENT_SACRIFICE, 33000);
                             break;
-                        case EVENT_SPAWN_GHOUL:
-                        {
-                            deadghouls = 0;
-                            Unit* _first = NULL;
-                            Unit* _prev = NULL;
-                            for (uint8 i = 1; i < 8; ++i)
-                            {
-                                if (Creature* pGhoul = me->SummonCreature(NPC_RISEN_GHOUL, ghoulPos[i]))
-                                {
-                                    if (_prev)
-                                    {
-                                        _prev->CastSpell(pGhoul, SPELL_WRACKING_PAIN_ANY, true);
-                                        _prev->GetAI()->SetGUID(pGhoul->GetGUID(), DATA_GUID);
-                                        
-                                    }
-                                    _prev = pGhoul;
-                                    if (i == 1)
-                                        _first = pGhoul;
-                                }
-                            }
-                            if (_first)
-                            {
-                                _prev->CastSpell(_first, SPELL_WRACKING_PAIN_ANY, true);
-                                _prev->GetAI()->SetGUID(_first->GetGUID(), DATA_GUID);
-                            }
-                            summons.DespawnEntry(NPC_GHOUL_1);
-                            break;
-                        }
-                        case EVENT_START:
-                            me->RemoveAura(SPELL_CALL_OF_THE_HIGHBORNE);
+                        case EVENT_SACRIFICE:
+                            // all ghouls reach her position in about 20 secs
+                            // then she casts Sacrifice and star newly melee attacks
+                            DoCastAOE(SPELL_SACRIFICE);
+                            Summons.DespawnAll();
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
-                            events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(5000, 20000));
-                            events.ScheduleEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE, urand(5000, 20000)); 
+
+                            me->RemoveAurasDueToSpell(SPELL_CALLING_IMMUNITY);
+
+                            events.ScheduleEvent(EVENT_SHRIEK_HIGHBORNE, urand(6000,10000));
+                            events.ScheduleEvent(EVENT_BLACK_ARROW, urand(2000,6000));
+                            events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(2000,6000));
                             events.ScheduleEvent(EVENT_TELEPORT, 40000);
+                            break;
+                        case EVENT_SHRIEK_HIGHBORNE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
+                                DoCast(target, SPELL_SHRIEK_HIGHBORNE);
+                            break;
+                        case EVENT_BLACK_ARROW:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
+                                DoCast(target, SPELL_BLACK_ARROW);
+                            events.CancelEvent(EVENT_UNHOLY_SHOT);
+                            events.CancelEvent(EVENT_BLIGHTED_ARROW);
+                            events.ScheduleEvent(EVENT_BLIGHTED_ARROW, urand(10000,15000));
+                            events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(10000,15000));
+                            break;
+                        case EVENT_UNHOLY_SHOT:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
+                                DoCast(target, SPELL_UNHOLY_SHOT);
+                            events.CancelEvent(EVENT_BLACK_ARROW);
+                            events.CancelEvent(EVENT_BLIGHTED_ARROW);
+                            events.ScheduleEvent(EVENT_BLIGHTED_ARROW, urand(10000,15000));
+                            events.ScheduleEvent(EVENT_BLACK_ARROW, urand(10000,15000));
+                            break;
+                        /*case EVENT_BLIGHTED_JUMP:
+                            me->CastSpell(me, EVENT_JUMP, true);
+                            break;*/
+                        case EVENT_BLIGHTED_ARROW:
+                            events.CancelEvent(EVENT_UNHOLY_SHOT);
+                            events.CancelEvent(EVENT_BLACK_ARROW);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_MAXDISTANCE, 0, 100, true))
+                            {
+                                // Spell save in the following float variable
+                                // the position of a random player
+                                float targetPosX = target->GetPositionX();
+                                float targetPosY = target->GetPositionY();
+                                float targetPosZ = target->GetPositionZ();
+                                float targetOrie = target->GetOrientation();
+                                // dist is the distance between pools
+                                float dist = 4.0f;
+                                // Sylvanas summon 5 pools lined up in a row
+                                // they have the same orientation of target
+                                me->SummonCreature(54403,targetPosX, targetPosY, targetPosZ);
+                                me->SummonCreature(54403,targetPosX + dist * cos(targetOrie), targetPosY + dist * sin(targetOrie), targetPosZ);
+                                me->SummonCreature(54403,targetPosX - dist * cos(targetOrie), targetPosY - dist * sin(targetOrie), targetPosZ);
+                                me->SummonCreature(54403,targetPosX + 2 * dist * cos(targetOrie), targetPosY + 2 * dist * sin(targetOrie), targetPosZ);
+                                me->SummonCreature(54403,targetPosX + 3 * dist * cos(targetOrie), targetPosY + 3 * dist * sin(targetOrie), targetPosZ);
+                                // They explode in class mob_blighted_arrows
+                                // TODO: sylvanas doesn't do the animation of blighted arrow
+                            }
                             break;
                         default:
                             break;
@@ -283,298 +278,387 @@ class boss_echo_of_sylvanas : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_echo_of_sylvanasAI(creature);
+        }
 };
 
-class npc_echo_of_sylvanas_ghoul : public CreatureScript
+class mob_ghoul_summoner : public CreatureScript
 {
     public:
+        mob_ghoul_summoner() : CreatureScript("mob_ghoul_summoner") { }
 
-        npc_echo_of_sylvanas_ghoul() : CreatureScript("npc_echo_of_sylvanas_ghoul") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct mob_ghoul_summonerAI : public ScriptedAI
         {
-            return new npc_echo_of_sylvanas_ghoulAI(pCreature);
-        }
-
-        struct npc_echo_of_sylvanas_ghoulAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_sylvanas_ghoulAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            mob_ghoul_summonerAI(Creature* creature) : ScriptedAI(creature)
             {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                instance = creature->GetInstanceScript();
             }
 
+            InstanceScript* instance;
             EventMap events;
+            float size;
 
-            void Reset()
+            void InitializeAI() override
             {
-                events.Reset();
-            }
-
-            void IsSummonedBy(Unit* owner)
-            {
-                DoCast(me, SPELL_CALL_OF_THE_HIGHBORNE_1, true);
-            }
-        };
-};
-
-class npc_echo_of_sylvanas_risen_ghoul : public CreatureScript
-{
-    public:
-
-        npc_echo_of_sylvanas_risen_ghoul() : CreatureScript("npc_echo_of_sylvanas_risen_ghoul") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_echo_of_sylvanas_risen_ghoulAI(pCreature);
-        }
-
-        struct npc_echo_of_sylvanas_risen_ghoulAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_sylvanas_risen_ghoulAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {
+                size = 2.5f;
+                me->GetMotionMaster()->Clear();
+                me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
                 me->SetReactState(REACT_PASSIVE);
+                if (Creature* sylvanas = instance->GetCreature(NPC_ECHO_OF_SYLVANAS))
+                    me->SetTarget(sylvanas->GetGUID());
+                me->SetSpeed(MOVE_WALK, 0.4f);
+                me->SetWalk(true);
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            EventMap events;
-            uint64 _guid;
-
-            void Reset()
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
-                events.Reset();
-                _guid = 0;
-                me->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, 5.0f);
-                me->SetFloatValue(UNIT_FIELD_COMBATREACH, 5.0f);
-            }
- 
-            void JustDied(Unit* /*killer*/)
-            {
-                me->RemoveAura(SPELL_WRACKING_PAIN_ANY);
-                if (Creature* pTarget = ObjectAccessor::GetCreature(*me, _guid))
-                    pTarget->RemoveAura(SPELL_WRACKING_PAIN_ANY);
-                _guid = 0;
-                if (Creature* pSylvanas = me->FindNearestCreature(NPC_ECHO_OF_SYLVANAS, 300.0f))
-                    pSylvanas->GetAI()->DoAction(ACTION_KILL_GHOUL);
-                me->DespawnOrUnsummon(500);
+                DoCast(me, SPELL_GHOUL_CIRCLE);
+                events.ScheduleEvent(EVENT_SUMMON_GHOUL, 1000);
+                events.ScheduleEvent(EVENT_CALLING_SHADOWS, 7000);
+                events.ScheduleEvent(EVENT_DESPAWN, 33000);
             }
 
-            void EnterCombat(Unit* /*who*/)
-            {
-                DoCast(me, SPELL_SEEPING_SHADOWS_DUMMY, true); 
-                events.ScheduleEvent(EVENT_MOVE_GHOUL, 2000);
-            }
-            
-            void SetGUID(uint64 guid, int32 type)
-            {
-                if (type == DATA_GUID)
-                    _guid = guid;
-            }
 
-            uint64 GetGUID(int32 type)
-            {
-                if (type == DATA_GUID)
-                    return _guid;
-                return 0;
-            }
-
-            void MovementInform(uint32 type, uint32 data)
-            {
-                if (type == POINT_MOTION_TYPE)
-                    if (data == POINT_GHOUL)
-                        if (Unit* pSylvanas = me->FindNearestCreature(NPC_ECHO_OF_SYLVANAS, 300.0f))
-                            pSylvanas->GetAI()->DoAction(ACTION_GHOUL);
-            }
-
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
+                size -= 0.0035f;
+
+                me->SetObjectScale(size);
+
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
-                        case EVENT_MOVE_GHOUL:
-                            me->SetWalk(true);
-                            me->SetSpeed(MOVE_RUN, 0.5f, true);
-                            me->SetSpeed(MOVE_WALK, 0.5f, true);
-                            me->GetMotionMaster()->MovePoint(POINT_GHOUL, centerPos);
-                            //DoCast(me, SPELL_CALL_OF_THE_HIGHBORNE_2, true);
-                            DoCast(me, SPELL_WRACKING_PAIN_AURA, true);
+                        // Ghoul summoner summons its own ghoul
+                        case EVENT_SUMMON_GHOUL:
+                            DoCast(me, SPELL_SUMMON_GHOUL);
+                            break;
+                        // Ghoul summoner adds itself shadow aura (visual)
+                        case EVENT_CALLING_SHADOWS:
+                            DoCast(me, SPELL_CALLING_SHADOWS);
+                            me->GetMotionMaster()->MovePoint(0, TelePoint[0], TelePoint[1], TelePoint[2], TelePoint[3]);
+                            break;
+                        case EVENT_DESPAWN:
+                            me->DisappearAndDie();
+                            break;
+                    }
+                }
+            }
+
+
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new mob_ghoul_summonerAI(creature);
+        }
+};
+
+class mob_risen_ghoul : public CreatureScript
+{
+    public:
+        mob_risen_ghoul() : CreatureScript("mob_risen_ghoul") { }
+
+        struct mob_risen_ghoulAI : public ScriptedAI
+        {
+            mob_risen_ghoulAI(Creature* creature) : ScriptedAI(creature) { }
+
+            InstanceScript* instance;
+            EventMap events;
+            uint8 i;
+            uint32 checkTimer;
+            float arc;
+            float checkDistance;
+
+            void InitializeAI() override
+            {
+                instance = me->GetInstanceScript();
+
+                if (!instance)
+                {
+                    me->DespawnOrUnsummon();
+                    return;
+                }
+
+                me->GetMotionMaster()->Clear();
+                me->SetReactState(REACT_PASSIVE);
+                if (Creature* sylvanas = instance->GetCreature(NPC_ECHO_OF_SYLVANAS))
+                    me->SetTarget(sylvanas->GetGUID());
+                me->SetSpeed(MOVE_WALK, 0.4f);
+                me->SetWalk(true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+            }
+
+            void IsSummonedBy(Unit* /*summoner*/) override
+            {
+                events.Reset();
+                me->SetSpeed(MOVE_WALK, 0.4f);
+                me->SetWalk(true);
+                events.ScheduleEvent(EVENT_WRACKING_PAIN_LINK, 4000);
+                events.ScheduleEvent(EVENT_DESPAWN, 33000);
+                checkTimer = 5000;
+                arc = float(M_PI);
+                checkDistance = 50.0f;
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                // When ghoul dies, it has to kill its own summoner (the nearest)
+                me->DisappearAndDie();
+                if (Creature* summoner = GetClosestCreatureWithEntry(me, NPC_GHOUL_SUMMONER, 100.0f))
+                    summoner->DisappearAndDie();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                // We have to check if a player is between two adjacent ghouls
+                // First step: we make a list of all ghouls in 30 ys
+                // nextGhoul1 & nextGhoul2 are the two nearby ghoul (one to the left and one to the right)
+                Unit* nextGhoul1 = nullptr;
+                Unit* nextGhoul2 = nullptr;
+                std::list<Unit*> Ghouls;
+                Trinity::AnyFriendlyUnitInObjectRangeCheck u_check(me, me, 30.0f);
+                Trinity::UnitListSearcher<Trinity::AnyFriendlyUnitInObjectRangeCheck> searcher(me, Ghouls, u_check);
+                Cell::VisitAllObjects(me, searcher, 30.0f);
+                for (std::list<Unit*>::const_iterator iter = Ghouls.begin(); iter != Ghouls.end(); ++iter)
+                {
+                    // Skip creatures that aren't ghouls
+                    if ((*iter)->GetEntry() != NPC_RISEN_GHOUL && nextGhoul1 && nextGhoul2)
+                        continue;
+
+                    if (Creature* sylvanas = instance->GetCreature(NPC_ECHO_OF_SYLVANAS))
+                    {
+                        // We have to check if the angle between ghoul (me), sylvanas and the adjacent ghoul
+                        float meX = me->GetPositionX();
+                        float meY = me->GetPositionY();
+                        float sylvanasX = sylvanas->GetPositionX();
+                        float sylvanasY = sylvanas->GetPositionY();
+                        float nearbyGhoulX = (*iter)->GetPositionX();
+                        float nearbyGhoulY = (*iter)->GetPositionY();
+
+                        float squareAB = sqrt(pow((meX - sylvanasX), 2) + pow((meY - sylvanasY), 2));
+                        float squareBC = sqrt(pow((sylvanasX - nearbyGhoulX), 2) + pow((sylvanasY - nearbyGhoulY), 2));
+
+                        float cosAngle = ((meX - sylvanasX) * (nearbyGhoulX - sylvanasX) + (meY - sylvanasY) * (nearbyGhoulY - sylvanasY)) / (squareAB * squareBC);
+
+                        // If the agle is minor than 90°
+                        // (*iter) is the right ghoul for which we could check if player is in between
+                        if (acos(cosAngle) < 1.57f && !nextGhoul1)
+                        {
+                            nextGhoul1 = (*iter);
+                        }
+
+                        // If the agle is major than 270°
+                        // (*iter) is the right ghoul for which we could check if player is in between
+                        if (acos(cosAngle) > 4.71f && !nextGhoul2)
+                        {
+                            nextGhoul2 = (*iter);
+                        }
+                    }
+                }
+
+                if (nextGhoul1)
+                {
+                    if (Map* map = me->GetMap())
+                    {
+                        if (map && map->IsDungeon())
+                        {
+                            std::list<Player*> PlayerList;
+                            Map::PlayerList const& Players = map->GetPlayers();
+                            for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                            {
+                                if (Player* player = itr->GetSource())
+                                {
+                                    // If player is in between two adjacent ghouls
+                                    // player will be hitted by Wracking Pain
+                                    if (player->IsInBetween(me, nextGhoul1, 1.5f))
+                                    {
+                                        player->CastSpell(player, SPELL_WRACKING_PAIN_DMG, true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (nextGhoul2)
+                {
+                    if (Map* map = me->GetMap())
+                    {
+                        if (map && map->IsDungeon())
+                        {
+                            std::list<Player*> PlayerList;
+                            Map::PlayerList const& Players = map->GetPlayers();
+                            for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                            {
+                                if (Player* player = itr->GetSource())
+                                {
+                                    // If player is in between two adjacent ghouls
+                                    // player will be hitted by Wracking Pain
+                                    if (player->IsInBetween(me, nextGhoul2, 1.5f))
+                                    {
+                                        player->CastSpell(player, SPELL_WRACKING_PAIN_DMG, true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (checkTimer <= diff)
+                {
+                    arc -= 0.009817f;
+                    checkDistance -= 0.1675f;
+                    if (Map* map = me->GetMap())
+                    {
+                        std::list<Player*> PlayerList;
+                        Map::PlayerList const& Players = map->GetPlayers();
+                        for (Map::PlayerList::const_iterator itr = Players.begin(); itr != Players.end(); ++itr)
+                        {
+                            if (Player* player = itr->GetSource())
+                            {
+                                if (me->isInBackInMap(player, checkDistance, arc))
+                                {
+                                    player->CastSpell(player, SPELL_WRACKING_PAIN_DMG, true);
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                    checkTimer -= diff;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_WRACKING_PAIN_LINK:
+                        {
+                            DoCastAOE(SPELL_WRACKING_PAIN_LINK);
+                            me->GetMotionMaster()->MovePoint(0, TelePoint[0], TelePoint[1], TelePoint[2], TelePoint[3]);
+                        }
+                        break;
+                        case EVENT_DESPAWN:
+                            me->DisappearAndDie();
                             break;
                     }
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new mob_risen_ghoulAI(creature);
+        }
 };
 
-class spell_echo_of_sylvanas_wracking_pain_dmg : public SpellScriptLoader
+class spell_wracking_pain_link : public SpellScriptLoader
 {
     public:
-        spell_echo_of_sylvanas_wracking_pain_dmg() : SpellScriptLoader("spell_echo_of_sylvanas_wracking_pain_dmg") { }
+        spell_wracking_pain_link() : SpellScriptLoader("spell_wracking_pain_link") { }
 
-        class spell_echo_of_sylvanas_wracking_pain_dmg_SpellScript : public SpellScript
+        class spell_wracking_pain_link_SpellScript : public SpellScript
         {
-            PrepareSpellScript(spell_echo_of_sylvanas_wracking_pain_dmg_SpellScript);
+            PrepareSpellScript(spell_wracking_pain_link_SpellScript);
 
-            void FilterTargets(std::list<WorldObject*>& targets)
+            void CountTargets(std::list<WorldObject*>& targets)
             {
-                if (!GetCaster() || !GetCaster()->isAlive())
+                targets.remove_if([](const WorldObject* target)
                 {
-                    targets.clear();
-                    return;
-                }
-
-                if (!GetCaster()->GetAI())
-                {
-                    targets.clear();
-                    return;
-                }
-
-                uint64 _guid = GetCaster()->GetAI()->GetGUID(DATA_GUID);
-                if (Creature* pTarget = ObjectAccessor::GetCreature(*GetCaster(), _guid))
-                {
-                    if (pTarget->isAlive())
-                        targets.remove_if(WrackingPainTargetSelector(GetCaster(), pTarget));
-                    else
-                        targets.clear();
-                }
-                else
-                    targets.clear();
+                    return target->GetEntry() != NPC_RISEN_GHOUL;
+                });
             }
 
-            void Register()
+            void Register() override
             {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_echo_of_sylvanas_wracking_pain_dmg_SpellScript::FilterTargets, EFFECT_0,TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_wracking_pain_link_SpellScript::CountTargets, EFFECT_0,  TARGET_UNIT_SRC_AREA_ALLY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_wracking_pain_link_SpellScript();
+        }
+};
+
+class mob_blighted_arrows : public CreatureScript
+{
+    public:
+        mob_blighted_arrows() : CreatureScript("mob_blighted_arrows") { }
+
+        struct mob_blighted_arrowsAI : public ScriptedAI
+        {
+            mob_blighted_arrowsAI(Creature* creature) : ScriptedAI(creature)
+            {
+                instance = creature->GetInstanceScript();
             }
 
-        private:
+            InstanceScript* instance;
+            EventMap events;
 
-            class WrackingPainTargetSelector
+            void InitializeAI() override
             {
-                public:
-                    WrackingPainTargetSelector(WorldObject* caster, WorldObject* target) : i_caster(caster), i_target(target) { }
+                DoStopAttack();
+                me->SetReactState(REACT_PASSIVE);
+                me->setActive(false);
+            }
 
-                    bool operator()(WorldObject* unit)
+            void IsSummonedBy(Unit* /*summoner*/) override
+            {
+                DoStopAttack();
+                me->setActive(false);
+                events.Reset();
+                me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+                me->SetReactState(REACT_PASSIVE);
+                DoCastAOE(SPELL_BLIGHTED_ARROWS_VISUAL);
+                events.ScheduleEvent(EVENT_EXPLODE, 5000);
+                events.ScheduleEvent(EVENT_DESPAWN, 10000);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
                     {
-                        if (unit->IsInBetween(i_caster, i_target))
-                            return false;
-                        return true;
+                    case EVENT_EXPLODE:
+                        me->RemoveAurasDueToSpell(SPELL_BLIGHTED_ARROWS_VISUAL);
+                        DoCastAOE(SPELL_BLIGHTED_ARROWS_EXPLOSION);
+                        break;
+                    case EVENT_DESPAWN:
+                        me->DisappearAndDie();
+                        break;
+                    default:
+                        break;
                     }
-
-                    WorldObject* i_caster;
-                    WorldObject* i_target;
-            };
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_echo_of_sylvanas_wracking_pain_dmg_SpellScript();
-        }
-};
-
-class spell_echo_of_sylvanas_death_grip_aoe : public SpellScriptLoader
-{
-    public:
-        spell_echo_of_sylvanas_death_grip_aoe() : SpellScriptLoader("spell_echo_of_sylvanas_death_grip_aoe") { }
-
-        class spell_echo_of_sylvanas_death_grip_aoe_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_echo_of_sylvanas_death_grip_aoe_SpellScript);
-
-            void HandleScript(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
-
-                GetHitUnit()->CastSpell(GetCaster(), SPELL_DEATH_GRIP, true);
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_echo_of_sylvanas_death_grip_aoe_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+                }
             }
         };
 
-        SpellScript* GetSpellScript() const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new spell_echo_of_sylvanas_death_grip_aoe_SpellScript();
-        }
-};
-
-class spell_echo_of_sylvanas_seeping_shadows : public SpellScriptLoader
-{
-    public:
-        spell_echo_of_sylvanas_seeping_shadows() : SpellScriptLoader("spell_echo_of_sylvanas_seeping_shadows") { }
-
-        class spell_echo_of_sylvanas_seeping_shadows_AuraScript : public AuraScript
-        {
-            PrepareAuraScript(spell_echo_of_sylvanas_seeping_shadows_AuraScript);
-
-            void HandlePeriodicTick(constAuraEffectPtr /*aurEff*/)
-            {
-                if (!GetCaster())
-                    return;
-
-                int32 amount = int32(0.2f * (100.0f - GetCaster()->GetHealthPct()));
-
-                if (AuraPtr aur = GetCaster()->GetAura(103182))
-                    aur->ModStackAmount(amount - aur->GetStackAmount());
-                else
-                    GetCaster()->CastCustomSpell(103182, SPELLVALUE_AURA_STACK, amount, GetCaster(), true);
-
-            }
-
-            void Register()
-            {
-                OnEffectPeriodic += AuraEffectPeriodicFn(spell_echo_of_sylvanas_seeping_shadows_AuraScript::HandlePeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
-            }
-        };
-
-        AuraScript* GetAuraScript() const
-        {
-            return new spell_echo_of_sylvanas_seeping_shadows_AuraScript();
-        }
-};
-
-class achievement_several_ties : public AchievementCriteriaScript
-{
-    public:
-        achievement_several_ties() : AchievementCriteriaScript("achievement_several_ties") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (boss_echo_of_sylvanas::boss_echo_of_sylvanasAI* echo_of_sylvanasAI = CAST_AI(boss_echo_of_sylvanas::boss_echo_of_sylvanasAI, target->GetAI()))
-                return echo_of_sylvanasAI->AllowAchieve();
-
-            return false;
+            return new mob_blighted_arrowsAI(creature);
         }
 };
 
 void AddSC_boss_echo_of_sylvanas()
 {
     new boss_echo_of_sylvanas();
-    new npc_echo_of_sylvanas_ghoul();
-    new npc_echo_of_sylvanas_risen_ghoul();
-    new spell_echo_of_sylvanas_wracking_pain_dmg();
-    new spell_echo_of_sylvanas_death_grip_aoe();
-    new spell_echo_of_sylvanas_seeping_shadows();
-    new achievement_several_ties();
+    new mob_ghoul_summoner();
+    new mob_risen_ghoul();
+    new spell_wracking_pain_link();
+    new mob_blighted_arrows();
 }

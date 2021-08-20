@@ -1,82 +1,131 @@
 /*
-* Copyright (C) 2008-20XX JadeCore <http://www.pandashan.com>
-* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
-* Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of the GNU General Public License as published by the
-* Free Software Foundation; either version 2 of the License, or (at your
-* option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along
-* with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright 2021 FuzionCore
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Raid: Throne of Thunder.
+ * Description: Header Script.
+ */
 
-#ifndef THRONE_OF_THUNDER_H_
-#define THRONE_OF_THUNDER_H_
+#ifndef DEF_THRONE_OF_THUNDER_H
+#define DEF_THRONE_OF_THUNDER_H
 
 #include "SpellScript.h"
 #include "Map.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
 
-enum eData
+#define MAX_ENCOUNTERS 13
+
+// Boss encounters
+enum Data
 {
-    DATA_JIN_ROKH_BREAKER_EVENT			= 0,
-    DATA_HORRIDON_EVENT					= 1,
+    // Bosses
+	DATA_JIN_ROKH_BREAKER_EVENT      = 0,
+	DATA_HORRIDON_EVENT              = 1,
+	DATA_COUNCIL_OF_ELDERS_EVENT     = 2,
 
-    DATA_FARA_DOOR,
-    DATA_GURU_DOOR,
-    DATA_DRAK_DOOR,
-    DATA_AMANI_DOOR,
+	DATA_TORTOS_EVENT                = 3,
+	DATA_MEGAERA_EVENT               = 4,
+    DATA_JI_KUN_EVENT                = 5,
 
-    DATA_GARAJAL,
-    DATA_MALAK,
-    DATA_KARAZJIN,
-    DATA_HIGH_PRIESTSESS,
-    DATA_SAND_CRAWLER,
+	DATA_DURUMU_THE_FORGOTTEN_EVENT  = 6,
+	DATA_PRIMORDIUS_EVENT            = 7,
+    DATA_DARK_ANIMUS_EVENT           = 8,
 
-    DATA_JINROKH_DOOR,
-    DATA_JINROKH_HORRIDON_DOOR,
-    DATA_HORRIDON_DOOR,
-    DATA_HORRIDON_COUNCIL_DOOR,
-    DATA_COUNCIL_TORTOS_DOOR,
+	DATA_IRON_QON_EVENT              = 9,
+	DATA_TWIN_CONSORTS_EVENT         = 10,
+    DATA_LEI_SHEN_EVENT              = 11,
 
-    DATA_JI_KUN,
-
-    DATA_TORTOS,
-    DATA_MEGAERA,
-    DATA_DURUMU_THE_FORGOTTEN,
+    DATA_RA_DEN_EVENT                = 12  // Heroic only.
 };
-enum eActions
-{ //617299803
-};
-enum eCreatures
+
+// GUID retrieval
+enum Data64
 {
-    BOSS_JINROKH_BREAKER = 69465,
-    NPC_JINROKH_STATUE = 69467,
-    BOSS_HORRIDON = 68476,
+    // Bosses
 
-    BOSS_MALAK = 69131,
-    BOSS_KAZARJIN = 69134,
-    BOSS_MARLI = 69132,
-    BOSS_SUL = 69078,
-    CREATURE_GARJAL = 70056,
+	DATA_JIN_ROKH_BREAKER      = 0,
+	DATA_HORRIDON              = 1,
 
-    BOSS_TORTOS = 67977,
-    BOSS_MEGAERA = 68065,
-    BOSS_JI_KUN = 69712,
+    // Council of Elders
+	DATA_KAZRAJIN              = 2,
+	DATA_SUL_THE_SANDCRAWLER   = 3,
+	DATA_FROST_KING_MALAKK     = 4,
+	DATA_HIGH_PRIESTESS_MARLI  = 5,
 
-	BOSS_DURUMU = 68036,
+	DATA_TORTOS                = 6,
+	DATA_MEGAERA               = 7,
+    DATA_JI_KUN                = 8,
 
-    CREATURE_HEAD_FIRE = 70212,
-    CREATURE_HEAD_FROST = 70235,
-    CREATURE_HEAD_VENOM = 70247,
+	DATA_DURUMU_THE_FORGOTTEN  = 9,
+	DATA_PRIMORDIUS            = 10,
+    DATA_DARK_ANIMUS           = 11,
+
+	DATA_IRON_QON              = 12,
+
+    // Twin Consorts
+	DATA_LU_LIN                = 13,
+	DATA_SUEN                  = 14,
+
+    DATA_LEI_SHEN              = 15,
+
+    DATA_RA_DEN                = 16,  // Heroic only.
+
+    // GameObjects
+
+    DATA_FIRST_DOOR            = 17,
+
+    // Jin'Rokh the Breaker
+    DATA_MOGU_FOUNTAIN_NE      = 18,
+    DATA_MOGU_FOUNTAIN_NW      = 19,
+    DATA_MOGU_FOUNTAIN_SE      = 20,
+    DATA_MOGU_FOUNTAIN_SW      = 21,
+
+    DATA_JIN_ROKH_FRONT_DOOR   = 22,     // door he is looking at
+    DATA_JIN_ROKH_BACK_DOOR    = 23      // door to the next boss
+};
+
+enum CreatureIds
+{
+    BOSS_JIN_ROKH_BREAKER      = 69495,
+
+    BOSS_HORRIDON              = 68476,
+
+    // Council of Elders
+    BOSS_KAZRAJIN              = 69134,
+    BOSS_SUL_THE_SANDCRAWLER   = 69078,
+    BOSS_FROST_KING_MALAKK     = 69131,
+    BOSS_HIGH_PRIESTESS_MARLI  = 69132,
+
+    BOSS_TORTOS                = 67977,
+    BOSS_MEGAERA               = 68065,
+    BOSS_JI_KUN                = 69712,
+
+    BOSS_DURUMU_THE_FORGOTTEN  = 68036,
+    BOSS_PRIMORDIUS            = 69017,
+    BOSS_DARK_ANIMUS           = 69427,
+
+    BOSS_IRON_QON              = 68078,
+
+    // Twin Consorts
+    BOSS_LU_LIN                = 68905,
+    BOSS_SUEN                  = 68904,
+
+    BOSS_LEI_SHEN              = 68397,
+
+    BOSS_RA_DEN                = 69473  // Heroic only.
 };
 
 enum GameObjectIds
@@ -93,24 +142,4 @@ enum GameObjectIds
     GO_JIN_ROKH_BACK_DOOR      = 218663,     // door to the next boss
 };
 
-enum eGameObjects
-{
-    // GAME_OBJECT_MOGU_STATUE = ,
-    OBJECT_GURUBASHI_DOOR = 218670,
-    OBJECT_DRAKKARI_DOOR = 218671,
-    OBJECT_FARAKKI_DOOR = 218672,
-    OBJECT_AMANI_DOOR = 218673,
-    // DOORS
-    OBJECT_HORRIDON_ENTRACE = 444557,
-    OBJECT_HORRIDON_COUNCIL = 444558,
-    OBJECT_COUNCIL_TORTOS = 444559,
-};
-enum ePhases
-{
-};
-enum eWeapons
-{
-};
-
-
-#endif // THRONE_OF_THUNDER_H_
+#endif // DEF_THRONE_OF_THUNDER_H

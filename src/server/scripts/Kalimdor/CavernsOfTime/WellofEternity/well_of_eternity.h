@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #ifndef DEF_WELLOFETERNITY_H
 #define DEF_WELLOFETERNITY_H
 
@@ -23,8 +40,8 @@ enum CreatureIds
     NPC_PEROTHARN   = 55085,
     NPC_ILLIDAN_1   = 55500,
     NPC_AZSHARA     = 54853,
-    NPC_TYRANDE     = 55524, 
-    NPC_ILLIDAN_2   = 55532, 
+    NPC_TYRANDE     = 55524,
+    NPC_ILLIDAN_2   = 55532,
     NPC_MALFURION   = 55570,
     NPC_VAROTHEN    = 55419,
     NPC_ABYSSAL     = 55510,

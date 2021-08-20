@@ -1,90 +1,88 @@
-#ifndef DEF_ENDTIME_H
-#define DEF_ENDTIME_H
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-#define ETScriptName "instance_end_time"
+#include "Map.h"
+#include "CreatureAI.h"
+#include "ObjectMgr.h"
 
-#define MAX_FRAGMENTS_COUNT 12
+#ifndef DEF_END_TIME_H
+#define DEF_END_TIME_H
 
-enum Data
+#define EndTimeScriptName "instance_end_time"
+
+enum DataTypes
 {
-    DATA_ECHO_OF_SYLVANAS   = 0,
-	DATA_ECHO_OF_BAINE      = 1,
-	DATA_ECHO_OF_TYRANDE    = 2,
-	DATA_ECHO_OF_JAINA      = 3,
-    DATA_MUROZOND           = 4,
-    DATA_JAINA_EVENT        = 5,
-    DATA_ECHO_1             = 6,
-    DATA_ECHO_2             = 7,
-    DATA_FIRST_ENCOUNTER    = 8,
-    DATA_SECOND_ENCOUNTER   = 9,
-    DATA_TYRANDE_EVENT      = 10,
-    DATA_NOZDORMU_1         = 11,
-    DATA_NOZDORMU_2         = 12,
-    DATA_NOZDORMU_3         = 13,
-    DATA_NOZDORMU_4         = 14,
-    DATA_PLATFORMS          = 15,
-    DATA_IMAGE_OF_NOZDORMU  = 16,
-    DATA_FRAGMENTS          = 17,
-    DATA_HOURGLASS          = 18,
-    DATA_NOZDORMU           = 19,
+    DATA_BAINE = 0,
+    DATA_JAINA,
+    DATA_SYLVANAS,
+    DATA_TYRANDE,
+    DATA_MUROZOND,
+    FIRST_BOSS,
+    SECOND_BOSS,
+    DATA_MUROZOND_TRASH,
+    DATA_MUROZOND_STARTED,
+    DATA_BOSS_COUNT,
 };
 
-enum GameObjectIds
+enum Npcs
 {
-    MUROZOND_CACHE      = 209547,
-    HOURGLASS_OF_TIME   = 209249,
-    GO_ET_TELEPORT      = 209438,
-
-    GO_PLATFORM_1       = 209670,
-    GO_PLATFORM_2       = 209693,
-    GO_PLATFORM_3       = 209694,
-    GO_PLATFORM_4       = 209695,
-};
-
-enum CreatureIds
-{
-    NPC_ECHO_OF_JAINA       = 54445,
     NPC_ECHO_OF_BAINE       = 54431,
+    NPC_ECHO_OF_JAINA       = 54445,
     NPC_ECHO_OF_SYLVANAS    = 54123,
     NPC_ECHO_OF_TYRANDE     = 54544,
-    NPC_MUROZOND            = 54432,
-    NPC_NOZDORMU            = 54751,
-    NPC_IMAGE_OF_NOZDORMU   = 54867,
+    NPC_ECHO_OF_MUROZOND    = 54432,
 };
 
-enum WorldStatesET
+enum TeleporterSpells
 {
-    WORLDSTATE_SHOW_FRAGMENTS       = 6046,
-    WORLDSTATE_FRAGMENTS_COLLECTED  = 6025,
+    AZURE_DRAGONSHIRINE_TELEPORT    = 102126,
+    RUBY_DRAGONSHIRINE_TELEPORT     = 102579,
+    BLACK_DRAGONSHIRINE_TELEPORT    = 103868,
+    EMERALD_DRAGONSHIRINE_TELEPORT  = 104761,
+    BRONZE_DRAGONSHIRINE_TELEPORT   = 104764
 };
 
-enum QuestIds
+enum CreaturesIds
 {
-    QUEST_MUROZOND  = 30096,
+    NPC_INFINITE_SUPPRESSOR             = 54920,
+    NPC_INFINITE_WARDEN                 = 54923,
+    NPC_TRIGGER_HOURGLASS_TIME          = 54928,
+    NPC_BOSS_MUROZOND                   = 54432,
 };
 
-enum QuestSpells
+enum Actions
 {
-    SPELL_ARCHIVED_JAINA    = 109284,
-    SPELL_ARCHIVED_SYLVANAS = 109278,
-    SPELL_ARCHIVED_BAINE    = 109288,
-    SPELL_ARCHIVED_TYRANDE  = 109292,
+    ACTION_MUROZOND_START                   = -500000,
+    ACTION_MUROZOND_REMOVE_TEMPORAL_BOMB    = -500001,
+    ACTION_MUROZOND_REMOVE_HOURGLASS_BAR    = -500002,
+    ACTION_TYRANDE_START                    = -500003,
 };
 
-enum CustomAreas
+template<class AI>
+CreatureAI* GetEndTimelAI(Creature* creature)
 {
-    AREA_RUBY       = 5790,
-    AREA_BLUE       = 5793,
-    AREA_EMERALD    = 5794,
-    AREA_OBSIDIAN   = 5792,
-};
+    if (InstanceMap* instance = creature->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptIdOrAdd(EndTimeScriptName))
+                return new AI(creature);
+    return NULL;
+}
 
-enum CustomActions
-{
-    ACTION_TALK_BAINE       = 1,
-    ACTION_TALK_JAINA       = 2,
-    ACTION_TALK_SYLVANAS    = 3,
-    ACTION_TALK_TYRANDE     = 4,
-};
-
-#endif
+#endif // DEF_END_TIME_H

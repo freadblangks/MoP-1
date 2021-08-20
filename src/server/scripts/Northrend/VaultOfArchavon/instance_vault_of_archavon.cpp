@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -26,58 +26,34 @@
 4 - Toravon the Ice Watcher event
 */
 
-class instance_archavon : public InstanceMapScript
+ObjectData const creatureData[] =
+{
+    { NPC_ARCHAVON, DATA_ARCHAVON },
+    { NPC_EMALON,   DATA_EMALON   },
+    { NPC_KORALON,  DATA_KORALON  },
+    { NPC_TORAVON,  DATA_TORAVON  },
+    { 0,            0,            }
+};
+
+class instance_vault_of_archavon : public InstanceMapScript
 {
     public:
-        instance_archavon() : InstanceMapScript("instance_archavon", 624) { }
+        instance_vault_of_archavon() : InstanceMapScript(VoAScriptName, 624) { }
 
-        struct instance_archavon_InstanceMapScript : public InstanceScript
+        struct instance_vault_of_archavon_InstanceMapScript : public InstanceScript
         {
-            instance_archavon_InstanceMapScript(Map* map) : InstanceScript(map)
+            instance_vault_of_archavon_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
-                SetBossNumber(MAX_ENCOUNTER);
+                SetHeaders(DataHeader);
+                SetBossNumber(EncounterCount);
+                LoadObjectData(creatureData, nullptr);
+
+                ArchavonDeath   = 0;
+                EmalonDeath     = 0;
+                KoralonDeath    = 0;
             }
 
-            void Initialize()
-            {
-                EmalonGUID = 0;
-                ToravonGUID = 0;
-                ArchavonDeath = 0;
-                EmalonDeath = 0;
-                KoralonDeath = 0;
-            }
-
-            void OnCreatureCreate(Creature* creature)
-            {
-                switch (creature->GetEntry())
-                {
-                    case CREATURE_EMALON:
-                        EmalonGUID = creature->GetGUID();
-                        break;
-                    case CREATURE_TORAVON:
-                        ToravonGUID = creature->GetGUID();
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            uint64 GetData64(uint32 identifier)
-            {
-                switch (identifier)
-                {
-                    case DATA_EMALON:
-                        return EmalonGUID;
-                    case DATA_TORAVON:
-                        return ToravonGUID;
-                    default:
-                        break;
-                }
-
-                return 0;
-            }
-
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
@@ -88,13 +64,13 @@ class instance_archavon : public InstanceMapScript
                 switch (type)
                 {
                     case DATA_ARCHAVON:
-                        ArchavonDeath = time(NULL);
+                        ArchavonDeath = time(nullptr);
                         break;
                     case DATA_EMALON:
-                        EmalonDeath = time(NULL);
+                        EmalonDeath = time(nullptr);
                         break;
                     case DATA_KORALON:
-                        KoralonDeath = time(NULL);
+                        KoralonDeath = time(nullptr);
                         break;
                     default:
                         return true;
@@ -106,7 +82,7 @@ class instance_archavon : public InstanceMapScript
                 return true;
             }
 
-            bool CheckAchievementCriteriaMeet(uint32 criteria_id, Player const* /*source*/, Unit const* /*target*/, uint32 /*miscvalue1*/)
+            bool CheckAchievementCriteriaMeet(uint32 criteria_id, Player const* /*source*/, Unit const* /*target*/, uint32 /*miscvalue1*/) override
             {
                 switch (criteria_id)
                 {
@@ -129,20 +105,18 @@ class instance_archavon : public InstanceMapScript
             }
 
         private:
-            uint64 EmalonGUID;
-            uint64 ToravonGUID;
             time_t ArchavonDeath;
             time_t EmalonDeath;
             time_t KoralonDeath;
         };
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
-            return new instance_archavon_InstanceMapScript(map);
+            return new instance_vault_of_archavon_InstanceMapScript(map);
         }
 };
 
-void AddSC_instance_archavon()
+void AddSC_instance_vault_of_archavon()
 {
-    new instance_archavon();
+    new instance_vault_of_archavon();
 }

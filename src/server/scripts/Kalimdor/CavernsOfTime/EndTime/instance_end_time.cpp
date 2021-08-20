@@ -1,356 +1,233 @@
-#include "ScriptPCH.h"
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ *
+ * Copyright (C) 2008-2014 Forgotten Lands <http://www.forgottenlands.eu/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "ScriptMgr.h"
+#include "InstanceScript.h"
+#include "Object.h"
+#include "ObjectMgr.h"
 #include "end_time.h"
+#include "Spell.h"
+#include "SpellMgr.h"
+#include "GameObject.h"
+#include "ScriptedGossip.h"
 
-#define MAX_ENCOUNTER 5
+#define GOSSIP_SENDER_TIME_DELIVER_DEVICE 700
 
-class instance_end_time : public InstanceMapScript
+enum Bosses
 {
-    public:
-        instance_end_time() : InstanceMapScript("instance_end_time", 938) { }
+    BOSS_ECHO_OF_JAINA,
+    BOSS_ECHO_OF_SYLVANAS,
+    BOSS_ECHO_OF_TYRANDE,
+    BOSS_ECHO_OF_BAINE
+};
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+struct instance_end_time : public InstanceScript
+{
+    instance_end_time(InstanceMap* map) : InstanceScript(map)
+    {
+        TeamInInstance = 0;
+        murozondStarted = false;
+        bossCount = 0;
+    }
+
+    void OnPlayerEnter(Player* player) override
+    {
+        if (!TeamInInstance)
         {
-            return new instance_end_time_InstanceMapScript(map);
+            TeamInInstance = player->GetTeam();
+
+            uint32 boss1 = urand(0, 3);
+            uint32 boss2 = urand(0, 3);
+
+            while (boss1 == boss2)
+                boss2 = urand(0, 3);
+
+            SetData(FIRST_BOSS, boss1);
+            SetData(SECOND_BOSS, boss2);
+
         }
 
-        struct instance_end_time_InstanceMapScript : public InstanceScript
+        if (!GetData(DATA_MUROZOND_STARTED))
+            player->RemoveAura(102668);
+    }
+
+    void OnUnitDeath(Unit* unit) override
+    {
+        Creature* creature = unit->ToCreature();
+        if (!creature)
+            return;
+
+        if (GetData(DATA_MUROZOND_STARTED))
+            return;
+
+        switch (creature->GetEntry())
         {
-            instance_end_time_InstanceMapScript(Map* map) : InstanceScript(map)
+            case NPC_INFINITE_SUPPRESSOR:
+            case NPC_INFINITE_WARDEN:
             {
-                SetBossNumber(MAX_ENCOUNTER);
-                uiTeamInInstance = 0;
-                uiFragmentsCollected = 0;
-                jaina_event = NOT_STARTED;
-                RandEchos();
-                first_encounter = 0;
-                second_encounter = 0;
-                tyrande_event = 0;
-                uiMurozondCacheGUID = 0;
-                uiTyrandeGUID = 0;
-                uiJainaGUID = 0;
-                uiPlatform1GUID = 0;
-                uiPlatform2GUID = 0;
-                uiPlatform3GUID = 0;
-                uiPlatform4GUID = 0;
-                uiImageOfNozdormuGUID = 0;
-                uiMurozondGUID = 0;
-                uiHourglassGUID = 0;
-                memset(nozdormu_dialog, 0, sizeof(nozdormu_dialog));
-            }
+                MurozondTrash.erase(creature->GetSpawnId());
+                if (MurozondTrash.empty() && bossCount > 1)
+                    if (Creature* murozond = instance->GetCreature(MurozondGUID))
+                        murozond->AI()->DoAction(ACTION_MUROZOND_START);
 
-            void RandEchos()
-            {
-                std::list<uint32> echo_list;
-                for (uint8 i = 0; i < 4; ++i)
-                    echo_list.push_back(i);
-                first_echo = JadeCore::Containers::SelectRandomContainerElement(echo_list);
-                echo_list.remove(first_echo);
-                second_echo = JadeCore::Containers::SelectRandomContainerElement(echo_list);
+                break;
             }
+        }
+    }
 
-            void OnPlayerEnter(Player* pPlayer)
-            {
-                if (!uiTeamInInstance)
-				    uiTeamInInstance = pPlayer->GetTeam();
-            }
+    void OnCreatureCreate(Creature* creature) override
+    {
+        InstanceScript::OnCreatureCreate(creature);
 
-            void OnGameObjectCreate(GameObject* pGo)
+        switch (creature->GetEntry())
+        {
+            case NPC_BOSS_MUROZOND:
+                MurozondGUID = creature->GetGUID();
+                break;
+        }
+    }
+
+    void SetData(uint32 type, uint32 data) override
+    {
+        switch (type)
+        {
+            case FIRST_BOSS:
+                firstBoss = data;
+                break;
+            case SECOND_BOSS:
+                secondBoss = data;
+                break;
+            case DATA_MUROZOND_TRASH:
+                MurozondTrash.insert(data);
+                break;
+            case DATA_MUROZOND_STARTED:
+                murozondStarted = data;
+                break;
+            case DATA_BOSS_COUNT:
+                //sLog->outError(LOG_FILTER_GENERAL, "bossCount = %u", bossCount);
+                bossCount++;
+                break;
+            default:
+                break;
+        }
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        switch (type)
+        {
+            case FIRST_BOSS:
+                return firstBoss;
+            case SECOND_BOSS:
+                return secondBoss;
+            case DATA_MUROZOND_TRASH:
+                return MurozondTrash.size();
+            case DATA_MUROZOND_STARTED:
+                return murozondStarted;
+            case DATA_BOSS_COUNT:
+                return bossCount;
+            default:
+                break;
+        }
+
+        return 0;
+    }
+
+
+protected:
+    uint32 TeamInInstance;
+    uint32 firstBoss;
+    uint32 secondBoss;
+    ObjectGuid MurozondGUID;
+    bool murozondStarted;
+    std::set<uint32> MurozondTrash;
+
+    uint32 bossCount;
+};
+
+class time_deliver_device : public GameObjectScript
+{
+    public:
+        time_deliver_device() : GameObjectScript("time_deliver_device") { }
+
+        bool OnGossipHello(Player* player, GameObject* go) override
+        {
+            go->SetGoState(GO_STATE_READY);
+            if (InstanceScript* instance = go->GetInstanceScript())
             {
-                switch (pGo->GetEntry())
+                if (instance->GetData(DATA_BOSS_COUNT) == 0)
                 {
-                    case MUROZOND_CACHE:
-                        uiMurozondCacheGUID = pGo->GetGUID();
-                        break;
-                    case GO_PLATFORM_1:
-                        uiPlatform1GUID = pGo->GetGUID();
-                        break;
-                    case GO_PLATFORM_2:
-                        uiPlatform2GUID = pGo->GetGUID();
-                        break;
-                    case GO_PLATFORM_3:
-                        uiPlatform3GUID = pGo->GetGUID();
-                        break;
-                    case GO_PLATFORM_4:
-                        uiPlatform4GUID = pGo->GetGUID();
-                        break;
-                    case HOURGLASS_OF_TIME:
-                        uiHourglassGUID = pGo->GetGUID();
-                        break;
-                    default:
-                        break;
-                }
-		    }
-
-            void OnCreatureCreate(Creature* pCreature)
-            {
-                switch (pCreature->GetEntry())
-                {
-                    case NPC_ECHO_OF_TYRANDE:
-                        uiTyrandeGUID = pCreature->GetGUID();
-                        break;
-                    case NPC_ECHO_OF_JAINA:
-                        uiJainaGUID = pCreature->GetGUID();
-                        break;
-                    case NPC_IMAGE_OF_NOZDORMU:
-                        uiImageOfNozdormuGUID = pCreature->GetGUID();
-                        break;
-                    case NPC_MUROZOND:
-                        uiMurozondGUID = pCreature->GetGUID();
-                        break;
-                    case NPC_NOZDORMU:
-                        uiNozdormuGUID = pCreature->GetGUID();
-                        break;
-                }
-            }
-
-            void SetData(uint32 type,uint32 data)
-            {
-                switch(type)
-                {
-                    case DATA_JAINA_EVENT:
-                        switch (data)
-                        {
-                            case IN_PROGRESS:
-                                DoUpdateWorldState(WORLDSTATE_SHOW_FRAGMENTS, 1);
-                                break;
-                            case DONE:
-                                DoUpdateWorldState(WORLDSTATE_SHOW_FRAGMENTS, 0);
-                                break;
-                        }
-                        jaina_event = data;
-			            break;
-                    case DATA_FRAGMENTS:
-                        uiFragmentsCollected = data;
-                        return; // Don't save instance if data equals 3
-                        break;
-                    case DATA_TYRANDE_EVENT:
-                        tyrande_event = data;
-                        break;
-                    case DATA_NOZDORMU_1:
-                        nozdormu_dialog[0] = data;
-                        if (data == IN_PROGRESS)
-                            if (Creature* pImage = instance->GetCreature(uiImageOfNozdormuGUID))
-                                pImage->AI()->DoAction(ACTION_TALK_TYRANDE);
-                        break;
-                    case DATA_NOZDORMU_2:
-                        nozdormu_dialog[1] = data;
-                        if (data == IN_PROGRESS)
-                            if (Creature* pImage = instance->GetCreature(uiImageOfNozdormuGUID))
-                                pImage->AI()->DoAction(ACTION_TALK_BAINE);
-                        break;
-                    case DATA_NOZDORMU_3:
-                        nozdormu_dialog[2] = data;
-                        if (data == IN_PROGRESS)
-                            if (Creature* pImage = instance->GetCreature(uiImageOfNozdormuGUID))
-                                pImage->AI()->DoAction(ACTION_TALK_JAINA);
-                        break;
-                    case DATA_NOZDORMU_4:
-                        nozdormu_dialog[3] = data;
-                        if (data == IN_PROGRESS)
-                            if (Creature* pImage = instance->GetCreature(uiImageOfNozdormuGUID))
-                                pImage->AI()->DoAction(ACTION_TALK_SYLVANAS);
-                        break;
-                    case DATA_PLATFORMS:
-                        if (data == NOT_STARTED)
-                        {
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform1GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform2GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform3GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform4GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                        }
-                        break;
-                }
-             
-                if (data == DONE)
-                    SaveToDB();
-            }
-
-            uint32 GetData(uint32 type)
-            {
-                switch(type)
-                {
-                    case DATA_ECHO_1: return first_echo;
-                    case DATA_ECHO_2: return second_echo;
-                    case DATA_FIRST_ENCOUNTER: return first_encounter;
-                    case DATA_SECOND_ENCOUNTER: return second_encounter;
-                    case DATA_TYRANDE_EVENT: return tyrande_event;
-                    case DATA_JAINA_EVENT: return jaina_event;
-                    case DATA_FRAGMENTS: return uiFragmentsCollected; 
-                    case DATA_NOZDORMU_1: return nozdormu_dialog[0];
-                    case DATA_NOZDORMU_2: return nozdormu_dialog[1];
-                    case DATA_NOZDORMU_3: return nozdormu_dialog[2];
-                    case DATA_NOZDORMU_4: return nozdormu_dialog[3];
-                }
-                return 0;
-            }
-
-            uint64 GetData64(uint32 type)
-            {
-                switch (type)
-                {
-                    case DATA_ECHO_OF_TYRANDE: return uiTyrandeGUID;
-                    case DATA_ECHO_OF_JAINA: return uiJainaGUID;
-                    case DATA_IMAGE_OF_NOZDORMU: return uiImageOfNozdormuGUID;
-                    case DATA_NOZDORMU: return uiNozdormuGUID;
-                    case DATA_MUROZOND: return uiMurozondGUID;
-                    case DATA_HOURGLASS: return uiHourglassGUID;
-                    default: return 0;
-                }
-                return 0;
-            }
-
-            bool SetBossState(uint32 type, EncounterState state)
-            {
-			    if (!InstanceScript::SetBossState(type, state))
-				    return false;
-
-                switch (type)
-                {
-                    case DATA_MUROZOND:
-                        if (state == DONE)
-                            DoRespawnGameObject(uiMurozondCacheGUID, DAY);
-                        break;
-                    case DATA_ECHO_OF_JAINA:
-                    case DATA_ECHO_OF_BAINE:
-                    case DATA_ECHO_OF_TYRANDE:
-                    case DATA_ECHO_OF_SYLVANAS:
-                        if (state == DONE)
-                        {
-                            if (first_encounter != DONE)
-                                first_encounter = DONE;
-                            else
-                                second_encounter = DONE;
-
-                            SaveToDB();
-                        }
-                        break;
+                    if (instance->GetData(FIRST_BOSS) == BOSS_ECHO_OF_JAINA)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Azure Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, AZURE_DRAGONSHIRINE_TELEPORT);
+                    if (instance->GetData(FIRST_BOSS) == BOSS_ECHO_OF_SYLVANAS)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Ruby Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, RUBY_DRAGONSHIRINE_TELEPORT);
+                    if (instance->GetData(FIRST_BOSS) == BOSS_ECHO_OF_TYRANDE)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Obsidian Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, BLACK_DRAGONSHIRINE_TELEPORT);
+                    if (instance->GetData(FIRST_BOSS) == BOSS_ECHO_OF_BAINE)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Emerald Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, EMERALD_DRAGONSHIRINE_TELEPORT);
                 }
 
-			    return true;
-            }
-
-            void FillInitialWorldStates(WorldPacket& data)
-            {
-                data << uint32(WORLDSTATE_SHOW_FRAGMENTS) << uint32(jaina_event == IN_PROGRESS);
-                data << uint32(WORLDSTATE_FRAGMENTS_COLLECTED) << uint32(uiFragmentsCollected);
-            }
-
-            std::string GetSaveData()
-            {
-                OUT_SAVE_INST_DATA;
-
-                std::string str_data;
-
-                std::ostringstream saveStream;
-                saveStream << "E T " << GetBossSaveData() 
-                    << first_echo  << ' ' << second_echo << ' ' 
-                    << first_encounter << ' ' << second_encounter << ' '
-                    << jaina_event << ' ' << tyrande_event << ' '
-                    << nozdormu_dialog[0] << ' ' << nozdormu_dialog[1] << ' '
-                    << nozdormu_dialog[2] << ' ' << nozdormu_dialog[3] << ' ';
-
-                str_data = saveStream.str();
-
-                OUT_SAVE_INST_DATA_COMPLETE;
-                return str_data;
-            }
-
-            void Load(const char* in)
-            {
-                if (!in)
+                if (instance->GetData(DATA_BOSS_COUNT) == 1)
                 {
-                    OUT_LOAD_INST_DATA_FAIL;
-                    return;
+                    if (instance->GetData(SECOND_BOSS) == BOSS_ECHO_OF_JAINA)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Azure Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, AZURE_DRAGONSHIRINE_TELEPORT);
+                    if (instance->GetData(SECOND_BOSS) == BOSS_ECHO_OF_SYLVANAS)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Ruby Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, RUBY_DRAGONSHIRINE_TELEPORT);
+                    if (instance->GetData(SECOND_BOSS) == BOSS_ECHO_OF_TYRANDE)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Obsidian Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, BLACK_DRAGONSHIRINE_TELEPORT);
+                    if (instance->GetData(SECOND_BOSS) == BOSS_ECHO_OF_BAINE)
+                        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Emerald Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, EMERALD_DRAGONSHIRINE_TELEPORT);
                 }
 
-                OUT_LOAD_INST_DATA(in);
-
-                char dataHead1, dataHead2;
-
-                std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2;
-
-                if (dataHead1 == 'E' && dataHead2 == 'T')
+                if (instance->GetData(DATA_BOSS_COUNT) >= 2)
                 {
-                    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-				    {
-					    uint32 tmpState;
-					    loadStream >> tmpState;
-					    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-						    tmpState = NOT_STARTED;
-					    SetBossState(i, EncounterState(tmpState));
-				    }
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Bronze Dragonshirine", GOSSIP_SENDER_TIME_DELIVER_DEVICE, BRONZE_DRAGONSHIRINE_TELEPORT);
+                }
+            }
+            SendGossipMenuFor(player, player->GetGossipTextId(go), go->GetGUID());
+            return true;
+        }
 
-                    uint32 temp_echo1 = 0;
-                    loadStream >> temp_echo1;
-                    first_echo = temp_echo1;
+        bool OnGossipSelect(Player* player, GameObject* /*go*/, uint32 sender, uint32 action) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            CloseGossipMenuFor(player);
+            SpellInfo const* spell = sSpellMgr->GetSpellInfo(action, player->GetMap()->GetDifficultyID());
+            if (!spell)
+                return false;
 
-                    uint32 temp_echo2 = 0;
-                    loadStream >> temp_echo2;
-                    second_echo = temp_echo2;
-
-                    uint32 temp_enc1 = 0;
-                    loadStream >> temp_enc1;
-                    first_encounter = temp_enc1;
-
-                    uint32 temp_enc2 = 0;
-                    loadStream >> temp_enc2;
-                    second_encounter = temp_enc2;
-
-                    uint32 temp = 0;
-                    loadStream >> temp;
-                    jaina_event = temp ? DONE : NOT_STARTED;
-
-                    uint32 temp_event = 0;
-                    loadStream >> temp_event;
-                    if (temp_event == IN_PROGRESS || temp_event > SPECIAL)
-						temp_event = NOT_STARTED;
-                    tyrande_event = temp_event;
-
-                    for (uint8 i = 0; i < 4; ++i)
-				    {
-					    uint32 tmpDialog;
-					    loadStream >> tmpDialog;
-					    if (tmpDialog == IN_PROGRESS || tmpDialog > SPECIAL)
-						    tmpDialog = NOT_STARTED;
-					    nozdormu_dialog[i] = tmpDialog;
-				    }
-
-                } else OUT_LOAD_INST_DATA_FAIL;
-
-                OUT_LOAD_INST_DATA_COMPLETE;
+            if (player->IsInCombat())
+            {
+                //Spell::SendCastResult(player, spell, 0, SPELL_FAILED_AFFECTING_COMBAT);
+                return true;
             }
 
-            private:
-                uint32 uiTeamInInstance;
-                uint32 uiFragmentsCollected;
-                uint32 jaina_event;
-                uint32 first_echo;
-                uint32 second_echo;
-                uint32 first_encounter;
-                uint32 second_encounter;
-                uint32 tyrande_event;
-                uint32 nozdormu_dialog[4];
-                uint64 uiMurozondCacheGUID;
-                uint64 uiTyrandeGUID;
-                uint64 uiJainaGUID;
-                uint64 uiPlatform1GUID;
-                uint64 uiPlatform2GUID;
-                uint64 uiPlatform3GUID;
-                uint64 uiPlatform4GUID;
-                uint64 uiImageOfNozdormuGUID;
-                uint64 uiMurozondGUID;
-                uint64 uiHourglassGUID;
-                uint64 uiNozdormuGUID;
-               
-        };
+            if (sender == GOSSIP_SENDER_TIME_DELIVER_DEVICE)
+                player->CastSpell(player, spell, true);
+
+            return true;
+        }
 };
 
 void AddSC_instance_end_time()
 {
-    new instance_end_time();
+    RegisterInstanceScript(instance_end_time, 938);
+    new time_deliver_device();
 }

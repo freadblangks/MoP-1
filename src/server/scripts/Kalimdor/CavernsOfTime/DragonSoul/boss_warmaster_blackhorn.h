@@ -1,16 +1,33 @@
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2014-2018 RoG_WoW Source <http://wow.rog.snet>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #define GOSSIP_OPTION_1 "Let's go!"
 #define GOSSIP_OPTION_2 "Bring us closer."
 #define DATA_WAVE 1
 #define POINT_LAND 1
 
-const Position addsPos[2] = 
+const Position addsPos[2] =
 {
     {13460.484375f, -12140.264648f, 150.94f, 3.12f},
     {13461.267578f, -12125.923828f, 150.91f, 3.12f}
 };
 
-const Position gorionaPos[8] = 
+const Position gorionaPos[8] =
 {
     {13535.674805f, -12078.470703f, 173.678528f, 3.44f}, // summon
     {13462.571289f, -12099.389648f, 170.569244f, 3.74f},
@@ -22,22 +39,26 @@ const Position gorionaPos[8] =
     {13418.731445f, -12132.061523f, 151.18f, 0.01f}
 };
 
-const Position enginePos[4] = 
+const Position enginePos[8] =
 {
-    {13472.7f, -12173.8f, 139.096f, 0.0f},
-    {13397.7f, -12100.1f, 142.06f, 0.0f},
-    {13475.1f, -12093.9f, 139.878f, 0.0f},
-    {13397.6f, -12162.7f, 142.621f, 0.0f}
+    { 13502.0f, -12177.0f, 134.298f, 3.09534f },
+    { 13373.6f, -12168.5f, 126.420f, 3.01221f },
+    { 13376.0f, -12092.4f, 126.500f, 3.42062f },
+    { 13505.7f, -12094.5f, 134.275f, 2.15986f },
+    { 13479.8f, -12094.7f, 143.790f, 3.10040f },
+    { 13397.9f, -12099.7f, 146.124f, 3.09647f },
+    { 13392.0f, -12162.1f, 146.087f, 3.06025f },
+    { 13473.4f, -12174.3f, 143.757f, 3.06959f }
 };
 
 const Position blackhornPos = {13465.208008f, -12134.354492f, 151.18f, 3.07f};
-const Position sapperPos[2] = 
+const Position sapperPos[2] =
 {
     {13418.580078f, -12132.129883f, 151.18f, 6.23f},
     {13475.221680f, -12134.425781f, 150.81f, 6.21f}
 };
 
-const Position assaultdrakePos[2][10] = 
+const Position assaultdrakePos[2][10] =
 {
     {
         {13577.010742f, -12103.028320f, 190.578171f, 3.121954f},
@@ -65,13 +86,13 @@ const Position assaultdrakePos[2][10] =
     }
 };
 
-const Position harpoonPos[2] = 
+const Position harpoonPos[2] =
 {
     {13430.200195f, -12159.500000f, 157.082993f, 1.574715f}, // 0 side
     {13432.299805f, -12105.599609f, 157.080994f, 4.700602f}  // 1 side
 };
 
-const Position infiltratorPos[12] = 
+const Position infiltratorPos[12] =
 {
     {13541.888672f, -12186.561523f, 203.783569f, 3.007129f},
     {13532.317383f, -12185.048828f, 201.008087f, 2.979640f},
