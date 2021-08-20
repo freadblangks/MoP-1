@@ -16,19 +16,14 @@ if(CMAKE_COMPILER_IS_GNUCXX AND NOT MINGW)
   add_definitions(-fno-delete-null-pointer-checks)
 endif()
 
-if(WIN32)
+if(WIN32/64)
   list(APPEND sources_windows
     ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin32.cpp
     ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin32.h
-  )
-#endif(WIN32)
-
-if(WIN64)
-  list(APPEND sources_windows
-    ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin64.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin64.cpp 
     ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin64.h
   )
-#endif(WIN64)
+#endif(WIN32/64)
 
 add_subdirectory(database)
 add_subdirectory(proto)
