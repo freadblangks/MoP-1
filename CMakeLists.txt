@@ -63,8 +63,8 @@ include(cmake/options.cmake)
 
 # turn off PCH totally if enabled (hidden setting, mainly for devs)
 if( NOPCH )
-  set(USE_COREPCH 0)
-  set(USE_SCRIPTPCH 0)
+  set(USE_COREPCH 1)
+  set(USE_SCRIPTPCH 1)
 endif()
 
 include(ConfigureBaseTargets)

@@ -16,7 +16,9 @@ if(CMAKE_COMPILER_IS_GNUCXX AND NOT MINGW)
   add_definitions(-fno-delete-null-pointer-checks)
 endif()
 
-Use(WIN32/64)
+else()
+
+if(WIN32/64)
   list(APPEND sources_windows
     ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin32.cpp
     ${CMAKE_SOURCE_DIR}/src/common/Platform/ServiceWin32.h
