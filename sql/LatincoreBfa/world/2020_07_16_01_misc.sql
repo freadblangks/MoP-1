@@ -1,2 +1,0 @@
-DELETE FROM gameobject_template_addon WHERE entry = 290126;
-REPLACE INTO `instance_template` (`map`, `parent`, `script`, `allowMount`, `insideResurrection`) VALUES ('1861', '0', 'instance_uldir', '0', '1');

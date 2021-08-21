@@ -1,1 +1,0 @@
-UPDATE `realmlist` SET `name`='Black Empire' WHERE `id`=1;
