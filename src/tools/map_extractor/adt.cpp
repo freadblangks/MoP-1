@@ -19,7 +19,9 @@
 
 #define _CRT_SECURE_NO_DEPRECATE
 
-#include "adt.h"
+#include "ADT.h"
+#include "loadlib.h"
+#include "WDT.h"
 
 // Helper
 int holetab_h[4] = {0x1111, 0x2222, 0x4444, 0x8888};

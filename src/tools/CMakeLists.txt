@@ -8,7 +8,9 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_subdirectory(map_extractor)
-add_subdirectory(mmap_extractor)
+add_subdirectory(map_extractor) 
 add_subdirectory(vmap4_assembler)
 add_subdirectory(vmap4_extractor)
+#if (WITH_MESHEXTRACTOR)
+#  add_subdirectory(mesh_extractor)
+#endif()
