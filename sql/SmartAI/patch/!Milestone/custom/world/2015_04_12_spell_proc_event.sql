@@ -1,2 +1,0 @@
-DELETE FROM `spell_proc_event` WHERE `entry`='138367';
-INSERT INTO `spell_proc_event`(`entry`,`SchoolMask`,`SpellFamilyName`,`SpellFamilyMask0`,`SpellFamilyMask1`,`SpellFamilyMask2`,`SpellFamilyMask3`,`procFlags`,`procEx`,`ppmRate`,`CustomChance`,`Cooldown`) VALUES ( '138367','0','0','137216','0','0','0','256','0','4','0','0'); 

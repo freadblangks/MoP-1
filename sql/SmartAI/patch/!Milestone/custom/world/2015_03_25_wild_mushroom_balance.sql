@@ -1,1 +1,0 @@
-UPDATE `creature_template` SET `unit_flags` = 0x2|0x4|0x2000000, ScriptName="npc_fungal_growth" WHERE `entry` = 43484;

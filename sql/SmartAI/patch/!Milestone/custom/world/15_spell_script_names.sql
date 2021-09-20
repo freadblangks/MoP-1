@@ -1,1 +1,0 @@
-INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES ('76856', 'spell_warr_unshackled_fury');

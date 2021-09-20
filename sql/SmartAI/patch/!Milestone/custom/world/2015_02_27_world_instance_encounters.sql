@@ -1,1 +1,0 @@
-UPDATE instance_encounters SET `dungeon` = 519 WHERE `map` = 994 AND `index` = 2 AND `difficulty` = 2

@@ -1,1 +1,0 @@
-UPDATE creature_template SET unit_flags=33554438 WHERE entry=33248;

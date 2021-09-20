@@ -1,1 +1,0 @@
-DELETE FROM playercreateinfo_spell WHERE Spell IN (27762, 27763, 52665);

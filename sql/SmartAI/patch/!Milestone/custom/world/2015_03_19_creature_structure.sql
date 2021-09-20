@@ -1,1 +1,0 @@
-ALTER TABLE `creature` MODIFY COLUMN `spawnMask`  int(8) UNSIGNED NOT NULL DEFAULT 1 AFTER `areaId`;
