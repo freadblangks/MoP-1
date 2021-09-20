@@ -1,1 +1,0 @@
-DELETE FROM creature WHERE guid IN (303448, 130190);

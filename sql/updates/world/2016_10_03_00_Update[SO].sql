@@ -1,1 +1,0 @@
-UPDATE `areatrigger_actions` SET `moment`='42' WHERE `entry`='1038' AND `id`='3'; 
