@@ -22,7 +22,6 @@ enum Spells
     SPELL_VEIL_OF_SKY2          = 74372,
     SPELL_VEIL_OF_SKY3          = 74373,
     SPELL_ARCANE_BARRAGE        = 74374,
-    SPELL_ARCANE_BARRAGE_H      = 89886,
     SPELL_MIRROR_IMAGE_VS       = 74261, // summon veil of sky
     SPELL_MIRROR_IMAGE_AR       = 74262, // summon astral rain
     SPELL_MIRROR_IMAGE_CC       = 74263, // summon celestial call
@@ -53,46 +52,36 @@ class boss_isiset : public CreatureScript
     public:
         boss_isiset() : CreatureScript("boss_isiset") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_isisetAI(pCreature);
-        }
-
         struct boss_isisetAI : public BossAI
         {
-            boss_isisetAI(Creature* pCreature) : BossAI(pCreature, DATA_ISISET)
+            boss_isisetAI(Creature* creature) : BossAI(creature, DATA_ISISET)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
             uint8 phase;
             bool Phased;
-
             bool AstralRain, VeilOfSky, CelestialCall;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HOScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                DespawnCreatures(NPC_ASTRAL_FAMILIAR);
                 phase = 0;
                 AstralRain = true;
                 VeilOfSky = true;
@@ -102,30 +91,37 @@ class boss_isiset : public CreatureScript
                 me->SetReactState(REACT_AGGRESSIVE);
             }
 
-            void EnterCombat(Unit *who)
+            void EnterCombat(Unit* /*who*/) override
             {
-                Talk(SAY_AGGRO);
+                _EnterCombat();
 
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+                Talk(SAY_AGGRO);
                 events.ScheduleEvent(EVENT_SUPERNOVA, urand(7000, 10000));
                 events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(9000, 15000));
                 events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(10000, 17000));
                 events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(6000, 10000));
-
-                instance->SetBossState(DATA_ISISET, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* Killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 Talk(SAY_DEATH);
+                DespawnCreatures(NPC_ASTRAL_FAMILIAR);
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 BossAI::SummonedCreatureDespawn(summon);
 
@@ -173,7 +169,7 @@ class boss_isiset : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -198,9 +194,9 @@ class boss_isiset : public CreatureScript
                 }
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
+                    return;
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
@@ -241,7 +237,25 @@ class boss_isiset : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
+        private:
+            void DespawnCreatures(uint32 entry)
+            {
+                std::list<Creature*> creatures;
+                GetCreatureListWithEntryInGrid(creatures, me, entry, 1000.0f);
+
+                if (creatures.empty())
+                   return;
+
+                for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
+                     (*iter)->DespawnOrUnsummon();
+            }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_isisetAI>(creature);
+        }
 };
 
 class npc_isiset_astral_rain : public CreatureScript
@@ -249,51 +263,44 @@ class npc_isiset_astral_rain : public CreatureScript
     public:
         npc_isiset_astral_rain() : CreatureScript("npc_isiset_astral_rain") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_astral_rainAI(creature);
-        }
-
         struct npc_isiset_astral_rainAI : public ScriptedAI
         {
-            npc_isiset_astral_rainAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_isiset_astral_rainAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_ASTRAL_RAIN, urand(5000, 15000));
                 events.ScheduleEvent(EVENT_ENTER_COMBAT, 2000);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->DespawnOrUnsummon();
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -301,15 +308,15 @@ class npc_isiset_astral_rain : public CreatureScript
                 events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
+                    return;
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_ENTER_COMBAT:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             break;
                         case EVENT_ASTRAL_RAIN:
                             DoCast(me, SPELL_ASTRAL_RAIN1);
@@ -320,6 +327,11 @@ class npc_isiset_astral_rain : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_isiset_astral_rainAI>(creature);
+        }
 };
 
 class npc_isiset_celestial_call : public CreatureScript
@@ -327,51 +339,44 @@ class npc_isiset_celestial_call : public CreatureScript
     public:
         npc_isiset_celestial_call() : CreatureScript("npc_isiset_celestial_call") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_celestial_callAI(creature);
-        }
-
         struct npc_isiset_celestial_callAI : public ScriptedAI
         {
-            npc_isiset_celestial_callAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_isiset_celestial_callAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_CELESTIAL_CALL, urand(5000, 15000));
                 events.ScheduleEvent(EVENT_ENTER_COMBAT, 2000);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->DespawnOrUnsummon();
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -379,15 +384,15 @@ class npc_isiset_celestial_call : public CreatureScript
                 events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
+                    return;
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_ENTER_COMBAT:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             break;
                         case EVENT_CELESTIAL_CALL:
                             DoCast(me, SPELL_CELESTIAL_CALL1);
@@ -398,6 +403,11 @@ class npc_isiset_celestial_call : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_isiset_celestial_callAI>(creature);
+        }
 };
 
 class npc_isiset_veil_of_sky : public CreatureScript
@@ -405,51 +415,44 @@ class npc_isiset_veil_of_sky : public CreatureScript
     public:
         npc_isiset_veil_of_sky() : CreatureScript("npc_isiset_veil_of_sky") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_veil_of_skyAI(creature);
-        }
-
         struct npc_isiset_veil_of_skyAI : public ScriptedAI
         {
-            npc_isiset_veil_of_skyAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_isiset_veil_of_skyAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_VEIL_OF_SKY, urand(5000, 15000));
                 events.ScheduleEvent(EVENT_ENTER_COMBAT, 2000);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->DespawnOrUnsummon();
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -457,15 +460,15 @@ class npc_isiset_veil_of_sky : public CreatureScript
                 events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
+                    return;
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_ENTER_COMBAT:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             break;
                         case EVENT_VEIL_OF_SKY:
                             DoCast(me, SPELL_VEIL_OF_SKY1);
@@ -476,6 +479,11 @@ class npc_isiset_veil_of_sky : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_isiset_veil_of_skyAI>(creature);
+        }
 };
 
 class npc_isiset_astral_familiar : public CreatureScript
@@ -483,48 +491,42 @@ class npc_isiset_astral_familiar : public CreatureScript
     public:
         npc_isiset_astral_familiar() : CreatureScript("npc_isiset_astral_familiar") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_isiset_astral_familiarAI(creature);
-        }
-
         struct npc_isiset_astral_familiarAI : public ScriptedAI
         {
-            npc_isiset_astral_familiarAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_isiset_astral_familiarAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            InstanceScript* pInstance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(3000, 7000));
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->DespawnOrUnsummon();
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -532,9 +534,9 @@ class npc_isiset_astral_familiar : public CreatureScript
                 events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
+                    return;
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
@@ -546,12 +548,18 @@ class npc_isiset_astral_familiar : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_isiset_astral_familiarAI>(creature);
+        }
 };
 
 class OrientationCheck
 {
     public:
         explicit OrientationCheck(WorldObject* _caster) : caster(_caster) { }
+
         bool operator() (WorldObject* unit)
         {
             return !unit->isInFront(caster, 2.5f);
@@ -565,6 +573,7 @@ class spell_isiset_supernova_dis : public SpellScriptLoader
 {
     public:
         spell_isiset_supernova_dis() : SpellScriptLoader("spell_isiset_supernova_dis") { }
+
         class spell_isiset_supernova_dis_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_isiset_supernova_dis_SpellScript);
@@ -574,13 +583,13 @@ class spell_isiset_supernova_dis : public SpellScriptLoader
                 unitList.remove_if(OrientationCheck(GetCaster()));
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_isiset_supernova_dis_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_isiset_supernova_dis_SpellScript();
         }
@@ -590,6 +599,7 @@ class spell_isiset_supernova_dmg : public SpellScriptLoader
 {
     public:
         spell_isiset_supernova_dmg() : SpellScriptLoader("spell_isiset_supernova_dmg") { }
+
         class spell_isiset_supernova_dmg_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_isiset_supernova_dmg_SpellScript);
@@ -599,13 +609,13 @@ class spell_isiset_supernova_dmg : public SpellScriptLoader
                 unitList.remove_if(OrientationCheck(GetCaster()));
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_isiset_supernova_dmg_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
         };
 
-        SpellScript *GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_isiset_supernova_dmg_SpellScript();
         }

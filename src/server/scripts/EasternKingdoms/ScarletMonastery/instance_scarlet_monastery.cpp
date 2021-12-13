@@ -1,187 +1,252 @@
-/*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
-
-/* ScriptData
-SDName: Instance_Scarlet_Monastery
-SD%Complete: 50
-SDComment:
-SDCategory: Scarlet Monastery
-EndScriptData */
-
 #include "ScriptMgr.h"
-#include "ScriptedCreature.h"
+#include "InstanceScript.h"
+#include "VMapFactory.h"
 #include "scarlet_monastery.h"
+#include "Log.h"
+#include "Containers.h"
+#include "LFGMgr.h"
+#include "Group.h"
 
-enum Entry
+static std::vector<DoorData> const doorData =
 {
-    ENTRY_PUMPKIN_SHRINE    = 186267,
-    ENTRY_HORSEMAN          = 23682,
-    ENTRY_HEAD              = 23775,
-    ENTRY_PUMPKIN           = 23694,
-    NPC_THALNOS_H           = 59791, // just temporarily
-    NPC_THALNOS             = 59789,
-    NPC_KORLOFF             = 59223,
-    NPC_KORLOFF_H           = 59202,
-    NPC_DURAND              = 60106,
-    NPC_DURAND_H            = 60040,
-    NPC_WHITEMANE           = 3977,
-    NPC_WHITEMANE_H         = 3905
+    { GO_THALNOS_EXIT,       BOSS_THALNOS_THE_SOULRENDER, DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
+    { GO_KORLOFF_EXIT,       BOSS_BROTHER_KORLOFF,        DOOR_TYPE_PASSAGE,    BOUNDARY_NONE },
+    { GO_WHITEMANE_ENTRANCE, BOSS_WHITEMANE,              DOOR_TYPE_SPAWN_HOLE, BOUNDARY_NONE }
 };
 
-#define MAX_ENCOUNTER 3
+static std::vector<ScenarioBosses> const scenarioBosses =
+{
+    { BOSS_THALNOS_THE_SOULRENDER, CRITERIA_THALNOS_THE_SOULRENDER },
+    { BOSS_BROTHER_KORLOFF,        CRITERIA_BROTHER_KORLOFF        },
+    { BOSS_WHITEMANE,              CRITERIA_DURAND                 },
+};
 
 class instance_scarlet_monastery : public InstanceMapScript
 {
-public:
-    instance_scarlet_monastery() : InstanceMapScript("instance_scarlet_monastery", 1004) { }
+    public:
+        instance_scarlet_monastery() : InstanceMapScript("instance_scarlet_monastery", 1004) { }
 
-    InstanceScript* GetInstanceScript(InstanceMap* map) const
-    {
-        return new instance_scarlet_monastery_InstanceMapScript(map);
-    }
-
-    struct instance_scarlet_monastery_InstanceMapScript : public InstanceScript
-    {
-        instance_scarlet_monastery_InstanceMapScript(Map* map) : InstanceScript(map) {}
-
-        uint64 PumpkinShrineGUID;
-        uint64 HorsemanGUID;
-        uint64 HeadGUID;
-        std::set<uint64> HorsemanAdds;
-
-        uint64 VorrelGUID;
-
-        uint64 thalnosGUID;
-        uint64 korloffGUID;
-        uint64 durandGUID;
-        uint64 whitemaneGUID;
-
-        uint32 encounter[MAX_ENCOUNTER];
-
-        void Initialize()
+        struct instance_scarlet_monastery_InstanceMapScript : public InstanceScript
         {
-            memset(&encounter, 0, sizeof(encounter));
+            instance_scarlet_monastery_InstanceMapScript(Map* map) : InstanceScript(map) { }
+            std::set<uint64> guids;
+            uint32 lfgDungeon;
 
-            PumpkinShrineGUID  = 0;
-            HorsemanGUID = 0;
-            HeadGUID = 0;
-            HorsemanAdds.clear();
-
-            VorrelGUID = 0;
-
-            thalnosGUID = 0;
-            korloffGUID = 0;
-            durandGUID = 0;
-            whitemaneGUID = 0;
-        }
-
-        void OnGameObjectCreate(GameObject* go)
-        {
-            switch (go->GetEntry())
+            void Initialize() override
             {
-            case ENTRY_PUMPKIN_SHRINE: PumpkinShrineGUID = go->GetGUID();break;
+                SetBossNumber(encounternumber);
+                LoadDoorData(doorData);
+                guids.clear();
+                lfgDungeon = 0;
+
+                if (instance->IsChallengeDungeon())
+                    LoadScenarioInfo(scenarioBosses, CRITERIA_ENEMIES);
             }
-        }
 
-        void OnCreatureCreate(Creature* creature)
-        {
-            switch (creature->GetEntry())
+            void OnPlayerEnter(Player* player) override
             {
-                case ENTRY_HORSEMAN:    HorsemanGUID = creature->GetGUID(); break;
-                case ENTRY_HEAD:        HeadGUID = creature->GetGUID(); break;
-                case ENTRY_PUMPKIN:     HorsemanAdds.insert(creature->GetGUID());break;
-                case 3981: VorrelGUID = creature->GetGUID(); break;
-                case NPC_THALNOS_H: thalnosGUID = creature->GetGUID(); break;
-                case NPC_KORLOFF_H: korloffGUID = creature->GetGUID(); break;
-                case NPC_DURAND_H: durandGUID = creature->GetGUID(); break;
-                case NPC_WHITEMANE_H: whitemaneGUID = creature->GetGUID(); break;
+                if (instance->IsChallengeDungeon())
+                    SendChallengeInfo(player, SCENARIO_ID);
             }
-        }
 
-        void SetData(uint32 type, uint32 data)
-        {
-            switch (type)
+            void OnCreatureCreate(Creature* creature) override
             {
-            case GAMEOBJECT_PUMPKIN_SHRINE:
-                HandleGameObject(PumpkinShrineGUID, false);
-                break;
-            case DATA_HORSEMAN_EVENT:
-                encounter[1] = data;
-                if (data == DONE)
+                if (instance->ToInstanceMap()->IsLFGMap() && !lfgDungeon)
+                    if (Player* player = instance->GetFirstPlayerInInstance())
+                        lfgDungeon = sLFGMgr->GetDungeon(player->GetGroup() ? player->GetGroup()->GetGUID() : player->GetGUID());
+
+                if (instance->IsChallengeDungeon() && creature->isDead())
+                    creature->Respawn();
+
+                switch (creature->GetEntry())
                 {
-                    for (std::set<uint64>::const_iterator itr = HorsemanAdds.begin(); itr != HorsemanAdds.end(); ++itr)
-                    {
-                        Creature* add = instance->GetCreature(*itr);
-                        if (add && add->isAlive())
-                            add->Kill(add);
-                    }
-                    HorsemanAdds.clear();
-                    HandleGameObject(PumpkinShrineGUID, false);
+                    case NPC_THALNOS_THE_SOULRENDER:
+                        ThalnosGUID = creature->GetGUID();
+                        if (lfgDungeon == LFG_DUNGEON_HEADLESS_HORSEMAN)
+                        {
+                            creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                            creature->SetVisible(false);
+                        }
+                        break;
+                    case NPC_BROTHER_KORLOFF:
+                        KorloffGUID = creature->GetGUID();
+                        break;
+                    case NPC_COMMANDER_DURAND:
+                        DurandGUID = creature->GetGUID();
+                        break;
+                    case NPC_HIGH_INQUISITOR_WHITEMANE:
+                        WhitemaneGUID = creature->GetGUID();
+                        break;
+                    case NPC_FALLEN_CRUSADER:
+                        FallenCrusaderGUID = creature->GetGUID();
+                        guids.insert(FallenCrusaderGUID);
+                        break;
+                    case NPC_HOODED_CRUSADER_OUTRO:
+                        HoodedGUID = creature->GetGUID();
+                        creature->SetVisible(false);
+                        break;
+                    case NPC_SCARLET_JUDICATOR:
+                        if (!creature->HasAura(128800)) // drunked at holl must be neutral [set like default]
+                            creature->setFaction(67);
+                        break;
+                    case NPC_PILE_OF_CORPSES:
+                    case NPC_SCARLET_FLAMETHOWER:
+                    case NPC_SCARLET_CENTURION:
+                    case NPC_ZOMBIFIED_CORPSE:
+                    case NPC_HOODED_CRUSADER_INTO:
+                    case NPC_FRENZIED_SPIRIT:
+                        if (lfgDungeon == LFG_DUNGEON_HEADLESS_HORSEMAN)
+                        {
+                            creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                            creature->SetVisible(false);
+                        }
+                        break;
                 }
-                break;
             }
-        }
 
-        bool SetBossState(uint32 type, EncounterState state)
-        {
-            if (!InstanceScript::SetBossState(type, state))
-                return false;
-
-            switch (type)
+            void OnGameObjectCreate(GameObject* go) override
             {
-                case DATA_THALNOS:
-                    break;
-                case DATA_KORLOFF:
-                    break;
-                case DATA_DURAND:
-                    break;
-                case DATA_WHITEMANE:
-                    break;
-                default:
-                    break;
+                switch (go->GetEntry())
+                {
+                    case GO_THALNOS_EXIT:
+                    case GO_KORLOFF_EXIT:
+                        AddDoor(go, true);
+                        break;
+                    case GO_WHITEMANE_ENTRANCE:
+                        AddDoor(go, true);
+                        WhitemaneDoorGUID = go->GetGUID();
+                        break;
+                    case GO_CHALLENGE_DOOR:
+                        SetChallengeDoorGuid(go->GetGUID());
+                        break;
+                }
             }
 
-            return true;
-        }
-
-        uint64 GetData64(uint32 type)
-        {
-            switch (type)
+            void OnUnitDeath(Unit* unit) override
             {
-                //case GAMEOBJECT_PUMPKIN_SHRINE:   return PumpkinShrineGUID;
-                //case DATA_HORSEMAN:               return HorsemanGUID;
-                //case DATA_HEAD:                   return HeadGUID;
-                case DATA_VORREL:                   return VorrelGUID;
-                case DATA_THALNOS:                  return thalnosGUID;
-                case DATA_KORLOFF:                  return korloffGUID;
-                case DATA_DURAND:                   return durandGUID;
-                case DATA_WHITEMANE:                return whitemaneGUID;
-            }
-            return 0;
-        }
+                Creature* creature = unit->ToCreature();
+                if (!creature)
+                    return;
+                if (creature->GetEntry() == NPC_FALLEN_CRUSADER)
+                    guids.erase(creature->GetGUID());
 
-        uint32 GetData(uint32 type)
+                if (instance->IsChallengeDungeon() && !IsChallengeModeCompleted())
+                    UpdateConditionInfo(creature, ENEMIES_COUNT);
+            }
+
+            void Update(uint32 diff) override
+            {
+                ScheduleBeginningTimeUpdate(diff);
+                ScheduleChallengeStartup(diff);
+                ScheduleChallengeTimeUpdate(diff);
+            }
+
+            uint64 GetData64(uint32 type) const override
+            {
+                switch (type)
+                {
+                    case BOSS_THALNOS_THE_SOULRENDER:
+                        return ThalnosGUID;
+                    case BOSS_BROTHER_KORLOFF:
+                        return KorloffGUID;
+                    case BOSS_DURAND:
+                        return DurandGUID;
+                    case BOSS_WHITEMANE:
+                        return WhitemaneGUID;
+                    case NPC_HOODED_CRUSADER_OUTRO:
+                        return HoodedGUID;
+                }
+                return 0;
+            }
+
+            std::string GetSaveData() override
+            {
+                OUT_SAVE_INST_DATA;
+
+                std::ostringstream saveStream;
+                saveStream << "S C M " << GetBossSaveData();
+
+                OUT_SAVE_INST_DATA_COMPLETE;
+                return saveStream.str();
+            }
+
+            void Load(char const* in) override
+            {
+                if (!in)
+                {
+                    OUT_LOAD_INST_DATA_FAIL;
+                    return;
+                }
+
+                OUT_LOAD_INST_DATA(in);
+
+                char dataHead1, dataHead2, dataHead3;
+
+                std::istringstream loadStream(in);
+                loadStream >> dataHead1 >> dataHead2 >> dataHead3;
+
+                if (dataHead1 == 'S' && dataHead2 == 'C' && dataHead3 == 'M')
+                {
+                    for (uint8 i = 0; i < 3; ++i)
+                    {
+                        uint32 tmpState;
+                        loadStream >> tmpState;
+                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
+                            tmpState = NOT_STARTED;
+
+                        SetBossState(i, EncounterState(tmpState));
+                    }
+                }
+                else OUT_LOAD_INST_DATA_FAIL;
+
+                OUT_LOAD_INST_DATA_COMPLETE;
+            }
+
+            bool isWipe()
+            {
+                for (auto&& itr : instance->GetPlayers())
+                    if (Player* plr = itr.GetSource())
+                        if (plr->IsAlive() && !plr->IsGameMaster())
+                            return false;
+
+                return true;
+            }
+
+            bool SetBossState(uint32 type, EncounterState state) override
+            {
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
+
+                if (type == BOSS_DURAND && state == SPECIAL)
+                {
+                    if (Creature* Durand = instance->GetCreature(DurandGUID))
+                    {
+                        Durand->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        Durand->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        Durand->SetReactState(REACT_AGGRESSIVE);
+                        Durand->SetStandState(UNIT_STAND_STATE_STAND);
+                        Durand->SetFullHealth();
+                        if (Player* _player = Durand->FindNearestPlayer(VISIBLE_RANGE))
+                            Durand->AI()->AttackStart(_player);
+                    }
+                }
+                return true;
+            }
+
+        protected:
+            uint64 ThalnosGUID;
+            uint64 KorloffGUID;
+            uint64 DurandGUID;
+            uint64 WhitemaneGUID;
+            uint64 FallenCrusaderGUID;
+            uint64 WhitemaneDoorGUID;
+            uint64 HoodedGUID;
+        };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
-            if (type == DATA_HORSEMAN_EVENT)
-                return encounter[1];
-            return 0;
+            return new instance_scarlet_monastery_InstanceMapScript(map);
         }
-    };
 };
 
 void AddSC_instance_scarlet_monastery()

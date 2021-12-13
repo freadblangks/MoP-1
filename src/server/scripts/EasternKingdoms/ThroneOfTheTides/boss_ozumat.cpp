@@ -30,15 +30,13 @@ enum Spells
     SPELL_BLIGHT_OF_OZUMAT_DUMMY        = 83672,
     SPELL_BLIGHT_OF_OZUMAT_AURA         = 83525,
     SPELL_BLIGHT_OF_OZUMAT_DMG          = 83561,
-    SPELL_BLIGHT_OF_OZUMAT_DMG_H        = 91495,
     SPELL_BLIGHT_OF_OZUMAT_AOE          = 83607,
     SPELL_BLIGHT_OF_OZUMAT_AOE_DMG      = 83608,
-    SPELL_BLIGHT_OF_OZUMAT_AOE_DMG_H    = 91494,
     SPELL_TIDAL_SURGE                   = 76133,
+    SPELL_CLEAR_TIDAL_SURGE             = 83909,
         
     // Vicious Mindslasher
     SPELL_BRAIN_SPIKE                   = 83915,
-    SPELL_BRAIN_SPIKE_H                 = 91497,
     SPELL_VEIL_OF_SHADOW                = 83926,
     SPELL_SHADOW_BOLT                   = 83914,
 
@@ -84,6 +82,11 @@ enum Actions
 {
     ACTION_NEPTULON_START_EVENT = 1,
     ACTION_NEPTULON_START       = 2,
+
+    ACTION_OZUMAT_APPEAR        = 3,
+    ACTION_OZUMAT_START         = 4,
+    ACTION_OZUMAT_RESET         = 5,
+    ACTION_OZUMAT_DEAD          = 6,
 };
 
 enum Achievement
@@ -105,53 +108,48 @@ class npc_neptulon : public CreatureScript
     public:
         npc_neptulon() : CreatureScript("npc_neptulon") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        bool OnGossipHello(Player* player, Creature* creature) override
         {
-            return new npc_neptulonAI (pCreature);
-        }
-
-        bool OnGossipHello(Player* pPlayer, Creature* pCreature)
-        {
-            if (InstanceScript* pInstance = pCreature->GetInstanceScript())
+            if (InstanceScript* instance = creature->GetInstanceScript())
             {
-                if (pInstance->GetBossState(DATA_COMMANDER_ULTHOK) != DONE
-                    || pInstance->GetBossState(DATA_OZUMAT) == IN_PROGRESS
-                    || pInstance->GetBossState(DATA_OZUMAT) == DONE)
+                if (instance->GetBossState(DATA_COMMANDER_ULTHOK) != DONE
+                    || instance->GetBossState(DATA_OZUMAT) == IN_PROGRESS
+                    || instance->GetBossState(DATA_OZUMAT) == DONE)
                     return false;
 
-                pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_READY, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
-                pPlayer->SEND_GOSSIP_MENU(1, pCreature->GetGUID());
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_READY, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
+                player->SEND_GOSSIP_MENU(1, creature->GetGUID());
             }
             return true;
         }
 
-        bool OnGossipSelect(Player* pPlayer, Creature* pCreature, uint32 uiSender, uint32 uiAction)
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 /*action*/) override
         {
-            if (InstanceScript* pInstance = pCreature->GetInstanceScript())
+            if (InstanceScript* instance = creature->GetInstanceScript())
             {
-                if (pInstance->GetBossState(DATA_COMMANDER_ULTHOK) != DONE
-                    || pInstance->GetBossState(DATA_OZUMAT) == IN_PROGRESS
-                    || pInstance->GetBossState(DATA_OZUMAT) == DONE)
+                if (instance->GetBossState(DATA_COMMANDER_ULTHOK) != DONE
+                    || instance->GetBossState(DATA_OZUMAT) == IN_PROGRESS
+                    || instance->GetBossState(DATA_OZUMAT) == DONE)
                     return false;
 
-                pPlayer->PlayerTalkClass->ClearMenus();
-                pPlayer->CLOSE_GOSSIP_MENU();
-                pCreature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-                pInstance->SetBossState(DATA_OZUMAT, IN_PROGRESS);
-                pCreature->AI()->DoAction(ACTION_NEPTULON_START);
+                player->PlayerTalkClass->ClearMenus();
+                player->CLOSE_GOSSIP_MENU();
+                creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                instance->SetBossState(DATA_OZUMAT, IN_PROGRESS);
+                creature->AI()->DoAction(ACTION_NEPTULON_START);
             }
             return true;
         }
 
         struct npc_neptulonAI : public ScriptedAI
         {
-            npc_neptulonAI(Creature* pCreature) : ScriptedAI(pCreature), summons(me)
+            npc_neptulonAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
             SummonList summons;
             uint32 uiMindLasherCount;
@@ -159,24 +157,29 @@ class npc_neptulon : public CreatureScript
             bool bActive;
             bool b50;
             bool b25;
+            bool bTidalSurgeSaid;
 
-            void Reset()
+            void Reset() override
             {
                 bActive = false;
                 b50 = false;
                 b25 = false;
+                bTidalSurgeSaid = false;
                 uiMindLasherCount = 0;
                 uiSapperCount = 0;
-                me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                 events.Reset();
                 summons.DespawnAll();
                 me->SetHealth(me->GetMaxHealth());
-                if (pInstance)
-                    if (pInstance->GetBossState(DATA_OZUMAT) != DONE)
-                        pInstance->SetBossState(DATA_OZUMAT, NOT_STARTED);
+                DoCastAOE(SPELL_CLEAR_TIDAL_SURGE, true);
+                if (Creature* ozumat = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_OZUMAT)))
+                    ozumat->AI()->DoAction(ACTION_OZUMAT_RESET);
+                if (instance)
+                    if (instance->GetBossState(DATA_OZUMAT) != DONE)
+                        instance->SetBossState(DATA_OZUMAT, NOT_STARTED);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_NEPTULON_START_EVENT)
                 {
@@ -193,17 +196,22 @@ class npc_neptulon : public CreatureScript
                     events.ScheduleEvent(EVENT_SUMMON_MINDLASHER, 10000);
                     events.ScheduleEvent(EVENT_SUMMON_BEHEMOTH, 20000);
                 }
+                else if (action == ACTION_OZUMAT_DEAD)
+                {
+                    bActive = false;
+                    CompleteEncounter();
+                }
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
             }
 
-            void SummonedCreatureDies(Creature* pCreature, Unit* pKiller)
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
             {
-                summons.Despawn(pCreature);
-                if (pCreature->GetEntry() == NPC_VICIOUS_MINDLASHER)
+                summons.Despawn(summon);
+                if (summon->GetEntry() == NPC_VICIOUS_MINDLASHER)
                 {
                     uiMindLasherCount++;
                     if (uiMindLasherCount > 2)
@@ -214,36 +222,61 @@ class npc_neptulon : public CreatureScript
                         events.ScheduleEvent(EVENT_SUMMON_SAPPER, 8000);
                         events.ScheduleEvent(EVENT_SUMMON_BEAST, 14000);
                         events.ScheduleEvent(EVENT_BLIGHT_OF_OZUMAT, urand(9000, 11000));
+                        if (Creature* ozumat = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_OZUMAT)))
+                            ozumat->AI()->DoAction(ACTION_OZUMAT_APPEAR);
                     }
                     else
                         events.ScheduleEvent(EVENT_SUMMON_MINDLASHER, urand(10000, 15000));
                 }
-                else if (pCreature->GetEntry() == NPC_FACELESS_SAPPER)
+                else if (summon->GetEntry() == NPC_FACELESS_SAPPER)
                 {
                     uiSapperCount++;
                     if (uiSapperCount > 2)
                     {
-                        bActive = false;
-                        Talk(SAY_PHASE_3_1);
-                        CompleteEncounter();
+                        Talk(SAY_PHASE_3_2);
+                        events.CancelEvent(EVENT_BLIGHT_OF_OZUMAT);
+                        events.CancelEvent(EVENT_SUMMON_BEAST);
+                        events.CancelEvent(EVENT_SUMMON_MINDLASHER);
+                        events.ScheduleEvent(EVENT_PLAYER_CHECK, 1000);
+                        DoCastAOE(SPELL_BLIGHT_OF_OZUMAT_SUMMON_2, true);
+                        DoCastAOE(SPELL_TIDAL_SURGE);
+                        if (Creature* ozumat = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_OZUMAT)))
+                            ozumat->AI()->DoAction(ACTION_OZUMAT_START);
                     }
                 }
             }
 
             void CompleteEncounter()
             {
-                if (pInstance)
+                DoCastAOE(SPELL_CLEAR_TIDAL_SURGE, true);
+
+                if (instance)
                 {
                     // Achievement
-                    pInstance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_KILL_OZUMAT, 0, 0, me); 
+                    instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_KILL_OZUMAT, 0, me); 
                     
-                    pInstance->UpdateEncounterState(ENCOUNTER_CREDIT_CAST_SPELL, SPELL_ENCOUNTER_COMPLETE, me); 
-                    pInstance->SetBossState(DATA_OZUMAT, DONE);
+                    // Guild Achievement
+                    Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
+                    if (!PlayerList.isEmpty())
+                    {
+                        for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                        {
+                            if (Player* player = i->GetSource())
+                                if (Group* pGroup = player->GetGroup())
+                                    if (player->GetGuildId() && pGroup->IsGuildGroup(player->GetGuildId(), player))
+                                    {
+                                        pGroup->UpdateGuildAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_KILL_OZUMAT, 0, 0, NULL, me);
+                                        break;
+                                    }
+                        }
+                    }
+                    instance->UpdateEncounterState(ENCOUNTER_CREDIT_CAST_SPELL, SPELL_ENCOUNTER_COMPLETE, me); 
+                    instance->SetBossState(DATA_OZUMAT, DONE);
                 }
                 EnterEvadeMode();
             }
 
-            void DamageTaken(Unit* pAttacker, uint32 &damage)
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
                 if (damage >= me->GetHealth())
                 {
@@ -253,7 +286,16 @@ class npc_neptulon : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void SpellHitTarget(Unit* /*target*/, const SpellInfo* spell) override
+            {
+                if (spell->Id == SPELL_TIDAL_SURGE && !bTidalSurgeSaid)
+                {
+                    bTidalSurgeSaid = true;
+                    Talk(SAY_PHASE_3_1);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 if (!bActive)
                     return;
@@ -275,64 +317,84 @@ class npc_neptulon : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_INTRO_2:
-                        Talk(SAY_INTRO_2);
-                        bActive = false;
-                        break;
-                    case EVENT_INTRO_3_2:
-                        Talk(SAY_INTRO_3_2);
-                        break;
-                    case EVENT_PHASE_2_2:
-                        Talk(SAY_PHASE_2_1);
-                        break;
-                    case EVENT_SUMMON_MINDLASHER:
-                        if (Creature* pMindlasher = me->SummonCreature(NPC_VICIOUS_MINDLASHER, spawnPos[urand(0, 1)]))
-                        {
-                            pMindlasher->AddThreat(me, 1.0f);
-                            pMindlasher->AI()->AttackStart(me);
-                        }
-                        break;
-                    case EVENT_SUMMON_BEHEMOTH:
-                        if (Creature* pBehemoth = me->SummonCreature(NPC_UNYIELDING_BEHEMOTH, spawnPos[urand(0, 1)]))
-                        {
-                            pBehemoth->AddThreat(me, 1.0f);
-                            pBehemoth->AI()->AttackStart(me);
-                        }
-                        break;
-                    case EVENT_SUMMON_SAPPER:
-                        for (uint8 i = 2; i < 5; i++)
-                            if (Creature* pSapper = me->SummonCreature(NPC_FACELESS_SAPPER, spawnPos[i]))
-                                pSapper->CastSpell(me, SPELL_ENTANGLING_GRASP, false);
-                        break;
-                    case EVENT_SUMMON_BEAST:
-                        if (Creature* pBeast = me->SummonCreature(NPC_BLIGHT_BEAST,
-                            me->GetPositionX(),
-                            me->GetPositionY(),
-                            me->GetPositionZ(),
-                            me->GetOrientation()))
-                            if (Player* pTarget = GetRandomPlayer())
-                                pBeast->AI()->AttackStart(pTarget);
-                        events.ScheduleEvent(EVENT_SUMMON_BEAST, urand(15000, 24000));
-                        break;
-                    case EVENT_SUMMON_MURLOC:
-                        for (uint8 i = 0; i < 5; i++)
-                        {
-                            if (Creature* pMurloc = me->SummonCreature(NPC_DEEP_MURLOC_INVADER, spawnPos[urand(0, 1)]))
+                        case EVENT_INTRO_2:
+                            Talk(SAY_INTRO_2);
+                            bActive = false;
+                            break;
+                        case EVENT_INTRO_3_2:
+                            Talk(SAY_INTRO_3_2);
+                            break;
+                        case EVENT_PHASE_2_2:
+                            Talk(SAY_PHASE_2_1);
+                            break;
+                        case EVENT_SUMMON_MINDLASHER:
+                            if (Creature* pMindlasher = me->SummonCreature(NPC_VICIOUS_MINDLASHER, spawnPos[urand(0, 1)]))
                             {
-                                pMurloc->AddThreat(me, 1.0f);
-                                pMurloc->AI()->AttackStart(me);
+                                pMindlasher->AddThreat(me, 1.0f);
+                                pMindlasher->AI()->AttackStart(me);
                             }
-                        }
-                        events.ScheduleEvent(EVENT_SUMMON_MURLOC, urand(10000, 17000));
-                        break;
-                    case EVENT_BLIGHT_OF_OZUMAT:
-                        if (Player* pTarget = GetRandomPlayer())
-                            DoCast(pTarget, SPELL_BLIGHT_OF_OZUMAT_MISSILE);
-                        events.ScheduleEvent(EVENT_BLIGHT_OF_OZUMAT, urand(10000, 18000));
-                        break;
+                            break;
+                        case EVENT_SUMMON_BEHEMOTH:
+                            if (Creature* pBehemoth = me->SummonCreature(NPC_UNYIELDING_BEHEMOTH, spawnPos[urand(0, 1)]))
+                            {
+                                pBehemoth->AddThreat(me, 1.0f);
+                                pBehemoth->AI()->AttackStart(me);
+                            }
+                            break;
+                        case EVENT_SUMMON_SAPPER:
+                            for (uint8 i = 2; i < 5; i++)
+                                if (Creature* pSapper = me->SummonCreature(NPC_FACELESS_SAPPER, spawnPos[i]))
+                                    pSapper->CastSpell(me, SPELL_ENTANGLING_GRASP, false);
+                            break;
+                        case EVENT_SUMMON_BEAST:
+                            if (Creature* pBeast = me->SummonCreature(NPC_BLIGHT_BEAST,
+                                me->GetPositionX(),
+                                me->GetPositionY(),
+                                me->GetPositionZ(),
+                                me->GetOrientation()))
+                                if (Player* target = GetRandomPlayer())
+                                    pBeast->AI()->AttackStart(target);
+                            events.ScheduleEvent(EVENT_SUMMON_BEAST, urand(15000, 24000));
+                            break;
+                        case EVENT_SUMMON_MURLOC:
+                            for (uint8 i = 0; i < 5; i++)
+                            {
+                                if (Creature* pMurloc = me->SummonCreature(NPC_DEEP_MURLOC_INVADER, spawnPos[urand(0, 1)]))
+                                {
+                                    pMurloc->AddThreat(me, 1.0f);
+                                    pMurloc->AI()->AttackStart(me);
+                                }
+                            }
+                            events.ScheduleEvent(EVENT_SUMMON_MURLOC, urand(10000, 17000));
+                            break;
+                        case EVENT_BLIGHT_OF_OZUMAT:
+                            if (Player* target = GetRandomPlayer())
+                                if (Creature* ozumat = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_OZUMAT)))
+                                    ozumat->CastSpell(target, SPELL_BLIGHT_OF_OZUMAT_MISSILE, true);
+                            events.ScheduleEvent(EVENT_BLIGHT_OF_OZUMAT, urand(10000, 18000));
+                            break;
+                        case EVENT_PLAYER_CHECK:
+                            if (me->IsAlive())
+                            {
+                                Map::PlayerList const& players = instance->instance->GetPlayers();
+                                for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                                {
+                                    if (Player* player = itr->GetSource())
+                                    {
+                                        if (player->IsAlive())
+                                        {
+                                            events.ScheduleEvent(EVENT_PLAYER_CHECK, 1000);
+                                            return;
+                                        }
+                                    }
+                                }
+
+                                EnterEvadeMode();
+                            }
+                            break;
                     }
                 }
-            }         
+            }
 
             Player* GetRandomPlayer()
             {
@@ -340,8 +402,8 @@ class npc_neptulon : public CreatureScript
                 Map::PlayerList const &pPlayerList = me->GetMap()->GetPlayers();
                 if (!pPlayerList.isEmpty())
                     for (Map::PlayerList::const_iterator itr = pPlayerList.begin(); itr != pPlayerList.end(); ++itr)
-                        if (itr->getSource()->isAlive())
-                            pAliveList.push_back(itr->getSource());
+                        if (itr->GetSource()->IsAlive())
+                            pAliveList.push_back(itr->GetSource());
 
                 if (!pAliveList.empty())
                 {
@@ -358,11 +420,107 @@ class npc_neptulon : public CreatureScript
 
                 if (!pPlayerList.isEmpty())
                     for (Map::PlayerList::const_iterator itr = pPlayerList.begin(); itr != pPlayerList.end(); ++itr)
-                        if (itr->getSource()->isAlive())
+                        if (itr->GetSource()->IsAlive())
                             return true;
                 return false;
             };
-        };        
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_neptulonAI>(creature);
+        }
+};
+
+class npc_ozumat : public CreatureScript
+{
+    public:
+        npc_ozumat() : CreatureScript("npc_ozumat") { }
+
+        struct npc_ozumatAI : public ScriptedAI
+        {
+            npc_ozumatAI(Creature* creature) : ScriptedAI(creature), summons(me)
+            {
+                instance = creature->GetInstanceScript();
+            }
+
+            InstanceScript* instance;
+            SummonList summons;
+
+            void Reset() override
+            {
+                me->SetVisible(false);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                if (!me->GetVehicle())
+                    if (Creature* vehicle = me->FindNearestCreature(NPC_OZUMAT_VEHICLE, 1000))
+                        me->EnterVehicle(vehicle, 0);
+            }
+
+            void DamageTaken(Unit* attacker, uint32& damage) override
+            {
+                if (damage >= me->GetHealth())
+                {
+                    damage = 0;
+
+                    if (Creature* neptulon = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_NEPTULON)))
+                        neptulon->AI()->DoAction(ACTION_OZUMAT_DEAD);
+
+                    me->DisappearAndDie(); // No fancy animations T_T
+                }
+            }
+
+            void DoAction(int32 action) override
+            {
+                switch (action)
+                {
+                    case ACTION_OZUMAT_RESET:
+                        summons.DespawnAll();
+                        me->DespawnOrUnsummon();
+                        me->Respawn();
+                        Reset();
+
+                        if (instance)
+                            instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                        break;
+                    case ACTION_OZUMAT_APPEAR:
+                        me->SetVisible(true);
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                        DoCast(me, SPELL_BLIGHT_OF_OZUMAT_DUMMY);
+
+                        if (instance)
+                            instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+                        break;
+                    case ACTION_OZUMAT_START:
+                        summons.DespawnEntry(NPC_BLIGHT_OF_OZUMAT_1);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
+                        DoZoneInCombat();
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+            }
+
+            void UpdateAI(uint32 /*diff*/) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_ozumatAI>(creature);
+        }
 };
 
 class npc_vicious_mindslasher : public CreatureScript
@@ -370,27 +528,22 @@ class npc_vicious_mindslasher : public CreatureScript
     public:
         npc_vicious_mindslasher() : CreatureScript("npc_vicious_mindslasher") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_vicious_mindslasherAI(pCreature);
-        }
-
         struct npc_vicious_mindslasherAI : public ScriptedAI
         {
-            npc_vicious_mindslasherAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_vicious_mindslasherAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_BRAIN_SPIKE, urand(6000, 10000));
                 if (IsHeroic())
@@ -398,14 +551,14 @@ class npc_vicious_mindslasher : public CreatureScript
                 events.ScheduleEvent(EVENT_SHADOW_BOLT, 2000);
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                if (pInstance)
-                    if (Creature* pNeptulon = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_NEPTULON)))
+                if (instance)
+                    if (Creature* pNeptulon = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_NEPTULON)))
                         pNeptulon->AI()->Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -419,23 +572,28 @@ class npc_vicious_mindslasher : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_BRAIN_SPIKE:
-                        DoCast(me, SPELL_BRAIN_SPIKE);
-                        events.ScheduleEvent(EVENT_BRAIN_SPIKE, urand(15000, 20000));
-                        break;
-                    case EVENT_VEIL_OF_SHADOW:
-                        DoCast(me->getVictim(), SPELL_VEIL_OF_SHADOW);
-                        events.ScheduleEvent(EVENT_VEIL_OF_SHADOW, urand(13000, 20000));
-                        break;
-                    case EVENT_SHADOW_BOLT:
-                        DoCast(me->getVictim(), SPELL_SHADOW_BOLT);
-                        events.ScheduleEvent(EVENT_SHADOW_BOLT, 2000);
-                        break;
+                        case EVENT_BRAIN_SPIKE:
+                            DoCast(me, SPELL_BRAIN_SPIKE);
+                            events.ScheduleEvent(EVENT_BRAIN_SPIKE, urand(15000, 20000));
+                            break;
+                        case EVENT_VEIL_OF_SHADOW:
+                            DoCast(me->GetVictim(), SPELL_VEIL_OF_SHADOW);
+                            events.ScheduleEvent(EVENT_VEIL_OF_SHADOW, urand(13000, 20000));
+                            break;
+                        case EVENT_SHADOW_BOLT:
+                            DoCast(me->GetVictim(), SPELL_SHADOW_BOLT);
+                            events.ScheduleEvent(EVENT_SHADOW_BOLT, 2000);
+                            break;
                     }
                 }            
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_vicious_mindslasherAI>(creature);
+        }
 };
 
 class npc_unyielding_behemoth : public CreatureScript
@@ -443,39 +601,34 @@ class npc_unyielding_behemoth : public CreatureScript
     public:
         npc_unyielding_behemoth() : CreatureScript("npc_unyielding_behemoth") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_unyielding_behemothAI(pCreature);
-        }
-
         struct npc_unyielding_behemothAI : public ScriptedAI
         {
-            npc_unyielding_behemothAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_unyielding_behemothAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                if (pInstance)
-                    if (Creature* pNeptulon = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_NEPTULON)))
+                if (instance)
+                    if (Creature* pNeptulon = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_NEPTULON)))
                         pNeptulon->AI()->Talk(SAY_KILL);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_BLIGHT_SPRAY, urand(8000, 12000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -486,15 +639,20 @@ class npc_unyielding_behemoth : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_BLIGHT_SPRAY:
-                        DoCast(me, SPELL_BLIGHT_SPRAY);
-                        events.ScheduleEvent(EVENT_BLIGHT_SPRAY, urand(15000, 23000));
-                        break;
+                        case EVENT_BLIGHT_SPRAY:
+                            DoCast(me, SPELL_BLIGHT_SPRAY);
+                            events.ScheduleEvent(EVENT_BLIGHT_SPRAY, urand(15000, 23000));
+                            break;
                     }
                 }            
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_unyielding_behemothAI>(creature);
+        }
 };
 
 class npc_faceless_sapper : public CreatureScript
@@ -502,14 +660,9 @@ class npc_faceless_sapper : public CreatureScript
     public:
         npc_faceless_sapper() : CreatureScript("npc_faceless_sapper") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_faceless_sapperAI(pCreature);
-        }
-
         struct npc_faceless_sapperAI : public ScriptedAI
         {
-            npc_faceless_sapperAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_faceless_sapperAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -526,15 +679,15 @@ class npc_faceless_sapper : public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
-            {
+            void Reset() override { }
 
-            }
-
-            void UpdateAI(const uint32 diff)
-            {   
-            }
+            void UpdateAI(uint32 /*diff*/) override { }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_faceless_sapperAI>(creature);
+        }
 };
 
 class npc_blight_of_ozumat : public CreatureScript
@@ -542,29 +695,28 @@ class npc_blight_of_ozumat : public CreatureScript
     public:
         npc_blight_of_ozumat() : CreatureScript("npc_blight_of_ozumat") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_blight_of_ozumatAI : public ScriptedAI
         {
-            return new npc_blight_of_ozumatAI (pCreature);
-        }
-
-        struct npc_blight_of_ozumatAI : public Scripted_NoMovementAI
-        {
-            npc_blight_of_ozumatAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_blight_of_ozumatAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 DoCast(me, SPELL_BLIGHT_OF_OZUMAT_AURA);
             }
 
-            void UpdateAI(const uint32 diff)
-            {
-            }
+            void UpdateAI(uint32 /*diff*/) override { }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_blight_of_ozumatAI>(creature);
+        }
 };
 
 class at_tott_ozumat : public AreaTriggerScript
@@ -572,21 +724,21 @@ class at_tott_ozumat : public AreaTriggerScript
     public:
         at_tott_ozumat() : AreaTriggerScript("at_tott_ozumat") { }
 
-        bool OnTrigger(Player* pPlayer, const AreaTriggerEntry* /*pAt*/)
+        bool OnTrigger(Player* player, const AreaTriggerEntry* /*trigger*/) override
         {
-		    if (InstanceScript* pInstance = pPlayer->GetInstanceScript())
-		    {
-			    if (pInstance->GetData(DATA_NEPTULON_EVENT) != DONE
-                    && pInstance->GetBossState(DATA_OZUMAT) != IN_PROGRESS
-                    && pInstance->GetBossState(DATA_OZUMAT) != DONE)
-			    {
-                    pInstance->SetData(DATA_NEPTULON_EVENT, DONE);
-                    if (Creature* pNeptulon = ObjectAccessor::GetCreature(*pPlayer, pInstance->GetData64(DATA_NEPTULON)))
+            if (InstanceScript* instance = player->GetInstanceScript())
+            {
+                if (instance->GetData(DATA_NEPTULON_EVENT) != DONE
+                    && instance->GetBossState(DATA_OZUMAT) != IN_PROGRESS
+                    && instance->GetBossState(DATA_OZUMAT) != DONE)
+                {
+                    instance->SetData(DATA_NEPTULON_EVENT, DONE);
+                    if (Creature* pNeptulon = ObjectAccessor::GetCreature(*player, instance->GetData64(DATA_NEPTULON)))
                     {
                         pNeptulon->AI()->DoAction(ACTION_NEPTULON_START_EVENT);
                     }
-			    }
-		    }
+                }
+            }
             return true;
         }
 };
@@ -594,6 +746,7 @@ class at_tott_ozumat : public AreaTriggerScript
 void AddSC_boss_ozumat()
 {
     new npc_neptulon();
+    new npc_ozumat();
     new npc_vicious_mindslasher();
     new npc_unyielding_behemoth();
     new npc_faceless_sapper();

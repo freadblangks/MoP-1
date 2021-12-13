@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -18,15 +21,17 @@
 #include "ScriptPCH.h"
 #include "CreatureTextMgr.h"
 #include "culling_of_stratholme.h"
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
 
 #define MAX_ENCOUNTER 5
 
 /* Culling of Stratholme encounters:
-0 - Meathook
-1 - Salramm the Fleshcrafter
-2 - Chrono-Lord Epoch
-3 - Mal'Ganis
-4 - Infinite Corruptor (Heroic only)
+ 0 - Meathook
+ 1 - Salramm the Fleshcrafter
+ 2 - Chrono-Lord Epoch
+ 3 - Mal'Ganis
+ 4 - Infinite Corruptor (Heroic only)
 */
 
 enum Texts
@@ -55,11 +60,6 @@ class instance_culling_of_stratholme : public InstanceMapScript
     public:
         instance_culling_of_stratholme() : InstanceMapScript("instance_culling_of_stratholme", 595) { }
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
-        {
-            return new instance_culling_of_stratholme_InstanceMapScript(map);
-        }
-
         struct instance_culling_of_stratholme_InstanceMapScript : public InstanceScript
         {
             instance_culling_of_stratholme_InstanceMapScript(Map* map) : InstanceScript(map)
@@ -85,9 +85,10 @@ class instance_culling_of_stratholme : public InstanceMapScript
                 _zombieTimer = 60000;
                 _eventTimer = 1500000;
                 _lastTimer = 1500000;
+                 debug = false;
             }
 
-            bool IsEncounterInProgress() const
+            bool IsEncounterInProgress() const override
             {
                 for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
                     if (_encounterState[i] == IN_PROGRESS)
@@ -96,16 +97,16 @@ class instance_culling_of_stratholme : public InstanceMapScript
                 return false;
             }
 
-            void FillInitialWorldStates(WorldPacket& data)
+            void FillInitialWorldStates(WorldStateBuilder& builder) override
             {
-                data << uint32(WORLDSTATE_SHOW_CRATES) << uint32(1);
-                data << uint32(WORLDSTATE_CRATES_REVEALED) << uint32(_crateCount);
-                data << uint32(WORLDSTATE_WAVE_COUNT) << uint32(0);
-                data << uint32(WORLDSTATE_TIME_GUARDIAN) << uint32(25);
-                data << uint32(WORLDSTATE_TIME_GUARDIAN_SHOW) << uint32(0);
+                builder.AppendState(WORLDSTATE_SHOW_CRATES, 1);
+                builder.AppendState(WORLDSTATE_CRATES_REVEALED, _crateCount);
+                builder.AppendState(WORLDSTATE_WAVE_COUNT, 0);
+                builder.AppendState(WORLDSTATE_TIME_GUARDIAN, 25);
+                builder.AppendState(WORLDSTATE_TIME_GUARDIAN_SHOW, 0);
             }
 
-            void OnCreatureCreate(Creature* creature)
+            void OnCreatureCreate(Creature* creature) override
             {
                 switch (creature->GetEntry())
                 {
@@ -130,10 +131,10 @@ class instance_culling_of_stratholme : public InstanceMapScript
                     case NPC_GENERIC_BUNNY:
                         _genericBunnyGUID = creature->GetGUID();
                         break;
-                    case NPC_CITY_MAN:
-                    case NPC_CITY_MAN2:
-                    case NPC_CITY_MAN3:
-                    case NPC_CITY_MAN4:
+                    case NPC_CITY_MAN_1:
+                    case NPC_CITY_MAN_2:
+                    case NPC_CITY_MAN_3:
+                    case NPC_CITY_MAN_4:
                     case 30570: case 31020: case 31021: case 31022: case 31023: // Some individual npcs...
                     case 31025: case 31018: case 31027: case 31028: case 30994: case 31019:
                         _citizensList.push_back(creature->GetGUID());
@@ -144,7 +145,7 @@ class instance_culling_of_stratholme : public InstanceMapScript
                 }
             }
 
-            void OnGameObjectCreate(GameObject* go)
+            void OnGameObjectCreate(GameObject* go) override
             {
                 switch (go->GetEntry())
                 {
@@ -165,13 +166,11 @@ class instance_culling_of_stratholme : public InstanceMapScript
                     case GO_MALGANIS_CHEST_N:
                     case GO_MALGANIS_CHEST_H:
                         _malGanisChestGUID = go->GetGUID();
-                        if (_encounterState[3] == DONE)
-                            go->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_INTERACT_COND);
                         break;
                 }
             }
 
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
                 switch (type)
                 {
@@ -179,11 +178,11 @@ class instance_culling_of_stratholme : public InstanceMapScript
                         _encounterState[0] = data;
                         break;
                     case DATA_SALRAMM_EVENT:
-                        if(data == DONE)
+                        if (data == DONE)
                         {
                             DoUpdateWorldState(WORLDSTATE_WAVE_COUNT, 0);
-                            if(ArthasNeedsTeleport())
-                                if(Creature* arthas = instance->GetCreature(_arthasGUID))
+                            if (ArthasNeedsTeleport())
+                                if (Creature* arthas = instance->GetCreature(_arthasGUID))
                                     arthas->AI()->SetData(1, 0);
                         }
                         _encounterState[1] = data;
@@ -205,11 +204,14 @@ class instance_culling_of_stratholme : public InstanceMapScript
                             case DONE:
                                 HandleGameObject(_exitGateGUID, true);
                                 if (GameObject* go = instance->GetGameObject(_malGanisChestGUID))
-                                    go->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_INTERACT_COND);
+                                {
+                                    go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND | GO_FLAG_NOT_SELECTABLE);
+                                    DoRespawnGameObject(go->GetGUID(), 7 * DAY);
+                                }
+
                                 instance->SummonCreature(NPC_CHROMIE_3, ChromieExitSummonPos);
-                                Map::PlayerList const &players = instance->GetPlayers();
-                                for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                                    itr->getSource()->KilledMonsterCredit(31006, 0);
+                                for (auto&& ref : instance->GetPlayers())
+                                    ref.GetSource()->KilledMonsterCredit(31006, 0);
                                 break;
                         }
                         break;
@@ -223,7 +225,7 @@ class instance_culling_of_stratholme : public InstanceMapScript
                                 break;
                             case FAIL:
                                 DoUpdateWorldState(WORLDSTATE_TIME_GUARDIAN_SHOW, 0);
-                                if(Creature* infinite = instance->GetCreature(_infiniteGUID))
+                                if (Creature* infinite = instance->GetCreature(_infiniteGUID))
                                     infinite->AI()->DoAction(0);
                                 break;
                             case IN_PROGRESS:
@@ -242,14 +244,14 @@ class instance_culling_of_stratholme : public InstanceMapScript
 
                                 int index;
 
-                                if(_artasStepUi >= 83) // Before last run
+                                if (_artasStepUi >= 83) // Before last run
                                     index = 2;
                                 else if (_artasStepUi >= 60) // Before the council
                                     index = 1;
                                 else // entrance of city
                                     index = 0;
 
-                                if(Creature* newArthas = instance->SummonCreature(NPC_ARTHAS, ArthasSpawnPositions[index]))
+                                if (Creature* newArthas = instance->SummonCreature(NPC_ARTHAS, ArthasSpawnPositions[index]))
                                     newArthas->AI()->SetData(0, pow(2.0, index));
                             }
                         }
@@ -259,20 +261,19 @@ class instance_culling_of_stratholme : public InstanceMapScript
                         DoUpdateWorldState(WORLDSTATE_CRATES_REVEALED, _crateCount);
                         if (_crateCount == 5)
                         {
-                            Map::PlayerList const &players = instance->GetPlayers();
-                            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                                itr->getSource()->KilledMonsterCredit(30996, 0);
+                            for (auto&& ref : instance->GetPlayers())
+                                ref.GetSource()->KilledMonsterCredit(30996, 0);
 
                             // Summon Chromie and global whisper
                             if (Creature* chromie = instance->SummonCreature(NPC_CHROMIE_2, ChromieEntranceSummonPos))
                                 if (!instance->GetPlayers().isEmpty())
-                                    if (Player* player = instance->GetPlayers().getFirst()->getSource())
-                                        sCreatureTextMgr->SendChat(chromie, SAY_CRATES_COMPLETED, player->GetGUID(), CHAT_MSG_ADDON, LANG_ADDON, TEXT_RANGE_MAP);
+                                    if (Player* player = instance->GetPlayers().getFirst()->GetSource())
+                                        sCreatureTextMgr->SendChat(chromie, SAY_CRATES_COMPLETED, player);
                             DoUpdateWorldState(WORLDSTATE_SHOW_CRATES, 0);
                         }
                         break;
                     case DATA_TRANSFORM_CITIZENS:
-                        switch(data)
+                        switch (data)
                         {
                             case SPECIAL: // Respawn Zombies
                                 while (!_zombiesList.empty())
@@ -293,48 +294,52 @@ class instance_culling_of_stratholme : public InstanceMapScript
                                     }
                                 }
                             case IN_PROGRESS: // Transform Citizens
-                                for (std::list<uint64>::iterator itr = _citizensList.begin(); itr != _citizensList.end(); ++itr)
-                                    if(Creature* citizen = instance->GetCreature((*itr)))
+                                for (auto&& guid : _citizensList)
+                                    if (Creature* citizen = instance->GetCreature(guid))
                                     {
-                                        if(Creature* arthas = instance->GetCreature(GetData64(DATA_ARTHAS)))
-                                            if(Creature* risenZombie = arthas->SummonCreature(NPC_ZOMBIE, citizen->GetPositionX(), citizen->GetPositionY(), citizen->GetPositionZ(), citizen->GetOrientation())) //, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000))
+                                        if (Creature* arthas = instance->GetCreature(GetData64(DATA_ARTHAS)))
+                                            if (Creature* risenZombie = arthas->SummonCreature(NPC_ZOMBIE, citizen->GetPositionX(), citizen->GetPositionY(), citizen->GetPositionZ(), citizen->GetOrientation())) //, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000))
                                                 _zombiesList.push_back(risenZombie->GetGUID());
                                         citizen->SetPhaseMask(2, true);
                                     }
                                 break;
-                        }
+                            }
                         break;
                     case DATA_ZOMBIEFEST:
                         if (!instance->IsHeroic() || GetData(DATA_ZOMBIEFEST) == DONE)
                             break;
 
-                        switch(data)
+                        switch (data)
                         {
                             case DONE:
                                 DoCompleteAchievement(ACHIEVEMENT_ZOMBIEFEST);
-                                DoSendNotifyToInstance(zombiefestWarnings[10]);
+                                if (debug)
+                                    DoSendNotifyToInstance(zombiefestWarnings[10]);
                                 _zombieFest = data;
                                 break;
                             case IN_PROGRESS:
-                                DoSendNotifyToInstance(zombiefestWarnings[0]);
+                                if (debug)
+                                    DoSendNotifyToInstance(zombiefestWarnings[0]);
                                 _zombieFest = data;
                                 break;
                             case FAIL:
                                 _killedZombieCount = 0;
                                 _zombieTimer = 60000;
                                 _zombieFest = data;
-                                DoSendNotifyToInstance(zombiefestWarnings[11]);
+                                if (debug)
+                                    DoSendNotifyToInstance(zombiefestWarnings[11]);
                                 break;
                             case SPECIAL:
                                 _killedZombieCount++;
-                                if(_killedZombieCount == 1)
+                                if (_killedZombieCount == 1)
                                     SetData(DATA_ZOMBIEFEST, IN_PROGRESS);
-                                else if(_killedZombieCount >= 100 && GetData(DATA_ZOMBIEFEST) == IN_PROGRESS)
+                                else if (_killedZombieCount >= 100 && GetData(DATA_ZOMBIEFEST) == IN_PROGRESS)
                                     SetData(DATA_ZOMBIEFEST, DONE);
                                 else
                                 {
-                                    if(_killedZombieCount%10 == 0)
-                                        DoSendNotifyToInstance(zombiefestWarnings[_killedZombieCount/10]);
+                                    if (_killedZombieCount % 10 == 0)
+                                        if (debug)
+                                            DoSendNotifyToInstance(zombiefestWarnings[_killedZombieCount / 10]);
                                 }
                                 break;
                         }
@@ -348,7 +353,7 @@ class instance_culling_of_stratholme : public InstanceMapScript
                     SaveToDB();
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 switch (type)
                 {
@@ -370,9 +375,9 @@ class instance_culling_of_stratholme : public InstanceMapScript
                 return 0;
             }
 
-            uint64 GetData64(uint32 identifier)
+            uint64 GetData64(uint32 type) const override
             {
-                switch (identifier)
+                switch (type)
                 {
                     case DATA_ARTHAS:
                         return _arthasGUID;
@@ -402,22 +407,22 @@ class instance_culling_of_stratholme : public InstanceMapScript
                 return 0;
             }
 
-            void Update(uint32 diff)
+            void Update(uint32 diff) override
             {
-                if(GetData(DATA_ZOMBIEFEST) == IN_PROGRESS)
+                if (GetData(DATA_ZOMBIEFEST) == IN_PROGRESS)
                 {
                     if (_zombieTimer <= diff)
                         SetData(DATA_ZOMBIEFEST, FAIL);
                     else _zombieTimer -= diff;
                 }
 
-                if(GetData(DATA_INFINITE_EVENT) == IN_PROGRESS)
+                if (GetData(DATA_INFINITE_EVENT) == IN_PROGRESS)
                 {
-                    if(_eventTimer <= diff)
+                    if (_eventTimer <= diff)
                         SetData(DATA_INFINITE_EVENT, FAIL);
                     else _eventTimer -= diff;
 
-                    if(_eventTimer < _lastTimer - 60000)
+                    if (_eventTimer < _lastTimer - 60000)
                     {
                         _lastTimer = _eventTimer;
                         uint32 tMinutes = _eventTimer / 60000;
@@ -426,19 +431,19 @@ class instance_culling_of_stratholme : public InstanceMapScript
                 }
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
                 std::ostringstream saveStream;
-                saveStream << "C S " << _encounterState[0] << ' ' << _encounterState[1] << ' '
-                    << _encounterState[2] << ' ' << _encounterState[3] << ' ' << _encounterState[4];
+                saveStream << "C S " << _encounterState[0] << " " << _encounterState[1] << " "
+                    << _encounterState[2] << " " << _encounterState[3] << " " << _encounterState[4];
 
                 OUT_SAVE_INST_DATA_COMPLETE;
                 return saveStream.str();
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -498,20 +503,25 @@ class instance_culling_of_stratholme : public InstanceMapScript
             std::list<uint64> _zombiesList;
             uint32 _eventTimer;
             uint32 _lastTimer;
+            bool debug;
 
             bool ArthasNeedsTeleport()
             {
-                if(Creature* arthas = instance->GetCreature(_arthasGUID))
+                if (Creature* arthas = instance->GetCreature(_arthasGUID))
                 {
-                    Map::PlayerList const &players = instance->GetPlayers();
-                    for(Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                        if(Player* player = itr->getSource())
-                            if(player->GetDistance(arthas) >= 210.0f)
+                    for (auto&& ref : instance->GetPlayers())
+                        if (Player* player = ref.GetSource())
+                            if (player->GetDistance(arthas) >= 210.0f)
                                 return true;
                 }
                 return false;
             }
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_culling_of_stratholme_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_culling_of_stratholme()

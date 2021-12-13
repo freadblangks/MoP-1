@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -67,7 +68,7 @@ namespace VMAP
     std::string VMapManager2::getMapFileName(unsigned int mapId)
     {
         std::stringstream fname;
-        fname.width(3);
+        fname.width(4);
         fname << std::setfill('0') << mapId << std::string(MAP_FILENAME_EXTENSION2);
 
         return fname.str();
@@ -139,10 +140,6 @@ namespace VMAP
         if (!isLineOfSightCalcEnabled() || DisableMgr::IsDisabledFor(DISABLE_TYPE_VMAP, mapId, NULL, VMAP_DISABLE_LOS))
             return true;
 
-        // Don't calculate hit position, if wrong src/dest points provided!
-        if (!VMAP::CheckPosition(x1,y1,z1) || !VMAP::CheckPosition(x2,y2,z2))
-            return false;
-
         InstanceTreeMap::iterator instanceTree = iInstanceMapTrees.find(mapId);
         if (instanceTree != iInstanceMapTrees.end())
         {
@@ -163,10 +160,6 @@ namespace VMAP
     */
     bool VMapManager2::getObjectHitPos(unsigned int mapId, float x1, float y1, float z1, float x2, float y2, float z2, float& rx, float &ry, float& rz, float modifyDist)
     {
-        bool result = false;
-        rx=x2;
-        ry=y2;
-        rz=z2;
         if (isLineOfSightCalcEnabled() && !DisableMgr::IsDisabledFor(DISABLE_TYPE_VMAP, mapId, NULL, VMAP_DISABLE_LOS))
         {
             InstanceTreeMap::iterator instanceTree = iInstanceMapTrees.find(mapId);
@@ -175,31 +168,27 @@ namespace VMAP
                 Vector3 pos1 = convertPositionToInternalRep(x1, y1, z1);
                 Vector3 pos2 = convertPositionToInternalRep(x2, y2, z2);
                 Vector3 resultPos;
-                float maxDist = (pos2 - pos1).magnitude();
-                // prevent NaN values which can cause BIH intersection to enter infinite loop
-                if (maxDist < 1e-10f)
-                {
-                    resultPos = pos2;
-                    result = false;
-                }
-                else
-                {
-                    result = instanceTree->second->getObjectHitPos(pos1, pos2, resultPos, modifyDist);
-                    resultPos = convertPositionToInternalRep(resultPos.x,resultPos.y,resultPos.z);
-                }
+                bool result = instanceTree->second->getObjectHitPos(pos1, pos2, resultPos, modifyDist);
+                resultPos = convertPositionToInternalRep(resultPos.x, resultPos.y, resultPos.z);
                 rx = resultPos.x;
                 ry = resultPos.y;
                 rz = resultPos.z;
+                return result;
             }
         }
-        return result;
+
+        rx = x2;
+        ry = y2;
+        rz = z2;
+
+        return false;
     }
 
     /**
     get height or INVALID_HEIGHT if no height available
     */
 
-    float VMapManager2::getHeight(unsigned int mapId, float x, float y, float z, float maxSearchDist)
+    float VMapManager2::getHeight(unsigned int mapId, float x, float y, float z, float maxSearchDist, bool ceiling)
     {
         if (isHeightCalcEnabled() && !DisableMgr::IsDisabledFor(DISABLE_TYPE_VMAP, mapId, NULL, VMAP_DISABLE_HEIGHT))
         {
@@ -207,7 +196,7 @@ namespace VMAP
             if (instanceTree != iInstanceMapTrees.end())
             {
                 Vector3 pos = convertPositionToInternalRep(x, y, z);
-                float height = instanceTree->second->getHeight(pos, maxSearchDist);
+                float height = instanceTree->second->getHeight(pos, maxSearchDist, ceiling);
                 if (!(height < G3D::inf()))
                     return height = VMAP_INVALID_HEIGHT_VALUE; // No height
 
@@ -272,11 +261,11 @@ namespace VMAP
             WorldModel* worldmodel = new WorldModel();
             if (!worldmodel->readFile(basepath + filename + ".vmo"))
             {
-                sLog->outDebug(LOG_FILTER_MAPS, "VMapManager2: could not load '%s%s.vmo'", basepath.c_str(), filename.c_str());
+                VMAP_ERROR_LOG("misc", "VMapManager2: could not load '%s%s.vmo'", basepath.c_str(), filename.c_str());
                 delete worldmodel;
                 return NULL;
             }
-            sLog->outDebug(LOG_FILTER_MAPS, "VMapManager2: loading file '%s%s'", basepath.c_str(), filename.c_str());
+            VMAP_DEBUG_LOG("maps", "VMapManager2: loading file '%s%s'", basepath.c_str(), filename.c_str());
             model = iLoadedModelFiles.insert(std::pair<std::string, ManagedModel>(filename, ManagedModel())).first;
             model->second.setModel(worldmodel);
         }
@@ -292,12 +281,12 @@ namespace VMAP
         ModelFileMap::iterator model = iLoadedModelFiles.find(filename);
         if (model == iLoadedModelFiles.end())
         {
-            sLog->outDebug(LOG_FILTER_MAPS, "VMapManager2: trying to unload non-loaded file '%s'", filename.c_str());
+            VMAP_ERROR_LOG("misc", "VMapManager2: trying to unload non-loaded file '%s'", filename.c_str());
             return;
         }
         if (model->second.decRefCount() == 0)
         {
-            sLog->outDebug(LOG_FILTER_MAPS, "VMapManager2: unloading file '%s'", filename.c_str());
+            VMAP_DEBUG_LOG("maps", "VMapManager2: unloading file '%s'", filename.c_str());
             delete model->second.getModel();
             iLoadedModelFiles.erase(model);
         }

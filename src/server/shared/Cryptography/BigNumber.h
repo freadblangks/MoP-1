@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2011-2021 Project SkyFire <https://www.projectskyfire.org/>
- * Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2021 MaNGOS <https://www.getmangos.eu/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,6 +21,7 @@
 #define _AUTH_BIGNUMBER_H
 
 #include "Define.h"
+#include <ace/Auto_Ptr.h>
 
 struct bignum_st;
 
@@ -87,13 +88,14 @@ class BigNumber
 
         uint32 AsDword();
 
-        uint8* AsByteArray(int32 minSize = 0, bool littleEndian = true);
+        ACE_Auto_Array_Ptr<uint8> AsByteArray(int32 minSize = 0, bool littleEndian = true);
 
         char * AsHexStr() const;
         char * AsDecStr() const;
 
     private:
         struct bignum_st *_bn;
+
 };
 #endif
 

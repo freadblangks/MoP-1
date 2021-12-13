@@ -106,14 +106,9 @@ class boss_queen_azshara : public CreatureScript
     public:
         boss_queen_azshara() : CreatureScript("boss_queen_azshara") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_queen_azsharaAI(pCreature);
-        }
-
         struct boss_queen_azsharaAI : public BossAI
         {
-            boss_queen_azsharaAI(Creature* pCreature) : BossAI(pCreature, DATA_AZSHARA)
+            boss_queen_azsharaAI(Creature* creature) : BossAI(creature, DATA_AZSHARA)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -127,18 +122,9 @@ class boss_queen_azshara : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(WoEScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -151,7 +137,7 @@ class boss_queen_azshara : public CreatureScript
                 addsCount = 0;
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
 
@@ -163,25 +149,25 @@ class boss_queen_azshara : public CreatureScript
                 instance->SetBossState(DATA_AZSHARA, IN_PROGRESS);
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 Talk(SAY_WIPE);
                 addsCount = 0;
             }
 
-            void AttackStart(Unit* who)
+            void AttackStart(Unit* target) override
             {
-                if (who)
-                    me->Attack(who, false);
+                if (target)
+                    me->Attack(target, false);
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
             
-            void SpellHit(Unit* /*who*/, const SpellInfo* spellInfo)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spellInfo) override
             {
                 if (Spell* spell = me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
                     if (spellInfo->HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
@@ -191,9 +177,15 @@ class boss_queen_azshara : public CreatureScript
                     }
             }
 
-            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (!me->isInCombat())
+                damage = 0;
+                me->UpdateUInt32Value(UNIT_FIELD_HEALTH, me->GetMaxHealth());
+            }
+
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+            {
+                if (!me->IsInCombat())
                     return;
 
                 if (summon->GetEntry() == NPC_ENCHANTED_MAGUS_FIRE ||
@@ -212,7 +204,7 @@ class boss_queen_azshara : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -228,6 +220,7 @@ class boss_queen_azshara : public CreatureScript
                     {
                         case EVENT_TOTAL_OBEDIENCE:
                             Talk(SAY_ALL);
+                            DoCastAOE(SPELL_TOTAL_OBEDIENCE);
                             break;
                         case EVENT_ADDS_1:
                             Talk((addsCount / 2) + 9);
@@ -257,7 +250,7 @@ class boss_queen_azshara : public CreatureScript
 
                             instance->SetBossState(DATA_AZSHARA, DONE);
                             instance->DoRespawnGameObject(instance->GetData64(DATA_ROYAL_CACHE), DAY);
-                            instance->DoModifyPlayerCurrencies(395, 7000);
+                            instance->DoModifyPlayerCurrencies(CURRENCY_TYPE_JUSTICE_POINTS, 7000);
                             me->DespawnOrUnsummon();
                             break;
                         }
@@ -266,38 +259,36 @@ class boss_queen_azshara : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
             uint8 phase;
             uint64 addsGUIDs[6];
             uint8 addsCount;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_queen_azsharaAI>(creature);
+        }
 };
 
 class npc_queen_azshara_enchanted_magus : public CreatureScript
 {
     public:
-
         npc_queen_azshara_enchanted_magus() : CreatureScript("npc_queen_azshara_enchanted_magus") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_queen_azshara_enchanted_magusAI(pCreature);
-        }
 
         struct npc_queen_azshara_enchanted_magusAI : public ScriptedAI
         {
-            npc_queen_azshara_enchanted_magusAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-            }
+            npc_queen_azshara_enchanted_magusAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_ATTACK)
                 {
@@ -321,14 +312,14 @@ class npc_queen_azshara_enchanted_magus : public CreatureScript
                 }
             }
         
-            /*void MovementInform(uint32 type, uint32 data)
+            /*void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (me->GetEntry() == NPC_ENCHANTED_MAGUS_FROST && data == EVENT_CHARGE)
-                    if (Player* pPlayer = me->SelectNearestPlayer(5.0f))
-                        DoCast(pPlayer, SPELL_BLADES_OF_ICE_DMG, true);
+                    if (Player* player = me->SelectNearestPlayer(5.0f))
+                        DoCast(player, SPELL_BLADES_OF_ICE_DMG, true);
             }*/
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -347,8 +338,8 @@ class npc_queen_azshara_enchanted_magus : public CreatureScript
                             events.ScheduleEvent(EVENT_FIREBALL, 3000);
                             break;
                         case EVENT_FIREBOMB:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_FIREBOMB);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_FIREBOMB);
                             events.ScheduleEvent(EVENT_FIREBOMB, urand(15000, 20000));
                             break;
                         case EVENT_BLASTWAVE:
@@ -360,13 +351,13 @@ class npc_queen_azshara_enchanted_magus : public CreatureScript
                             events.ScheduleEvent(EVENT_ICE_FLING, urand(10000, 20000));
                             break;
                         case EVENT_BLADES_OF_ICE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_BLADES_OF_ICE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_BLADES_OF_ICE);
                             events.ScheduleEvent(EVENT_BLADES_OF_ICE, urand(12000, 20000));
                             break;
                         case EVENT_COLDFLAME:
-                            //if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                //DoCast(pTarget, SPELL_COLDFLAME);
+                            //if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                //DoCast(target, SPELL_COLDFLAME);
                             events.ScheduleEvent(EVENT_COLDFLAME, urand(16000, 25000));
                             break;
                         case EVENT_ARCANE_SHOCK:
@@ -376,10 +367,10 @@ class npc_queen_azshara_enchanted_magus : public CreatureScript
                             break;
                         case EVENT_ARCANE_BOMB:
                         {
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
                             {
-                                Creature* pStalker1 = me->SummonCreature(NPC_HAMMER_OF_DIVINITY_2, pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ(), pTarget->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 20000);
-                                Creature* pStalker2 = me->SummonCreature(NPC_HAMMER_OF_DIVINITY_1, pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ() + 30.0f, pTarget->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 20000);
+                                Creature* pStalker1 = me->SummonCreature(NPC_HAMMER_OF_DIVINITY_2, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), target->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 20000);
+                                Creature* pStalker2 = me->SummonCreature(NPC_HAMMER_OF_DIVINITY_1, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ() + 30.0f, target->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 20000);
                                 
                                 if (pStalker1 && pStalker2)
                                     pStalker2->GetMotionMaster()->MovePoint(0, pStalker1->GetPositionX(), pStalker1->GetPositionY(), pStalker1->GetPositionZ()); 
@@ -398,30 +389,30 @@ class npc_queen_azshara_enchanted_magus : public CreatureScript
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_queen_azshara_enchanted_magusAI>(creature);
+        }
 };
 
 class npc_queen_azshara_hammer_of_divinity : public CreatureScript
 {
     public:
-
         npc_queen_azshara_hammer_of_divinity() : CreatureScript("npc_queen_azshara_hammer_of_divinity") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_queen_azshara_hammer_of_divinityAI : public ScriptedAI
         {
-            return new npc_queen_azshara_hammer_of_divinityAI(pCreature);
-        }
-
-        struct npc_queen_azshara_hammer_of_divinityAI : public Scripted_NoMovementAI
-        {
-            npc_queen_azshara_hammer_of_divinityAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_queen_azshara_hammer_of_divinityAI(Creature* creature) : ScriptedAI(creature)
             {
                 bDespawn = false;
                 me->SetSpeed(MOVE_RUN, 0.1f, true); 
                 me->SetCanFly(true);
                 me->SetDisableGravity(true);
+                SetCombatMovement(false);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 /*diff*/) override
             {
                 if (bDespawn)
                     return;
@@ -434,9 +425,15 @@ class npc_queen_azshara_hammer_of_divinity : public CreatureScript
                     me->DespawnOrUnsummon(500);
                 }
             }
+
         private:
             bool bDespawn;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_queen_azshara_hammer_of_divinityAI>(creature);
+        }
 };
 
 class spell_queen_azshara_coldflame : public SpellScriptLoader
@@ -448,13 +445,13 @@ class spell_queen_azshara_coldflame : public SpellScriptLoader
         {
             PrepareAuraScript(spell_queen_azshara_coldflame_AuraScript);
             
-            bool Load()
+            bool Load() override
             {
                 count = 0;
                 return true;
             }
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
@@ -472,7 +469,7 @@ class spell_queen_azshara_coldflame : public SpellScriptLoader
                 GetCaster()->CastSpell(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), SPELL_COLDFLAME_DMG, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_queen_azshara_coldflame_AuraScript::PeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
             }
@@ -481,7 +478,7 @@ class spell_queen_azshara_coldflame : public SpellScriptLoader
             uint8 count;
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_queen_azshara_coldflame_AuraScript();
         }
@@ -505,14 +502,14 @@ class spell_queen_azshara_arcane_bomb : public SpellScriptLoader
                 GetHitDest()->RelocateOffset(offset);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHit += SpellEffectFn(spell_queen_azshara_arcane_bomb_SpellScript::ChangeSummonPos, EFFECT_0, SPELL_EFFECT_SUMMON);
             }
         };
 
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_queen_azshara_arcane_bomb_SpellScript();
         }

@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,18 +23,24 @@
 #include "Common.h"
 #include "SharedDefines.h"
 #include "Define.h"
+#include "WorldStateBuilder.h"
 #include <ace/Singleton.h>
 
 #define max_ge_check_delay DAY  // 1 day in seconds
 
 enum GameEventState
 {
-    GAMEEVENT_NORMAL = 0,   // standard game events
-    GAMEEVENT_WORLD_INACTIVE = 1,   // not yet started
-    GAMEEVENT_WORLD_CONDITIONS = 2,  // condition matching phase
-    GAMEEVENT_WORLD_NEXTPHASE = 3,   // conditions are met, now 'length' timer to start next event
-    GAMEEVENT_WORLD_FINISHED = 4,    // next events are started, unapply this one
-    GAMEEVENT_INTERNAL = 5, // never handled in update
+    GAMEEVENT_NORMAL           = 0, // standard game events
+    GAMEEVENT_WORLD_INACTIVE   = 1, // not yet started
+    GAMEEVENT_WORLD_CONDITIONS = 2, // condition matching phase
+    GAMEEVENT_WORLD_NEXTPHASE  = 3, // conditions are met, now 'length' timer to start next event
+    GAMEEVENT_WORLD_FINISHED   = 4, // next events are started, unapply this one
+    GAMEEVENT_INTERNAL         = 5  // never handled in update
+};
+
+enum GameEvents
+{
+    GAME_EVENT_APRIL_FOOLS_DAY = 95,
 };
 
 struct GameEventFinishCondition
@@ -55,7 +62,7 @@ typedef std::map<uint32 /*condition id*/, GameEventFinishCondition> GameEventCon
 
 struct GameEventData
 {
-    GameEventData() : start(1), end(0), nextstart(0), occurence(0), length(0), holiday_id(HOLIDAY_NONE), state(GAMEEVENT_NORMAL) {}
+    GameEventData() : start(1), end(0), nextstart(0), occurence(0), length(0), holiday_id(HOLIDAY_NONE), state(GAMEEVENT_NORMAL) { }
     time_t start;           // occurs after this time
     time_t end;             // occurs before this time
     time_t nextstart;       // after this time the follow-up events count this phase completed
@@ -66,16 +73,19 @@ struct GameEventData
     GameEventConditionMap conditions;  // conditions to finish
     std::set<uint16 /*gameevent id*/> prerequisite_events;  // events that must be completed before starting this event
     std::string description;
-
+    uint8 announce;         // if 0 dont announce, if 1 announce, if 2 take config value
+    uint32 worldstate;      // needs for achievements
+    uint32 ScriptID = 0;
+    uint32 LastScriptUpdateTime = 0;
     bool isValid() const { return length > 0 || state > GAMEEVENT_NORMAL; }
 };
 
 struct ModelEquip
 {
     uint32 modelid;
-    uint32 equipment_id;
     uint32 modelid_prev;
-    uint32 equipement_id_prev;
+    uint8 equipment_id;
+    uint8 equipement_id_prev;
 };
 
 struct NPCVendorEntry
@@ -98,7 +108,7 @@ class GameEventMgr
 
     private:
         GameEventMgr();
-        ~GameEventMgr() {};
+        ~GameEventMgr() { };
 
     public:
         typedef std::set<uint16> ActiveEvents;
@@ -118,6 +128,7 @@ class GameEventMgr
         void StopEvent(uint16 event_id, bool overwrite = false);
         void HandleQuestComplete(uint32 quest_id);  // called on world event type quest completions
         void HandleWorldEventGossip(Player* player, Creature* c);
+        void FillWorldStates(Player* player, WorldStateBuilder& builder);
         uint32 GetNPCFlag(Creature* cr);
         uint32 GetNpcTextId(uint32 guid);
         uint16 GetEventIdForQuest(Quest const* quest) const;
@@ -168,10 +179,11 @@ class GameEventMgr
         //GameEventGuidMap  mGameEventGameobjectGuids;
         GameEventIdMap    mGameEventPoolIds;
         GameEventDataMap  mGameEvent;
+        GameEventBitmask  mGameEventBattlegroundHolidays;
         QuestIdToEventConditionMap mQuestToEventConditions;
         GameEventNPCFlagMap mGameEventNPCFlags;
         ActiveEvents m_ActiveEvents;
-        UNORDERED_MAP<uint32, uint16> _questToEventLinks;
+        std::unordered_map<uint32, uint16> _questToEventLinks;
         bool isSystemInit;
     public:
         GameEventGuidMap  mGameEventCreatureGuids;
@@ -184,4 +196,3 @@ bool IsHolidayActive(HolidayIds id);
 bool IsEventActive(uint16 event_id);
 
 #endif
-

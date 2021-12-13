@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,20 +18,22 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
-#include "InstanceScript.h"
+#include "ScriptPCH.h"
 #include "pit_of_saron.h"
 
-// positions for Martin Victus (37591) and Gorkun Ironskull (37592)
-Position const SlaveLeaderPos  = {689.7158f, -104.8736f, 513.7360f, 0.0f};
 // position for Jaina and Sylvanas
-Position const EventLeaderPos2 = {1054.368f, 107.14620f, 628.4467f, 0.0f};
+Position const EventLeaderPos2   = { 1054.368f, 107.14620f, 628.4467f, 0.0f };
 
-DoorData const Doors[] =
+// Slaves For Alliance and Horde. Martin Victus and Gorkun Ironskull 
+const uint32 NpcSlaveAlliance[3] = { 37591, 37572, 37575 };
+const uint32 NpcSlaveHorde[3]    = { 37592, 37578, 37579 };
+
+// Dead Garfrost
+static const Position SlaveLeaderPos[3] =
 {
-    {GO_ICE_WALL,   DATA_GARFROST,  DOOR_TYPE_PASSAGE,  BOUNDARY_NONE},
-    {GO_ICE_WALL,   DATA_ICK,       DOOR_TYPE_PASSAGE,  BOUNDARY_NONE},
-    {GO_HALLS_OF_REFLECTION_PORTCULLIS,   DATA_TYRANNUS,       DOOR_TYPE_PASSAGE,  BOUNDARY_NONE},
+    { 693.281555f, -169.690872f, 526.965454f, 1.485173f },
+    { 696.024902f, -169.953308f, 526.870850f, 1.603771f },
+    { 690.887512f, -169.970963f, 526.891357f, 1.269191f },
 };
 
 class instance_pit_of_saron : public InstanceMapScript
@@ -41,7 +46,7 @@ class instance_pit_of_saron : public InstanceMapScript
             instance_pit_of_saron_InstanceScript(Map* map) : InstanceScript(map)
             {
                 SetBossNumber(MAX_ENCOUNTER);
-                LoadDoorData(Doors);
+
                 _garfrostGUID = 0;
                 _krickGUID = 0;
                 _ickGUID = 0;
@@ -50,21 +55,24 @@ class instance_pit_of_saron : public InstanceMapScript
                 _jainaOrSylvanas1GUID = 0;
                 _jainaOrSylvanas2GUID = 0;
                 _teamInInstance = 0;
+
+                _dontLookUpEligible = true;
+                instance->SetWorldState(WORLDSTATE_DONT_LOOK_UP, 1);
             }
 
-            void BeforePlayerEnter(Player* player)
+            void OnPlayerEnter(Player* player) override
             {
                 if (!_teamInInstance)
                     _teamInInstance = player->GetTeam();
             }
 
-            void OnCreatureCreate(Creature* creature)
+            void OnCreatureCreate(Creature* creature) override
             {
                 if (!_teamInInstance)
                 {
-                    Map::PlayerList const &players = instance->GetPlayers();
+                    Map::PlayerList const& players = instance->GetPlayers();
                     if (!players.isEmpty())
-                        if (Player* player = players.begin()->getSource())
+                        if (Player* player = players.begin()->GetSource())
                             _teamInInstance = player->GetTeam();
                 }
 
@@ -163,45 +171,56 @@ class instance_pit_of_saron : public InstanceMapScript
                 }
             }
 
-            void OnGameObjectCreate(GameObject* go)
+            void OnGameObjectCreate(GameObject* go) override
             {
                 switch (go->GetEntry())
                 {
-                    case GO_ICE_WALL:
-                    case GO_HALLS_OF_REFLECTION_PORTCULLIS:
-                        AddDoor(go, true);
-                        break;
+                case GO_ICE_WALL:
+                    uiIceWall = go->GetGUID();
+                    if (GetBossState(DATA_GARFROST) == DONE && GetBossState(DATA_ICK) == DONE)
+                        HandleGameObject(0, true, go);
+                    break;
                 }
             }
 
-            void OnGameObjectRemove(GameObject* go)
-            {
-                switch (go->GetEntry())
-                {
-                    case GO_ICE_WALL:
-                    case GO_HALLS_OF_REFLECTION_PORTCULLIS:
-                        AddDoor(go, false);
-                        break;
-                }
-            }
-
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
 
                 switch (type)
                 {
-                    case DATA_GARFROST:
-                        if (state == DONE)
+                    case DATA_ICK:
+                        switch (state)
                         {
-                            if (Creature* summoner = instance->GetCreature(_garfrostGUID))
-                            {
-                                if (_teamInInstance == ALLIANCE)
-                                    summoner->SummonCreature(NPC_MARTIN_VICTUS_1, SlaveLeaderPos, TEMPSUMMON_MANUAL_DESPAWN);
-                                else
-                                    summoner->SummonCreature(NPC_GORKUN_IRONSKULL_2, SlaveLeaderPos, TEMPSUMMON_MANUAL_DESPAWN);
-                            }
+                            case DONE:
+                            //if (Creature* summoner = instance->GetCreature(_garfrostGUID))
+                            //{
+                            //if (_teamInInstance == ALLIANCE)
+                            //    summoner->SummonCreature(NPC_JAINA_PART2, EventLeaderPos2, TEMPSUMMON_MANUAL_DESPAWN);
+                            //else
+                            //        summoner->SummonCreature(NPC_SYLVANAS_PART2, EventLeaderPos2, TEMPSUMMON_MANUAL_DESPAWN);
+                            //}
+                            if (GetBossState(DATA_GARFROST) == DONE)
+                                HandleGameObject(uiIceWall, true, NULL);
+                        }
+                        break;
+                    case DATA_GARFROST:
+                        switch (state)
+                        {
+                            case DONE:
+                                if (Creature* summoner = instance->GetCreature(_garfrostGUID))
+                                {
+                                    for (int i = 0; i < 3; ++i)
+                                    {
+                                        if (_teamInInstance == ALLIANCE)
+                                            summoner->SummonCreature(NpcSlaveAlliance[i], SlaveLeaderPos[i], TEMPSUMMON_MANUAL_DESPAWN);
+                                        else
+                                            summoner->SummonCreature(NpcSlaveHorde[i], SlaveLeaderPos[i], TEMPSUMMON_MANUAL_DESPAWN);
+                                    }
+                                }
+                                if (GetBossState(DATA_ICK)==DONE)
+                                    HandleGameObject(uiIceWall, true, NULL);
                         }
                         break;
                     case DATA_TYRANNUS:
@@ -219,11 +238,39 @@ class instance_pit_of_saron : public InstanceMapScript
                     default:
                         break;
                 }
-
                 return true;
             }
 
-            uint32 GetData(uint32 type)
+            void SetData64(uint32 type, uint64 data) override
+            {
+                switch (type)
+                {
+                    case DATA_CAVE_GUARDIAN_SPAWN:
+                        if (_dontLookUpEligible)
+                            _caveGuardianSet.insert(data);
+                        break;
+                    case DATA_CAVE_GUARDIAN_KILL:
+                        if (_dontLookUpEligible)
+                        {
+                            _caveGuardianSet.erase(data);
+                            // Killed last cave guardian
+                            if (_caveGuardianSet.empty())
+                            {
+                                DistributeDontLookUpAchievement(data);
+                                _dontLookUpEligible = false;
+                            }
+                        }
+                        break;
+                    case DATA_DONT_LOOK_UP_FAIL:
+                        _dontLookUpEligible = false;
+                        instance->SetWorldState(WORLDSTATE_DONT_LOOK_UP, 0);
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            uint32 GetData(uint32 type) const override
             {
                 switch (type)
                 {
@@ -236,7 +283,7 @@ class instance_pit_of_saron : public InstanceMapScript
                 return 0;
             }
 
-            uint64 GetData64(uint32 type)
+            uint64 GetData64(uint32 type) const override
             {
                 switch (type)
                 {
@@ -263,18 +310,20 @@ class instance_pit_of_saron : public InstanceMapScript
                 return 0;
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
                 std::ostringstream saveStream;
                 saveStream << "P S " << GetBossSaveData();
 
+                saveStream << " " << _dontLookUpEligible;
+
                 OUT_SAVE_INST_DATA_COMPLETE;
                 return saveStream.str();
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -300,11 +349,48 @@ class instance_pit_of_saron : public InstanceMapScript
 
                         SetBossState(i, EncounterState(tmpState));
                     }
+                    loadStream >> _dontLookUpEligible;
                 }
                 else
                     OUT_LOAD_INST_DATA_FAIL;
 
                 OUT_LOAD_INST_DATA_COMPLETE;
+            }
+
+            void DistributeDontLookUpAchievement(uint64 guardianGUID)
+            {
+                Map::PlayerList const& players = instance->GetPlayers();
+                if (players.isEmpty())
+                    return;
+
+                // First cycle for radius check
+                for (auto&& ref : players)
+                {
+                    if (Player* player = ref.GetSource())
+                    {
+                        // GM is here
+                        if (player->IsGameMaster())
+                            continue;
+
+                        // Get last killed guardian
+                        Creature* guardian = ObjectAccessor::GetCreature(*player, guardianGUID);
+                        if (!guardian || !guardian->IsWithinDist(player, 40.0f))                             // All players must be in 40 yards radius from last guardian
+                            return;
+                    }
+                }
+
+                // Second cycle for distribute achievement
+                for (auto&& ref : players)
+                {
+                    if (Player* player = ref.GetSource())
+                    {
+                        // GM is here
+                        if (player->IsGameMaster())
+                            continue;
+
+                        player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, 72845);
+                    }
+                }
             }
 
         private:
@@ -317,11 +403,15 @@ class instance_pit_of_saron : public InstanceMapScript
             uint64 _tyrannusEventGUID;
             uint64 _jainaOrSylvanas1GUID;
             uint64 _jainaOrSylvanas2GUID;
+            uint64 uiIceWall;
 
             uint32 _teamInInstance;
+
+            std::set<uint64> _caveGuardianSet;
+            bool _dontLookUpEligible;
         };
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
             return new instance_pit_of_saron_InstanceScript(map);
         }

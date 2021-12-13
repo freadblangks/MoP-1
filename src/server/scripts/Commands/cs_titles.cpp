@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,39 +24,38 @@ Comment: All titles related commands
 Category: commandscripts
 EndScriptData */
 
-#include "ScriptMgr.h"
-#include "ObjectMgr.h"
 #include "Chat.h"
+#include "Language.h"
+#include "ObjectMgr.h"
+#include "Player.h"
+#include "ScriptMgr.h"
 
 class titles_commandscript : public CommandScript
 {
 public:
     titles_commandscript() : CommandScript("titles_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand titlesSetCommandTable[] =
+        static std::vector<ChatCommand> titlesSetCommandTable =
         {
-            { "mask",           SEC_GAMEMASTER,     false, &HandleTitlesSetMaskCommand,        "", NULL },
-            { NULL,             0,                  false, NULL,                               "", NULL }
+            { "mask",       SEC_ADMINISTRATOR,  false,  &HandleTitlesSetMaskCommand,    },
         };
-        static ChatCommand titlesCommandTable[] =
+        static std::vector<ChatCommand> titlesCommandTable =
         {
-            { "add",            SEC_GAMEMASTER,     false, &HandleTitlesAddCommand,            "", NULL },
-            { "current",        SEC_GAMEMASTER,     false, &HandleTitlesCurrentCommand,        "", NULL },
-            { "remove",         SEC_GAMEMASTER,     false, &HandleTitlesRemoveCommand,         "", NULL },
-            { "set",            SEC_GAMEMASTER,     false, NULL,              "", titlesSetCommandTable },
-            { NULL,             0,                  false, NULL,                               "", NULL }
+            { "add",        SEC_ADMINISTRATOR,  false,  &HandleTitlesAddCommand,        },
+            { "current",    SEC_ADMINISTRATOR,  false,  &HandleTitlesCurrentCommand,    },
+            { "remove",     SEC_ADMINISTRATOR,  false,  &HandleTitlesRemoveCommand,     },
+            { "set",        SEC_ADMINISTRATOR,  false,  titlesSetCommandTable           },
         };
-        static ChatCommand commandTable[] =
+        static std::vector<ChatCommand> commandTable =
         {
-            { "titles",         SEC_GAMEMASTER,     false, NULL,                 "", titlesCommandTable },
-            { NULL,             0,                  false, NULL,                               "", NULL }
+            { "titles",     SEC_ADMINISTRATOR,  false,  titlesCommandTable              },
         };
         return commandTable;
     }
 
-    static bool HandleTitlesCurrentCommand(ChatHandler* handler, const char* args)
+    static bool HandleTitlesCurrentCommand(ChatHandler* handler, char const* args)
     {
         // number or [name] Shift-click form |color|Htitle:title_id|h[name]|h|r
         char* id_p = handler->extractKeyFromLink((char*)args, "Htitle");
@@ -92,14 +93,14 @@ public:
         std::string tNameLink = handler->GetNameLink(target);
 
         target->SetTitle(titleInfo);                            // to be sure that title now known
-        target->SetUInt32Value(PLAYER_CHOSEN_TITLE, titleInfo->bit_index);
+        target->SetUInt32Value(PLAYER_FIELD_PLAYER_TITLE, titleInfo->bit_index);
 
         handler->PSendSysMessage(LANG_TITLE_CURRENT_RES, id, titleInfo->name, tNameLink.c_str());
 
         return true;
     }
 
-    static bool HandleTitlesAddCommand(ChatHandler* handler, const char* args)
+    static bool HandleTitlesAddCommand(ChatHandler* handler, char const* args)
     {
         // number or [name] Shift-click form |color|Htitle:title_id|h[name]|h|r
         char* id_p = handler->extractKeyFromLink((char*)args, "Htitle");
@@ -136,9 +137,8 @@ public:
 
         std::string tNameLink = handler->GetNameLink(target);
 
-        char const* targetName = target->GetName();
         char titleNameStr[80];
-        snprintf(titleNameStr, 80, titleInfo->name, targetName);
+        snprintf(titleNameStr, 80, titleInfo->name[handler->GetSessionDbcLocale()], target->GetName().c_str());
 
         target->SetTitle(titleInfo);
         handler->PSendSysMessage(LANG_TITLE_ADD_RES, id, titleNameStr, tNameLink.c_str());
@@ -146,7 +146,7 @@ public:
         return true;
     }
 
-    static bool HandleTitlesRemoveCommand(ChatHandler* handler, const char* args)
+    static bool HandleTitlesRemoveCommand(ChatHandler* handler, char const* args)
     {
         // number or [name] Shift-click form |color|Htitle:title_id|h[name]|h|r
         char* id_p = handler->extractKeyFromLink((char*)args, "Htitle");
@@ -185,15 +185,14 @@ public:
 
         std::string tNameLink = handler->GetNameLink(target);
 
-        char const* targetName = target->GetName();
         char titleNameStr[80];
-        snprintf(titleNameStr, 80, titleInfo->name, targetName);
+        snprintf(titleNameStr, 80, titleInfo->name[handler->GetSessionDbcLocale()], target->GetName().c_str());
 
         handler->PSendSysMessage(LANG_TITLE_REMOVE_RES, id, titleNameStr, tNameLink.c_str());
 
-        if (!target->HasTitle(target->GetInt32Value(PLAYER_CHOSEN_TITLE)))
+        if (!target->HasTitle(target->GetInt32Value(PLAYER_FIELD_PLAYER_TITLE)))
         {
-            target->SetUInt32Value(PLAYER_CHOSEN_TITLE, 0);
+            target->SetUInt32Value(PLAYER_FIELD_PLAYER_TITLE, 0);
             handler->PSendSysMessage(LANG_CURRENT_TITLE_RESET, tNameLink.c_str());
         }
 
@@ -201,7 +200,7 @@ public:
     }
 
     //Edit Player KnownTitles
-    static bool HandleTitlesSetMaskCommand(ChatHandler* handler, const char* args)
+    static bool HandleTitlesSetMaskCommand(ChatHandler* handler, char const* args)
     {
         if (!*args)
             return false;
@@ -233,9 +232,9 @@ public:
         target->SetUInt64Value(PLAYER_FIELD_KNOWN_TITLES, titles);
         handler->SendSysMessage(LANG_DONE);
 
-        if (!target->HasTitle(target->GetInt32Value(PLAYER_CHOSEN_TITLE)))
+        if (!target->HasTitle(target->GetInt32Value(PLAYER_FIELD_PLAYER_TITLE)))
         {
-            target->SetUInt32Value(PLAYER_CHOSEN_TITLE, 0);
+            target->SetUInt32Value(PLAYER_FIELD_PLAYER_TITLE, 0);
             handler->PSendSysMessage(LANG_CURRENT_TITLE_RESET, handler->GetNameLink(target).c_str());
         }
 

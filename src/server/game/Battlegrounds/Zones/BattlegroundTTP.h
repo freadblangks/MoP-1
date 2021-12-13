@@ -1,7 +1,7 @@
-#ifndef __BATTLEGROUNDTTP_H
-#define __BATTLEGROUNDTTP_H
+#ifndef BATTLEGROUND_TTP_H
+#define BATTLEGROUND_TTP_H
 
-class Battleground;
+#include "Battleground.h"
 
 enum BattlegroundTTPObjectTypes
 {
@@ -20,30 +20,23 @@ enum BattlegroundTTPObjects
     BG_TTP_OBJECT_TYPE_BUFF_2    = 184664
 };
 
-class BattlegroundTTPScore : public BattlegroundScore
-{
-    public:
-        BattlegroundTTPScore() {};
-        virtual ~BattlegroundTTPScore() {};
-};
-
 class BattlegroundTTP : public Battleground
 {
-    public:
-        BattlegroundTTP();
-        ~BattlegroundTTP();
+public:
+    BattlegroundTTP();
+    ~BattlegroundTTP();
 
-        /* inherited from BattlegroundClass */
-        virtual void AddPlayer(Player* player);
-        virtual void StartingEventCloseDoors();
-        virtual void StartingEventOpenDoors();
+    /* inherited from BattlegroundClass */
+    void AddPlayer(Player* player) override;
+    void OnInvite(Player* player, GroupQueueInfo const* ginfo) override;
+    void StartingEventCloseDoors() override;
+    void StartingEventOpenDoors() override;
 
-        void RemovePlayer(Player* player, uint64 guid, uint32 team);
-        void HandleAreaTrigger(Player* Source, uint32 Trigger);
-        bool SetupBattleground();
-        virtual void Reset();
-        virtual void FillInitialWorldStates(WorldPacket &d);
-        void HandleKillPlayer(Player* player, Player* killer);
-        bool HandlePlayerUnderMap(Player* player);
+    void RemovePlayer(Player* player, uint64 guid, uint32 team);
+    void HandleAreaTrigger(Player* Source, uint32 Trigger);
+    bool SetupBattleground();
+    void FillInitialWorldStates(WorldStateBuilder& builder) override;
+    void HandleKillPlayer(Player* player, Player* killer) override;
+    bool HandlePlayerUnderMap(Player* player) override;
 };
 #endif

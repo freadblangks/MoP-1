@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,19 +18,22 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+ /* ScriptData
+ SDName: boss_Lich_king
+ SDCategory: Halls of Reflection
+ EndScriptData */
+
 #include "ScriptPCH.h"
 #include "halls_of_reflection.h"
 #include "ScriptedEscortAI.h"
+#include "Transport.h"
 
 enum Spells
 {
-    SPELL_WINTER                       = 69780,
-    SPELL_PAIN_AND_SUFFERING           = 74115,
-    SPELL_FURY_OF_FROSTMOURNE          = 70063,
-    SPELL_SOUL_REAPER                  = 73797,
-    SPELL_RAISE_DEAD                   = 69818,
-    SPELL_ICE_PRISON                   = 69708,
-    SPELL_DARK_ARROW                   = 70194,
+    SPELL_SUMMON_ICE_WALL              = 69768,
+    SPELL_SUMMON_RAGING_GHOUL          = 69818,
+    SPELL_SUMMON_LUMBERING_ABOMINATION = 69835,
+    SPELL_SUMMON_RISEN_WITCH_DOCTOR    = 69836,
     SPELL_HARVEST_SOUL                 = 70070,
 
     // Raging gnoul
@@ -36,29 +42,23 @@ enum Spells
 
     // Witch Doctor
     SPELL_COURSE_OF_DOOM               = 70144,
-    H_SPELL_COURSE_OF_DOOM             = 70183,
     SPELL_SHADOW_BOLT_VOLLEY           = 70145,
-    H_SPELL_SHADOW_BOLT_VOLLEY         = 70184,
     SPELL_SHADOW_BOLT                  = 70080,
-    H_SPELL_SHADOW_BOLT                = 70182,
 
-    //Lumbering Abomination
+    // Lumbering Abomination
     SPELL_ABON_STRIKE                  = 40505,
     SPELL_VOMIT_SPRAY                  = 70176,
-    H_SPELL_VOMIT_SPRAY                = 70181,
 };
 
-enum Yells
+enum Events
 {
-    SAY_LICH_KING_WALL_01              = 2,
-    SAY_LICH_KING_WALL_02              = 3,
-    SAY_LICH_KING_WALL_03              = 4,
-    SAY_LICH_KING_WALL_04              = 5,
-    SAY_LICH_KING_GNOUL                = 6,
-    SAY_LICH_KING_ABON                 = 7,
-    SAY_LICH_KING_WINTER               = 8,
-    SAY_LICH_KING_END_DUN              = 9,
-    SAY_LICH_KING_WIN                  = 10,
+    EVENT_SAY_REMORSELESS_WINTER       = 1,
+    EVENT_SAY_SUMMON_RAGING_GHOUL,
+    EVENT_SAY_SUMMON_MINIONS,
+    EVENT_REMORSELESS_WINTER,
+    EVENT_SUMMON_RAGING_GHOUL,
+    EVENT_SUMMON_LUMBERING_ABOMINATION,
+    EVENT_SUMMON_RISEN_WITCH_DOCTOR,
 };
 
 class boss_lich_king_hor : public CreatureScript
@@ -66,322 +66,318 @@ class boss_lich_king_hor : public CreatureScript
     public:
         boss_lich_king_hor() : CreatureScript("boss_lich_king_hor") { }
 
-        CreatureAI* GetAI(Creature* creature) const
+        struct boss_lich_king_horAI : public ScriptedAI
         {
-            return new boss_lich_king_horAI(creature);
-        }
-
-        struct boss_lich_king_horAI : public npc_escortAI
-        {
-            boss_lich_king_horAI(Creature* creature) : npc_escortAI(creature)
+            boss_lich_king_horAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
                 Reset();
-                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
             }
 
-            InstanceScript* _instance;
-            uint32 Step;
-            uint32 StepTimer;
-            uint32 uiWall;
+            InstanceScript* instance;
+            SummonList summons;
             bool StartEscort;
             bool NonFight;
+            bool splineStarted;
+            bool WaypointsEnded = false;
 
-            void Reset()
+            void Reset() override
             {
+                if (!instance)
+                    return;
+
                 NonFight = false;
                 StartEscort = false;
-                uiWall = 0;
+                splineStarted = false;
             }
 
-            void DamageTaken(Unit* /*who*/, uint32 &damage)
-            {
-                damage = 0;
-            }
+            void JustDied(Unit* /*killer*/) override { }
 
-            void WaypointReached(uint32 i)
+            void AttackStart(Unit* who) override
             {
-                if (!_instance)
+                if (!instance || !who)
                     return;
 
-                if (_instance->GetData(DATA_ICE_WALL_STATE_1) == IN_PROGRESS)
-                {
-                    uiWall = 1;
-                    SetEscortPaused(true);
-                }
-
-                if (_instance->GetData(DATA_ICE_WALL_STATE_2) == IN_PROGRESS)
-                {
-                    uiWall = 2;
-                    SetEscortPaused(true);
-                }
-
-                if (_instance->GetData(DATA_ICE_WALL_STATE_3) == IN_PROGRESS)
-                {
-                    uiWall = 3;
-                    SetEscortPaused(true);
-                }
-
-                if (_instance->GetData(DATA_ICE_WALL_STATE_4) == IN_PROGRESS)
-                {
-                    uiWall = 4;
-                    SetEscortPaused(true);
-                }
-
-                switch (i)
-                {
-                    case 20:
-                        SetEscortPaused(true);
-                        _instance->SetData(DATA_LICHKING_EVENT, SPECIAL);
-                        Talk(SAY_LICH_KING_END_DUN);
-                        if (Creature* escapeLider = ObjectAccessor::GetCreature(*me, _instance ? _instance->GetData64(DATA_ESCAPE_LIDER) : 0))
-                            me->CastSpell(escapeLider, SPELL_HARVEST_SOUL, false);
-                        me->setActive(false);
-                        break;
-                }
-            }
-
-            void AttackStart(Unit* who)
-            {
-                if (!_instance || !who || NonFight)
+                if (NonFight)
                     return;
 
-                if (_instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS || who->GetTypeId() == TYPEID_PLAYER)
+                if (instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS || who->GetTypeId() == TYPEID_PLAYER)
                     return;
 
-                me->Attack(who, true);
+                ScriptedAI::AttackStart(who);
             }
 
-            void JustSummoned(Creature* summoned)
+            void JustSummoned(Creature* summon) override
             {
-                if (!_instance || !summoned)
+                summons.Summon(summon);
+
+                if (summon->GetEntry() == NPC_ICE_WALL_TARGET)
                     return;
 
-                summoned->setActive(true);
-                
-                _instance->SetData(DATA_SUMMONS, 1);
+                summon->SetInCombatWithZone();
+                summon->setActive(true);
             }
 
-            void CallGuard(uint32 GuardID)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
-                me->SummonCreature(GuardID,(me->GetPositionX()-5)+rand()%10, (me->GetPositionY()-5)+rand()%10, me->GetPositionZ(),4.17f,TEMPSUMMON_TIMED_OR_DEAD_DESPAWN,360000);
+                summons.Despawn(summon);
             }
 
-            void Wall01()
+            bool CanAIAttack(Unit const* who) const override
             {
-                switch (Step)
+                return who->GetTypeId() == TYPEID_UNIT && (who->GetEntry() == NPC_JAINA_OUTRO || who->GetEntry() == NPC_SYLVANAS_OUTRO);
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (damage >= me->GetHealth())
+                    damage = me->GetHealth() - 1;
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                if (actionId == ACTION_LICH_KING_STOP_FOLLOW)
                 {
-                    case 0:
-                        _instance->SetData(DATA_SUMMONS, 3);
-                        Talk(SAY_LICH_KING_WALL_01);
-                        StepTimer = 2000;
-                        ++Step;
-                        break;
-                    case 1:
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        Talk(SAY_LICH_KING_GNOUL);
-                        StepTimer = 7000;
-                        ++Step;
-                        break;
-                    case 2:
-                        DoCast(me, SPELL_PAIN_AND_SUFFERING);
-                        DoCast(me, SPELL_WINTER);
-                        Talk(SAY_LICH_KING_WINTER);
-                        StepTimer = 1000;
-                        ++Step;
-                        break;
-                    case 3:
-                        StepTimer = 2000;
-                        ++Step;
-                        break;
-                    case 4:
-                        me->SetSpeed(MOVE_WALK, 0.7f);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        _instance->SetData(DATA_ICE_WALL_STATE_1, DONE);
-                        StepTimer = 100;
-                        Step = 0;
-                        uiWall = 0;
-                        SetEscortPaused(false);
-                        break;
+                    me->StopMoving();
+                    me->GetMotionMaster()->Clear();
+
+                    Movement::MoveSplineInit init(me);
+                    for (auto itr : lichKingPath)
+                    {
+                        if (itr.GetPositionX() > me->GetPositionX()) // break already reached points
+                            continue;
+
+                        init.Path().push_back(G3D::Vector3(itr.GetPositionX(), itr.GetPositionY(), itr.GetPositionZ()));
+                    }
+
+                    init.SetUncompressed();
+                    init.Launch();
                 }
             }
 
-            void Wall02()
+            void UpdateAI(uint32 diff) override
             {
-                switch (Step)
-                {
-                    case 0:
-                        _instance->SetData(DATA_SUMMONS, 3);
-                        Talk(SAY_LICH_KING_WALL_02);
-                        StepTimer = 2000;
-                        ++Step;
-                        break;
-                    case 1:
-                        Talk(SAY_LICH_KING_GNOUL);
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        StepTimer = 6000;
-                        ++Step;
-                        break;
-                    case 2:
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_ABON);
-                        _instance->SetData(DATA_ICE_WALL_STATE_2, DONE);
-                        StepTimer = 5000;
-                        Step = 0;
-                        uiWall = 0;
-                        SetEscortPaused(false);
-                        break;
-                }
-            }
-
-            void Wall03()
-            {
-                switch(Step)
-                {
-                    case 0:
-                        _instance->SetData(DATA_SUMMONS, 3);
-                        Talk(SAY_LICH_KING_WALL_03);
-                        StepTimer = 2000;
-                        ++Step;
-                        break;
-                    case 1:
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        Talk(SAY_LICH_KING_GNOUL);
-                        StepTimer = 6000;
-                        ++Step;
-                        break;
-                    case 2:
-                        Talk(SAY_LICH_KING_ABON);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_ABON);
-                        CallGuard(NPC_ABON);
-                        _instance->SetData(DATA_ICE_WALL_STATE_3, DONE);
-                        StepTimer = 5000;
-                        Step = 0;
-                        uiWall = 0;
-                        SetEscortPaused(false);
-                        break;
-                }
-            }
-
-            void Wall04()
-            {
-                switch(Step)
-                {
-                    case 0:
-                        _instance->SetData(DATA_SUMMONS, 3);
-                        Talk(SAY_LICH_KING_WALL_04);
-                        StepTimer = 2000;
-                        ++Step;
-                        break;
-                    case 1:
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        Talk(SAY_LICH_KING_GNOUL);
-                        StepTimer = 6000;
-                        ++Step;
-                        break;
-                    case 2:
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_ABON);
-                        CallGuard(NPC_ABON);
-                        StepTimer = 15000;
-                        ++Step;
-                        break;
-                    case 3:
-                        Talk(SAY_LICH_KING_ABON);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        CallGuard(NPC_RISEN_WITCH_DOCTOR);
-                        _instance->SetData(DATA_ICE_WALL_STATE_4, DONE);
-                        uiWall = 0;
-                        SetEscortPaused(false);
-                        ++Step;
-                        break;
-                }
-            }
-
-            void UpdateEscortAI(const uint32 diff)
-            {
-                if (!_instance)
+                if (!instance)
                     return;
 
-                if (_instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED || _instance->GetData(DATA_LICHKING_EVENT) == FAIL)
+                if (instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
                 {
+                    if (!me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC))
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+
                     if (!UpdateVictim())
                         return;
 
                     DoMeleeAttackIfReady();
                 }
+                else if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC))
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
 
                 // Start chase for leader
-                if (_instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS && StartEscort != true)
+                if (instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS && !StartEscort)
                 {
                     StartEscort = true;
-                    me->RemoveAurasDueToSpell(SPELL_ICE_PRISON);
-                    me->RemoveAurasDueToSpell(SPELL_DARK_ARROW);
-                    me->SetInCombatWithZone();
+                    if (me->HasAura(SPELL_ICE_PRISON))
+                    {
+                        DoCast(me, SPELL_STUN_BREAK_JAINA);
+                        me->RemoveAurasDueToSpell(SPELL_ICE_PRISON);
+                    }
+                    else if (me->HasAura(SPELL_DARK_ARROW))
+                    {
+                        DoCast(me, SPELL_STUN_BREAK_JAINA);
+                        me->RemoveAurasDueToSpell(SPELL_DARK_ARROW);
+                    }
                     me->setActive(true);
                     NonFight = true;
                     me->AttackStop();
-                    me->SetSpeed(MOVE_WALK, 2.5f, true);
-                    Start(false, false);
-                    Step = 0;
-                    StepTimer = 100;
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                    DoAttackerAreaInCombat(me, 50000.0f);
+                    Follow(false);
+
+                    me->SummonCreature(NPC_ICE_WALL_TARGET, 5547.833f, 2083.701f, 731.4332f, 1.0297440f);
+                    me->SummonCreature(NPC_ICE_WALL_TARGET, 5503.213f, 1969.547f, 737.0245f, 1.2740900f);
+                    me->SummonCreature(NPC_ICE_WALL_TARGET, 5439.799f, 1878.861f, 752.7194f, 1.0646510f);
+                    me->SummonCreature(NPC_ICE_WALL_TARGET, 5318.289f, 1749.184f, 771.9423f, 0.8726646f);
                 }
 
                 // Leader caught, wipe
-                if (Creature* escapeLider = ObjectAccessor::GetCreature(*me, _instance ? _instance->GetData64(DATA_ESCAPE_LIDER) : 0))
+                if (Creature* pLider = ((Creature*)Unit::GetUnit(*me, instance->GetData64(DATA_ESCAPE_LIDER))))
                 {
-                    if (escapeLider->IsWithinDistInMap(me, 2.0f) && _instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
+                    if (pLider->IsWithinDistInMap(me, 2.0f) && instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
                     {
                         me->setActive(false);
-                        SetEscortPaused(false);
                         me->StopMoving();
+                        me->GetMotionMaster()->Clear();
+                        me->GetMotionMaster()->MoveIdle();
                         Talk(SAY_LICH_KING_WIN);
                         me->CastSpell(me, SPELL_FURY_OF_FROSTMOURNE, false);
-                        me->DealDamage(escapeLider, escapeLider->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                        me->Kill(pLider);
+                        summons.DespawnAll();
                     }
                 }
 
-                if (uiWall == 1)
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    if (StepTimer < diff)
-                        Wall01();
-                    else
-                        StepTimer -= diff;
+                    switch (eventId)
+                    {
+                        case EVENT_SAY_REMORSELESS_WINTER:
+                            Talk(SAY_LICH_KING_WINTER);
+                            DoCast(me, SPELL_PAIN_AND_SUFFERING, true);
+                            break;
+                        case EVENT_SAY_SUMMON_RAGING_GHOUL:
+                            Talk(SAY_LICH_KING_SUMMON_GHOULS);
+                            break;
+                        case EVENT_SAY_SUMMON_MINIONS:
+                            Talk(SAY_LICH_KING_SUMMON_MINIONS);
+                            break;
+                        case EVENT_REMORSELESS_WINTER:
+                        {
+                            DoCast(me, SPELL_REMORSELESS_WINTER);
+                            me->StopMoving();
+                            me->GetMotionMaster()->Clear();
+                            splineStarted = true;
+
+                            Movement::MoveSplineInit init(me);
+                            for (auto itr : lichKingPath)
+                                init.Path().push_back(G3D::Vector3(itr.GetPositionX(), itr.GetPositionY(), itr.GetPositionZ()));
+
+                            init.SetWalk(true);
+                            init.SetVelocity(1.0f);
+                            init.SetUncompressed();
+                            init.Launch();
+
+                            events.ScheduleEvent(EVENT_SAY_REMORSELESS_WINTER, 2000);
+                            break;
+                        }
+                        case EVENT_SUMMON_RAGING_GHOUL:
+                            DoCast(me, SPELL_SUMMON_RAGING_GHOUL);
+                            break;
+                        case EVENT_SUMMON_LUMBERING_ABOMINATION:
+                            DoCast(me, SPELL_SUMMON_LUMBERING_ABOMINATION);
+                            break;
+                        case EVENT_SUMMON_RISEN_WITCH_DOCTOR:
+                            DoCast(me, SPELL_SUMMON_RISEN_WITCH_DOCTOR);
+                            break;
+                        default:
+                            break;
+                    }
+
+                    if (me->HasUnitState(UNIT_STATE_CASTING))
+                        break;
                 }
 
-                if (uiWall == 2)
+                if (me->GetPositionX() < 5280.0f && !WaypointsEnded)
                 {
-                    if (StepTimer < diff)
-                        Wall02();
-                    else
-                        StepTimer -= diff;
+                    WaypointsEnded = true;
+                    instance->SetData(DATA_LICHKING_EVENT, SPECIAL);
+                    Talk(SAY_LICH_KING_ESCAPE_03);
+                    if (Creature* leader = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_ESCAPE_LIDER)))
+                        me->CastSpell(leader, SPELL_HARVEST_SOUL, false);
+
+                    if (Transport* gunship = ObjectAccessor::GetTransport(*me, instance->GetData64(DATA_GUNSHIP)))
+                        gunship->EnableMovement(true);
+
+                    me->setActive(false);
                 }
 
-                if (uiWall == 3)
+                if (instance->GetData(DATA_ICE_WALL_1) == IN_PROGRESS)
                 {
-                    if (StepTimer < diff)
-                        Wall03();
-                    else
-                        StepTimer -= diff;
+                    DoCast(me, SPELL_SUMMON_ICE_WALL);
+                    Talk(SAY_LICH_KING_WALL_01);
+
+                    Follow();
+
+                    uint32 delay = 0;
+                    events.ScheduleEvent(EVENT_REMORSELESS_WINTER,              delay +=  3 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RAGING_GHOUL,             delay +=  4 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  6 * IN_MILLISECONDS);
+                    instance->SetData(DATA_SUMMONS, 7);
+                    instance->SetData(DATA_ICE_WALL_1, DONE);
                 }
 
-                if (uiWall == 4)
+                if (instance->GetData(DATA_ICE_WALL_2) == IN_PROGRESS)
                 {
-                    if (StepTimer < diff)
-                        Wall04();
-                    else
-                        StepTimer -= diff;
+                    DoCast(me, SPELL_SUMMON_ICE_WALL);
+                    Talk(SAY_LICH_KING_WALL_02);
+                    events.ScheduleEvent(EVENT_SAY_SUMMON_RAGING_GHOUL, 5000); // Timer unknown or if even used at all
+
+                    uint32 delay = 0;
+                    events.ScheduleEvent(EVENT_SUMMON_RAGING_GHOUL,             delay +=  5 * IN_MILLISECONDS); // From old script
+                    events.ScheduleEvent(EVENT_SUMMON_LUMBERING_ABOMINATION,    delay +=  6 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  2 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  2 * IN_MILLISECONDS);
+                    instance->SetData(DATA_SUMMONS, 9);
+                    instance->SetData(DATA_ICE_WALL_2, DONE);
                 }
-                return;
+
+                if (instance->GetData(DATA_ICE_WALL_3) == IN_PROGRESS)
+                {
+                    DoCast(me, SPELL_SUMMON_ICE_WALL);
+                    Talk(SAY_LICH_KING_WALL_03);
+                    events.ScheduleEvent(EVENT_SAY_SUMMON_MINIONS, 11000); // Timer unknown or if even used at all
+
+                    uint32 delay = 0;
+                    events.ScheduleEvent(EVENT_SUMMON_RAGING_GHOUL,             delay +=  5 * IN_MILLISECONDS); // From old script
+                    events.ScheduleEvent(EVENT_SUMMON_LUMBERING_ABOMINATION,    delay +=  6 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  2 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_LUMBERING_ABOMINATION,    delay +=  2 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay += 20 * IN_MILLISECONDS);
+                    instance->SetData(DATA_SUMMONS, 10);
+                    instance->SetData(DATA_ICE_WALL_3, DONE);
+                }
+
+                if (instance->GetData(DATA_ICE_WALL_4) == IN_PROGRESS)
+                {
+                    DoCast(me, SPELL_SUMMON_ICE_WALL);
+                    Talk(SAY_LICH_KING_WALL_04);
+                    events.ScheduleEvent(EVENT_SAY_SUMMON_MINIONS, 11000); // Timer unknown or if even used at all
+
+                    uint32 delay = 0;
+                    events.ScheduleEvent(EVENT_SUMMON_RAGING_GHOUL,             delay +=  5 * IN_MILLISECONDS); // From old script
+                    events.ScheduleEvent(EVENT_SUMMON_LUMBERING_ABOMINATION,    delay +=  6 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  2 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  2 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_LUMBERING_ABOMINATION,    delay += 20 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_LUMBERING_ABOMINATION,    delay +=  6 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RAGING_GHOUL,             delay += 10 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  6 * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_SUMMON_RISEN_WITCH_DOCTOR,       delay +=  4 * IN_MILLISECONDS);
+                    instance->SetData(DATA_SUMMONS, 19);
+                    instance->SetData(DATA_ICE_WALL_4, DONE);
+                }
+            }
+
+        private:
+            EventMap events;
+
+            void Follow(bool walk = true)
+            {
+                // Temporarily remove combat flag in order for MotionMaster::MoveFollow not to remove MOVEMENTFLAG_WALKING
+                bool wasInCombat = me->IsInCombat();
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IN_COMBAT);
+
+                if (!splineStarted)
+                {
+                    me->SetWalk(walk);
+                    if (Creature* leader = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_ESCAPE_LIDER)))
+                        me->GetMotionMaster()->MoveFollow(leader, 0.1f, 0.0f);
+                }
+
+                // Restore now that the movement generator has been initialized
+                if (wasInCombat)
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IN_COMBAT);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_lich_king_horAI(creature);
+        }
 };
 
 class npc_raging_gnoul : public CreatureScript
@@ -391,87 +387,96 @@ class npc_raging_gnoul : public CreatureScript
 
         struct npc_raging_gnoulAI : public ScriptedAI
         {
-            npc_raging_gnoulAI(Creature *creature) : ScriptedAI(creature)
+            npc_raging_gnoulAI(Creature* creature) : ScriptedAI(creature)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
+                me->setActive(true);
+                Reset();
             }
 
-            InstanceScript* _instance;
-            uint32 _emergeTimer;
-            bool _doEmerge;
-            bool _doJump;
+            InstanceScript* instance;
+            uint32 EmergeTimer;
+            bool Emerge;
+            bool Jumped;
 
-            void Reset()
+            void Reset() override
             {
-                _emergeTimer = 4000;
-                _doEmerge = false;
-                _doJump = false;
+                me->UpdateObjectVisibility();
+                DoCast(me, SPELL_EMERGE_VISUAL);
+                EmergeTimer = 4000;
+                Emerge = false;
+                Jumped = false;
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void JustDied(Unit* /*killer*/) override
             {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetStandState(UNIT_STAND_STATE_SUBMERGED);
-                DoCast(me, SPELL_EMERGE_VISUAL); 
-                DoZoneInCombat(me, 100.00f); 
+                if (!instance)
+                    return;
+
+                instance->SetData(DATA_SUMMONS, 0);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void AttackStart(Unit* who) override
             {
-                if (_instance)
-                    _instance->SetData(DATA_SUMMONS, 0);
-            }
+                if (!who)
+                    return;
 
-            void AttackStart(Unit* who)
-            {
-                if (!who || !_doEmerge)
+                if (Emerge == false)
                     return;
 
                 ScriptedAI::AttackStart(who);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!_instance)
+                if (!instance)
                     return;
 
-                if (_instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
+                if (instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
                 {
-                    if (!_doEmerge)
+                    if (Emerge != true)
                     {
-                        if (_emergeTimer < diff)
+                        if (EmergeTimer < diff)
                         {
-                            me->SetStandState(UNIT_STAND_STATE_STAND);
-                            _doEmerge = true;
-
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            if (Unit* victim = me->SelectVictim())
+                            //me->RemoveFlag(SPLINEFLAG_WALKING | MOVEMENTFLAG_WALKING, true);
+                            Emerge = true;
+                            if (Creature* pLider = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_ESCAPE_LIDER)))
                             {
-                                DoResetThreat(); 
-                                AttackStart(victim);
+                                DoResetThreat();
+                                me->AI()->AttackStart(pLider);
+                                me->AddThreat(pLider, 100.0f);
+                                me->GetMotionMaster()->Clear();
+                                me->GetMotionMaster()->MoveChase(pLider);
                             }
                         }
                         else
-                            _emergeTimer -= diff;
+                            EmergeTimer -= diff;
+
+                        return;
                     }
+
+                    if (!UpdateVictim())
+                        return;
 
                     if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f))
                     {
-                        if (!_doJump && me->IsInRange(target, 5, 30, false))
+                        if (!Jumped && me->IsWithinDistInMap(target, 30.0f) && !me->IsWithinDistInMap(target, 5.0f))
                         {
-                            _doJump = true;
+                            Jumped = true;
+                            me->AddThreat(target, 200.0f);
+                            AttackStart(target);
                             DoCast(target, SPELL_GNOUL_JUMP);
                         }
                     }
-                }
-                else if (_instance->GetData(DATA_LICHKING_EVENT) == FAIL || _instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
+                } 
+                else if (instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
                     me->DespawnOrUnsummon();
 
                 DoMeleeAttackIfReady();
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new npc_raging_gnoulAI(creature);
         }
@@ -484,110 +489,110 @@ class npc_risen_witch_doctor : public CreatureScript
 
         struct npc_risen_witch_doctorAI : public ScriptedAI
         {
-            npc_risen_witch_doctorAI(Creature *creature) : ScriptedAI(creature)
+            npc_risen_witch_doctorAI(Creature* creature) : ScriptedAI(creature)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
+                me->setActive(true);
+                Reset();
             }
 
-            InstanceScript* _instance;
-            uint32 _emergeTimer;
-            bool _doEmerge;
-            uint32 _boltTimer;
-            uint32 _boltVolleyTimer;
-            uint32 _curseTimer;
+            InstanceScript* instance;
+            uint32 EmergeTimer;
+            bool Emerge;
+            uint32 uiBoltTimer;
+            uint32 uiBoltVolleyTimer;
+            uint32 uiCurseTimer;
 
-            void Reset()
+            void Reset() override
             {
-                _emergeTimer = 5000;
-                _boltTimer = 6000;
-                _boltVolleyTimer = 15000;
-                _curseTimer = 7000;
-                _doEmerge = false;
+                me->UpdateObjectVisibility();
+                DoCast(me, SPELL_EMERGE_VISUAL);
+                EmergeTimer = 5000;
+                uiBoltTimer = 6000;
+                uiBoltVolleyTimer = 15000;
+                uiCurseTimer = 7000;
+                Emerge = false;
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void JustDied(Unit* /*killer*/) override
             {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetStandState(UNIT_STAND_STATE_SUBMERGED);
-                DoCast(me, SPELL_EMERGE_VISUAL); 
-                DoZoneInCombat(me, 100.00f); 
+                if (!instance)
+                    return;
+
+                instance->SetData(DATA_SUMMONS, 0);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void AttackStart(Unit* who) override
             {
-                if (_instance)
-                    _instance->SetData(DATA_SUMMONS, 0);
-            }
+                if (!who)
+                    return;
 
-            void AttackStart(Unit* who)
-            {
-                if (!who || !_doEmerge)
+                if (Emerge == false)
                     return;
 
                 ScriptedAI::AttackStart(who);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!_instance)
+                if (!instance)
                     return;
 
-                if (_instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
+                if (instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
                 {
-                    if (!_doEmerge)
+                    if (Emerge != true)
                     {
-                        if (_emergeTimer < diff)
+                        if (EmergeTimer < diff)
                         {
-                            me->SetStandState(UNIT_STAND_STATE_STAND);
-                            _doEmerge = true;
-                            
-                            me->SetReactState(REACT_AGGRESSIVE);
-                            if (Unit* victim = me->SelectVictim())
+                            Emerge = true;
+                            if (Creature* pLider = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_ESCAPE_LIDER)))
                             {
-                                DoResetThreat(); 
-                                AttackStart(victim);
+                                DoResetThreat();
+                                me->AI()->AttackStart(pLider);
+                                me->AddThreat(pLider, 100.0f);
+                                me->GetMotionMaster()->Clear();
+                                me->GetMotionMaster()->MoveChase(pLider);
                             }
                         }
                         else
-                            _emergeTimer -= diff;
+                            EmergeTimer -= diff;
+
+                        return;
                     }
 
-                    if (_curseTimer < diff)
+                    if (!UpdateVictim())
+                        return;
+
+                    if (uiCurseTimer < diff)
                     {
                         if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
                             DoCast(target, SPELL_COURSE_OF_DOOM);
-                        _curseTimer = urand(10000, 15000);
-                    }
-                    else
-                        _curseTimer -= diff;
+                        uiCurseTimer = urand(10000, 15000);
+                    } else uiCurseTimer -= diff;
 
-                    if (_boltTimer < diff)
+                    if (uiBoltTimer < diff)
                     {
                         if (Unit* target = SelectTarget(SELECT_TARGET_TOPAGGRO))
-                           DoCast(target, SPELL_SHADOW_BOLT);
-                        _boltTimer = urand(2000, 3000);
-                    }
-                    else
-                        _boltTimer -= diff;
+                            DoCast(target, SPELL_SHADOW_BOLT);
+                        uiBoltTimer = urand(2000, 3000);
+                    } else uiBoltTimer -= diff;
 
-                    if (_boltVolleyTimer < diff)
+                    if (uiBoltVolleyTimer < diff)
                     {
                         if (Unit* target = SelectTarget(SELECT_TARGET_TOPAGGRO))
                             DoCast(target, SPELL_SHADOW_BOLT_VOLLEY);
-                        _boltVolleyTimer = urand(15000, 22000);
-                    }
-                    else
-                        _boltVolleyTimer -= diff;
+                        uiBoltVolleyTimer = urand(15000, 22000);
+                    } else uiBoltVolleyTimer -= diff;
 
                 }
-                else if (_instance->GetData(DATA_LICHKING_EVENT) == FAIL || _instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
+                else if (instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
                     me->DespawnOrUnsummon();
 
                 DoMeleeAttackIfReady();
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new npc_risen_witch_doctorAI(creature);
         }
@@ -602,72 +607,75 @@ class npc_abon : public CreatureScript
         {
             npc_abonAI(Creature* creature) : ScriptedAI(creature)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
+                me->setActive(true);
+                Reset();
             }
 
-            InstanceScript* _instance;
-            bool _doWalk; 
-            uint32 _strikeTimer;
-            uint32 _vomitTimer;
+            InstanceScript* instance;
+            bool Walk;
+            uint32 uiStrikeTimer;
+            uint32 uiVomitTimer;
 
-            void Reset()
+            void Reset() override
             {
-                _doWalk = false;
-                _vomitTimer = 15000;
-                _strikeTimer = 6000;
+                Walk = false;
+                uiVomitTimer = 15000;
+                uiStrikeTimer = 6000;
             }
 
-            void UpdateAI(uint32 const diff)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (!_instance)
+                if (!instance)
                     return;
 
-                if (_instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
+                instance->SetData(DATA_SUMMONS, 0);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!instance) return;
+
+                if (instance->GetData(DATA_LICHKING_EVENT) == IN_PROGRESS)
                 {
-                    if (!_doWalk)
+                    if (Walk != true)
                     {
-                        _doWalk = true;
-                        
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        if (Unit* victim = me->SelectVictim())
+                        Walk = true;
+                        if (Creature* pLider = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_ESCAPE_LIDER)))
                         {
-                            DoResetThreat(); 
-                            AttackStart(victim);
+                            DoResetThreat();
+                            me->AI()->AttackStart(pLider);
+                            me->AddThreat(pLider, 100.0f);
+                            me->GetMotionMaster()->Clear();
+                            me->GetMotionMaster()->MoveChase(pLider);
                         }
                     }
 
-                    if (_strikeTimer < diff)
+                    if (!UpdateVictim())
+                        return;
+
+                    if (uiStrikeTimer < diff)
                     {
                         if (Unit* target = SelectTarget(SELECT_TARGET_TOPAGGRO))
                             DoCast(target, SPELL_ABON_STRIKE);
-                        _strikeTimer = urand(7000, 9000);
-                    }
-                    else
-                        _strikeTimer -= diff;
+                        uiStrikeTimer = urand(7000, 9000);
+                    } else uiStrikeTimer -= diff;
 
-                    if (_vomitTimer < diff)
+                    if (uiVomitTimer < diff)
                     {
                         if (Unit* target = SelectTarget(SELECT_TARGET_TOPAGGRO))
                             DoCast(target, SPELL_VOMIT_SPRAY);
-                        _vomitTimer = urand(15000, 20000);
-                    }
-                    else
-                        _vomitTimer -= diff;
+                        uiVomitTimer = urand(15000, 20000);
+                    } else uiVomitTimer -= diff;
                 }
-                else if (_instance->GetData(DATA_LICHKING_EVENT) == FAIL || _instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
+                else if (instance->GetData(DATA_LICHKING_EVENT) == NOT_STARTED)
                     me->DespawnOrUnsummon();
-               
+
                 DoMeleeAttackIfReady();
             }
+        };
 
-            void JustDied(Unit* /*killer*/)
-            {
-                if (_instance)
-                    _instance->SetData(DATA_SUMMONS, 0);
-            }
-       };
-
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new npc_abonAI(creature);
         }

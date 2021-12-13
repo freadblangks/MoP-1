@@ -11,7 +11,6 @@ enum Spells
     SPELL_FOCUSED_FIRE_1            = 96884,
 
     SPELL_EYE_OF_OCCUTHAR           = 96920, 
-    SPELL_EYE_OF_OCCUTHAR_25        = 101006,
     SPELL_EYE_OF_OCCUTHAR_VEHICLE   = 96932,
 
     SPELL_EYE_OF_OCCUTHAR_DMG       = 96942,
@@ -39,50 +38,37 @@ class boss_occuthar : public CreatureScript
     public:
         boss_occuthar() : CreatureScript("boss_occuthar") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_occutharAI(pCreature);
-        }
-
         struct boss_occutharAI : public BossAI
         {
-            boss_occutharAI(Creature* pCreature) : BossAI(pCreature, DATA_OCCUTHAR) 
+            boss_occutharAI(Creature* creature) : BossAI(creature, DATA_OCCUTHAR) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-				me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(BHScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 
                 events.Reset();
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 _JustReachedHome();
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_BERSERK, 300000);
                 events.ScheduleEvent(EVENT_EYE_OF_OCCUTHAR, 59000);
@@ -91,12 +77,12 @@ class boss_occuthar : public CreatureScript
                 instance->SetBossState(DATA_OCCUTHAR, IN_PROGRESS);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -107,14 +93,14 @@ class boss_occuthar : public CreatureScript
                     return;
 
                 while (uint32 eventId = events.ExecuteEvent())
-				{
-					switch (eventId)
-					{
+                {
+                    switch (eventId)
+                    {
                         case EVENT_BERSERK:
                             DoCast(me, SPELL_BERSERK, true);
                             break;
                         case EVENT_SEARING_SHADOWS:
-                            DoCast(me->getVictim(), SPELL_SEARING_SHADOW);
+                            DoCast(me->GetVictim(), SPELL_SEARING_SHADOW);
                             events.ScheduleEvent(EVENT_SEARING_SHADOWS, 24000);
                             break;
                         case EVENT_FOCUSED_FIRE:
@@ -128,10 +114,14 @@ class boss_occuthar : public CreatureScript
                             break;
                     }
                 }
-
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_occutharAI>(creature);
+        }
 };
 
 class npc_occuthar_eyestalk : public CreatureScript
@@ -139,31 +129,32 @@ class npc_occuthar_eyestalk : public CreatureScript
     public:
         npc_occuthar_eyestalk() : CreatureScript("npc_occuthar_eyestalk") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_occuthar_eyestalkAI : public ScriptedAI
         {
-            return new npc_occuthar_eyestalkAI (pCreature);
-        }
-
-        struct npc_occuthar_eyestalkAI : public Scripted_NoMovementAI
-        {
-            npc_occuthar_eyestalkAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_occuthar_eyestalkAI(Creature* creature) : ScriptedAI(creature)
             {
                 //me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 //me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void IsSummonedBy(Unit* owner)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 if (Creature* pOccuthar = me->FindNearestCreature(NPC_OCCUTHAR, 200.0f))
                 {
-                    if (pOccuthar->isInCombat())
+                    if (pOccuthar->IsInCombat())
                         me->SetInCombatWithZone();
 
                     pOccuthar->CastSpell(me, SPELL_FOCUSED_FIRE_1, true);
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_occuthar_eyestalkAI>(creature);
+        }
 };
 
 class npc_occuthar_eye_of_occuthar : public CreatureScript
@@ -171,36 +162,32 @@ class npc_occuthar_eye_of_occuthar : public CreatureScript
     public:
         npc_occuthar_eye_of_occuthar() : CreatureScript("npc_occuthar_eye_of_occuthar") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_occuthar_eye_of_occutharAI : public ScriptedAI
         {
-            return new npc_occuthar_eye_of_occutharAI (pCreature);
-        }
-
-        struct npc_occuthar_eye_of_occutharAI : public Scripted_NoMovementAI
-        {
-            npc_occuthar_eye_of_occutharAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_occuthar_eye_of_occutharAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-				me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
                 me->SetReactState(REACT_PASSIVE);
                 uiDestructionTimer = 9500;
                 bDestruction = false;
+                SetCombatMovement(false);
             }
 
             uint32 uiDestructionTimer;
             bool bDestruction;
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (uiDestructionTimer <= diff && !bDestruction)
                 {
@@ -210,8 +197,12 @@ class npc_occuthar_eye_of_occuthar : public CreatureScript
                 else
                     uiDestructionTimer -= diff;
             }
-
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_occuthar_eye_of_occutharAI>(creature);
+        }
 };
 
 class spell_occuthar_eye_of_occuthar : public SpellScriptLoader
@@ -224,7 +215,7 @@ class spell_occuthar_eye_of_occuthar : public SpellScriptLoader
             PrepareSpellScript(spell_occuthar_eye_of_occuthar_SpellScript);
 
             void HandleScript(SpellEffIndex /*effIndex*/)
-			{
+            {
                 if (!GetCaster() || !GetHitUnit())
                     return;
 
@@ -234,13 +225,13 @@ class spell_occuthar_eye_of_occuthar : public SpellScriptLoader
                     pEye->CastSpell(GetCaster(), SPELL_EYE_OF_OCCUTHAR_DMG, true); 
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_occuthar_eye_of_occuthar_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_occuthar_eye_of_occuthar_SpellScript();
         }

@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -18,7 +19,7 @@
 
 #ifndef DBC_FILE_LOADER_H
 #define DBC_FILE_LOADER_H
-#include "Define.h"
+#include "Common.h"
 #include "Utilities/ByteConverter.h"
 #include <cassert>
 
@@ -62,7 +63,7 @@ class DBCFileLoader
                 }
 
             private:
-                Record(DBCFileLoader &file_, unsigned char *offset_): offset(offset_), file(file_) {}
+                Record(DBCFileLoader &file_, unsigned char *offset_): offset(offset_), file(file_) { }
                 unsigned char *offset;
                 DBCFileLoader &file;
 
@@ -80,7 +81,7 @@ class DBCFileLoader
         uint32 GetOffset(size_t id) const { return (fieldsOffset != NULL && id < fieldCount) ? fieldsOffset[id] : 0; }
         bool IsLoaded() const { return data != NULL; }
         char* AutoProduceData(const char* fmt, uint32& count, char**& indexTable, uint32 sqlRecordCount, uint32 sqlHighestIndex, char *& sqlDataTable);
-        char* AutoProduceStrings(const char* fmt, char* dataTable);
+        char* AutoProduceStrings(const char* fmt, char* dataTable, LocaleConstant locale);
         static uint32 GetFormatRecordSize(const char * format, int32 * index_pos = NULL);
     private:
 

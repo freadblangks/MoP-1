@@ -75,6 +75,11 @@ enum Points
     POINT_JINDO = 1,
 };
 
+enum Actions
+{
+    ACTION_TWISTED_SPIRIT,
+};
+
 const Position chainPos[3] = 
 {
     {-11801.4f, -1678.39f, 53.0471f, 0.0f},
@@ -92,14 +97,9 @@ class boss_jindo_the_godbreaker : public CreatureScript
     public:
         boss_jindo_the_godbreaker() : CreatureScript("boss_jindo_the_godbreaker") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_jindo_the_godbreakerAI(pCreature);
-        }
-
         struct boss_jindo_the_godbreakerAI : public BossAI
         {
-            boss_jindo_the_godbreakerAI(Creature* pCreature) : BossAI(pCreature, DATA_JINDO)
+            boss_jindo_the_godbreakerAI(Creature* creature) : BossAI(creature, DATA_JINDO)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -118,7 +118,7 @@ class boss_jindo_the_godbreaker : public CreatureScript
             bool bTwoPhase;
             uint8 chains;
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 bTwoPhase = false;
@@ -126,9 +126,12 @@ class boss_jindo_the_godbreaker : public CreatureScript
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                 me->LowerPlayerDamageReq(me->GetHealth());
+
+                scheduler.CancelAll();
+                me->GetMap()->SetWorldState(WORLDSTATE_SPIRIT_TWISTER, 1); // by default, controlled by inner timer
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (instance->GetData(DATA_BOSSES) < 2)
                 {
@@ -145,15 +148,15 @@ class boss_jindo_the_godbreaker : public CreatureScript
                 instance->SetBossState(DATA_JINDO, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
-                if (me->isInCombat() && (summon->GetEntry() != NPC_GURUBASHI_SPIRIT))
+                if (me->IsInCombat() && (summon->GetEntry() != NPC_GURUBASHI_SPIRIT))
                     DoZoneInCombat(summon);
 
                 if (summon->GetEntry() == NPC_GURUBASHI_SPIRIT || 
@@ -162,7 +165,7 @@ class boss_jindo_the_godbreaker : public CreatureScript
                     summon->SetPhaseMask(2, true);
             }
 
-            void SummonedCreatureDies(Creature* summon, Unit* killer)
+            void SummonedCreatureDies(Creature* summon, Unit* killer) override
             {
                 if (summon->GetEntry() == NPC_HAKKAR_CHAINS)
                 {
@@ -179,16 +182,19 @@ class boss_jindo_the_godbreaker : public CreatureScript
                             for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
                                 (*iter)->DespawnOrUnsummon();
 
+                        if (Player* realKiller = killer->GetCharmerOrOwnerPlayerOrPlayerItself())
+                            if (Creature* pHakkar = me->FindNearestCreature(NPC_SPIRIT_OF_HAKKAR, 100.0f))
+                                pHakkar->SendPlaySound(SOUND_HAKKAR_BREAK_CHAINS, false); //realKiller->ToPlayer()->SendSoundToAll(SOUND_HAKKAR_BREAK_CHAINS, pHakkar->GetGUID());
                         events.ScheduleEvent(EVENT_END_1, 4000);                            
                     }
                 }    
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
                 {
-                    if (id == POINT_JINDO)
+                    if (pointId == POINT_JINDO)
                     {
                         DoCast(me, SPELL_SPIRIT_WORLD, true);
                         events.ScheduleEvent(EVENT_PHASE_2, 4000);
@@ -200,14 +206,14 @@ class boss_jindo_the_godbreaker : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
-                /*if (me->HealthBelowPct(70) && !bTwoPhase)
+                if (me->HealthBelowPct(70) && !bTwoPhase)
                 {
                     bTwoPhase = true;
                     me->AttackStop();
@@ -225,7 +231,7 @@ class boss_jindo_the_godbreaker : public CreatureScript
 
                     me->GetMotionMaster()->MovePoint(POINT_JINDO, jindoPos);
                     return;
-                }*/
+                }
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
@@ -239,6 +245,7 @@ class boss_jindo_the_godbreaker : public CreatureScript
                             events.ScheduleEvent(EVENT_DEADZONE, 19000);
                             break;
                         case EVENT_SHADOWS_OF_HAKKAR:
+                            DoCast(me, SPELL_SHADOWS_OF_HAKKAR);
                             events.ScheduleEvent(EVENT_SHADOWS_OF_HAKKAR, 18000);
                             break;
                         case EVENT_PHASE_2:
@@ -283,8 +290,8 @@ class boss_jindo_the_godbreaker : public CreatureScript
                             break;
                         case EVENT_END_4:
                             me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                pTarget->Kill(me);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                target->Kill(me);
                             break;
                     }
                 }
@@ -292,22 +299,21 @@ class boss_jindo_the_godbreaker : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_jindo_the_godbreakerAI>(creature);
+        }
 };
 
 class npc_jindo_gurubashi_spirit : public CreatureScript
 {
     public:
-
-        npc_jindo_gurubashi_spirit() : CreatureScript("npc_jindo_gurubashi_spirit") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_jindo_gurubashi_spiritAI(pCreature);
-        }
+        npc_jindo_gurubashi_spirit() : CreatureScript("npc_jindo_gurubashi_spirit") { }
 
         struct npc_jindo_gurubashi_spiritAI : public ScriptedAI
         {
-            npc_jindo_gurubashi_spiritAI(Creature* pCreature) : ScriptedAI(pCreature) 
+            npc_jindo_gurubashi_spiritAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -324,32 +330,32 @@ class npc_jindo_gurubashi_spirit : public CreatureScript
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_BODY_SLAM, 12000);
                 events.ScheduleEvent(EVENT_FRENZY, 7000);
                 DoZoneInCombat(me, 100.0f);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 if (Creature* pJindo = me->FindNearestCreature(NPC_JINDO, 100.0f))
                     static_cast<boss_jindo_the_godbreaker::boss_jindo_the_godbreakerAI*>(pJindo->GetAI())->JustSummoned(summon);
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                if (id == EVENT_JUMP)
+                if (pointId == EVENT_JUMP)
                     if (Creature* pChain = me->FindNearestCreature(NPC_HAKKAR_CHAINS, 5.0f))
                         pChain->RemoveAurasDueToSpell(SPELL_BRITTLE_BARRIER);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -377,22 +383,21 @@ class npc_jindo_gurubashi_spirit : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_jindo_gurubashi_spiritAI>(creature);
+        }
 };
 
 class npc_jindo_spirit_of_hakkar : public CreatureScript
 {
     public:
+        npc_jindo_spirit_of_hakkar() : CreatureScript("npc_jindo_spirit_of_hakkar") { }
 
-        npc_jindo_spirit_of_hakkar() : CreatureScript("npc_jindo_spirit_of_hakkar") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_jindo_spirit_of_hakkarAI : public ScriptedAI
         {
-            return new npc_jindo_spirit_of_hakkarAI(pCreature);
-        }
-
-        struct npc_jindo_spirit_of_hakkarAI : public Scripted_NoMovementAI
-        {
-            npc_jindo_spirit_of_hakkarAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_jindo_spirit_of_hakkarAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -406,29 +411,29 @@ class npc_jindo_spirit_of_hakkar : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void DamageTaken(Unit* attacker, uint32 &damage)
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
                 damage = 0;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_jindo_spirit_of_hakkarAI>(creature);
+        }
 };
 
 class npc_jindo_chains_of_hakkar : public CreatureScript
 {
     public:
+        npc_jindo_chains_of_hakkar() : CreatureScript("npc_jindo_chains_of_hakkar") { }
 
-        npc_jindo_chains_of_hakkar() : CreatureScript("npc_jindo_chains_of_hakkar") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_jindo_chains_of_hakkarAI : public ScriptedAI
         {
-            return new npc_jindo_chains_of_hakkarAI(pCreature);
-        }
-
-        struct npc_jindo_chains_of_hakkarAI : public Scripted_NoMovementAI
-        {
-            npc_jindo_chains_of_hakkarAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_jindo_chains_of_hakkarAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -442,38 +447,44 @@ class npc_jindo_chains_of_hakkar : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 DoZoneInCombat(me, 300.0f);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_jindo_chains_of_hakkarAI>(creature);
+        }
 };
 
 class npc_jindo_spirit_portal : public CreatureScript
 {
     public:
+        npc_jindo_spirit_portal() : CreatureScript("npc_jindo_spirit_portal") { }
 
-        npc_jindo_spirit_portal() : CreatureScript("npc_jindo_spirit_portal") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_jindo_spirit_portalAI : public ScriptedAI
         {
-            return new npc_jindo_spirit_portalAI(pCreature);
-        }
-
-        struct npc_jindo_spirit_portalAI : public Scripted_NoMovementAI
-        {
-            npc_jindo_spirit_portalAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_jindo_spirit_portalAI(Creature* creature) : ScriptedAI(creature) 
             {
+                SetCombatMovement(false);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 if (Creature* pJindo = me->FindNearestCreature(NPC_JINDO, 300.0f))
                     static_cast<boss_jindo_the_godbreaker::boss_jindo_the_godbreakerAI*>(pJindo->GetAI())->JustSummoned(summon);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_jindo_spirit_portalAI>(creature);
+        }
 };
 
 class spell_jindo_shadow_spike_target : public SpellScriptLoader
@@ -481,12 +492,11 @@ class spell_jindo_shadow_spike_target : public SpellScriptLoader
     public:
         spell_jindo_shadow_spike_target() : SpellScriptLoader("spell_jindo_shadow_spike_target") { }
 
-
         class spell_jindo_shadow_spike_target_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_jindo_shadow_spike_target_SpellScript);
 
-            void HandleDummy(SpellEffIndex effIndex)
+            void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 if (!GetCaster() || !GetHitUnit())
                     return;
@@ -494,13 +504,13 @@ class spell_jindo_shadow_spike_target : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_SHADOW_SPIKE, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_jindo_shadow_spike_target_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_jindo_shadow_spike_target_SpellScript();
         }
@@ -509,12 +519,17 @@ class spell_jindo_shadow_spike_target : public SpellScriptLoader
 class SpiritPortalCheck
 {
     public:
-        SpiritPortalCheck(uint32 entry) {i_entry = entry;}
+        SpiritPortalCheck(uint32 entry)
+        {
+            i_entry = entry;
+        }
+
         bool operator()(WorldObject* obj) const
         {
             if (!obj->ToCreature())
                 return true;
-            return ((obj->ToCreature()->HasUnitState(UNIT_STATE_CASTING)) || (obj->ToCreature()->GetEntry() != i_entry) || !obj->ToCreature()->isAlive());
+
+            return ((obj->ToCreature()->HasUnitState(UNIT_STATE_CASTING)) || (obj->ToCreature()->GetEntry() != i_entry) || !obj->ToCreature()->IsAlive());
         }
         uint32 i_entry;
 };
@@ -524,7 +539,6 @@ class spell_jindo_summon_spirit_target : public SpellScriptLoader
     public:
         spell_jindo_summon_spirit_target() : SpellScriptLoader("spell_jindo_summon_spirit_target") { }
 
-
         class spell_jindo_summon_spirit_target_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_jindo_summon_spirit_target_SpellScript);
@@ -533,10 +547,10 @@ class spell_jindo_summon_spirit_target : public SpellScriptLoader
             { 
                 targets.remove_if(SpiritPortalCheck(NPC_SPIRIT_PORTAL));
                 if (targets.size() > 1)
-                    JadeCore::RandomResizeList(targets, 1);
+                    Trinity::RandomResizeList(targets, 1);
             }
 
-            void HandleDummy(SpellEffIndex effIndex)
+            void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 if (!GetCaster() || !GetHitUnit())
                     return;
@@ -544,14 +558,14 @@ class spell_jindo_summon_spirit_target : public SpellScriptLoader
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_SUMMON_SPIRIT);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_jindo_summon_spirit_target_SpellScript::FilterTargets, EFFECT_0,TARGET_UNIT_SRC_AREA_ENTRY);
                 OnEffectHitTarget += SpellEffectFn(spell_jindo_summon_spirit_target_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_jindo_summon_spirit_target_SpellScript();
         }
@@ -566,7 +580,7 @@ class spell_jindo_spirit_warrior_gaze_target : public SpellScriptLoader
         {
             PrepareSpellScript(spell_jindo_spirit_warrior_gaze_target_SpellScript);
 
-            void HandleApplyAura(SpellEffIndex effIndex)
+            void HandleApplyAura(SpellEffIndex /*effIndex*/)
             {
                 if (!GetCaster() || !GetHitUnit())
                     return;
@@ -574,18 +588,17 @@ class spell_jindo_spirit_warrior_gaze_target : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_BODY_SLAM);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_jindo_spirit_warrior_gaze_target_SpellScript::HandleApplyAura, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_jindo_spirit_warrior_gaze_target_SpellScript();
         }
 };
-
 
 void AddSC_boss_jindo_the_godbreaker()
 {
@@ -594,6 +607,7 @@ void AddSC_boss_jindo_the_godbreaker()
     new npc_jindo_spirit_of_hakkar();
     new npc_jindo_chains_of_hakkar();
     new npc_jindo_spirit_portal();
+
     new spell_jindo_shadow_spike_target();
     new spell_jindo_summon_spirit_target();
     new spell_jindo_spirit_warrior_gaze_target();

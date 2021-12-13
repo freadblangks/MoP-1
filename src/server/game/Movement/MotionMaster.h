@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -23,10 +24,10 @@
 #include <vector>
 #include "SharedDefines.h"
 #include "Object.h"
-#include <LockedVector.h>
 
 class MovementGenerator;
 class Unit;
+class PathGenerator;
 
 // Creature Entry ID used for waypoints show, visible only for GMs
 #define VISUAL_WAYPOINT 1
@@ -52,7 +53,7 @@ enum MovementGeneratorType
     FOLLOW_MOTION_TYPE    = 14,
     ROTATE_MOTION_TYPE    = 15,
     EFFECT_MOTION_TYPE    = 16,
-    NULL_MOTION_TYPE      = 17,
+    NULL_MOTION_TYPE      = 17
 };
 
 enum MovementSlot
@@ -60,7 +61,8 @@ enum MovementSlot
     MOTION_SLOT_IDLE,
     MOTION_SLOT_ACTIVE,
     MOTION_SLOT_CONTROLLED,
-    MAX_MOTION_SLOT,
+    MOTION_SLOT_CRITICAL,
+    MAX_MOTION_SLOT
 };
 
 enum MMCleanFlag
@@ -73,7 +75,7 @@ enum MMCleanFlag
 enum RotateDirection
 {
     ROTATE_DIRECTION_LEFT,
-    ROTATE_DIRECTION_RIGHT,
+    ROTATE_DIRECTION_RIGHT
 };
 
 // assume it is 25 yard per 0.6 second
@@ -87,13 +89,24 @@ class MotionMaster //: private std::stack<MovementGenerator *>
 
         void pop()
         {
+            ASSERT(_top < MAX_MOTION_SLOT && _top >= 0);
             Impl[_top] = NULL;
-            while (!top())
+            while (!empty() && !top())
                 --_top;
         }
-        void push(_Ty _Val) { ++_top; Impl[_top] = _Val; }
+        void push(_Ty _Val)
+        {
+            ++_top;
+            ASSERT(_top < MAX_MOTION_SLOT && _top >= 0);
+            Impl[_top] = _Val;
+        }
 
-        bool needInitTop() const { return _needInit[_top]; }
+        bool needInitTop() const 
+        {
+            if (empty())
+                return false;
+            return _needInit[_top];
+        }
         void InitTop();
     public:
 
@@ -112,9 +125,10 @@ class MotionMaster //: private std::stack<MovementGenerator *>
 
         bool empty() const { return (_top < 0); }
         int size() const { return _top + 1; }
-        _Ty top() const { return Impl[_top]; }
-        _Ty GetMotionSlot(int slot) const { return Impl[slot]; }
+        _Ty top() const { ASSERT(_top < MAX_MOTION_SLOT && _top >= 0);  return Impl[_top]; }
+        _Ty GetMotionSlot(int slot) const { ASSERT(_top < MAX_MOTION_SLOT && _top >= 0); return Impl[slot]; }
 
+        void DirectDelete(int slot);
         void DirectDelete(_Ty curr);
         void DelayedDelete(_Ty curr);
 
@@ -153,28 +167,31 @@ class MotionMaster //: private std::stack<MovementGenerator *>
         void MoveChase(Unit* target, float dist = 0.0f, float angle = 0.0f);
         void MoveConfused();
         void MoveFleeing(Unit* enemy, uint32 time = 0);
-        void MovePoint(uint32 id, const Position &pos)
-            { MovePoint(id, pos.m_positionX, pos.m_positionY, pos.m_positionZ); }
-        void MovePoint(uint32 id, float x, float y, float z);
+        void MovePoint(uint32 id, Position const& pos, bool generatePath = true)
+            { MovePoint(id, pos.m_positionX, pos.m_positionY, pos.m_positionZ, generatePath); }
+        void MovePoint(uint32 id, float x, float y, float z, bool generatePath = true, MovementSlot slot = MOTION_SLOT_ACTIVE);
 
         // These two movement types should only be used with creatures having landing/takeoff animations
-        void MoveLand(uint32 id, Position const& pos);
-        void MoveTakeoff(uint32 id, Position const& pos);
-        void MoveTakeoff(uint32 id, float x, float y, float z);
+        void MoveLand(uint32 id, Position const& pos, float speed = 0);
+        void MoveTakeoff(uint32 id, Position const& pos, float speed = 0);
 
-        void MoveCharge(float x, float y, float z, float speed = SPEED_CHARGE, uint32 id = EVENT_CHARGE);
+        void MoveCharge(float x, float y, float z, float speed = SPEED_CHARGE, uint32 id = EVENT_CHARGE, bool generatePath = false);
+        void MoveCharge(PathGenerator const& path);
         void MoveKnockbackFrom(float srcX, float srcY, float speedXY, float speedZ);
         void MoveJumpTo(float angle, float speedXY, float speedZ);
-        void MoveJump(float x, float y, float z, float speedXY, float speedZ, float o = 10.0f, uint32 id = 0);
+        void MoveJump(Position const& pos, float speedXY, float speedZ, uint32 id = EVENT_JUMP)
+            { MoveJump(pos.m_positionX, pos.m_positionY, pos.m_positionZ, speedXY, speedZ, id); };
+        void MoveJump(float x, float y, float z, float speedXY, float speedZ, uint32 id = EVENT_JUMP);
         void CustomJump(float x, float y, float z, float speedXY, float speedZ, uint32 id = 0);
+        void MoveCirclePath(float x, float y, float z, float radius, bool clockwise, uint8 stepCount, float velocityOrDuration = 0.0f);
         void MoveFall(uint32 id = 0);
-        void MoveBackward(uint32 id, float x, float y, float z, float speed = 0.0f);
 
         void MoveSeekAssistance(float x, float y, float z);
         void MoveSeekAssistanceDistract(uint32 timer);
         void MoveTaxiFlight(uint32 path, uint32 pathnode);
         void MoveDistract(uint32 time);
         void MovePath(uint32 path_id, bool repeatable);
+        void MoveSplinePath(const Position* path, uint32 count, bool fly = false, bool walk = false, float speed = 0.0f, bool cyclic = false, bool catmullrom = true, bool uncompressed = true);
         void MoveRotate(uint32 time, RotateDirection direction);
 
         MovementGeneratorType GetCurrentMovementGeneratorType() const;
@@ -192,7 +209,7 @@ class MotionMaster //: private std::stack<MovementGenerator *>
         void DirectExpire(bool reset);
         void DelayedExpire();
 
-        typedef ACE_Based::LockedVector<_Ty> ExpireList;
+        typedef std::vector<_Ty> ExpireList;
         ExpireList* _expList;
         _Ty Impl[MAX_MOTION_SLOT];
         int _top;
@@ -201,4 +218,3 @@ class MotionMaster //: private std::stack<MovementGenerator *>
         uint8 _cleanFlag;
 };
 #endif
-

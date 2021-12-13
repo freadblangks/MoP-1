@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -32,6 +33,78 @@ using G3D::Vector3;
 
 namespace VMAP
 {
+    bool IgnoreInLOSTest(uint32 mapID, ModelSpawn const& spawn, VMapManager2* vm)
+    {
+        if (mapID == 571) // Northrend
+        {
+            switch (spawn.ID)
+            {
+                // Skipping loading of gate, wall and tower spawns, which are for some reason added statically in map, when they should be displayed with GameObjects
+                // Towers
+                case 2339089: // Wintergrasp Fortress Tower (SE)
+                case 2339090: // Wintergrasp Fortress Tower (SW)
+                case 2339091: // Wintergrasp Fortress Tower (NE)
+                case 2339092: // Wintergrasp Fortress Tower (NW)
+                case 2381624: // Shadowsight Tower
+                case 2381625: // Winter's Edge Tower
+                case 2381628: // Flamewatch Tower
+                              // Workshops
+                case 2422012: // Sunken Ring Vehicle Workshop
+                case 2422013: // Broken Temple Vehicle Workshop
+                case 2422014: // Fortress Vehicle Workshop (E)
+                case 2422015: // Fortress Vehicle Workshop (W)
+                case 2453481: // Eastpark Vehicle Workshop
+                case 2468284: // Westpark Vehicle Workshop
+                              // Enable towers and workshops for mmaps generation, but skip during server runtime (GameObjects are used for LOS checks)
+                    return !vm->isForMMapsGenerator();
+                    // Gates
+                case 2339087:
+                case 2339088:
+                case 2672749:
+                    // Walls
+                case 2339079:
+                case 2339080:
+                case 2339083:
+                case 2339085:
+                case 2339093:
+                case 2339095:
+                case 2339096:
+                case 2339099:
+                case 2339101:
+                case 2339103:
+                case 2339105:
+                case 2339107:
+                case 2339112:
+                case 2339116:
+                case 2339118:
+                case 2339121:
+                case 2339122:
+                case 2339125:
+                case 2339126:
+                case 2339127:
+                case 2339128:
+                case 2339129:
+                    return true;
+            }
+        }
+        if (mapID == 607) // Strand of the Ancients
+        {
+            switch (spawn.ID)
+            {
+                // Skipping loading of gate spawns, which are for some reason added statically in map, when they should be displayed with GameObjects
+                // Gates
+                case 2522556:
+                case 2522558:
+                case 2522649:
+                case 2522655:
+                case 2522717:
+                // Relic Gate
+                case 2707988:
+                    return true;
+            }
+        }
+        return false;
+    }
 
     class MapRayCallback
     {
@@ -90,7 +163,7 @@ namespace VMAP
     {
         std::stringstream tilefilename;
         tilefilename.fill('0');
-        tilefilename << std::setw(3) << mapID << '_';
+        tilefilename << std::setw(4) << mapID << '_';
         //tilefilename << std::setw(2) << tileX << '_' << std::setw(2) << tileY << ".vmtile";
         tilefilename << std::setw(2) << tileY << '_' << std::setw(2) << tileX << ".vmtile";
         return tilefilename.str();
@@ -162,13 +235,10 @@ namespace VMAP
             return false;
 
         // valid map coords should *never ever* produce float overflow, but this would produce NaNs too
-        if (maxDist > std::numeric_limits<float>::max())
-            return false;
-
+        ASSERT(maxDist < std::numeric_limits<float>::max());
         // prevent NaN values which can cause BIH intersection to enter infinite loop
         if (maxDist < 1e-10f)
             return true;
-
         // direction with length of 1
         G3D::Ray ray = G3D::Ray::fromOriginAndDirection(pos1, (pos2 - pos1)/maxDist);
         if (getIntersectionTime(ray, maxDist, true))
@@ -227,15 +297,15 @@ namespace VMAP
 
     //=========================================================
 
-    float StaticMapTree::getHeight(const Vector3& pPos, float maxSearchDist) const
+    float StaticMapTree::getHeight(Vector3 const& pPos, float maxSearchDist, bool ceiling) const
     {
         float height = G3D::inf();
-        Vector3 dir = Vector3(0, 0, -1);
+        Vector3 dir = Vector3(0, 0, ceiling ? 1 : -1);
         G3D::Ray ray(pPos, dir);   // direction with length of 1
         float maxDist = maxSearchDist;
         if (getIntersectionTime(ray, maxDist, false))
         {
-            height = pPos.z - maxDist;
+            height = ceiling ? pPos.z + maxDist : pPos.z - maxDist;
         }
         return(height);
     }
@@ -281,7 +351,7 @@ namespace VMAP
 
     bool StaticMapTree::InitMap(const std::string &fname, VMapManager2* vm)
     {
-        sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::InitMap() : initializing StaticMapTree '%s'", fname.c_str());
+        VMAP_DEBUG_LOG("maps", "StaticMapTree::InitMap() : initializing StaticMapTree '%s'", fname.c_str());
         bool success = false;
         std::string fullname = iBasePath + fname;
         FILE* rf = fopen(fullname.c_str(), "rb");
@@ -310,17 +380,17 @@ namespace VMAP
         if (!iIsTiled && ModelSpawn::readFromFile(rf, spawn))
         {
             WorldModel* model = vm->acquireModelInstance(iBasePath, spawn.name);
-            sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::InitMap() : loading %s", spawn.name.c_str());
+            VMAP_DEBUG_LOG("maps", "StaticMapTree::InitMap() : loading %s", spawn.name.c_str());
             if (model)
             {
                 // assume that global model always is the first and only tree value (could be improved...)
-                iTreeValues[0] = ModelInstance(spawn, model);
+                iTreeValues[0] = ModelInstance(spawn, model, false);
                 iLoadedSpawns[0] = 1;
             }
             else
             {
                 success = false;
-                sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::InitMap() : could not acquire WorldModel pointer for '%s'", spawn.name.c_str());
+                VMAP_ERROR_LOG("misc", "StaticMapTree::InitMap() : could not acquire WorldModel pointer for '%s'", spawn.name.c_str());
             }
         }
 
@@ -355,7 +425,7 @@ namespace VMAP
         }
         if (!iTreeValues)
         {
-            sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::LoadMapTile() : tree has not been initialized [%u, %u]", tileX, tileY);
+            VMAP_ERROR_LOG("misc", "StaticMapTree::LoadMapTile() : tree has not been initialized [%u, %u]", tileX, tileY);
             return false;
         }
         bool result = true;
@@ -381,7 +451,7 @@ namespace VMAP
                     // acquire model instance
                     WorldModel* model = vm->acquireModelInstance(iBasePath, spawn.name);
                     if (!model)
-                        sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::LoadMapTile() : could not acquire WorldModel pointer [%u, %u]", tileX, tileY);
+                        VMAP_ERROR_LOG("misc", "StaticMapTree::LoadMapTile() : could not acquire WorldModel pointer [%u, %u]", tileX, tileY);
 
                     // update tree
                     uint32 referencedVal;
@@ -397,7 +467,7 @@ namespace VMAP
                                 continue;
                             }
 #endif
-                            iTreeValues[referencedVal] = ModelInstance(spawn, model);
+                            iTreeValues[referencedVal] = ModelInstance(spawn, model, IgnoreInLOSTest(iMapID, spawn, vm));
                             iLoadedSpawns[referencedVal] = 1;
                         }
                         else
@@ -431,7 +501,7 @@ namespace VMAP
         loadedTileMap::iterator tile = iLoadedTiles.find(tileID);
         if (tile == iLoadedTiles.end())
         {
-            sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::UnloadMapTile() : trying to unload non-loaded tile - Map:%u X:%u Y:%u", iMapID, tileX, tileY);
+            VMAP_ERROR_LOG("misc", "StaticMapTree::UnloadMapTile() : trying to unload non-loaded tile - Map:%u X:%u Y:%u", iMapID, tileX, tileY);
             return;
         }
         if (tile->second) // file associated with tile
@@ -465,7 +535,7 @@ namespace VMAP
                         else
                         {
                             if (!iLoadedSpawns.count(referencedNode))
-                                sLog->outDebug(LOG_FILTER_MAPS, "StaticMapTree::UnloadMapTile() : trying to unload non-referenced model '%s' (ID:%u)", spawn.name.c_str(), spawn.ID);
+                                VMAP_ERROR_LOG("misc", "StaticMapTree::UnloadMapTile() : trying to unload non-referenced model '%s' (ID:%u)", spawn.name.c_str(), spawn.ID);
                             else if (--iLoadedSpawns[referencedNode] == 0)
                             {
                                 iTreeValues[referencedNode].setUnloaded();

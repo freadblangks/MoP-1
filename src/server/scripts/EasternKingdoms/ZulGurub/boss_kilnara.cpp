@@ -16,7 +16,6 @@ enum ScriptTexts
 enum Spells
 {
     SPELL_SHADOW_BOLT           = 96516,
-    SPELL_SHADOW_BOLT_H         = 96956,
     SPELL_WAVE_OF_AGONY_AOE     = 98269, // select target
     SPELL_WAVE_OF_AGONY_END     = 96461, // summon stalker
     SPELL_WAVE_OF_AGONY_START   = 96457, // summon wave stalker
@@ -75,6 +74,14 @@ enum Adds
     NPC_TEMPLE_RAT          = 53108,
 };
 
+enum
+{
+    ACTION_CAT_FED                  = 1,
+
+    SPELL_CLEAR_ACHIEVEMENT_CREDIT  = 98840,
+    WORLD_STATE_HERE_KITTY_KITTY    = 3410,
+};
+
 const Position pridePos[16] = 
 {
     {-11517.2f, -1646.82f, 44.4849f, 3.87463f},
@@ -103,17 +110,10 @@ const Position cavePos[4] =
     {-11522.52f, -1610.81f, 44.41f, 0.0f}
 };
 
-
-
 class boss_kilnara : public CreatureScript
 {
     public:
         boss_kilnara() : CreatureScript("boss_kilnara") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_kilnaraAI(pCreature);
-        }
 
         struct boss_kilnaraAI : public BossAI
         {
@@ -135,7 +135,7 @@ class boss_kilnara : public CreatureScript
             bool bTwoPhase;
             uint8 rats;
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -147,15 +147,16 @@ class boss_kilnara : public CreatureScript
                     }
 
                 bTwoPhase = false;
-                rats = 0;
                 me->SetReactState(REACT_AGGRESSIVE);
+
+                ResetAchievement();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 bTwoPhase = false;
-                rats = 0;
+
                 events.ScheduleEvent(EVENT_SHADOW_BOLT, 1000);
                 events.ScheduleEvent(EVENT_WAVE_OF_AGONY, urand(18000, 25000));
                 events.ScheduleEvent(EVENT_LASH_OF_ANGUISH, 10000);
@@ -164,15 +165,19 @@ class boss_kilnara : public CreatureScript
                 instance->DoResetAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, ACHIEVEMENT_CRITERIA_CONDITION_NO_SPELL_HIT, SPELL_CLEAR_ACHIEVEMENT);
                 instance->DoResetAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_KILL_CREATURE, ACHIEVEMENT_CRITERIA_CONDITION_NO_SPELL_HIT, SPELL_CLEAR_ACHIEVEMENT);
                 instance->SetBossState(DATA_KILNARA, IN_PROGRESS);
+
+                // Here, because playres can avoid spell due to dying/teleporting etc
+                ResetAchievement();
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
+                summons.DespawnAll();
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 BossAI::JustSummoned(summon);
                 if (summon->GetEntry() == NPC_WAVE_OF_AGONY_END)
@@ -182,25 +187,24 @@ class boss_kilnara : public CreatureScript
                 }
             }
 
-            void DamageTaken(Unit* attacker, uint32 &damage)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
                 if (me->GetGUID() == attacker->GetGUID())
                     damage = 0;
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who->GetTypeId() == TYPEID_PLAYER)
+                if (victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(bTwoPhase? SAY_KILL_FERAL: SAY_KILL);
             }
 
-            void SpellHit(Unit* caster, SpellInfo const* spellInfo)
+            void SpellHit(Unit* caster, const SpellInfo* spellInfo) override
             {
                 if (spellInfo->HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
                 {
                     if (Spell const* spell = me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
-                        if (spell->m_spellInfo->Id == SPELL_SHADOW_BOLT ||
-                            spell->m_spellInfo->Id == SPELL_SHADOW_BOLT_H)
+                        if (spell->m_spellInfo->Id == SPELL_SHADOW_BOLT)
                             me->InterruptSpell(CURRENT_GENERIC_SPELL);
 
                     me->RemoveAurasDueToSpell(SPELL_TEARS_OF_BLOOD_AURA);
@@ -208,7 +212,7 @@ class boss_kilnara : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -249,8 +253,8 @@ class boss_kilnara : public CreatureScript
                             events.ScheduleEvent(EVENT_WAIL_OF_SORROW, urand(15000, 20000));
                             break;
                         case EVENT_LASH_OF_ANGUISH:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_LASH_OF_ANGUISH);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_LASH_OF_ANGUISH);
                             events.ScheduleEvent(EVENT_LASH_OF_ANGUISH, urand(15000, 20000));
                             break;
                         case EVENT_TEARS_OF_BLOOD:
@@ -268,7 +272,7 @@ class boss_kilnara : public CreatureScript
                             break;
                         case EVENT_CONTINUE:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            AttackStart(me->getVictim());
+                            AttackStart(me->GetVictim());
                             events.ScheduleEvent(EVENT_VENGEFUL_SMASH, urand(4000, 10000));
                             events.ScheduleEvent(EVENT_RAVAGE, urand(2000, 6000));
                             break;
@@ -285,34 +289,50 @@ class boss_kilnara : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
+            void DoAction(int32 action) override
+            {
+                if (action == ACTION_CAT_FED)
+                {
+                    instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_CAT_FED);
+
+                    ++rats;
+                    if (rats == 4)
+                        me->GetMap()->SetWorldState(WORLD_STATE_HERE_KITTY_KITTY, 1);
+                }
+            }
+
+            void ResetAchievement()
+            {
+                rats = 0;
+                me->CastSpell(me, SPELL_CLEAR_ACHIEVEMENT_CREDIT, true);
+                me->GetMap()->SetWorldState(WORLD_STATE_HERE_KITTY_KITTY, 0);
+            }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_kilnaraAI>(creature);
+        }
 };
 
 class npc_kilnara_pride_of_bethekk : public CreatureScript
 {
     public:
-
-        npc_kilnara_pride_of_bethekk() : CreatureScript("npc_kilnara_pride_of_bethekk") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_kilnara_pride_of_bethekkAI(pCreature);
-        }
+        npc_kilnara_pride_of_bethekk() : CreatureScript("npc_kilnara_pride_of_bethekk") { }
 
         struct npc_kilnara_pride_of_bethekkAI : public ScriptedAI
         {
-            npc_kilnara_pride_of_bethekkAI(Creature* pCreature) : ScriptedAI(pCreature) 
-            {
-            }
+            npc_kilnara_pride_of_bethekkAI(Creature* creature) : ScriptedAI(creature)  { }
 
             uint32 uiGapingWound;
 
-            void Reset()
+            void Reset() override
             {
                 uiGapingWound = urand(5000, 15000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -320,8 +340,8 @@ class npc_kilnara_pride_of_bethekk : public CreatureScript
                 if (uiGapingWound <= diff)
                 {
                     uiGapingWound = urand(5000, 15000);
-                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                        DoCast(pTarget, SPELL_GAPING_WOUND);
+                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                        DoCast(target, SPELL_GAPING_WOUND);
                 }
                 else
                     uiGapingWound -= diff;
@@ -330,60 +350,33 @@ class npc_kilnara_pride_of_bethekk : public CreatureScript
             }
 
         };
-};
 
-class npc_kilnara_wave_of_agony : public CreatureScript
-{
-    public:
-
-        npc_kilnara_wave_of_agony() : CreatureScript("npc_kilnara_wave_of_agony") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_kilnara_wave_of_agonyAI(pCreature);
+            return GetInstanceAI<npc_kilnara_pride_of_bethekkAI>(creature);
         }
-
-        struct npc_kilnara_wave_of_agonyAI : public Scripted_NoMovementAI
-        {
-            npc_kilnara_wave_of_agonyAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
-            {
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void Reset()
-            {
-            }
-        };
 };
 
 class npc_kilnara_temple_rat : public CreatureScript
 {
     public:
-
-        npc_kilnara_temple_rat() : CreatureScript("npc_kilnara_temple_rat") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_kilnara_temple_ratAI(pCreature);
-        }
+        npc_kilnara_temple_rat() : CreatureScript("npc_kilnara_temple_rat") { }
 
         struct npc_kilnara_temple_ratAI : public ScriptedAI
         {
-            npc_kilnara_temple_ratAI(Creature* pCreature) : ScriptedAI(pCreature) 
-            {
-            }
+            npc_kilnara_temple_ratAI(Creature* creature) : ScriptedAI(creature)  { }
 
-            void IsSummonedBy(Unit* summoner)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 if (me->GetEntry() == NPC_TEMPLE_RAT)
                     DoCast(me, SPELL_RAT_LURE, true);
             }
-
-            void OnSpellClick(Unit* clicker)
-            {
-                me->DespawnOrUnsummon();
-            }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_kilnara_temple_ratAI>(creature);
+        }
 };
 
 class spell_kilnara_wave_of_agony_target : public SpellScriptLoader
@@ -391,11 +384,9 @@ class spell_kilnara_wave_of_agony_target : public SpellScriptLoader
     public:
         spell_kilnara_wave_of_agony_target() : SpellScriptLoader("spell_kilnara_wave_of_agony_target") { }
 
-
         class spell_kilnara_wave_of_agony_target_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_kilnara_wave_of_agony_target_SpellScript);
-
 
             void HandleScript(SpellEffIndex /*effIndex*/)
             { 
@@ -405,13 +396,13 @@ class spell_kilnara_wave_of_agony_target : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_WAVE_OF_AGONY_END, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_kilnara_wave_of_agony_target_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_kilnara_wave_of_agony_target_SpellScript();
         }
@@ -426,7 +417,7 @@ class spell_kilnara_wave_of_agony_start : public SpellScriptLoader
         {
             PrepareAuraScript(spell_kilnara_wave_of_agony_start_AuraScript);
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetUnitOwner())
                     return;
@@ -440,7 +431,7 @@ class spell_kilnara_wave_of_agony_start : public SpellScriptLoader
                     GetUnitOwner()->ToCreature()->DespawnOrUnsummon(500);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_kilnara_wave_of_agony_start_AuraScript::PeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
             }
@@ -449,72 +440,89 @@ class spell_kilnara_wave_of_agony_start : public SpellScriptLoader
             Creature* pStart;
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_kilnara_wave_of_agony_start_AuraScript();
         }
 };
 
-class PrideCheck
+// 98178 - Create Rat
+class spell_create_rat : public SpellScript
 {
-    public:
-        PrideCheck() {}
-        bool operator()(WorldObject* obj) const
-        {
-            if (!obj->ToCreature())
-                return true;
-            return ((obj->ToCreature()->GetEntry() != NPC_PRIDE_OF_BETHEKK) || !obj->ToCreature()->isAlive() || obj->ToCreature()->HasAura(SPELL_DARK_SLUMBER) || obj->ToCreature()->HasAura(SPELL_BLOOD_FRENZY));
-        }
+    PrepareSpellScript(spell_create_rat);
+
+    SpellCastResult CheckCast()
+    {
+        if (GetExplTargetUnit())
+            if (Player* player = GetExplTargetUnit()->ToPlayer())
+                if (player->HasItemCount(GetSpellInfo()->Effects[EFFECT_0].ItemType, 1))
+                    return SPELL_FAILED_DONT_REPORT;
+        return SPELL_CAST_OK;
+    }
+
+    void HandleCast()
+    {
+        if (Creature* creature = GetCaster()->ToCreature())
+            creature->DespawnOrUnsummon();
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_create_rat::CheckCast);
+        OnCast += SpellCastFn(spell_create_rat::HandleCast);
+    }
 };
 
-class spell_kilnara_rat_lure : public SpellScriptLoader
+// 98238 - Rat Lure
+class spell_kilnara_rat_lure : public SpellScript
 {
-    public:
-        spell_kilnara_rat_lure() : SpellScriptLoader("spell_kilnara_rat_lure") { }
+    PrepareSpellScript(spell_kilnara_rat_lure);
 
-
-        class spell_kilnara_rat_lure_SpellScript : public SpellScript
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([](WorldObject const* target)
         {
-            PrepareSpellScript(spell_kilnara_rat_lure_SpellScript);
+            Creature const* creature = target->ToCreature();
+            if (!creature)
+                return true;
+            return creature->GetEntry() != NPC_PRIDE_OF_BETHEKK || !creature->IsAlive() || creature->HasAura(SPELL_DARK_SLUMBER) || creature->HasAura(SPELL_BLOOD_FRENZY);
+        });
 
-            void FilterTargets(std::list<WorldObject*>& targets)
-            { 
-                targets.remove_if(PrideCheck());
-                if (targets.size() > 1)
-                    JadeCore::RandomResizeList(targets, 1);
-            }
+        if (targets.size() > 1)
+            Trinity::RandomResizeList(targets, 1);
+    }
 
-            void HandleScript(SpellEffIndex effIndex)
-            {
-                if (!GetCaster() || !GetHitUnit())
-                    return;
+    void HandleScript(SpellEffIndex effIndex)
+    {
+        GetHitUnit()->CastSpell(GetCaster(), SPELL_POUNCE_RAT, true);
 
-                GetHitUnit()->CastSpell(GetHitUnit(), SPELL_BLOOD_FRENZY, true);
-                GetHitUnit()->CastSpell(GetCaster(), SPELL_POUNCE_RAT, true);
-                if (InstanceScript* pInstance = GetHitUnit()->GetInstanceScript())
-                    pInstance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_CAT_FED);
-            }
-
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kilnara_rat_lure_SpellScript::FilterTargets, EFFECT_0,TARGET_UNIT_SRC_AREA_ENTRY);
-                OnEffectHitTarget += SpellEffectFn(spell_kilnara_rat_lure_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
+        uint64 ratGuid = GetCaster()->GetGUID();
+        GetHitUnit()->Schedule(Milliseconds(GetHitUnit()->GetSplineDuration()), [ratGuid](Unit* self)
         {
-            return new spell_kilnara_rat_lure_SpellScript();
-        }
+            self->CastSpell(self, SPELL_BLOOD_FRENZY, true);
+            if (InstanceScript* instance = self->GetInstanceScript())
+                if (Creature* kilnara = ObjectAccessor::GetCreature(*self, instance->GetData64(DATA_KILNARA)))
+                    kilnara->AI()->DoAction(ACTION_CAT_FED);
+
+            if (Creature* rat = ObjectAccessor::GetCreature(*self, ratGuid))
+                rat->DespawnOrUnsummon();
+        });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_kilnara_rat_lure::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnEffectHitTarget += SpellEffectFn(spell_kilnara_rat_lure::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
 };
 
 void AddSC_boss_kilnara()
 {
     new boss_kilnara();
     new npc_kilnara_pride_of_bethekk();
-    new npc_kilnara_wave_of_agony();
     new npc_kilnara_temple_rat();
     new spell_kilnara_wave_of_agony_target();
     new spell_kilnara_wave_of_agony_start();
-    new spell_kilnara_rat_lure();
+    new spell_script<spell_create_rat>("spell_create_rat");
+    new spell_script<spell_kilnara_rat_lure>("spell_kilnara_rat_lure");
 }

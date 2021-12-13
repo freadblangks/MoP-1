@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -17,6 +19,8 @@
 
 #include "DatabaseEnv.h"
 #include "Transaction.h"
+
+std::mutex TransactionTask::_lock;
 
 //- Append a raw ad-hoc query to the transaction
 void Transaction::Append(const char* sql)
@@ -74,11 +78,22 @@ void Transaction::Cleanup()
 
 bool TransactionTask::Execute()
 {
+    bool result = DoTask();
+
+    if (_continuation)
+        _continuation->SetResult(result);
+
+    return result;
+}
+
+bool TransactionTask::DoTask()
+{
     if (m_conn->ExecuteTransaction(m_trans))
         return true;
 
     if (m_conn->GetLastError() == 1213)
     {
+        std::lock_guard<std::mutex> guard(_lock);
         uint8 loopBreaker = 5;  // Handle MySQL Errno 1213 without extending deadlock to the core itself
         for (uint8 i = 0; i < loopBreaker; ++i)
             if (m_conn->ExecuteTransaction(m_trans))
@@ -87,6 +102,18 @@ bool TransactionTask::Execute()
 
     // Clean up now.
     m_trans->Cleanup();
-
     return false;
+}
+
+bool SafeTransactionTask::Execute()
+{
+    try
+    {
+        TransactionTask::Execute();
+    }
+    catch (Exception const&)
+    {
+        _continuation->SetResult(false);
+    }
+    return true;
 }

@@ -1,104 +1,87 @@
-/*
-* Copyright (C) 2012-2013 JadeCore <http://www.pandashan.com/>
-* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
-* Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of the GNU General Public License as published by the
-* Free Software Foundation; either version 2 of the License, or (at your
-* option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along
-* with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
-
 #include "GameObjectAI.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "terrace_of_endless_spring.h"
-enum Platform
-{
-    PLATFORM_MIDDLE = 1,
-    PLATFORM_RIGHT = 2,
-    PLATFORM_LEFT = 3,
-};
+#include "InstanceScript.h"
+#include <numeric>
+
 enum eShaOfFearSpells
 {
     // Sha of Fear
-    SPELL_REACHING_ATTACK = 119775,
-    SPELL_EERIE_SKULL = 119519,
-    SPELL_ENERGY_TO_ZERO = 119417,
-    SPELL_BREATH_OF_FEAR = 119414,
-    SPELL_THRASH_AURA = 131996,
-    SPELL_THRASH_EXTRA_ATTACKS = 131994,
+    SPELL_REACHING_ATTACK           = 119775,
+    SPELL_EERIE_SKULL               = 119519,
+    SPELL_BREATH_OF_FEAR            = 119414,
+    SPELL_THRASH_AURA               = 131996,
+    SPELL_THRASH_EXTRA_ATTACKS      = 131994,
     SPELL_CONJURE_TERROR_SPAWN_TICK = 119108,
-    SPELL_BREATH_OF_FEAR_COSMETIC = 129098,
     // 4 spells for spawn, cauz' of different spawn coordinates
-    SPELL_CONJURE_TERROR_SPAWN_01 = 119312,
-    SPELL_CONJURE_TERROR_SPAWN_02 = 119370,
-    SPELL_CONJURE_TERROR_SPAWN_03 = 119371,
-    SPELL_CONJURE_TERROR_SPAWN_04 = 119372,
-    //   SPELL_BREATH_OF_FEAR          = 125786,
+    SPELL_CONJURE_TERROR_SPAWN_01   = 119312,
+    SPELL_CONJURE_TERROR_SPAWN_02   = 119370,
+    SPELL_CONJURE_TERROR_SPAWN_03   = 119371,
+    SPELL_CONJURE_TERROR_SPAWN_04   = 119372,
+    SPELL_CUSTOM_ENERGY_REGEN       = 119417,
+    SPELL_OMINOUS_CACKLE_MORPH      = 129147,
+
+    //Heroic
+    SPELL_NAKED_AND_AFRAID          = 120669,
+    SPELL_FADING_LIGHT              = 129378,
+    SPELL_IMPLACABLE_STRIKE         = 120672,
+    SPELL_DREAD_THRASH              = 132007,
+    SPELL_SUBMERGE                  = 120455,
+    SPELL_EMERGE                    = 120458,
+    SPELL_EMERGE_STUN               = 120475,
+    SPELL_HUDDLE_IN_TERROR          = 120629,
+    SPELL_WATERSPOUT                = 120519,
+    SPELL_WATERSPOUT_DAMAGE         = 120521,
+    SPELL_WATERSPOUT_DUMMY          = 120556,
+    SPELL_CHAMPION_OF_THE_LIGHT     = 120268,
+    SPELL_TRANSFER_LIGHT            = 120285,
+    SPELL_DREAD_EXPANSE             = 120289,
+    SPELL_ETERNAL_DARKNESS          = 120394,
+    SPELL_TELEPORT_SHA              = 120191,
+    SPELL_TELEPORT_PLAYER           = 120192,
+    SPELL_TELEPORT_TO_DREAD_EXPANSE = 120221,
+    SPELL_PHASE2_ENERGY_REGEN       = 120284,
+    SPELL_HEROIC_TRANSITION         = 114936, // DBM switch phase 2 [only heroic]
+    SPELL_HEROIC_TRANSITION_SCREEN  = 120193,
+    SPELL_HC_CONJURE_DREAD_SPAWN    = 120453,
+    SPELL_HC_TRASH_EXTRA_ATTACK     = 132000,
+        /*Dread Spawn*/
+    SPELL_SHA_SPINE                 = 120437, // not using
+    SPELL_SHA_SPINE_EFF             = 120438,
+    SPELL_GATHERING_SPEED           = 128419,
 
     // Other mobs
-    WALL_OF_LIGHT_IMMUNITY_2 = 117999,
-    WALL_OF_LIGHT_IMMUNITY = 117964,
-    SPELL_LIGHT_WALL = 117865,
-    SPELL_CHAMPION_OF_LIGHT = 117866,
-    SPELL_LIGHT_WALL_READY = 117770,
-    SPELL_LIGHT_WALL_VISUAL = 107145,
-    SPELL_FEARLESS = 118977,
-    SPELL_WALL_OF_LIGHT_BUFF = 117999,
-    SPELL_PENETRATING_BOLT = 129075,
-    SPELL_PENETRATING_BOLT_MISSILE = 129077,
-    SPELL_DARK_BULWARK = 119083,
-
-    // CACKLE
-    SPELL_CACKLE_CAST = 119593,
-    SPELL_CACKLE_TRANSFORM = 129147,
-
-    // GUARDIAN
-    DREAD_SPRAY_EFFECT = 119983,
-    DREAD_SPRAY = 119956,
-    DREAD_SPRAY_BUFF = 120047,
-    DREAD_SPRAY_FEAR = 119985,
-
-    GLOBUE_SPAWN = 129178,
-    GLOBUE_VISUAL = 129187,
-    GLOBUE_EFFECTY = 129189,
-    GLOBUE_BOSS_HEAL = 129190,
-
-    DEATH_BLOSSOM_CAST = 119888,
-    DEATH_BLOSSOM_DAMAGE = 119887,
-    DEATH_BLOSSOM_ARROW_VISUAL_1 = 119890,
-    DEATH_BLOSSOM_ARROW_VISUAL_2 = 119944,
-    DEATH_BLOSSOM_ARROW_VISUAL_3 = 119945,
-
-    FEARLESS = 118977,
-
-    SPELL_SHOT = 119862,
+    SPELL_LIGHT_WALL                = 117865,
+    SPELL_CHAMPION_OF_LIGHT         = 117866,
+    SPELL_LIGHT_WALL_READY          = 117770,
+    SPELL_LIGHT_WALL_VISUAL         = 107141,
+    SPELL_FEARLESS                  = 118977,
+    SPELL_WALL_OF_LIGHT_BUFF        = 117999,
+    SPELL_PENETRATING_BOLT          = 129075,
+    SPELL_PENETRATING_BOLT_MISSILE  = 129077,
+    SPELL_DARK_BULWARK              = 119083
 };
 
 enum eShaOfFearEvents
 {
-    EVENT_CHECK_MELEE = 1,
-    EVENT_EERIE_SKULL = 2,
-    EVENT_CHECK_ENERGY = 3,
-    EVENT_FIRST_TERRORS = 4,
-    EVENT_PENETRATING_BOLT = 5,
-    EVENT_SCHEDULE_LIGHT_WALL_VISUAL = 6,
-    EVENT_BREATH_OF_FEAR = 7,
-    EVENT_SHA_GLOBULES = 8,
-    EVENT_DREAD_SPRAY = 9,
-    EVENT_DEATH_BLOSSOM = 10,
-    EVENT_DREAD_DAMAGE = 11,
-    EVENT_SHOT = 12,
-    EVENT_CACKLE = 13,
+    EVENT_CHECK_MELEE              = 1,
+    EVENT_EERIE_SKULL              = 2,
+    EVENT_CHECK_ENERGY             = 3,
+    EVENT_FIRST_TERRORS            = 4,
+    EVENT_PENETRATING_BOLT         = 5,
+    EVENT_OMINOUS_CACKLE           = 6,
+    EVENT_EVADE                    = 7,
+    EVENT_BERSERK                  = 8,
+    EVENT_SET_EVADE_TRUE           = 10,
+    EVENT_HUDDLE_IN_TERROR         = 11,
+    EVENT_WATERSPOUT               = 12,
+    EVENT_NAKED_AND_AFRAID         = 13,
+    EVENT_IMPLACABLE_STRIKE        = 14,
+    EVENT_COSMETIC_BATTLE          = 15,
+    EVENT_IMPLACABLE_STRIKE_REMOVE = 16,
+    EVENT_DREAD_SPAWN              = 17,
+    EVENT_SUBMERGE                 = 18,
 };
 
 enum eShaOfFearActions
@@ -106,50 +89,56 @@ enum eShaOfFearActions
     ACTION_ACTIVATE_WALL_OF_LIGHT,
     ACTION_DESACTIVATE_WALL_OF_LIGHT,
     ACTION_SPAWN_TERROR,
-    ACTION_SPAWN_CHENG,
-    ACTION_SPAWN_YANG,
-    ACTION_SPAWN_JULU,
-    ACTION_REMOVE_DREAD_SPRAY,
+    ACTION_BERSERK,
+    ACTION_TRANSFER_LIGHT,
+    ACTION_EMOTE,
+    ACTION_SELECT_NEW_TARGET,
 };
 
 enum eShaOfFearSays
 {
-    TALK_INTRO = 2,
-    TALK_AGGRO = 0,
-    TALK_DEATH = 1,
-    TALK_BREATH_OF_FEAR = 4,
-    TALK_SLAY = 3,
-    TALK_SLAY_HEROIC,
-    TALK_SUBMERGE = 6,
-    TALK_HUDDLE = 5,
-    TALK_LAST_PHASE = 7,
-};
-enum EntriesOfTriggers
-{
-    spawnWallOfLightEntry = 654840,
-    spawnWallOfLightVisualEntry = 61797,
-    spawnWallOfPureLightEntry = 60788,
+    SAY_INTRO,
+    SAY_AGGRO,
+    SAY_BREATH_OF_FEAR,
+    SAY_SLAY,
+    SAY_PHASE_2,
+    SAY_SUBMERGE,
+    SAY_HUDDLE,
+    EMOTE_PHASE_2,
 
-    // DREAD SPRAY
-    dread_spray_1_8 = 654842,
-    dread_spray_2_8 = 654843,
-    dread_spray_3_8 = 654844,
-    dread_spray_4_8 = 654845,
-    dread_spray_5_8 = 654846,
-    dread_spray_6_8 = 654847,
-    dread_spray_7_8 = 654848,
-    dread_spray_8_8 = 654849,
+};
 
-    BACK_TO_TERRACE_PORTAL_1 = 65736,
-    BACK_TO_TERRACE_PORTAL_2 = 657360,
-    BACK_TO_TERRACE_PORTAL_3 = 657361,
-};
-enum cacklecreatures
+enum Entities
 {
-    CHENG = 61042,
-    YANG = 61038,
-    JULU = 61046,
+    NPC_YANG_GUOSHI         = 61038,
+    NPC_JINLUN_KUN          = 61046,
+    NPC_CHENG_KANG          = 61042,
 };
+
+enum Misc
+{
+    ACTION_BOWMAN_AGGRESSIVE        = 10,
+    ACTION_SUBMERGE_REMOVE          = 11,
+};
+
+struct BowmanData
+{
+    uint32 entry;
+    uint32 spellId;
+    float x;
+    float y;
+    float z;
+    float o;
+    bool active;
+};
+
+static BowmanData bowmenData[] = // DNC
+{
+    { NPC_YANG_GUOSHI, 119593, -1214.795f, -2824.823f, 41.24303f, 3.506719f },
+    { NPC_CHENG_KANG, 119693, -1075.198f, -2577.711f, 15.828019f, 1.725f },
+    { NPC_JINLUN_KUN, 119692, -832.0764f, -2745.405f, 31.67757f, 0.1583484f }
+};
+
 Player* GetChampionOfLight(Creature* me)
 {
     if (!me)
@@ -157,13 +146,14 @@ Player* GetChampionOfLight(Creature* me)
 
     Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
     for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
-        if (Player* player = itr->getSource())
+        if (Player* player = itr->GetSource())
             if (player->HasAura(SPELL_CHAMPION_OF_LIGHT))
                 return player;
 
     return NULL;
 }
-Position spawnTerrorPos[4] =
+
+static const Position spawnTerrorPos[4] =
 {
     { -1052.588f, -2788.164f, 38.268f, 0.0f },
     { -983.4550f, -2787.942f, 38.269f, 0.0f },
@@ -171,1671 +161,2292 @@ Position spawnTerrorPos[4] =
     { -1046.274f, -2772.215f, 38.303f, 0.0f }
 };
 
-Position platform1 = { -1079.24f, -2552.98f, 15.87f, 4.932f }; // changs
-Position platform2 = { -810.77f, -2741.60f, 31.704f, 3.277f }; // julu
-Position platform3 = { -1235.58f, -2832.87f, 41.269f, 0.328124f }; // yang
-
-Position yang_guoshi = { -1214.80f, -2824.82f, 41.243f, 3.506720f }; // left
-Position cheng_kang = { -1075.19f, -2577.82f, 15.851f, 1.742210f }; // middle
-Position julu_guoshi = { -832.07f, -2745.39f, 31.677f, 0.153694f }; // right
-
-Position returntomainplat = { -954.64f, -2754.13f, 37.742f, 3.253044f }; // left
-Position returntomainplat2 = { -1043.43f, -2729.68f, 38.254f, 5.220324f }; // middle
-Position returntomainplat3 = { -1077.80f, -2753.44f, 37.747f, 5.918619f }; // right
-
-Position spawnWallOfLightVisual[2] =
+enum eShaPhases
 {
-    { -990.25f, -2815.58f, 38.254f, 2.125254f },
-    { -1045.28f, -2816.16f, 38.254f, 1.028898f }
+    PHASE_TERRACE       = 1,
+    PHASE_DREAD_EXPANSE
 };
 
-Position spawnWallOfLight[6] =
+class DpsSelectPredicate
 {
-    { -1024.51f, -2818.54f, 38.254f, 0.0f },
-    { -1023.32f, -2810.017f, 38.266f, 0.0f },
-    { -1021.94f, -2799.86f, 38.300f, 0.0f },
-    { -1013.84f, -2799.90f, 38.303f, 0.0f },
-    { -1012.22f, -2810.20f, 38.266f, 0.0f },
-    { -1011.08f, -2818.51f, 38.254f, 0.0f }
+    public:
+        bool operator()(WorldObject* target) const
+        {
+            return target && target->ToPlayer() && target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) != ROLES_DPS;
+        }
 };
 
-SpecIndex std_dps_specs_spectrum[23] = { SPEC_HUNTER_BEASTMASTER, SPEC_HUNTER_MARKSMAN, SPEC_HUNTER_SURVIVAL, SPEC_PRIEST_SHADOW, SPEC_ROGUE_ASSASSINATION
-, SPEC_ROGUE_COMBAT, SPEC_ROGUE_SUBTLETY, SPEC_SHAMAN_ELEMENTAL, SPEC_SHAMAN_ENHANCEMENT, SPEC_WARLOCK_AFFLICTION, SPEC_WARLOCK_DEMONOLOGY, SPEC_WARLOCK_DESTRUCTION,
-SPEC_DK_UNHOLY, SPEC_DK_FROST, SPEC_DROOD_CAT, SPEC_DROOD_BALANCE, SPEC_WARRIOR_FURY, SPEC_WARRIOR_ARMS, SPEC_PALADIN_RETRIBUTION, SPEC_MAGE_FROST, SPEC_MAGE_FIRE
-, SPEC_MAGE_ARCANE, SPEC_MONK_WINDWALKER };
-SpecIndex std_heal_specs_spectrump[6] = { SPEC_SHAMAN_RESTORATION, SPEC_MONK_MISTWEAVER, SPEC_PRIEST_HOLY, SPEC_PRIEST_DISCIPLINE, SPEC_DROOD_RESTORATION, SPEC_PALADIN_HOLY };
-SpecIndex std_tank_specs_spectrum[5] = { SPEC_MONK_BREWMASTER, SPEC_DK_BLOOD, SPEC_DROOD_BEAR, SPEC_PALADIN_PROTECTION, SPEC_PALADIN_PROTECTION };
+class notValidTargetPredicate
+{
+    public:
+        notValidTargetPredicate(Unit* _caster) : caster(_caster) { }
 
+        bool operator()(WorldObject* target) const
+        {
+            return target && target->ToPlayer() && (target->ToPlayer()->HasAura(SPELL_CHAMPION_OF_LIGHT) || target->ToPlayer()->GetExactDist2d(caster) > 70.f);
+        }
+    private:
+        Unit* caster;
+};
 
-/*
+static const Position lightPos = { -1017.835f, -2771.984f, 38.65444f, 4.718282f };
 
-if(target->ToPlayer()->getClass() == CLASS_WARLOCK  | target->ToPlayer()->getClass() == CLASS_HUNTER || target->ToPlayer()->getClass() == CLASS_MAGE || target->ToPlayer()->getClass() == CLASS_ROGUE ||
-target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DK_FROST) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DK_UNHOLY) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_SHAMAN_ELEMENTAL) ||
-target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_SHAMAN_ENHANCEMENT) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_PALADIN_RETRIBUTION) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DROOD_CAT)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DROOD_BALANCE) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_WARRIOR_FURY) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_WARRIOR_ARMS)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_PRIEST_SHADOW) || target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_MONK_WINDWALKER))
+uint8 const ominousCaclkePathLenght = 8;
+Position const ominousCaclkePath[3][ominousCaclkePathLenght] =
 {
-if (dps <= 3)
-{
-
-dps += 1;
-}
-}
-else if (target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_PALADIN_HOLY)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_PRIEST_DISCIPLINE)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_PRIEST_HOLY)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DROOD_RESTORATION)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_SHAMAN_RESTORATION)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_MONK_MISTWEAVER))
-{
-if (healer <= 1)
-{
-STD_NEW_GROUP.push_back(target->ToPlayer());
-//STD_LOADED_PLAYERS.remove(std_loaded);
-healer += 1;
-}
-}
-else if (target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_PALADIN_PROTECTION)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_WARRIOR_PROTECTION)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DK_BLOOD)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_DROOD_BEAR)
-|| target->ToPlayer()->GetSpecializationId(target->ToPlayer()->GetActiveSpec() == SPEC_MONK_BREWMASTER))
-{
-if (tank <= 1)
-{
-STD_NEW_GROUP.push_back(target->ToPlayer());
-//STD_LOADED_PLAYERS.remove(std_loaded);
-tank += 1;
-}
-}
-}
-
-if (dps > 2 && healer > 0 && tank > 0)
-RampRand();
-
-
-void RampRand()
-{
-while (!reramp)
-{
-// kick in platforms
-switch (urand(0, 2))
-{
-case 0:
-if (!cheng)
-{
-cheng = true;
-OminousCacklePort();
-reramp = true;
-}
-break;
-case 1:
-if (!yang)
-{
-yang = true;
-OminousCacklePort();
-reramp = true;
-}
-break;
-case 2:
-if (!julu)
-{
-julu = true;
-OminousCacklePort();
-reramp = true;
-}
-break;
-}
-}
-}
-void OminousCacklePort()
-{
-if (STD_NEW_GROUP.empty())
-return;
-
-if (!me && !me->IsInWorld() || me->isDead())
-return;
-
-if (cheng)
-{
-me->GetAI()->DoAction(ACTION_SPAWN_CHENG);
-for (auto pls : STD_NEW_GROUP)
-{
-pls->NearTeleportTo(platform1.GetPositionX(), platform1.GetPositionY(), platform1.GetPositionZ(), platform1.GetOrientation());
-reramp = false;
-}
-}
-else if (yang)
-{
-me->GetAI()->DoAction(ACTION_SPAWN_YANG);
-for (auto pls : STD_NEW_GROUP)
-{
-pls->NearTeleportTo(platform2.GetPositionX(), platform2.GetPositionY(), platform2.GetPositionZ(), platform2.GetOrientation());
-reramp = false;
-}
-}
-else if (julu)
-{
-me->GetAI()->DoAction(ACTION_SPAWN_JULU);
-for (auto pls : STD_NEW_GROUP)
-{
-pls->NearTeleportTo(platform3.GetPositionX(), platform3.GetPositionY(), platform3.GetPositionZ(), platform3.GetOrientation());
-reramp = false;
-}
-}
-}
-
-*/
+    {
+        { -1046.99f, -2783.15f, 61.8138f, 0.0f },
+        { -1099.02f, -2793.58f, 54.7547f, 0.0f },
+        { -1140.58f, -2803.74f, 50.0972f, 0.0f },
+        { -1162.42f, -2840.47f, 62.152f,  0.0f },
+        { -1205.59f, -2866.87f, 57.9883f, 0.0f },
+        { -1236.89f, -2860.34f, 55.5584f, 0.0f },
+        { -1249.57f, -2843.74f, 48.606f,  0.0f },
+        { -1237.62f, -2833.73f, 41.2698f, 0.0f },
+    },
+    {
+        { -1059.84f, -2777.74f, 69.5133f, 0.0f },
+        { -1086.31f, -2715.18f, 57.1774f, 0.0f },
+        { -1096.7f,  -2666.51f, 43.1586f, 0.0f },
+        { -1136.55f, -2603.74f, 42.5406f, 0.0f },
+        { -1115.88f, -2560.9f,  31.2417f, 0.0f },
+        { -1096.6f,  -2541.23f, 25.3045f, 0.0f },
+        { -1083.98f, -2538.09f, 22.3872f, 0.0f },
+        { -1079.12f, -2553.06f, 15.8787f, 0.0f },
+    },
+    {
+        { -991.503f, -2780.37f, 83.9225f, 0.0f },
+        { -942.059f, -2752.11f, 72.1218f, 0.0f },
+        { -902.356f, -2729.78f, 63.2266f, 0.0f },
+        { -876.343f, -2719.93f, 59.0469f, 0.0f },
+        { -821.145f, -2702.31f, 53.7641f, 0.0f },
+        { -791.903f, -2717.04f, 47.9356f, 0.0f },
+        { -795.439f, -2737.12f, 39.1009f, 0.0f },
+        { -807.401f, -2741.74f, 31.7066f, 0.0f },
+    },
+};
 
 class boss_sha_of_fear : public CreatureScript
 {
-public:
-    boss_sha_of_fear() : CreatureScript("boss_sha_of_fear") { }
+    public:
+        boss_sha_of_fear() : CreatureScript("boss_sha_of_fear") { }
 
-    struct boss_sha_of_fearAI : public BossAI
-    {
-        boss_sha_of_fearAI(Creature* creature) : BossAI(creature, DATA_SHA_OF_FEAR)
+        struct boss_sha_of_fearAI : public BossAI
         {
-            pInstance = creature->GetInstanceScript();
-            me->setFaction(16);
-            me->Respawn();
-        }
+            boss_sha_of_fearAI(Creature* creature) : BossAI(creature, DATA_SHA_OF_FEAR) { }
 
-        InstanceScript* pInstance;
-        EventMap events;
+            EventMap m_mEvents, berserkEvents;
 
-        std::list<Player*> STD_LOADED_PLAYERS;
-        std::list<Player*> STD_NEW_GROUP;
-        uint8 attacksCounter;
-        uint8 terrorCounter;
-        int dps;
-        int tank;
-        int healer;
+            uint8 attacksCounter;
+            uint8 attackCounterDread;
+            uint8 terrorCounter;
+            uint8 m_uiPhase;
 
-        bool cheng;
-        bool yang;
-        bool julu;
-        bool reramp;
+            uint32 delay;
+            uint32 prevStep, curStep;
+            uint64 VictimGUID;
+            std::vector<uint32> m_dEvents;
 
-        bool ominous;
+            bool isDuringP2Transition;
+            bool isSecondEvent;
 
-        void Reset()
-        {
-            me->setFaction(16);
+            std::unordered_map<BowmanData*, uint32> pandaMap;
 
-            _Reset();
-            events.Reset();
-            summons.DespawnAll();
-
-            attacksCounter = 0;
-            terrorCounter = 0;
-
-            dps = 0;
-            healer = 0;
-            tank = 0;
-
-            ominous = false;
-
-            me->SetPower(POWER_ENERGY, 0);
-            me->SetInt32Value(UNIT_FIELD_POWER1, 0);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            if (pInstance)
+            void InitializeAI() override
             {
-                if (pInstance->GetBossState(DATA_PROTECTORS) == DONE)
-                {
-                    me->setFaction(14);
-                    me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
-                    pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                me->setActive(true);
+                SetCombatMovement(false);
+                introDone = false;
+                isDuringP2Transition = false;
+                delay      = 0;
+                prevStep   = 0;
+                curStep    = 1;
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
 
-                    if (pInstance->GetData(SPELL_RITUAL_OF_PURIFICATION))
-                        me->AddAura(SPELL_RITUAL_OF_PURIFICATION, me);
-                }
-                else
+                for (int i = 0; i < 3; ++i)
                 {
-                    me->setFaction(16);
-                    me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 35);
+                    BowmanData* data = new BowmanData();
+                    data->entry = bowmenData[i].entry;
+                    data->spellId = bowmenData[i].spellId;
+                    data->x = bowmenData[i].x;
+                    data->y = bowmenData[i].y;
+                    data->z = bowmenData[i].z;
+                    data->o = bowmenData[i].o;
+                    data->active = false;
+
+                    pandaMap.insert(std::make_pair(data, data->entry));
                 }
+
+                if (instance && instance->GetBossState(DATA_PROTECTORS) < DONE)
+                    m_mEvents.ScheduleEvent(EVENT_COSMETIC_BATTLE, 1500);
+
+                me->GetMap()->SetWorldState(WORLDSTATE_MIND_KILLER, 1);
             }
-        }
-        void MoveInLineOfSight(Unit* who)
-        {
-            if (who)
+
+            void Reset() override
             {
-                if (who->IsWithinDistInMap(me, 30.0f, true))
+                _Reset();
+                SetCombatMovement(false);
+
+                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, 32.0f);
+                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, 32.0f);
+
+                if (isDuringP2Transition)
+                    return;
+
+                isDuringP2Transition = false;
+                me->setRegeneratingHealth(true);
+
+                me->AddAura(72242, me);
+                me->SetReactState(REACT_DEFENSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+
+                summons.DespawnAll();
+
+                SetPhase(0);
+
+                prevStep       = 0;
+                curStep        = 1;
+                delay          = 0;
+                attacksCounter = 0;
+                attackCounterDread = 0;
+                terrorCounter  = 0;
+                VictimGUID     = 0;
+                m_dEvents.clear();
+                berserkEvents.Reset();
+
+                for (std::unordered_map<BowmanData*, uint32>::iterator itr = pandaMap.begin(); itr != pandaMap.end(); ++itr)
                 {
-                    if (instance && instance->GetBossState(DATA_LEI_SHI) == DONE && me->getFaction() == 35)
+                    itr->first->active = false;
+                }
+
+                isSecondEvent = false;
+
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                }
+
+                me->RemoveAurasDueToSpell(SPELL_BERSERK);
+                me->GetMap()->SetWorldState(WORLDSTATE_MIND_KILLER, 1);
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                if (type == TYPE_DREAD_TERRACE)
+                    return m_uiPhase == PHASE_DREAD_EXPANSE ? 1 : 0;
+
+                return 0;
+            }
+
+            void SetPhase(uint8 m_phase)
+            {
+                events.Reset();
+
+                switch (m_phase)
+                {
+                    case PHASE_TERRACE:
+                        events.ScheduleEvent(EVENT_CHECK_MELEE, 1000);
+                        events.ScheduleEvent(EVENT_EERIE_SKULL, 5000);
+                        events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
+                        events.ScheduleEvent(EVENT_FIRST_TERRORS, 30000);
+                        events.ScheduleEvent(EVENT_OMINOUS_CACKLE, 35000);
+                        break;
+                    case PHASE_DREAD_EXPANSE:
+                        summons.DespawnAll();
+                        // Remove First Phase Events and Types
+                        events.CancelEvent(EVENT_OMINOUS_CACKLE);
+                        events.CancelEvent(EVENT_EERIE_SKULL);
+                        berserkEvents.CancelEvent(EVENT_EVADE);
+                        me->RemoveAurasDueToSpell(SPELL_THRASH_AURA);
+                        me->setRegeneratingHealth(false);
+
+                        if (Unit* vict = me->GetVictim())
+                            VictimGUID = vict->GetGUID();
+
+                        // Always try to select healer in priority
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, HealerSpecTargetSelector()))
+                            target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+                        else if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, NonTankSpecTargetSelector()))
+                            target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+                        else if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 200.0f, true))
+                            target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+
+                        if (instance)
+                        {
+                            instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CHAMPION_OF_LIGHT);
+                            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_OMINOUS_CACKLE_MORPH);
+                            instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_WALL_OF_LIGHT_BUFF);
+                        }
+
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                        SetCombatMovement(true);
+                        Talk(SAY_PHASE_2);
+                        Talk(EMOTE_PHASE_2);
+                        me->PrepareChanneledCast(me->GetOrientation());
+                        DoCast(me, SPELL_FADING_LIGHT, true);
+                        DoCast(me, SPELL_HEROIC_TRANSITION, true);
+                        DoCast(me, SPELL_HEROIC_TRANSITION_SCREEN, true);
+                        DoCast(me, SPELL_TELEPORT_SHA, true);
+
+                        me->RemoveAurasDueToSpell(SPELL_CUSTOM_ENERGY_REGEN);
+
+                        // At Third phase, after submerge sha`ll rand choise one of this event and till next sumberge he`ll cast all of this.
+                        m_dEvents.clear();
+                        m_dEvents = { EVENT_HUDDLE_IN_TERROR, EVENT_WATERSPOUT, EVENT_IMPLACABLE_STRIKE };
+                        SetupPhaseTwoEvents();
+
+                        events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
+                        isDuringP2Transition = true;
+
+                        delay = 0;
+                        me->m_Events.Schedule(delay += 5000, 20, [this]()
+                        {
+                            isDuringP2Transition = false;
+                            me->UpdateObjectVisibility();
+                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                            SetCombatMovement(true);
+                            me->RemoveChanneledCast(VictimGUID);
+                            DoZoneInCombat(me, 400.0f);
+
+                            me->SetPower(POWER_ENERGY, 50);
+                            DoCast(me, SPELL_PHASE2_ENERGY_REGEN, true);
+                        });
+                        break;
+                }
+
+                m_uiPhase = m_phase;
+                //events.SetPhase(m_phase);
+            }
+
+            void GetAvailablePandaAndSummon()
+            {
+                std::unordered_map<BowmanData*, uint32> newPandaMap;
+                newPandaMap.reserve(sizeof(pandaMap));
+                std::copy(pandaMap.begin(), pandaMap.end(), std::inserter(newPandaMap, newPandaMap.begin()));
+                std::unordered_map<BowmanData*, uint32>::iterator itr = newPandaMap.begin();
+
+                for (;  itr != newPandaMap.end();)
+                {
+                    if (itr->first->active)
+                        itr = newPandaMap.erase(itr);
+                    else
+                        ++itr;
+                }
+
+                itr = newPandaMap.begin();
+
+                if (!newPandaMap.empty())
+                {
+                    if (newPandaMap.size() > 1)
+                        std::advance(itr, std::rand() % (newPandaMap.size() - 1));
+                    
+                    if (itr != newPandaMap.cend())
                     {
-                        Talk(TALK_INTRO);
-                        me->setFaction(16);
+                        for (std::unordered_map<BowmanData*, uint32>::const_iterator finder = pandaMap.begin(); finder != pandaMap.end(); ++finder)
+                        {
+                            if (finder->first->entry == itr->second)
+                            {
+                                PropagateSummon(finder);
+                                return;
+                            }
+                        }
                     }
                 }
+
+                itr = pandaMap.begin();
+
+                std::advance(itr, std::rand() % (pandaMap.size() - 1));
+
+                if (itr != pandaMap.cend())
+                    DoCast(me, itr->first->spellId);
             }
-        }
-        void JustReachedHome()
-        {
-            _JustReachedHome();
-            summons.DespawnEntry(NPC_TERROR_SPAWN);
-            summons.DespawnEntry(spawnWallOfLightVisualEntry);
-            summons.DespawnEntry(spawnWallOfPureLightEntry);
 
-            if (pInstance)
-                pInstance->SetBossState(DATA_SHA_OF_FEAR, FAIL);
-        }
-
-        void EnterCombat(Unit* attacker)
-        {
-            if (pInstance)
+            void PropagateSummon(std::unordered_map<BowmanData*, uint32>::const_iterator &itr)
             {
-                pInstance->SetBossState(DATA_SHA_OF_FEAR, IN_PROGRESS);
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-                events.ScheduleEvent(EVENT_CHECK_MELEE, 1000);
-                events.ScheduleEvent(EVENT_EERIE_SKULL, 5000);
-                events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
-                events.ScheduleEvent(EVENT_FIRST_TERRORS, 20000);
-                events.ScheduleEvent(EVENT_CACKLE, 90 * IN_MILLISECONDS);
+                if (Creature* pBowman = me->SummonCreature(itr->first->entry, itr->first->x, itr->first->y, itr->first->z, itr->first->o))
+                {
+                    DoCast(me, itr->first->spellId);
+                    itr->first->active = true;
 
-                cheng = false;
-                yang = false;
-                julu = false;
-                reramp = false;
+                    if (pBowman->AI())
+                        pBowman->AI()->DoAction(ACTION_BOWMAN_AGGRESSIVE);
+                }
+            }
 
-                DoZoneInCombat();
-                Talk(TALK_AGGRO);
+            void JustReachedHome() override
+            {
+                _JustReachedHome();
+
+                if (instance)
+                    instance->SetBossState(DATA_SHA_OF_FEAR, FAIL);
+            }
+
+            void SetupPhaseTwoEvents()
+            {
+                if (m_dEvents.empty())
+                    return;
+
+                if (uint32 nextTypeEvent = Trinity::Containers::SelectRandomContainerElement(m_dEvents))
+                {
+                    m_dEvents.erase(std::find(m_dEvents.begin(), m_dEvents.end(), nextTypeEvent));
+                    events.ScheduleEvent(nextTypeEvent, 10 * IN_MILLISECONDS);
+                }
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                if (isDuringP2Transition)
+                    return;
 
                 me->SetPower(POWER_ENERGY, 0);
-                me->SetInt32Value(UNIT_FIELD_POWER1, 0);
-                me->SetMaxPower(POWER_ENERGY, 100);
-                me->SetInt32Value(UNIT_FIELD_MAXPOWER1, 100);
-                me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
-            }
-        }
 
-        void JustDied(Unit* killer)
-        {
-            if (pInstance)
+                DoCast(me, SPELL_CUSTOM_ENERGY_REGEN, true);
+
+                if (instance)
+                {
+                    instance->SetBossState(DATA_SHA_OF_FEAR, IN_PROGRESS);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+                    DoZoneInCombat();
+                    Talk(SAY_AGGRO);
+                }
+
+                SetPhase(PHASE_TERRACE);
+                berserkEvents.ScheduleEvent(EVENT_BERSERK, 15 * MINUTE * IN_MILLISECONDS);
+                berserkEvents.ScheduleEvent(EVENT_EVADE, 1 * IN_MILLISECONDS);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                if (instance)
+                {
+                    summons.DespawnAll();
+                    instance->SetBossState(DATA_SHA_OF_FEAR, DONE);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_WALL_OF_LIGHT_BUFF);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CHAMPION_OF_LIGHT);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CHAMPION_OF_THE_LIGHT);
+                    _JustDied();
+                }
+            }
+
+            void EnterEvadeMode() override
             {
                 summons.DespawnAll();
-                pInstance->SetBossState(DATA_SHA_OF_FEAR, DONE);
-                pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-                _JustDied();
 
-                Map::PlayerList const &PlList = me->GetMap()->GetPlayers();
-                if (PlList.isEmpty())
-                    return;
-                AchievementEntry const* achievementEntry = sAchievementMgr->GetAchievement(6844);
-                for (Map::PlayerList::const_iterator i = PlList.begin(); i != PlList.end(); ++i)
-                    if (Player* player = i->getSource())
-                        if (player->GetAchievementMgr().HasAchieved(6844))
-                            player->CompletedAchievement(achievementEntry);
-            }
-        }
-        void JustSummoned(Creature* summon)
-        {
-            if (summon->GetEntry() == NPC_TERROR_SPAWN)
-                ++terrorCounter;
-
-            summons.Summon(summon);
-        }
-        void SpellHitTarget(Unit* target, SpellInfo const* spell)
-        {
-            if (spell->Id == SPELL_CACKLE_CAST)
-            {
-            }
-        }
-        void SummonedCreatureDespawn(Creature* summon)
-        {
-            if (summon->GetEntry() == NPC_TERROR_SPAWN)
-                --terrorCounter;
-
-            summons.Despawn(summon);
-        }
-        void KilledUnit(Unit* who)
-        {
-            if (who->GetTypeId() == TYPEID_PLAYER)
-            {
-                if (IsHeroic())
-                    Talk(TALK_SLAY_HEROIC);
-                else
-                    Talk(TALK_SLAY);
-            }
-        }
-        void DoAction(const int32 action)
-        {
-            switch (action)
-            {
-            case ACTION_SPAWN_TERROR:
-            {
-                if (!terrorCounter)
+                if (instance)
                 {
-                    me->CastSpell(spawnTerrorPos[0].GetPositionX(), spawnTerrorPos[0].GetPositionY(),
-                        spawnTerrorPos[0].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_01, true);
-                    me->CastSpell(spawnTerrorPos[1].GetPositionX(), spawnTerrorPos[1].GetPositionY(),
-                        spawnTerrorPos[1].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_02, true);
-                }
-                else
-                {
-                    me->CastSpell(spawnTerrorPos[2].GetPositionX(), spawnTerrorPos[2].GetPositionY(),
-                        spawnTerrorPos[2].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_03, true);
-                    me->CastSpell(spawnTerrorPos[3].GetPositionX(), spawnTerrorPos[3].GetPositionY(),
-                        spawnTerrorPos[3].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_04, true);
-                }
-                break;
-            }
-            case ACTION_SPAWN_CHENG:
-            {
-                if (ominous)
-                {
-                    ominous = false;
-                    me->SummonCreature(CHENG, cheng_kang.GetPositionX(), cheng_kang.GetPositionY(), cheng_kang.GetPositionZ(), cheng_kang.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 0);
-                    break;
-                }
-            }
-            case ACTION_SPAWN_YANG:
-            {
-                if (ominous)
-                {
-                    ominous = false;
-                    me->SummonCreature(YANG, julu_guoshi.GetPositionX(), julu_guoshi.GetPositionY(), julu_guoshi.GetPositionZ(), julu_guoshi.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 0);
-                    break;
-                }
-            }
-            case ACTION_SPAWN_JULU:
-            {
-                if (ominous)
-                {
-                    ominous = false;
-                    me->SummonCreature(JULU, yang_guoshi.GetPositionX(), yang_guoshi.GetPositionY(), yang_guoshi.GetPositionZ(), yang_guoshi.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 0);
-                    break;
-                }
-            }
-            default:
-                break;
-            }
-        }
-        void DamageDealt(Unit* /*victim*/, uint32& /*damage*/, DamageEffectType damageType)
-        {
-            if (damageType == DIRECT_DAMAGE)
-            {
-                if (attacksCounter >= 3 && !me->m_extraAttacks)
-                {
-                    me->CastSpell(me, SPELL_THRASH_EXTRA_ATTACKS, true);
-                    attacksCounter = 0;
-                }
-                else if (attacksCounter >= 2 && !me->m_extraAttacks)
-                {
-                    me->CastSpell(me, SPELL_THRASH_AURA, true);
-                    ++attacksCounter;
-                }
-                else if (!me->m_extraAttacks)
-                {
-                    me->RemoveAura(SPELL_THRASH_AURA);
-                    ++attacksCounter;
-                }
-            }
-        }
-        void OnAddThreat(Unit* victim, float& fThreat, SpellSchoolMask /*schoolMask*/, SpellInfo const* /*threatSpell*/)
-        {
-            if (!victim->HasAura(SPELL_CHAMPION_OF_LIGHT))
-                fThreat = 0;
-            return;
-        }
-        void DespawnCreaturesInArea(uint32 entry, WorldObject* object)
-        {
-            std::list<Creature*> creatures;
-            GetCreatureListWithEntryInGrid(creatures, object, entry, 300.0f);
-            if (creatures.empty())
-                return;
-
-            for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-                (*iter)->DespawnOrUnsummon();
-        }
-        void RegeneratePower(Powers power, int32& value)
-        {
-            if (power != POWER_ENERGY)
-                return;
-
-            // Sha of Fear regenerates 6 energy every 2s (15 energy for 5s)
-            value = 3;
-
-            int32 val = me->GetPower(POWER_ENERGY);
-            if (val + value > 100)
-                val = 100;
-            else
-                val += value;
-
-            if (value >= 100)
-            {
-                me->SetPower(POWER_ENERGY, 0);
-                me->SetInt32Value(UNIT_FIELD_POWER1, 0);
-                events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
-                //events.ScheduleEvent(EVENT_BREATH_OF_FEAR, 1000);
-            }
-
-            me->SetInt32Value(UNIT_FIELD_POWER1, val);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-            {
-                if (pInstance && pInstance->GetData(SPELL_RITUAL_OF_PURIFICATION) == false)
-                    me->RemoveAura(SPELL_RITUAL_OF_PURIFICATION);
-
-                return;
-            }
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_CHECK_MELEE:
-            {
-                if (!me->IsWithinMeleeRange(me->getVictim(), 7.0f))
-                {
-                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 80.0f))
-                        me->CastSpell(target, SPELL_REACHING_ATTACK, false);
-                }
-                else
-                {
-                    // Always attack champion of light
-                    if (Player* target = GetChampionOfLight(me))
-                        if (me->getVictim() && me->getVictim()->GetGUID() != target->GetGUID())
-                            AttackStart(target);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_WALL_OF_LIGHT_BUFF);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CHAMPION_OF_LIGHT);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CHAMPION_OF_THE_LIGHT);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DREAD_EXPANSE);
+                    instance->SetBossState(DATA_SHA_OF_FEAR, FAIL);
                 }
 
-                events.ScheduleEvent(EVENT_CHECK_MELEE, 1000);
-                break;
-            }
-            case EVENT_EERIE_SKULL:
-            {
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 60.0f, true))
-                    me->CastSpell(target, SPELL_EERIE_SKULL, true);
+                _EnterEvadeMode();
+                Reset();
 
-                events.ScheduleEvent(EVENT_EERIE_SKULL, 5000);
-                break;
-            }
-            case EVENT_CHECK_ENERGY:
-            {
-                if (me->GetUInt32Value(UNIT_FIELD_POWER1) == 100)
+                me->RemoveAurasDueToSpell(SPELL_BERSERK);
+                me->SetReactState(REACT_DEFENSIVE);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED);
+                me->setRegeneratingHealth(true);
+
+                if (me->HasUnitState(UNIT_STATE_CANNOT_TURN))
+                    me->ClearUnitState(UNIT_STATE_CANNOT_TURN);
+
+                for (auto&& itr : instance->instance->GetPlayers())
                 {
-                    std::list<Creature*> bof_triggers;
+                    if (Player* player = itr.GetSource())
+                        if (player->IsAlive() && !player->IsGameMaster())
+                            player->Kill(player, false);
+                }
 
-                    GetCreatureListWithEntryInGrid(bof_triggers, me, 654841, 300.0f);
+                if (m_uiPhase == PHASE_DREAD_EXPANSE)
+                {
+                    float x, y, z, o;
+                    me->GetHomePosition(x, y, z, o);
+                    me->NearTeleportTo(x, y, z, o);
+                    me->UpdateObjectVisibility();
+                }
 
-                    if (bof_triggers.empty())
+                _DespawnAtEvade();
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon->GetEntry() == NPC_TERROR_SPAWN)
+                {
+                    summon->SetInCombatWithZone();
+                    ++terrorCounter;
+                }
+
+                summons.Summon(summon);
+            }
+
+            void SummonedCreatureDespawn(Creature* summon) override
+            {
+                if (summon->GetEntry() == NPC_TERROR_SPAWN)
+                    --terrorCounter;
+
+                summons.Despawn(summon);
+            }
+
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+            {
+                switch (summon->GetEntry())
+                {
+                    case NPC_YANG_GUOSHI:
+                    case NPC_CHENG_KANG:
+                    case NPC_JINLUN_KUN:               
+                        for (std::unordered_map<BowmanData*, uint32>::iterator itr = pandaMap.begin(); itr != pandaMap.end(); ++itr)
+                            if (itr->first->entry == summon->GetEntry())
+                                itr->first->active = false;
+                        break;
+                    default:
                         return;
-
-                    for (auto _bof : bof_triggers)
-                    {
-                        me->CastSpell(_bof, SPELL_BREATH_OF_FEAR, true);
-                    }
-
-                    me->SetPower(POWER_ENERGY, 0);
-                    me->SetInt32Value(UNIT_FIELD_POWER1, 0);
-                    Talk(TALK_BREATH_OF_FEAR);
                 }
-                events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
-                break;
             }
-            case EVENT_FIRST_TERRORS:
+
+            void KilledUnit(Unit* victim) override
             {
-                me->CastSpell(me, SPELL_CONJURE_TERROR_SPAWN_TICK, true);
-                break;
+                if (victim->GetTypeId() == TYPEID_PLAYER)
+                    Talk(SAY_SLAY);
             }
-            case EVENT_CACKLE:
+
+            void DoAction(int32 actionId) override
             {
-                ominous = true;
+                switch (actionId)
+                {
+                    case ACTION_SPAWN_TERROR:
+                    {
+                        if (!terrorCounter)
+                        {
+                            me->CastSpell(spawnTerrorPos[0].GetPositionX(), spawnTerrorPos[0].GetPositionY(),
+                                          spawnTerrorPos[0].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_01, true);
+                            me->CastSpell(spawnTerrorPos[1].GetPositionX(), spawnTerrorPos[1].GetPositionY(),
+                                          spawnTerrorPos[1].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_02, true);
+                        }
+                        else
+                        {
+                            me->CastSpell(spawnTerrorPos[2].GetPositionX(), spawnTerrorPos[2].GetPositionY(),
+                                          spawnTerrorPos[2].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_03, true);
+                            me->CastSpell(spawnTerrorPos[3].GetPositionX(), spawnTerrorPos[3].GetPositionY(),
+                                          spawnTerrorPos[3].GetPositionZ(), SPELL_CONJURE_TERROR_SPAWN_04, true);
+                        }
 
-                DespawnCreaturesInArea(65736, me);
-                DespawnCreaturesInArea(657360, me);
-                DespawnCreaturesInArea(657361, me);
+                        break;
+                    }
+                    case ACTION_SHA_INTRO:
+                        Talk(SAY_INTRO);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
 
-                me->CastSpell(me, SPELL_CACKLE_CAST);
-                events.ScheduleEvent(EVENT_CACKLE, 90 * IN_MILLISECONDS);
-                break;
+                        if (GameObject* pVortex = ObjectAccessor::GetGameObject(*me, instance->GetData64(GO_SHA_VORTEX)))
+                            pVortex->SetGoState(GO_STATE_ACTIVE);
+
+                        if (GameObject* pVortexWall = ObjectAccessor::GetGameObject(*me, instance->GetData64(GO_SHA_VORTEX_WALL)))
+                            pVortexWall->SetGoState(GO_STATE_ACTIVE);
+                        break;
+                    case ACTION_BERSERK:
+                        DoCast(me, SPELL_BERSERK, true);
+                        break;
+                    case ACTION_SUBMERGE_REMOVE:
+                        me->SetReactState(REACT_AGGRESSIVE);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED);
+                        me->RemoveAurasDueToSpell(SPELL_SUBMERGE);
+                        me->RemoveChanneledCast(VictimGUID);
+                        break;
+                    case ACTION_TRANSFER_LIGHT:
+                        if (instance && instance->GetBossState(DATA_SHA_OF_FEAR) != IN_PROGRESS)
+                            break;
+
+                        // Always try to select healer in priority
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, HealerSpecTargetSelector()))
+                            target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+                        else if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, NonTankSpecTargetSelector()))
+                            target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+                        else if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 200.0f, true))
+                            target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+                        break;
+                    default:
+                        break;
+                }
             }
-            default:
-                break;
+
+            void DamageDealt(Unit* /*victim*/, uint32& /*damage*/, DamageEffectType damageType) override
+            {
+                if (damageType == DIRECT_DAMAGE)
+                {
+                    if (m_uiPhase == PHASE_TERRACE)
+                    {
+                        if (attacksCounter >= 3 && !me->m_extraAttacks)
+                        {
+                            me->CastSpell(me, SPELL_THRASH_EXTRA_ATTACKS, true);
+                            attacksCounter = 0;
+                        }
+                        else if (attacksCounter >= 2 && !me->m_extraAttacks)
+                        {
+                            me->CastSpell(me, SPELL_THRASH_AURA, true);
+                            ++attacksCounter;
+                        }
+                        else if (!me->m_extraAttacks)
+                        {
+                            me->RemoveAura(SPELL_THRASH_AURA);
+                            ++attacksCounter;
+                        }
+                    }
+                    else
+                    {
+                        // In Heroic apply Dread Thrash before each 16x strike (on 15) instead default thrash
+                        if (attacksCounter >= 3 && !me->m_extraAttacks)
+                        {
+                            me->CastSpell(me, attackCounterDread >= 4 ? SPELL_HC_TRASH_EXTRA_ATTACK : SPELL_THRASH_EXTRA_ATTACKS, true);
+                            attacksCounter = 0;
+
+                            if (attackCounterDread >= 4)
+                                attackCounterDread = 0;
+                        }
+                        else if (attacksCounter >= 2 && !me->m_extraAttacks)
+                        {
+                            attackCounterDread++;
+                            me->CastSpell(me, attackCounterDread >= 4 ? SPELL_DREAD_THRASH : SPELL_THRASH_AURA, true);
+                            ++attacksCounter;
+                        }
+                        else if (!me->m_extraAttacks)
+                        {
+                            me->RemoveAura(SPELL_THRASH_AURA);
+                            me->RemoveAura(SPELL_DREAD_THRASH);
+                            ++attacksCounter;
+                        }
+                    }
+                }
             }
 
-            DoMeleeAttackIfReady();
+            void OnAddThreat(Unit* /*victim*/, float& fThreat, SpellSchoolMask /*schoolMask*/, SpellInfo const* /*threatSpell*/)
+            {
+                fThreat = 0;
+                return;
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                // Prevent switch if in us cast
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (me->HealthBelowPctDamaged(66, damage) && m_uiPhase == PHASE_TERRACE)
+                {
+                    if (IsHeroic())
+                    {
+                        if (instance && instance->GetData(TYPE_LEIS_HOPE) != DONE)
+                            instance->SetData(TYPE_LEIS_HOPE, DONE);
+
+                        SetPhase(PHASE_DREAD_EXPANSE);
+                    }
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                m_mEvents.Update(diff);
+
+                while (uint32 eventId = m_mEvents.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_EVADE:
+                            me->SetVisible(true);
+                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                            break;
+                        case EVENT_COSMETIC_BATTLE:
+                            if (instance->GetBossState(DATA_PROTECTORS) < DONE)
+                            {
+                                me->HandleEmoteCommand(urand(35, 37));
+                                m_mEvents.ScheduleEvent(EVENT_COSMETIC_BATTLE, urand(1500, 2000));
+                            }
+                            break;
+                    }
+                }
+
+                if (isDuringP2Transition)
+                    return;
+
+                if (!UpdateVictim())
+                    return;
+
+                berserkEvents.Update(diff);
+
+                while (uint32 eventId = berserkEvents.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BERSERK:
+                            DoAction(ACTION_BERSERK);
+                            break;
+                        case EVENT_EVADE:
+                            if (instance && instance->IsWipe(70.0f, me))
+                                EnterEvadeMode();
+
+                            berserkEvents.ScheduleEvent(EVENT_EVADE, 1 * IN_MILLISECONDS);
+                            break;
+                    }
+                }
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_CHECK_ENERGY:
+                            if (!instance)
+                            {
+                                events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
+                                break;
+                            }
+
+                            if (me->GetPower(POWER_ENERGY) >= me->GetMaxPower(POWER_ENERGY))
+                            {
+                                if (m_uiPhase == PHASE_TERRACE)
+                                {
+                                    if (Creature* pureLight = Creature::GetCreature(*me, instance->GetData64(NPC_PURE_LIGHT_TERRACE)))
+                                        me->CastSpell(pureLight, SPELL_BREATH_OF_FEAR, false);
+                                    Talk(SAY_BREATH_OF_FEAR);
+                                }
+                                else
+                                {
+                                    Talk(SAY_SUBMERGE);
+                                    if (Unit* victim = me->GetVictim())
+                                    {
+                                        me->PrepareChanneledCast(me->GetAngle(victim));
+                                        VictimGUID = victim->GetGUID();
+                                    }
+
+                                    DoCast(SPELL_SUBMERGE);
+                                    m_dEvents.clear();
+                                    m_dEvents = { EVENT_HUDDLE_IN_TERROR, EVENT_WATERSPOUT, EVENT_IMPLACABLE_STRIKE };
+                                    SetupPhaseTwoEvents();
+                                    events.RescheduleEvent(EVENT_NAKED_AND_AFRAID, 8 * IN_MILLISECONDS);
+                                    events.ScheduleEvent(EVENT_DREAD_SPAWN, 6 * IN_MILLISECONDS);
+                                    events.ScheduleEvent(EVENT_SUBMERGE, 2 * IN_MILLISECONDS);
+                                }
+                                me->SetPower(POWER_ENERGY, 0);
+                                me->SetInt32Value(UNIT_FIELD_POWER, 0);
+                            }
+
+                            events.ScheduleEvent(EVENT_CHECK_ENERGY, 1000);
+                            break;
+                        case EVENT_CHECK_MELEE:
+                            if (Player* target = GetChampionOfLight(me))
+                            {
+                                if (me->GetVictim() && me->GetVictim()->GetGUID() != target->GetGUID())
+                                {
+                                    me->TauntFadeOut(me->GetVictim());
+                                    DoResetThreat();
+                                    AttackStart(target);
+                                    me->TauntApply(target);
+                                    me->AddThreat(target, 5000000.0f);
+                                }
+                            }
+
+                            if (!me->IsWithinMeleeRange(me->GetVictim(), 2.0f))
+                            {
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 80.0f))
+                                    me->CastSpell(target, SPELL_REACHING_ATTACK, false);
+                            }
+                            events.ScheduleEvent(EVENT_CHECK_MELEE, 1000);
+                            break;
+                        case EVENT_EERIE_SKULL:
+                            DoCast(SELECT_TARGET_RANDOM, SPELL_EERIE_SKULL, false, 1, 80.0f);
+                            events.ScheduleEvent(EVENT_EERIE_SKULL, 5000);
+                            break;
+                        case EVENT_FIRST_TERRORS:
+                            me->CastSpell(me, SPELL_CONJURE_TERROR_SPAWN_TICK, true);
+                            break;
+                        case EVENT_OMINOUS_CACKLE:
+                            GetAvailablePandaAndSummon();
+                            events.ScheduleEvent(EVENT_OMINOUS_CACKLE, Is25ManRaid() ? 45 * IN_MILLISECONDS : 90 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_WATERSPOUT:
+                            DoCast(me, SPELL_WATERSPOUT);
+                            SetupPhaseTwoEvents();
+                            break;
+                        case EVENT_SUBMERGE:
+                            me->CastSpell(me, SPELL_SUBMERGE, true);
+                            break;
+                        case EVENT_IMPLACABLE_STRIKE:
+                            if (Unit* vict = me->GetVictim())
+                            {
+                                VictimGUID = vict->GetGUID();
+                                me->PrepareChanneledCast(me->GetAngle(vict), SPELL_IMPLACABLE_STRIKE);
+                            }
+                            events.ScheduleEvent(EVENT_IMPLACABLE_STRIKE_REMOVE, 4 * IN_MILLISECONDS);
+                            SetupPhaseTwoEvents();
+                            break;
+                        case EVENT_IMPLACABLE_STRIKE_REMOVE:
+                            me->RemoveChanneledCast(VictimGUID);
+                            break;
+                        case EVENT_NAKED_AND_AFRAID:
+                            if (Unit* vict = me->GetVictim())
+                                me->CastSpell(vict, SPELL_NAKED_AND_AFRAID, false);
+
+                            events.ScheduleEvent(EVENT_NAKED_AND_AFRAID, 31 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_HUDDLE_IN_TERROR:
+                            Talk(SAY_HUDDLE);
+                            DoCast(SPELL_HUDDLE_IN_TERROR);
+                            SetupPhaseTwoEvents();
+                            break;
+                        case EVENT_DREAD_SPAWN:
+                        {
+                            uint32 spawnCount = GetDreadSpawnSummonCount();
+
+                            for (uint32 i = 0; i < spawnCount; i++)
+                            {
+                                float tempOri = Position::NormalizeOrientation(frand(0, 2 * M_PI));
+                                me->CastSpell(DreadCenter.GetPositionX() + (150.0f * cos(tempOri)), DreadCenter.GetPositionY() + (150.0f * sin(tempOri)), me->GetPositionZ(), SPELL_HC_CONJURE_DREAD_SPAWN, true);
+                            }
+                        }
+                        default:
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+            private:
+                bool introDone;
+
+                // At second phase pull it summon 1
+                // Next it summon k+1 between each 2 value: for example 2/3 - 2, 4/5 - 3 etc.
+                uint32 GetDreadSpawnSummonCount()
+                {
+                    if (curStep - prevStep == 0)
+                        curStep++;
+                    else
+                        prevStep++;
+
+                    return curStep;
+                }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_sha_of_fearAI(creature);
         }
-    private:
-        bool _evadeCheck;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_sha_of_fearAI(creature);
-    }
 };
 
 // Pure Light Terrace - 60788
-class mob_pure_light_terrace : public CreatureScript
+class npc_pure_light_terrace : public CreatureScript
 {
-public:
-    mob_pure_light_terrace() : CreatureScript("mob_pure_light_terrace") { }
+    public:
+        npc_pure_light_terrace() : CreatureScript("npc_pure_light_terrace") { }
 
-    struct mob_pure_light_terraceAI : public ScriptedAI
-    {
-        mob_pure_light_terraceAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_pure_light_terraceAI : public ScriptedAI
         {
-            pInstance = creature->GetInstanceScript();
-            wallActivated = false;
-            me->Respawn();
-        }
-
-        InstanceScript* pInstance;
-
-        bool wallActivated;
-
-        void Reset()
-        {
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-            me->CastSpell(me, SPELL_LIGHT_WALL, true);
-            me->CastSpell(me, SPELL_LIGHT_WALL_READY, true);
-
-            me->SetFacingTo(1.606599f);
-        }
-
-        void DoAction(const int32 action)
-        {
-            switch (action)
+            npc_pure_light_terraceAI(Creature* creature) : ScriptedAI(creature)
             {
-            case ACTION_ACTIVATE_WALL_OF_LIGHT:
-            {
-                if (wallActivated)
-                    return;
-
-                me->CastSpell(me, SPELL_LIGHT_WALL_VISUAL, true);
-                wallActivated = true;
-
-                me->RemoveAura(SPELL_LIGHT_WALL_READY);
-                break;
-            }
-            case ACTION_DESACTIVATE_WALL_OF_LIGHT:
-            {
-                if (!wallActivated)
-                    break;
-
+                instance = creature->GetInstanceScript();
                 wallActivated = false;
+            }
+
+            InstanceScript* instance;
+
+            bool wallActivated;
+            //float ang1;
+            //float ang2;
+
+            void Reset() override
+            {
+                lightTimer = 200;
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE|UNIT_FLAG_NON_ATTACKABLE);
+                me->CastSpell(me, SPELL_LIGHT_WALL, true);
                 me->CastSpell(me, SPELL_LIGHT_WALL_READY, true);
-                me->RemoveAura(SPELL_LIGHT_WALL_VISUAL);
-                summons.DespawnEntry(spawnWallOfLightEntry);
-                summons.DespawnEntry(spawnWallOfLightVisualEntry);
-                break;
-            }
-            default:
-                break;
-            }
-        }
 
-        void DamageTaken(Unit* attacker, uint32& damage)
-        {
-            damage = 0;
-            return;
-        }
+                //Position dst1 = {-989.4236f, -2821.757f, 38.25466f, 0.0f};
+                //Position dst2 = {-1045.602f, -2822.323f, 38.25466f, 0.0f};
+                //
+                //ang1 = src.GetAngle(&dst1) * 57.29578f;
+                //ang2 = src.GetAngle(&dst2) * 57.29578f;
+            }
 
-        void UpdateAI(const uint32 diff)
-        {
-            /*
-            Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
-            for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
+            void DoAction(int32 actionId) override
             {
-            if (Player* player = itr->getSource())
-            {
-            if (wallActivated = true)
-            {
-            if (me->isInFront(player))
-            if (!player->HasAura(SPELL_WALL_OF_LIGHT_BUFF))
-            player->CastSpell(player, SPELL_WALL_OF_LIGHT_BUFF, true);
-            else
-            player->RemoveAura(SPELL_WALL_OF_LIGHT_BUFF);
-            }
-            }
-            }
-            */
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_pure_light_terraceAI(creature);
-    }
-};
-
-class trigger_PureLight_Visual : public CreatureScript
-{
-public:
-    trigger_PureLight_Visual() : CreatureScript("trigger_PureLight_Visual") { }
-
-    struct trigger_PureLight_VisualAI : public Scripted_NoMovementAI
-    {
-        trigger_PureLight_VisualAI(Creature* creature) : Scripted_NoMovementAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-            me->Respawn();
-        }
-
-        InstanceScript* pInstance;
-
-        void Reset()
-        {
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-            me->setFaction(35);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            events.Update(diff);
-
-            if (Creature* PureLight = me->FindNearestCreature(spawnWallOfPureLightEntry, 300.0F, true))
-            {
-                me->CastSpell(PureLight, SPELL_LIGHT_WALL_VISUAL, true);
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_PureLight_VisualAI(creature);
-    }
-};
-
-class trigger_PureLight : public CreatureScript
-{
-public:
-    trigger_PureLight() : CreatureScript("trigger_PureLight") { }
-
-    struct trigger_PureLightAI : public ScriptedAI
-    {
-        trigger_PureLightAI(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-            me->Respawn();
-        }
-
-        InstanceScript* pInstance;
-        std::list<Player*> _lookForPlayersFearImmunity;
-
-        void Reset()
-        {
-            me->SetUnitMovementFlags(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-            me->setFaction(35);
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            std::list<Player*> PL_list;
-
-            JadeCore::AnyPlayerInObjectRangeCheck check(me, 10.0);
-            JadeCore::PlayerListSearcher<JadeCore::AnyPlayerInObjectRangeCheck> searcher(me, PL_list, check);
-            me->VisitNearbyObject(10.0, searcher);
-
-            for (std::list<Player*>::const_iterator it = PL_list.begin(); it != PL_list.end(); ++it)
-            {
-                if (!(*it))
-                    return;
-
-                if (!(*it)->HasAura(SPELL_WALL_OF_LIGHT_BUFF))
-                    me->AddAura(SPELL_WALL_OF_LIGHT_BUFF, (*it));
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_PureLightAI(creature);
-    }
-};
-
-
-// Return to the Terrace - 65736
-class mob_return_to_the_terrace : public CreatureScript
-{
-public:
-    mob_return_to_the_terrace() : CreatureScript("mob_return_to_the_terrace") { }
-
-    bool OnGossipHello(Player* player, Creature* creature)
-    {
-        if (player && player->IsInWorld())
-        {
-            switch (creature->GetEntry())
-            {
-            case BACK_TO_TERRACE_PORTAL_1:
-                player->NearTeleportTo(returntomainplat.GetPositionX(), returntomainplat.GetPositionY(), returntomainplat.GetPositionZ(), returntomainplat.GetOrientation());
-                break;
-            case BACK_TO_TERRACE_PORTAL_2:
-                player->NearTeleportTo(returntomainplat2.GetPositionX(), returntomainplat2.GetPositionY(), returntomainplat2.GetPositionZ(), returntomainplat2.GetOrientation());
-                break;
-            case BACK_TO_TERRACE_PORTAL_3:
-                player->NearTeleportTo(returntomainplat3.GetPositionX(), returntomainplat3.GetPositionY(), returntomainplat3.GetPositionZ(), returntomainplat3.GetOrientation());
-                break;
-            }
-            creature->AddAura(FEARLESS, player);
-            return true;
-        }
-		return false;
-    }
-    struct mob_return_to_the_terraceAI : public ScriptedAI
-    {
-        mob_return_to_the_terraceAI(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-            me->Respawn();
-        }
-
-        InstanceScript* pInstance;
-
-        void Reset()
-        {
-            // Sniffed values
-            me->SetObjectScale(2.8f);
-            me->CastSpell(me, 120216);
-            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-            me->SetFlag(UNIT_FIELD_INTERACT_SPELL_ID, 118977);
-        }
-
-        void UpdateAI(const uint32 diff) { }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_return_to_the_terraceAI(creature);
-    }
-};
-
-// Terror Spawn - 61034
-class mob_terror_spawn : public CreatureScript
-{
-public:
-    mob_terror_spawn() : CreatureScript("mob_terror_spawn") { }
-
-    struct mob_terror_spawnAI : public ScriptedAI
-    {
-        mob_terror_spawnAI(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-            me->Respawn();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        void Reset()
-        {
-            if (pInstance)
-                if (Creature* pureLight = Creature::GetCreature(*me, pInstance->GetData64(NPC_PURE_LIGHT_TERRACE)))
-                    me->SetFacingToObject(pureLight);
-
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            me->CastSpell(me, SPELL_DARK_BULWARK, true);
-
-            if (me->GetMap()->Is25ManRaid())
-            {
-                me->SetMaxHealth(3700000);
-                me->SetHealth(3700000);
-            }
-            else
-            {
-                me->SetMaxHealth(3700000);
-                me->SetHealth(3700000);
-            }
-
-            events.Reset();
-            events.ScheduleEvent(EVENT_PENETRATING_BOLT, 5000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            if (pInstance)
-                if (Creature* pureLight = Creature::GetCreature(*me, pInstance->GetData64(NPC_PURE_LIGHT_TERRACE)))
-                    me->SetFacingToObject(pureLight);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_PENETRATING_BOLT:
-            {
-                me->CastSpell(me, SPELL_PENETRATING_BOLT, false);
-                events.ScheduleEvent(EVENT_PENETRATING_BOLT, 5000);
-                break;
-            }
-            default:
-                break;
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_terror_spawnAI(creature);
-    }
-};
-
-// CHENG, JULU, YANG
-class mob_guardian : public CreatureScript
-{
-public:
-    mob_guardian() : CreatureScript("mob_guardian") { }
-
-    struct mob_guardianAI : public ScriptedAI
-    {
-        mob_guardianAI(Creature* creature) : ScriptedAI(creature)
-        {
-            pInstance = creature->GetInstanceScript();
-            me->Respawn();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        std::list<Creature*> dreadspraytriggers;
-        int32 stackstobreak;
-        bool dreadshotting;
-        void Reset()
-        {
-            events.Reset();
-            if (Is25ManRaid())
-            {
-                me->SetMaxHealth(14392521);
-                me->SetHealth(14392521);
-            }
-            else
-            {
-                me->SetMaxHealth(377932);
-                me->SetHealth(377932);
-            }
-
-            me->SetLevel(93);
-            me->setFaction(16);
-            me->SetReactState(REACT_AGGRESSIVE);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            dreadshotting = false;
-        }
-        void EnterCombat(Unit* attacker)
-        {
-            events.ScheduleEvent(EVENT_DREAD_SPRAY, 20 * IN_MILLISECONDS);
-            events.ScheduleEvent(EVENT_DEATH_BLOSSOM, 40 * IN_MILLISECONDS);
-            events.ScheduleEvent(EVENT_SHOT, 2000);
-        }
-        void DamageTaken(Unit* attacker, uint32& damage)
-        {
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            if (roll_chance_i(25)) // NOT SNIFFED
-            {
-                me->CastSpell(me, GLOBUE_SPAWN);
-            }
-        }
-        void DoAction(const int32 action)
-        {
-            switch (action)
-            {
-            case ACTION_REMOVE_DREAD_SPRAY:
-                events.ScheduleEvent(EVENT_SHOT, 2000);
-                break;
-            }
-        }
-        void JustDied(Unit* killer)
-        {
-            if (Creature* SHA = me->GetMap()->GetCreature(pInstance->GetData64(NPC_SHA_OF_FEAR)))
-            {
-                if (boss_sha_of_fear::boss_sha_of_fearAI* linkAI = CAST_AI(boss_sha_of_fear::boss_sha_of_fearAI, SHA->GetAI()))
+                switch (actionId)
                 {
-                    switch (me->GetEntry())
+                    case ACTION_ACTIVATE_WALL_OF_LIGHT:
                     {
-                    case YANG:
-                        me->SummonCreature(BACK_TO_TERRACE_PORTAL_1, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                        linkAI->yang = false;
-                        linkAI->reramp = false;
+                        if (wallActivated)
+                            break;
+
+                        std::list<Creature*> WallBunny;
+                        GetCreatureListWithEntryInGrid(WallBunny, me, NPC_GENERAL_BUNNY_JMF, 60.0f);
+
+                        for (auto&& wItr : WallBunny)
+                            wItr->CastSpell(wItr, SPELL_LIGHT_WALL_VISUAL, true);
+
+                        wallActivated = true;
+                        me->RemoveAura(SPELL_LIGHT_WALL_READY);
                         break;
-                    case CHENG:
-                        me->SummonCreature(BACK_TO_TERRACE_PORTAL_2, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                        linkAI->cheng = false;
-                        linkAI->reramp = false;
+                    }
+                    case ACTION_DESACTIVATE_WALL_OF_LIGHT:
+                    {
+                        if (!wallActivated)
+                            break;
+
+                        wallActivated = false;
+                        me->CastSpell(me, SPELL_LIGHT_WALL_READY, true);
+
+                        std::list<Creature*> WallBunny;
+                        GetCreatureListWithEntryInGrid(WallBunny, me, NPC_GENERAL_BUNNY_JMF, 60.0f);
+
+                        for (auto&& wItr : WallBunny)
+                            wItr->RemoveAurasDueToSpell(SPELL_LIGHT_WALL_VISUAL);
                         break;
-                    case JULU:
-                        me->SummonCreature(BACK_TO_TERRACE_PORTAL_3, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                        linkAI->julu = false;
-                        linkAI->reramp = false;
+                    }
+                    default:
                         break;
+                }
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                damage = 0;
+                return;
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (lightTimer >= diff)
+                {
+                    lightTimer -= diff;
+                    return;
+                }
+
+                lightTimer = 100;
+
+                Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
+                for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
+                {
+                    if (instance && instance->GetBossState(DATA_SHA_OF_FEAR) != IN_PROGRESS)
+                        break;
+
+                    if (Player* player = itr->GetSource())
+                    {
+                        // 60* frontal arc
+                        if (lightPos.HasInArc(M_PI / 3, player) && wallActivated)
+                        {
+                            if (!player->HasAura(SPELL_WALL_OF_LIGHT_BUFF) && !player->HasAura(SPELL_CHAMPION_OF_LIGHT))
+                                player->CastSpell(player, SPELL_WALL_OF_LIGHT_BUFF, true);
+                        }else
+                            player->RemoveAura(SPELL_WALL_OF_LIGHT_BUFF);
                     }
                 }
             }
-            me->DespawnOrUnsummon();
-            summons.DespawnAll();
-        }
-        void UpdateAI(const uint32 diff)
+
+        private:
+            uint32 lightTimer;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_SHOT:
-            {
-                me->CastSpell(me->getVictim(), SPELL_SHOT);
-                events.ScheduleEvent(EVENT_SHOT, 2000);
-                break;
-            }
-            case EVENT_DREAD_SPRAY:
-            {
-                dreadshotting = true;
-                me->CastSpell(me, DREAD_SPRAY_BUFF);
-
-                events.ScheduleEvent(EVENT_DREAD_SPRAY, 20 * IN_MILLISECONDS);
-                break;
-            }
-            case EVENT_DEATH_BLOSSOM:
-            {
-                me->MonsterYell("Seek shelter, lest I strike you down like the sha commands", LANG_UNIVERSAL, me->GetGUID());
-
-                me->CastSpell(me, DEATH_BLOSSOM_CAST);
-                events.ScheduleEvent(EVENT_DEATH_BLOSSOM, 40 * IN_MILLISECONDS);
-                break;
-            }
-            default:
-                break;
-            }
+            return new npc_pure_light_terraceAI(creature);
         }
-    };
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_guardianAI(creature);
-    }
 };
 
-// mob globue
-class mob_globue : public CreatureScript
+// Terror Spawn - 61034
+class npc_terror_spawn : public CreatureScript
 {
-public:
-    mob_globue() : CreatureScript("mob_globue") { }
+    public:
+        npc_terror_spawn() : CreatureScript("npc_terror_spawn") { }
 
-    struct mob_globueAI : public ScriptedAI
-    {
-        mob_globueAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_terror_spawnAI : public ScriptedAI
         {
-            pInstance = creature->GetInstanceScript();
-            me->Respawn();
-            Init();
-        }
-
-        InstanceScript* pInstance;
-        EventMap events;
-
-        int32 stackstobreak;
-        uint32 timertodespawn;
-
-        void Init()
-        {
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->setFaction(35);
-
-            me->CastSpell(me, GLOBUE_VISUAL);
-            timertodespawn = 8000;
-        }
-        void MoveInLineOfSight(Unit* who)
-        {
-            if (who->IsWithinDistInMap(me, 1.0f, true))
+            npc_terror_spawnAI(Creature* creature) : ScriptedAI(creature)
             {
-                // add aura
-                me->AddAura(GLOBUE_EFFECTY, who);
-                me->DespawnOrUnsummon();
+                instance = creature->GetInstanceScript();
             }
-        }
-        void UpdateAI(const uint32 diff)
-        {
-            if (timertodespawn <= diff)
+
+            InstanceScript* instance;
+            EventMap events;
+
+            void Reset() override
             {
-                if (Creature* cheng = me->FindNearestCreature(CHENG, 90.0f, true))
-                    me->CastSpell(cheng, GLOBUE_BOSS_HEAL);
+                if (instance)
+                    if (Creature* pureLight = Creature::GetCreature(*me, instance->GetData64(NPC_PURE_LIGHT_TERRACE)))
+                        me->SetFacingToObject(pureLight);
 
-                if (Creature* Yang = me->FindNearestCreature(YANG, 90.0f, true))
-                    me->CastSpell(Yang, GLOBUE_BOSS_HEAL);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                me->SetFlag(UNIT_FIELD_FLAGS2, UNIT_FLAG2_DISABLE_TURN);
 
-                if (Creature* jol = me->FindNearestCreature(JULU, 90.0f, true))
-                    me->CastSpell(jol, GLOBUE_BOSS_HEAL);
+                me->CastSpell(me, SPELL_DARK_BULWARK, true);
 
-                me->DespawnOrUnsummon();
+                events.Reset();
+                events.ScheduleEvent(EVENT_PENETRATING_BOLT, 5000);
             }
-            else
-                timertodespawn -= diff;
-        }
-    };
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_globueAI(creature);
-    }
+            void UpdateAI(uint32 diff) override
+            {
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                events.Update(diff);
+
+                switch (events.ExecuteEvent())
+                {
+                    case EVENT_PENETRATING_BOLT:
+                    {
+                        me->CastSpell(me, SPELL_PENETRATING_BOLT, false);
+                        events.ScheduleEvent(EVENT_PENETRATING_BOLT, 5000);
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_terror_spawnAI(creature);
+        }
+};
+
+// Dread Spawn - 61003
+class npc_dread_spawn : public CreatureScript
+{
+    public:
+        npc_dread_spawn() : CreatureScript("npc_dread_spawn") { }
+
+        enum Events
+        {
+            EVENT_MOVE  = 1,
+            EVENT_SPEED = 2,
+        };
+
+        struct npc_dread_spawnAI : public ScriptedAI
+        {
+            npc_dread_spawnAI(Creature* creature) : ScriptedAI(creature) 
+            {
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+            }
+
+            InstanceScript* instance;
+            EventMap events;
+            bool InPrepare;
+
+            void Reset() override
+            {
+                // Apply taunt immune
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+
+                InPrepare = false;
+                instance = me->GetInstanceScript();
+
+                if (Unit* pLight = ObjectAccessor::GetUnit(*me, LightTargetGUID()))
+                    me->FixateOnTarget(pLight->GetGUID());
+
+                events.ScheduleEvent(EVENT_MOVE, 1 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_SPEED, 8 * IN_MILLISECONDS);
+            }
+
+            uint64 LightTargetGUID()
+            {
+                std::list<Player*> m_players;
+                GetPlayerListInGrid(m_players, me, 300.0f);
+
+                for (auto&& itr : m_players)
+                    if (itr->HasAura(SPELL_CHAMPION_OF_THE_LIGHT))
+                        return itr->GetGUID();
+
+                return 0;
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                switch (actionId)
+                {
+                    case ACTION_EMOTE:
+                        InPrepare = true;
+                        me->InterruptNonMeleeSpells(true, SPELL_ETERNAL_DARKNESS);
+                        DoCast(me, SPELL_SHA_SPINE_EFF, true);
+                        me->PrepareChanneledCast(me->GetOrientation());
+                        me->RemoveAurasDueToSpell(SPELL_GATHERING_SPEED);
+                        events.RescheduleEvent(EVENT_SPEED, 8 * IN_MILLISECONDS);
+                        me->HandleEmoteCommand(EMOTE_ONESHOT_BATTLE_ROAR);
+                        break;
+                    case ACTION_SELECT_NEW_TARGET:
+                        me->SetReactState(REACT_AGGRESSIVE);
+                        InPrepare = false;
+                        break;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_MOVE:
+                            if (!InPrepare)
+                            {
+                                if (Unit* pLight = ObjectAccessor::GetUnit(*me, LightTargetGUID()))
+                                {
+                                    me->FixateOnTarget(pLight->GetGUID());
+
+                                    if (me->GetExactDist2d(pLight) < 4.0f)
+                                        DoCast(pLight, SPELL_ETERNAL_DARKNESS);
+                                }
+                            }
+
+                            events.ScheduleEvent(EVENT_MOVE, 1 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_SPEED:
+                            me->CastSpell(me, SPELL_GATHERING_SPEED, false);
+                            events.ScheduleEvent(EVENT_SPEED, 8 * IN_MILLISECONDS);
+                            break;
+                    }
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_dread_spawnAI(creature);
+        }
 };
 
 // Champion of Light - 117866
 class spell_champion_of_light : public SpellScriptLoader
 {
-public:
-    spell_champion_of_light() : SpellScriptLoader("spell_champion_of_light") { }
+    public:
+        spell_champion_of_light() : SpellScriptLoader("spell_champion_of_light") { }
 
-    class spell_champion_of_light_AuraScript : public AuraScript
-    {
-        PrepareAuraScript(spell_champion_of_light_AuraScript);
-
-        void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        class spell_champion_of_light_AuraScript : public AuraScript
         {
-            if (Unit* caster = GetCaster())
+            PrepareAuraScript(spell_champion_of_light_AuraScript);
+
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
-                if (GetTarget())
-                {
-                    if (caster->ToCreature() && caster->ToCreature()->AI() && GetTarget()->GetTypeId() == TYPEID_PLAYER)
+                if (Unit* caster = GetCaster())
+                    if (caster->ToCreature() && caster->ToCreature()->AI())
                         caster->ToCreature()->AI()->DoAction(ACTION_ACTIVATE_WALL_OF_LIGHT);
-
-                    caster->AddAura(SPELL_LIGHT_WALL_VISUAL, caster);
-
-                    for (int i = 0; i <= 1; i++)
-                    {
-                        GetCaster()->SummonCreature(spawnWallOfLightVisualEntry, spawnWallOfLightVisual[i].GetPositionX(), spawnWallOfLightVisual[i].GetPositionY(), spawnWallOfLightVisual[i].GetPositionZ(), spawnWallOfLightVisual[i].GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 0);
-                    }
-                    for (int i = 0; i <= 6; i++)
-                    {
-                        GetCaster()->SummonCreature(spawnWallOfLightEntry, spawnWallOfLight[i].GetPositionX(), spawnWallOfLight[i].GetPositionY(), spawnWallOfLight[i].GetPositionZ(), spawnWallOfLight[i].GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN, 0);
-                    }
-                }
             }
-        }
-        void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-        {
-            if (Unit* caster = GetCaster())
+
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
-                if (GetTarget())
-                {
-                    if (caster->ToCreature() && caster->ToCreature()->AI() && GetTarget()->GetTypeId() == TYPEID_PLAYER)
+                if (Unit* caster = GetCaster())
+                    if (caster->ToCreature() && caster->ToCreature()->AI())
                         caster->ToCreature()->AI()->DoAction(ACTION_DESACTIVATE_WALL_OF_LIGHT);
-
-                    std::list<Creature*> despawnLightWell;
-                    std::list<Creature*> despawnLightWellnonvisual;
-
-                    GetCaster()->GetCreatureListWithEntryInGrid(despawnLightWell, 61797, 300.0f);
-                    GetCaster()->GetCreatureListWithEntryInGrid(despawnLightWellnonvisual, spawnWallOfLightEntry, 300.0f);
-
-                    if (despawnLightWell.empty() || despawnLightWellnonvisual.empty())
-                        return;
-
-                    for (auto lightwelltriggers : despawnLightWell)
-                    {
-                        lightwelltriggers->DespawnOrUnsummon();
-                    }
-                    for (auto lightwelltriggersnonvisual : despawnLightWellnonvisual)
-                    {
-                        lightwelltriggersnonvisual->DespawnOrUnsummon();
-                    }
-
-                    InstanceScript* instance = GetCaster()->GetInstanceScript();
-
-                    if (instance)
-                    {
-                        instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_WALL_OF_LIGHT_BUFF);
-                    }
-                }
             }
-        }
 
-        void Register()
+            void Register() override
+            {
+                AfterEffectApply += AuraEffectApplyFn(spell_champion_of_light_AuraScript::OnApply, EFFECT_0, SPELL_AURA_MOD_SCALE, AURA_EFFECT_HANDLE_REAL);
+                AfterEffectRemove += AuraEffectRemoveFn(spell_champion_of_light_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_MOD_SCALE, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+
+        class spell_champion_of_light_Spellcript : public SpellScript
         {
-            AfterEffectApply += AuraEffectApplyFn(spell_champion_of_light_AuraScript::OnApply, EFFECT_0, SPELL_AURA_MOD_SCALE, AURA_EFFECT_HANDLE_REAL);
-            AfterEffectRemove += AuraEffectRemoveFn(spell_champion_of_light_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_MOD_SCALE, AURA_EFFECT_HANDLE_REAL);
-        }
-    };
+            PrepareSpellScript(spell_champion_of_light_Spellcript);
 
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_champion_of_light_AuraScript();
-    }
+            void SelectChampion(std::list<WorldObject*>& targets)
+            {
+                for (auto itr = targets.begin(); itr != targets.end();)
+                {
+                    Player * target = (*itr)->ToPlayer();
+                    // we have a target outside the trigger range
+                    if (!target->IsWithinDist2d(&lightPos, 3.0f))
+                    {
+                        if (target->HasAura(SPELL_CHAMPION_OF_LIGHT))
+                            target->RemoveAurasDueToSpell(SPELL_CHAMPION_OF_LIGHT);
+
+                        itr = targets.erase(itr);
+                    }
+                    else if (target->HasAura(SPELL_CHAMPION_OF_LIGHT))
+                    {
+                        targets.clear();
+                        return;
+                    }
+                    else
+                        ++itr;
+                }
+
+                if (!targets.empty())
+                    Trinity::Containers::RandomResizeList(targets, 1);
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_champion_of_light_Spellcript::SelectChampion, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_champion_of_light_Spellcript();
+        }
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_champion_of_light_AuraScript();
+        }
+};
+
+// Breath of Fear - 119414 / 125786
+class spell_breath_of_fear : public SpellScriptLoader
+{
+    public:
+        spell_breath_of_fear() : SpellScriptLoader("spell_breath_of_fear") { }
+
+        class spell_breath_of_fear_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_breath_of_fear_AuraScript);
+
+            void OnTick(AuraEffect const* /*aurEff*/)
+            {
+                // Breath of Fear only affects targets not in the wall of light
+                if (Unit* caster = GetCaster())
+                    if (!GetUnitOwner()->IsWithinDist2d(caster, 60.0f) || GetUnitOwner()->HasAura(SPELL_WALL_OF_LIGHT_BUFF) || GetUnitOwner()->HasAura(SPELL_CHAMPION_OF_LIGHT))
+                        PreventDefaultAction();
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_breath_of_fear_AuraScript::OnTick, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_breath_of_fear_AuraScript();
+        }
+};
+
+// Breath of Fear - 125786
+class spell_breath_of_fear_fear : public SpellScriptLoader
+{
+    public:
+        spell_breath_of_fear_fear() : SpellScriptLoader("spell_breath_of_fear_fear") { }
+
+        class spell_breath_of_fear_fear_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_breath_of_fear_fear_SpellScript);
+
+            std::list<WorldObject*> m_targets;
+
+            void CorrectRange(std::list<WorldObject*>& targets)
+            {
+                targets.clear();
+
+                // Breath of Fear only affects targets not in the wall of light
+                Map::PlayerList const& players = GetCaster()->GetMap()->GetPlayers();
+                if (!players.isEmpty())
+                    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                        if (Player* player = itr->GetSource())
+                            if (player->IsWithinDist2d(GetCaster(), 60.0f) && !player->HasAura(SPELL_WALL_OF_LIGHT_BUFF) && !player->HasAura(SPELL_CHAMPION_OF_LIGHT) && !player->HasAura(SPELL_OMINOUS_CACKLE_MORPH))
+                                targets.push_back(player);
+
+                m_targets = targets;
+            }
+
+            void CopyTargets(std::list<WorldObject*>& targets)
+            {
+                targets = m_targets;
+            }
+
+            void HandleFearEff(SpellEffIndex effIndex)
+            {
+                if (Player* target = GetHitPlayer())
+                    target->GetMap()->SetWorldState(WORLDSTATE_MIND_KILLER, 0);
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_breath_of_fear_fear_SpellScript::CorrectRange, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_breath_of_fear_fear_SpellScript::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_breath_of_fear_fear_SpellScript::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnEffectHitTarget += SpellEffectFn(spell_breath_of_fear_fear_SpellScript::HandleFearEff, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+            }
+        };
+
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_breath_of_fear_fear_SpellScript();
+        }
 };
 
 // Conjure Terror Spawn - 119108
 class spell_conjure_terror_spawn : public SpellScriptLoader
 {
-public:
-    spell_conjure_terror_spawn() : SpellScriptLoader("spell_conjure_terror_spawn") { }
+    public:
+        spell_conjure_terror_spawn() : SpellScriptLoader("spell_conjure_terror_spawn") { }
 
-    class spell_conjure_terror_spawn_AuraScript : public AuraScript
-    {
-        PrepareAuraScript(spell_conjure_terror_spawn_AuraScript);
-
-        void OnTick(constAuraEffectPtr /*aurEff*/)
+        class spell_conjure_terror_spawn_AuraScript : public AuraScript
         {
-            if (Creature* caster = GetCaster()->ToCreature())
-                caster->AI()->DoAction(ACTION_SPAWN_TERROR);
-        }
+            PrepareAuraScript(spell_conjure_terror_spawn_AuraScript);
 
-        void Register()
+            void OnTick(AuraEffect const* /*aurEff*/)
+            {
+                if (Creature* caster = GetCaster()->ToCreature())
+                    caster->AI()->DoAction(ACTION_SPAWN_TERROR);
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_conjure_terror_spawn_AuraScript::OnTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
         {
-            OnEffectPeriodic += AuraEffectPeriodicFn(spell_conjure_terror_spawn_AuraScript::OnTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+            return new spell_conjure_terror_spawn_AuraScript();
         }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_conjure_terror_spawn_AuraScript();
-    }
 };
 
-// called by 120047
-class dread_spray_buff : public SpellScriptLoader
-{
-public:
-    dread_spray_buff() : SpellScriptLoader("dread_spray_buff") { }
-
-    class dread_spray_buff_aura_script : public AuraScript
-    {
-        PrepareAuraScript(dread_spray_buff_aura_script);
-
-        void OnTick(constAuraEffectPtr /*aurEff*/)
-        {
-            if (Creature* caster = GetCaster()->ToCreature())
-            {
-                if (dreadspraytriggers.empty())
-                    return;
-
-                Creature* dreadtrigger = dreadspraytriggers.back();
-
-                if (dreadtrigger)
-                {
-                    GetCaster()->SetFacingToObject(dreadtrigger);
-                    GetCaster()->CastSpell(dreadtrigger, 119958, true); // visual is bugged?
-                    dreadspraytriggers.remove(dreadtrigger);
-                }
-            }
-        }
-        void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-        {
-            if (Unit* caster = GetCaster())
-            {
-                if (caster->ToCreature() && caster->ToCreature()->AI())
-                    caster->GetAI()->DoAction(ACTION_REMOVE_DREAD_SPRAY);
-            }
-        }
-        void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-        {
-            if (Unit* caster = GetCaster())
-            {
-                GetCaster()->GetCreatureListWithEntryInGrid(dreadspraytriggers, dread_spray_1_8, 65.0f);
-            }
-        }
-
-    private:
-        std::list<Creature*> dreadspraytriggers;
-
-        void Register()
-        {
-            AfterEffectApply += AuraEffectApplyFn(dread_spray_buff_aura_script::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
-            AfterEffectRemove += AuraEffectRemoveFn(dread_spray_buff_aura_script::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
-            OnEffectPeriodic += AuraEffectPeriodicFn(dread_spray_buff_aura_script::OnTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new dread_spray_buff_aura_script();
-    }
-};
-// called by 119953
-class spell_dread_spray_hit : public SpellScriptLoader
-{
-public:
-    spell_dread_spray_hit() : SpellScriptLoader("spell_dread_spray_hit") { }
-
-    class spell_dread_spray_hit_spell_Script : public SpellScript
-    {
-        PrepareSpellScript(spell_dread_spray_hit_spell_Script);
-
-        void HandleFearHit()
-        {
-            if (GetCaster())
-            {
-                if (GetHitUnit())
-                {
-                    if (GetHitUnit()->HasAura(119958))
-                        GetCaster()->AddAura(DREAD_SPRAY_FEAR, GetHitUnit());
-                }
-            }
-        }
-        void Register()
-        {
-            OnHit += SpellHitFn(spell_dread_spray_hit_spell_Script::HandleFearHit);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_dread_spray_hit_spell_Script();
-    }
-};
 // Penetrating Bolt - 129075
 class spell_penetrating_bolt : public SpellScriptLoader
 {
-public:
-    spell_penetrating_bolt() : SpellScriptLoader("spell_penetrating_bolt") { }
+    public:
+        spell_penetrating_bolt() : SpellScriptLoader("spell_penetrating_bolt") { }
 
-    class spell_penetrating_bolt_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_penetrating_bolt_SpellScript);
-
-        uint64 targetGuid;
-
-        void CorrectRange(std::list<WorldObject*>& targets)
+        class spell_penetrating_bolt_SpellScript : public SpellScript
         {
-            targetGuid = 0;
+            PrepareSpellScript(spell_penetrating_bolt_SpellScript);
 
-            if (!targets.empty())
-                JadeCore::Containers::RandomResizeList(targets, 1);
+            uint64 targetGuid;
 
-            for (auto itr : targets)
-                if (itr->GetGUID())
-                    targetGuid = itr->GetGUID();
-        }
-
-        void HandleDummy(SpellEffIndex index)
-        {
-            if (Unit* caster = GetCaster())
+            void CorrectRange(std::list<WorldObject*>& targets)
             {
-                if (InstanceScript* instance = caster->GetInstanceScript())
+                targetGuid = 0;
+
+                if (!targets.empty())
+                    Trinity::Containers::RandomResizeList(targets, 1);
+
+                for (auto&& itr : targets)
+                    if (itr->GetGUID())
+                        targetGuid = itr->GetGUID();
+            }
+
+            void HandleDummy(SpellEffIndex /*index*/)
+            {
+                if (Unit* caster = GetCaster())
                 {
-                    if (Player* target = Player::GetPlayer(*caster, targetGuid))
-                        caster->CastSpell(target, SPELL_PENETRATING_BOLT_MISSILE, true, NULL, NULLAURA_EFFECT, instance->GetData64(NPC_SHA_OF_FEAR));
+                    if (InstanceScript* instance = caster->GetInstanceScript())
+                    {
+                        if (Player* target = Player::GetPlayer(*caster, targetGuid))
+                            caster->CastSpell(target, SPELL_PENETRATING_BOLT_MISSILE, true, NULL, NULL, instance->GetData64(NPC_SHA_OF_FEAR));
+                    }
                 }
             }
-        }
 
-        void Register()
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_penetrating_bolt_SpellScript::CorrectRange, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnEffectLaunch += SpellEffectFn(spell_penetrating_bolt_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
         {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_penetrating_bolt_SpellScript::CorrectRange, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnEffectLaunch += SpellEffectFn(spell_penetrating_bolt_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+            return new spell_penetrating_bolt_SpellScript();
         }
-    };
+};
 
-    SpellScript* GetSpellScript() const
+// Ominous Cackle - 119593, 119692, 119693
+class spell_ominous_caclke_target : public SpellScript
+{
+    PrepareSpellScript(spell_ominous_caclke_target);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        return new spell_penetrating_bolt_SpellScript();
+        std::list<WorldObject*> vTanks;
+        std::list<WorldObject*> vHealers;
+
+        if (Unit* caster = GetCaster())
+        {
+            targets.remove_if(notValidTargetPredicate(caster));
+
+            for (auto&& target : targets)
+            {
+                if (Player* player = target->ToPlayer())
+                {
+                    uint32 m_role = player->GetRoleForGroup(player->GetTalentSpecialization());
+
+                    if (m_role == ROLES_TANK)
+                        vTanks.push_back(player);
+                    else if (m_role == ROLES_HEALER)
+                        vHealers.push_back(player);
+                }
+            }
+
+            targets.remove_if(DpsSelectPredicate());
+
+            if (targets.size() > 3)
+                targets.resize(3);
+
+            std::list<WorldObject*>::iterator itr = vTanks.begin();
+            std::list<WorldObject*>::iterator itr2 = vHealers.begin();
+
+            if (vTanks.size() > 1)
+                std::advance(itr, urand(0, vTanks.size() - 1));
+
+            if (itr != vTanks.end())
+                targets.insert(targets.begin(), *itr);
+
+            if (vHealers.size() > 1)
+                std::advance(itr2, urand(0, vHealers.size() - 1));
+
+            if (itr2 != vHealers.end())
+                targets.insert(targets.begin(), *itr2);
+
+            if (targets.empty())
+            {
+                if (caster->ToCreature()->AI())
+                    caster->ToCreature()->AI()->DoAction(ACTION_BERSERK);
+            }
+            
+        }
+    }
+
+    void ApplyMorph(SpellEffIndex effIndex)
+    {
+        Unit*  caster = GetCaster();
+        Player* victim = GetHitPlayer();
+
+        if (!caster || !victim)
+            return;
+
+        victim->AddAura(SPELL_OMINOUS_CACKLE_MORPH, victim);
+
+        uint32 path = 0;
+        switch (GetSpellInfo()->Id)
+        {
+            case 119593: path = 0; break;
+            case 119693: path = 1; break;
+            case 119692: path = 2; break;
+            default:
+                return;
+        }
+
+        // Works for players aswell. Should it?
+        victim->GetMotionMaster()->MoveSplinePath(ominousCaclkePath[path], ominousCaclkePathLenght, true, false, 20.0f, false, false, false);
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ominous_caclke_target::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnEffectHitTarget += SpellEffectFn(spell_ominous_caclke_target::ApplyMorph, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
-// called by 119888
-class spell_death_blossom : public SpellScriptLoader
+
+
+// Cheng Kang 61042, Yang Guoshi 61038, Jinlun Kun 61046
+class npc_sha_of_fear_bowman : public CreatureScript
 {
-public:
-    spell_death_blossom() : SpellScriptLoader("spell_death_blossom") { }
-
-    class spell_death_blossom_aura_Script : public AuraScript
+    enum
     {
-        PrepareAuraScript(spell_death_blossom_aura_Script);
+        SPELL_DEATH_BLOSSOM             = 119888,
+        SPELL_DREAD_SPRAY               = 119862,
+        SPELL_SHOOT                     = 119862,
+        SPELL_SHA_GLOBE                 = 129178,
+        SPELL_DREAD_SPRAY_INIT          = 120047,
+        SPELL_FEARLESS_ENABLER          = 131504,
+        SPELL_SHA_CORRUPTION            = 120000
+    };
 
-        void DamagePeriodTimer(AuraEffectPtr aurEff)
+    enum
+    {
+        EVENT_DEATH_BLOSSOM = 1,
+        EVENT_DREAD_SPRAY,
+        EVENT_DREAD_SPRAY_END,
+        EVENT_SHOOT,
+    };
+
+    enum
+    {
+        SAY_AGGRO,
+        SAY_DEATH,
+        SAY_UNK,
+    };
+
+    public:
+        npc_sha_of_fear_bowman() : CreatureScript("npc_sha_of_fear_bowman") { }
+
+        struct npc_sha_of_fear_bowmanAI : public ScriptedAI
         {
-            if (GetCaster())
+            npc_sha_of_fear_bowmanAI(Creature* creature) : ScriptedAI(creature)
             {
-                int32 timer = aurEff->GetPeriodicTimer();
-                if (timer <= 1)
+                SetCombatMovement(false);
+            }
+
+            EventMap events;
+
+            void Reset() override
+            {
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                // shoot spell max distance
+                me->m_ReactDistance = 40.0f;
+                me->m_CombatDistance = 40.0f;
+                lastHealthPct = 99;
+                events.Reset();
+            }
+
+            EventMap m_mLowEvents;
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                Talk(SAY_AGGRO);
+                events.ScheduleEvent(EVENT_DEATH_BLOSSOM, 5000);
+                events.ScheduleEvent(EVENT_SHOOT, 500);
+                events.ScheduleEvent(EVENT_DREAD_SPRAY, 8000);
+            }
+
+            void EnterEvadeMode() override { }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                Talk(SAY_DEATH);
+
+                if (Creature* pTerrace = GetClosestCreatureWithEntry(me, NPC_RETURN_TO_TERRACE, 30.f))
+                {
+                    pTerrace->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                    pTerrace->UpdateObjectVisibility();
+                    pTerrace->AddAura(120216, pTerrace);
+                }
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                if (actionId == ACTION_BOWMAN_AGGRESSIVE)
+                {
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    me->setActive(true);
+                    
+                    if (Creature* pTerrace = GetClosestCreatureWithEntry(me, NPC_RETURN_TO_TERRACE, 30.f))
+                    {
+                        pTerrace->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        pTerrace->RemoveAura(120216);
+                    }
+                }
+            }
+
+            void HealReceived(Unit* /*doneBy*/, uint32& heal) override
+            {
+                // just check, for double heal we`ll increase next threshold
+                lastHealthPct = me->GetHealthPct();
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (me->GetHealthPct() <= 5)
                     return;
 
-                for (int i = 0; i <= 6; i++)
-                    GetCaster()->CastSpell(GetCaster(), 119945, true); // VISUAL       
-            }
-        }
-
-        void Register()
-        {
-            OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_death_blossom_aura_Script::DamagePeriodTimer, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_death_blossom_aura_Script();
-    }
-};
-// called by 119887
-class spell_death_blossom_damage : public SpellScriptLoader
-{
-public:
-    spell_death_blossom_damage() : SpellScriptLoader("spell_death_blossom_damage") { }
-
-    class spell_massive_attacks_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_massive_attacks_SpellScript);
-
-        void RecalculateDamage(SpellEffIndex /*effIndex*/)
-        {
-            if (GetHitUnit() && GetCaster() && !GetHitUnit()->IsWithinLOSInMap(GetCaster()))
-                SetHitDamage(0);
-        }
-
-        void Register()
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_massive_attacks_SpellScript::RecalculateDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_massive_attacks_SpellScript();
-    }
-};
-class ObjectNonAuraImmune
-{
-public:
-    ObjectNonAuraImmune() {}
-    bool operator()(WorldObject* object)
-    {
-        if (object->ToPlayer()->HasAura(SPELL_WALL_OF_LIGHT_BUFF) || object->ToPlayer()->HasAura(SPELL_CHAMPION_OF_LIGHT))
-            return true;
-        else
-            return false;
-    }
-};
-// Cleansing Waters - 117283
-class spell_breath_of_fear_spell : public SpellScriptLoader
-{
-public:
-    spell_breath_of_fear_spell() : SpellScriptLoader("spell_breath_of_fear_spell") { }
-
-    class spell_cleansing_waters_regen_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_cleansing_waters_regen_SpellScript);
-
-        void CorrectTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            targets.remove_if(ObjectNonAuraImmune());
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_cleansing_waters_regen_SpellScript::CorrectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_cleansing_waters_regen_SpellScript::CorrectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_cleansing_waters_regen_SpellScript::CorrectTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_cleansing_waters_regen_SpellScript::CorrectTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENEMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_cleansing_waters_regen_SpellScript();
-    }
-};
-class OrientationCheck
-{
-public:
-    explicit OrientationCheck(WorldObject* _caster) : caster(_caster) { }
-    bool operator() (WorldObject* unit)
-    {
-        if (caster->isInFront(unit))
-            return false;
-
-        return true;
-    }
-
-private:
-    WorldObject* caster;
-};
-// Dread Spray - 119958
-class spell_dread_spray_damage_ori : public SpellScriptLoader
-{
-public:
-    spell_dread_spray_damage_ori() : SpellScriptLoader("spell_dread_spray_damage_ori") { }
-
-    class spell_dread_shadow_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_dread_shadow_spell_script);
-
-        void CorrectTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            targets.remove_if(ObjectNonAuraImmune());
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_dread_shadow_spell_script::CorrectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_dread_shadow_spell_script::CorrectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_dread_shadow_spell_script();
-    }
-};
-
-class ChengSpawn : public BasicEvent
-{
-public:
-    explicit ChengSpawn(Unit* caster) : BasicEvent(), unitTarget(caster)
-    {
-    }
-
-    bool Execute(uint64 /*currTime*/, uint32 /*diff*/)
-    {
-        if (unitTarget->GetAI())
-        {
-            unitTarget->GetAI()->DoAction(ACTION_SPAWN_CHENG);
-        }
-        return true;
-    }
-
-private:
-    Unit* unitTarget;
-
-};
-
-class YangSpawn : public BasicEvent
-{
-public:
-    explicit YangSpawn(Unit* caster) : BasicEvent(), unitTarget(caster)
-    {
-    }
-
-    bool Execute(uint64 /*currTime*/, uint32 /*diff*/)
-    {
-        if (unitTarget->GetAI())
-        {
-            unitTarget->GetAI()->DoAction(ACTION_SPAWN_YANG);
-        }
-        return true;
-    }
-
-private:
-    Unit* unitTarget;
-
-};
-
-class JuluSpawn : public BasicEvent
-{
-public:
-    explicit JuluSpawn(Unit* caster) : BasicEvent(), unitTarget(caster)
-    {
-    }
-
-    bool Execute(uint64 /*currTime*/, uint32 /*diff*/)
-    {
-        if (unitTarget->GetAI())
-        {
-            unitTarget->GetAI()->DoAction(ACTION_SPAWN_JULU);
-        }
-        return true;
-    }
-
-private:
-    Unit* unitTarget;
-
-};
-class spell_ominous_cackle : public SpellScriptLoader
-{
-public:
-    spell_ominous_cackle() : SpellScriptLoader("spell_ominous_cackle") { }
-
-    class spell_ominous_cackle_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_ominous_cackle_spell_script);
-
-        void CorrectTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            if (count >= 6)
-                return;
-
-            if (!GetCaster())
-                return;
-
-            // handle targets reset 
-            targets.clear();
-            targets.empty();
-
-            Map::PlayerList const &PlayerList = GetCaster()->GetMap()->GetPlayers();
-            if (PlayerList.isEmpty())
-                return;
-
-            for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-            {
-                Player* player = i->getSource();
-
-                if (player && player->isAlive())
+                if (me->HealthBelowPctDamaged(lastHealthPct, damage))
                 {
-                    // dps
-                    switch (player->getClass())
-                    {
-                    case CLASS_WARLOCK:
-                    case CLASS_ROGUE:
-                    case CLASS_HUNTER:
-                    case CLASS_DEATH_KNIGHT:
-                    case CLASS_WARRIOR:
-                    case CLASS_MAGE:
-                    case CLASS_PALADIN:
-                    case CLASS_SHAMAN:
-                    case CLASS_DRUID:
-                    case CLASS_MONK:
-                    case CLASS_PRIEST:
-                                if (countdps <= 4)
-                                {
-                                    count++;
-                                    countdps++;
-                                    targets.push_back(player);
-                                }
-                        break;
-                    }
-                    // healers
-                    if (counthealer < 1)
-                        if (player->GetActiveSpec() == SPEC_PALADIN_HOLY || player->GetActiveSpec() == SPEC_PRIEST_HOLY || player->GetActiveSpec() == SPEC_PRIEST_HOLY || player->GetActiveSpec() == SPEC_DROOD_RESTORATION || player->GetActiveSpec() == SPEC_SHAMAN_RESTORATION || player->GetActiveSpec() == SPEC_MONK_MISTWEAVER)
-                            targets.push_back(player);
-                    // tanks
-                    if (player->GetActiveSpec() == SPEC_MONK_BREWMASTER || player->GetActiveSpec() == SPEC_DK_BLOOD || player->GetActiveSpec() == SPEC_WARRIOR_PROTECTION || player->GetActiveSpec() == SPEC_DROOD_BEAR || player->GetActiveSpec() == SPEC_PALADIN_PROTECTION)
-                        if (counttank < 1)
-                            targets.push_back(player);
+                    for (; lastHealthPct > me->GetHealthPct(); lastHealthPct -= 4)
+                        DoCast(me, SPELL_SHA_GLOBE, true);
                 }
             }
-        }
-        void HandleScript(SpellEffIndex effIndex)
-        {
-            PreventHitDefaultEffect(effIndex);
 
-            if (GetHitUnit())
+            void UpdateAI(uint32 diff) override
             {
-                if (GetCaster())
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    if (GetCaster()->GetAI())
+                    switch (eventId)
                     {
-                        if (!GetHitUnit()->FindNearestCreature(61042, 1000.0f, true))
+                        case EVENT_DREAD_SPRAY:
+                            me->SetReactState(REACT_PASSIVE);
+                            me->AttackStop();
+                            DoCast(me, SPELL_DREAD_SPRAY_INIT, false);
+                            events.DelayEvents(9000);
+                            events.ScheduleEvent(EVENT_DREAD_SPRAY, 20000);
+                            events.ScheduleEvent(EVENT_DREAD_SPRAY_END, 8000);
+                            break;
+                        case EVENT_DREAD_SPRAY_END:
+                            me->SetReactState(REACT_AGGRESSIVE);
+                            break;
+                        case EVENT_SHOOT:
+                            DoCastVictim(SPELL_SHOOT, false);
+                            events.ScheduleEvent(EVENT_SHOOT, 1000);
+                            break;
+                        case EVENT_DEATH_BLOSSOM:
+                            if (me->GetHealthPct() < 25.1f)
+                            {
+                                Talk(SAY_UNK);
+                                DoCast(me, SPELL_DEATH_BLOSSOM, false);
+                                events.ScheduleEvent(EVENT_DEATH_BLOSSOM, 13000);
+                            }
+                            else
+                                events.ScheduleEvent(EVENT_DEATH_BLOSSOM, 5000);
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        private:
+            uint32 lastHealthPct;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_sha_of_fear_bowmanAI(creature);
+        }
+};
+
+// Sha Globe - 65691
+class npc_sha_globe : public CreatureScript
+{
+    enum
+    {
+        SPELL_SHA_GLOBE_VISUAL      = 129187,
+        SPELL_SHA_GLOBE_PRE_VISUAL  = 132214,
+        SPELL_SHA_GLOBE_HEAL        = 129190,
+        SPELL_SHA_GLOBE_DMG         = 129189
+    };
+
+    public:
+        npc_sha_globe() : CreatureScript("npc_sha_globe") { }
+
+        struct npc_sha_globeAI : public ScriptedAI
+        {
+            npc_sha_globeAI(Creature* creature) : ScriptedAI(creature)
+            {
+                SetCombatMovement(false);
+            }
+
+            void Reset() override
+            {
+                DoCast(me, SPELL_SHA_GLOBE_VISUAL, true);
+                visualTimer = 5000;
+                healTimer = 8000;
+                me->SetReactState(REACT_PASSIVE);
+            }
+
+            void EnterCombat(Unit* /*who*/) override { }
+
+            void SpellHitTarget(Unit* target, SpellInfo const* spell) override
+            {
+                if (spell->Id == SPELL_SHA_GLOBE_DMG)
+                {
+                    visualTimer = 0;
+                    healTimer = 0;
+                    me->RemoveAllAuras();
+                    me->DespawnOrUnsummon(500);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (visualTimer)
+                {
+                    if (visualTimer <= diff)
+                    {
+                        DoCast(me, SPELL_SHA_GLOBE_PRE_VISUAL);
+                        visualTimer = 0;
+                    } else visualTimer -= diff;
+
+                } else if (healTimer)
+                {
+                    if (healTimer <= diff)
+                    {
+                        DoCast(me, SPELL_SHA_GLOBE_HEAL, true);
+                        me->RemoveAllAuras();
+                        me->DespawnOrUnsummon(1000);
+                        healTimer = 0;
+                    } else healTimer -= diff;
+                }
+            }
+
+        private:
+            uint32 visualTimer;
+            uint32 healTimer;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_sha_globeAI(creature);
+        }
+};
+
+class spell_sha_globe_regen : public SpellScriptLoader
+{
+    public:
+        spell_sha_globe_regen() : SpellScriptLoader("spell_sha_globe_regen") { }
+
+        class spell_sha_globe_regen_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_sha_globe_regen_SpellScript);
+
+            void RemoveOldAura()
+            {
+                if (Unit*  victim = GetHitUnit())
+                    victim->RemoveAurasDueToSpell(129189);
+            }
+
+            void Register() override
+            {
+                BeforeHit += SpellHitFn(spell_sha_globe_regen_SpellScript::RemoveOldAura);
+            }
+
+            bool prevented;
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_sha_globe_regen_SpellScript();
+        }
+};
+
+// Dread spray - 119983
+class spell_dread_spray_stackable : public SpellScriptLoader
+{
+    enum
+    {
+        SPELL_DREAD_AURA        = 119983,
+        SPELL_FEAR              = 119985,
+    };
+
+    public:
+        spell_dread_spray_stackable() : SpellScriptLoader("spell_dread_spray_stackable") { }
+
+        class spell_dread_spray_stackable_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_dread_spray_stackable_AuraScript);
+
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (GetStackAmount() == 2)
+                    if (Unit*  owner = GetUnitOwner())
+                        owner->CastSpell(owner, SPELL_FEAR, true);
+            }
+
+            void Register() override
+            {
+                AfterEffectApply += AuraEffectApplyFn(spell_dread_spray_stackable_AuraScript::OnApply, EFFECT_1, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAPPLY);
+            }
+        };
+
+        class spell_dread_spray_stackable_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_dread_spray_stackable_SpellScript);
+
+            std::list<WorldObject*> m_targets;
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                if (Unit*  caster = GetCaster())
+                    targets.remove_if ([&caster](WorldObject * u) { return u->ToUnit()->HasAura(SPELL_FEAR) || !u->IsWithinLOSInMap(caster) || !caster->HasInLine(u, 35.0f); });
+
+                m_targets = targets;
+            }
+
+            void CopyTargets(std::list<WorldObject*>& targets)
+            {
+                targets = m_targets;
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_dread_spray_stackable_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_dread_spray_stackable_SpellScript::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_dread_spray_stackable_SpellScript::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_dread_spray_stackable_AuraScript;
+        }
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_dread_spray_stackable_SpellScript();
+        }
+};
+
+// Death Blossom - 119887
+class spell_death_blossom : public SpellScriptLoader
+{
+    public:
+        spell_death_blossom() : SpellScriptLoader("spell_death_blossom") { }
+
+        class spell_death_blossom_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_death_blossom_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                if (Unit*  caster = GetCaster())
+                    targets.remove_if ([&caster](WorldObject * u) { return !u->IsWithinLOSInMap(caster); });
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_death_blossom_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_death_blossom_SpellScript();
+        }
+};
+
+ // Dread Spray - 120047
+class spell_dread_spray : public SpellScriptLoader
+{
+    public:
+        spell_dread_spray() : SpellScriptLoader("spell_dread_spray") { }
+
+        class spell_dread_spray_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_dread_spray_AuraScript);
+
+            void OnTick(AuraEffect const* /*aurEff*/)
+            {
+                if (Unit*  owner = GetUnitOwner())
+                {
+                    owner->SetTarget(0);
+                    float ori = float(rand_norm())*static_cast<float>(2 * M_PI);
+                    owner->SetOrientation(ori);
+                    owner->SetFacingTo(ori);
+                    //Position pos;
+                    //owner->GetRandomNearPosition(pos, 15.0f);
+                    owner->CastSpell(owner, 119958, true);
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_dread_spray_AuraScript::OnTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_dread_spray_AuraScript();
+        }
+};
+
+class notPlayerPredicate
+{
+    public:
+        bool operator()(WorldObject* target) const
+        {
+            return target && !target->ToPlayer();
+        }
+};
+
+class spell_teleport_to_dread_expanse : public SpellScript
+{
+    PrepareSpellScript(spell_teleport_to_dread_expanse);
+
+    void HandleOnHit()
+    {
+        if (Unit* unit = GetHitUnit())
+        {
+            unit->CastSpell(unit, SPELL_TELEPORT_PLAYER, true);
+            unit->CastSpell(unit, SPELL_DREAD_EXPANSE, true);
+            unit->RemoveAurasDueToSpell(SPELL_LEIS_HOPE);
+        }
+    }
+
+    void SelectTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if(notPlayerPredicate());
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_teleport_to_dread_expanse::HandleOnHit);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_teleport_to_dread_expanse::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+class spell_implacable_strike : public SpellScriptLoader
+{
+    public:
+        spell_implacable_strike() : SpellScriptLoader("spell_implacable_strike") { }
+
+        class spell_implacable_strike_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_implacable_strike_SpellScript);
+
+            void HandleAfterCast()
+            {
+                if (Unit* caster = GetCaster())
+                {
+                    caster->ClearUnitState(UNIT_STATE_CANNOT_TURN);
+                    caster->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                }
+            }
+        };
+};
+
+// Huddle in Terror 120629
+class spell_huddle_in_terror : public SpellScript
+{
+    PrepareSpellScript(spell_huddle_in_terror);
+
+    std::list<WorldObject*> m_targets;
+
+    void SelectTargets(std::list<WorldObject*>& targets)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 300.0f);
+
+            // Remove whole exclude casters
+            pList.remove_if(TankSpecTargetSelector());
+            pList.remove_if([=](Player* target) { return target->HasAura(SPELL_CHAMPION_OF_THE_LIGHT); });
+
+            // Get real victim size
+            uint32 maxVictims = caster->GetInstanceScript()->instance->Is25ManRaid() ? 5 : 2;
+
+            // If we not found any dps then try select anyone without same aura
+            if (pList.size() >= maxVictims)
+            {
+                targets.clear();
+
+                for (auto&& itr : pList)
+                    targets.push_back(itr);
+
+                if (pList.size() > maxVictims)
+                    Trinity::Containers::RandomResizeList(targets, maxVictims);
+
+                m_targets = targets;
+
+                return;
+            }
+
+            targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && target->ToPlayer()->HasAura(SPELL_CHAMPION_OF_THE_LIGHT); });
+
+            if (targets.size() > maxVictims)
+                Trinity::Containers::RandomResizeList(targets, maxVictims);
+
+            m_targets = targets;
+        }
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = m_targets;
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_huddle_in_terror::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_huddle_in_terror::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_huddle_in_terror::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Waterspout 120519
+class spell_sha_waterspout : public SpellScriptLoader
+{
+    public:
+        spell_sha_waterspout() : SpellScriptLoader("spell_sha_waterspout") { }
+
+        class spell_sha_waterspout_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_sha_waterspout_SpellScript);
+
+            void SelectTargets(std::list<WorldObject*>& targets)
+            {
+                // Should affect only range
+                targets.remove_if(TankSpecTargetSelector());
+                targets.remove_if(MeeleSpecTargetSelector());
+                targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && target->ToPlayer()->HasAura(SPELL_CHAMPION_OF_THE_LIGHT); });
+                
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sha_waterspout_SpellScript::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+        };
+
+        class spell_sha_waterspout_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_sha_waterspout_AuraScript);
+
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                // If remove from player, then summon waterspout stalker and set aura
+                if (Unit* owner = GetOwner()->ToPlayer())
+                {
+                    if (TempSummon* m_waterspout = owner->SummonCreature(NPC_WATERSPOUT, *owner, TEMPSUMMON_TIMED_DESPAWN, 6 * IN_MILLISECONDS))
+                    {
+                        m_waterspout->AddAura(SPELL_WATERSPOUT, m_waterspout);
+                        m_waterspout->CastSpell(m_waterspout, SPELL_WATERSPOUT_DUMMY, true);
+                    }
+                }
+                // If remove from waterspout then cast aoe
+                else if (Unit* owner = GetOwner()->ToCreature())
+                    owner->CastSpell(owner, SPELL_WATERSPOUT_DAMAGE, false);
+            }
+
+            void Register() override
+            {
+                OnEffectRemove += AuraEffectRemoveFn(spell_sha_waterspout_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_sha_waterspout_AuraScript();
+        }
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_sha_waterspout_SpellScript();
+        }
+};
+
+// Submerge 120455
+class spell_sha_submerge : public SpellScriptLoader
+{
+    public:
+        spell_sha_submerge() : SpellScriptLoader("spell_sha_submerge") { }
+
+        class spell_sha_submerge_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_sha_submerge_AuraScript);
+
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (Creature* owner = GetOwner()->ToCreature())
+                {
+                    owner->SetReactState(REACT_PASSIVE);
+                    owner->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED);
+
+                    // Choise any player and tp to him
+                    std::list<Player*> PlayersInDread;
+                    GetPlayerListInGrid(PlayersInDread, owner, 200.0f);
+
+                    if (!PlayersInDread.empty())
+                    {
+                        if (Player* itr = Trinity::Containers::SelectRandomContainerElement(PlayersInDread))
                         {
-                            GetHitUnit()->NearTeleportTo(platform1.GetPositionX(), platform1.GetPositionY(), platform1.GetPositionZ(), platform1.GetOrientation());
-                            GetCaster()->m_Events.AddEvent(new ChengSpawn(GetCaster()), GetCaster()->m_Events.CalculateTime(5000));
-                        }
-                        else if (!GetHitUnit()->FindNearestCreature(61038, 1000.0f, true))
-                        {
-                            GetHitUnit()->NearTeleportTo(platform2.GetPositionX(), platform2.GetPositionY(), platform2.GetPositionZ(), platform2.GetOrientation());
-                            GetCaster()->m_Events.AddEvent(new YangSpawn(GetCaster()), GetCaster()->m_Events.CalculateTime(5000));
-                        }
-                        else if (!GetHitUnit()->FindNearestCreature(61046, 1000.0f, true))
-                        {
-                            GetHitUnit()->NearTeleportTo(platform3.GetPositionX(), platform3.GetPositionY(), platform3.GetPositionZ(), platform3.GetOrientation());
-                            GetCaster()->m_Events.AddEvent(new JuluSpawn(GetCaster()), GetCaster()->m_Events.CalculateTime(5000));
+                            owner->NearTeleportTo(itr->GetPositionX(), itr->GetPositionY(), itr->GetPositionZ(), owner->GetOrientation());
+                            owner->CastSpell(owner, SPELL_EMERGE, false);
                         }
                     }
                 }
             }
-        }
-        void Register()
+
+            void Register() override
+            {
+                OnEffectApply += AuraEffectApplyFn(spell_sha_submerge_AuraScript::OnApply, EFFECT_1, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
         {
-            OnEffectHitTarget += SpellEffectFn(spell_ominous_cackle_spell_script::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ominous_cackle_spell_script::CorrectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ominous_cackle_spell_script::CorrectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+            return new spell_sha_submerge_AuraScript();
         }
+};
 
-    private:
-        int count;
-        int countdps;
-        int counthealer;
-        int counttank;
-    };
+// Emerge 120458
+class spell_sha_emerge : public SpellScriptLoader
+{
+    public:
+        spell_sha_emerge() : SpellScriptLoader("spell_sha_emerge") { }
 
+        class spell_sha_emerge_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_sha_emerge_SpellScript);
 
+            void HandleAfterCast()
+            {
+                if (Creature* m_caster = GetCaster()->ToCreature())
+                    m_caster->AI()->DoAction(ACTION_SUBMERGE_REMOVE);
+            }
 
-    SpellScript* GetSpellScript() const
+            void Register() override
+            {
+                AfterCast += SpellCastFn(spell_sha_emerge_SpellScript::HandleAfterCast);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_sha_emerge_SpellScript();
+        }
+};
+
+// Transfer Light 120285
+class spell_transfer_light : public SpellScript
+{
+    PrepareSpellScript(spell_transfer_light);
+
+    SpellCastResult CheckCast()
     {
-        return new spell_ominous_cackle_spell_script();
+        if (Unit* caster = GetCaster())
+            if (Player* target = ObjectAccessor::GetPlayer(*caster, caster->GetTarget()))
+                if (target->IsAlive())
+                    return SPELL_CAST_OK;;
+
+        return SPELL_FAILED_SPELL_UNAVAILABLE;
+    }
+
+    void HandleTransfer()
+    {
+        if (Unit* caster = GetCaster())
+        {
+            if (Unit* target = GetHitUnit())
+            {
+                caster->RemoveAurasDueToSpell(SPELL_CHAMPION_OF_THE_LIGHT);
+
+                // We prevent target dead players, but if it happened (targed died in during ball missle) - return it back to caster
+                if (!target->IsAlive())
+                    target->CastSpell(caster, SPELL_TRANSFER_LIGHT, true);
+                else
+                    target->CastSpell(target, SPELL_CHAMPION_OF_THE_LIGHT, true);
+
+                // Should be removed by hit
+                target->RemoveAurasDueToSpell(SPELL_HUDDLE_IN_TERROR);
+
+                std::list<Creature*> cList;
+                GetCreatureListWithEntryInGrid(cList, caster, NPC_DREAD_SPAWN, 300.0f);
+
+                for (auto&& itr : cList)
+                    itr->AI()->DoAction(ACTION_SELECT_NEW_TARGET);
+            }
+        }
+    }
+
+    void HandleOnCast()
+    {
+        if (Unit* caster = GetCaster())
+        {
+            std::list<Creature*> cList;
+            GetCreatureListWithEntryInGrid(cList, caster, NPC_DREAD_SPAWN, 300.0f);
+
+            for (auto&& itr : cList)
+                if (itr->IsAlive())
+                    itr->AI()->DoAction(ACTION_EMOTE);
+        }
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_transfer_light::CheckCast);
+        OnHit += SpellHitFn(spell_transfer_light::HandleTransfer);
+        OnCast += SpellCastFn(spell_transfer_light::HandleOnCast);
     }
 };
+
+class LightWallTargetSelector
+{
+    public:
+        LightWallTargetSelector() { }
+
+        bool operator()(WorldObject* object)
+        {
+            return object && object->GetEntry() != NPC_PURE_LIGHT_TERRACE;
+        }
+};
+
+// Light Wall Active 107145
+class spell_light_wall_active : public SpellScriptLoader
+{
+    public:
+        spell_light_wall_active() : SpellScriptLoader("spell_light_wall_active") { }
+
+        class spell_light_wall_active_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_light_wall_active_SpellScript);
+
+            void CorrectTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if(LightWallTargetSelector());
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_light_wall_active_SpellScript::CorrectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_light_wall_active_SpellScript();
+        }
+};
+
+// Ominous Cackle Morph 129147
+class spell_ominous_cackle_morph : public AuraScript
+{
+    PrepareAuraScript(spell_ominous_cackle_morph);
+
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+        {
+            owner->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SILENCED);
+            owner->UnsummonPetTemporaryIfAny();
+        }
+    }
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+        {
+            owner->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SILENCED);
+            owner->ResummonPetTemporaryUnSummonedIfAny();
+        }
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_ominous_cackle_morph::OnApply, EFFECT_0, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_ominous_cackle_morph::OnRemove, EFFECT_0, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Heroic Transition Screen Effect 120193
+class spell_heroic_transition_screen_eff : public AuraScript
+{
+    PrepareAuraScript(spell_heroic_transition_screen_eff);
+
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+            owner->CastSpell(owner, SPELL_TELEPORT_TO_DREAD_EXPANSE, true);
+    }
+
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(spell_heroic_transition_screen_eff::OnRemove, EFFECT_2, SPELL_AURA_SCREEN_EFFECT, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Sha Spine 120438
+class spell_heroic_sha_spine : public SpellScript
+{
+    PrepareSpellScript(spell_heroic_sha_spine);
+
+    void CorrectTargets(std::list<WorldObject*>& targets)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            // Get real victim size
+            uint32 maxVictims = caster->GetInstanceScript()->instance->Is25ManRaid() ? 10 : 5;
+
+            if (targets.size() > maxVictims)
+                Trinity::Containers::RandomResizeList(targets, maxVictims);
+        }
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_heroic_sha_spine::CorrectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Fading Light 129378
+class spell_heroic_fading_light : public AuraScript
+{
+    PrepareAuraScript(spell_heroic_fading_light);
+
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+            owner->RemoveAllSpellCooldown();
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_heroic_fading_light::OnApply, EFFECT_0, SPELL_AURA_OBS_MOD_HEALTH, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Dread Spray Fear 119985
+class spell_sha_of_fear_dread_spray_fear : public AuraScript
+{
+    PrepareAuraScript(spell_sha_of_fear_dread_spray_fear);
+
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+            owner->GetMap()->SetWorldState(WORLDSTATE_MIND_KILLER, 0);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_sha_of_fear_dread_spray_fear::OnApply, EFFECT_0, SPELL_AURA_MOD_FEAR, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
 
 void AddSC_boss_sha_of_fear()
 {
-    // boss
     new boss_sha_of_fear();
-    // mobs
-    new mob_guardian();
-    new mob_terror_spawn();
-    //triggers
-    new mob_pure_light_terrace();
-    new mob_return_to_the_terrace();
-    new mob_globue();
-    new trigger_PureLight_Visual();
-
-    // spells 
-    new spell_dread_spray_hit();
-    new dread_spray_buff();
+    new npc_pure_light_terrace();
+    new npc_terror_spawn();
+    new npc_dread_spawn();
     new spell_champion_of_light();
+    new spell_breath_of_fear();
     new spell_conjure_terror_spawn();
     new spell_penetrating_bolt();
+    new spell_script<spell_ominous_caclke_target>("spell_ominous_caclke_target");
+    new npc_sha_of_fear_bowman();
+    new spell_dread_spray_stackable();
+    new spell_dread_spray();
+    new npc_sha_globe();
+    new spell_sha_globe_regen();
+    new spell_breath_of_fear_fear();
     new spell_death_blossom();
-    new spell_death_blossom_damage();
-    new trigger_PureLight();
-    new spell_breath_of_fear_spell();
-    new spell_dread_spray_damage_ori();
-    new spell_ominous_cackle();
+    new spell_script<spell_teleport_to_dread_expanse>("spell_teleport_to_dread_expanse");
+    new spell_script<spell_huddle_in_terror>("spell_huddle_in_terror");
+    new spell_sha_waterspout();
+    new spell_sha_submerge();
+    new spell_sha_emerge();
+    new spell_script<spell_transfer_light>("spell_transfer_light");
+    new spell_light_wall_active();
+    new aura_script<spell_ominous_cackle_morph>("spell_ominous_cackle_morph");
+    new aura_script<spell_heroic_transition_screen_eff>("spell_heroic_transition_screen_eff");
+    new spell_script<spell_heroic_sha_spine>("spell_heroic_sha_spine");
+    new aura_script<spell_heroic_fading_light>("spell_heroic_fading_light");
+    new aura_script<spell_sha_of_fear_dread_spray_fear>("spell_sha_of_fear_dread_spray_fear");
 }

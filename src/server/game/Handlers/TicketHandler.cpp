@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,20 +17,24 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "Language.h"
-#include "WorldPacket.h"
+#include "zlib.h"
 #include "Common.h"
+#include "Language.h"
 #include "ObjectMgr.h"
-#include "TicketMgr.h"
+#include "Opcodes.h"
 #include "Player.h"
-#include "World.h"
-#include "WorldSession.h"
+#include "TicketMgr.h"
 #include "Util.h"
+#include "World.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
+
+static const char InvalidCharacters[] = ":-\\";
 
 void WorldSession::HandleGMTicketCreateOpcode(WorldPacket& recvData)
 {
     // Don't accept tickets if the ticket queue is disabled. (Ticket UI is greyed out but not fully dependable)
-    if (sTicketMgr->GetStatus() == GMTICKET_QUEUE_STATUS_DISABLED)
+    if (sTicketMgr->GetGmTicketSystemStatus() == GMTICKET_QUEUE_STATUS_DISABLED)
         return;
 
     if (GetPlayer()->getLevel() < sWorld->getIntConfig(CONFIG_TICKET_LEVEL_REQ))
@@ -39,128 +44,172 @@ void WorldSession::HandleGMTicketCreateOpcode(WorldPacket& recvData)
     }
 
     GMTicketResponse response = GMTICKET_RESPONSE_CREATE_ERROR;
-    // Player must not have opened ticket
-    if (GmTicket* ticket = sTicketMgr->GetTicketByPlayer(GetPlayer()->GetGUID()))
+    GmTicket* ticket = sTicketMgr->GetGmTicketByPlayerGuid(GetPlayer()->GetGUID());
+
+    if (ticket && ticket->IsCompleted())
+        sTicketMgr->CloseTicket<GmTicket>(ticket->GetTicketId(), GetPlayer()->GetGUID());;
+
+    // Player must not have ticket
+    if (!ticket || ticket->IsClosed())
     {
-        if (ticket->IsCompleted())
+        uint32 count, mapId, decompressedSize;
+        G3D::Vector3 Position;
+        uint8 textCount, messageLen;
+        std::list<uint32> times;
+        std::string chatLog, message;
+        bool haveTicket, needResponse;
+
+        ticket = new GmTicket(GetPlayer());
+
+        recvData >> mapId;
+        recvData >> Position.z;
+        recvData >> Position.y;
+        recvData.read_skip<uint8>();    // flags!?
+        recvData >> Position.x;
+        recvData >> count;
+
+		if (!message.empty())
+			for (uint8 X = 0; X < strlen(InvalidCharacters); ++X)
+				message.erase(std::remove(message.begin(), message.end(), InvalidCharacters[X]), message.end());
+
+        if (count > 0)
         {
-            sTicketMgr->CloseTicket(ticket->GetId(), GetPlayer()->GetGUID());
-            sTicketMgr->SendTicket(this, NULL);
+            recvData >> textCount;
+            for (uint32 i = 0; i < textCount; i++)
+            {
+                uint32 time;
+                recvData >> time;
+                times.push_back(time);
+            }
 
-            WorldPacket data(SMSG_GM_RESPONSE_STATUS_UPDATE, 4);
-            data << uint8(GMTICKET_RESPONSE_TICKET_DELETED);
-            SendPacket(&data);
+            recvData >> decompressedSize;
 
-            GmTicket* newTicket = new GmTicket(GetPlayer(), recvData);
-            sTicketMgr->AddTicket(newTicket);
-            sTicketMgr->UpdateLastChange();
+            if (count && decompressedSize && decompressedSize < 0xFFFF)
+            {
+                uint32 pos = recvData.rpos();
+                ByteBuffer tailPacket;
+                tailPacket.resize(decompressedSize);
 
-            sWorld->SendGMText(LANG_COMMAND_TICKETNEW, GetPlayer()->GetName(), newTicket->GetId());
+                uLongf realSize = decompressedSize;
+                if (uncompress(tailPacket.contents(), &realSize, recvData.contents() + pos, recvData.size() - pos) == Z_OK)
+                    tailPacket >> chatLog;
 
-            sTicketMgr->SendTicket(this, newTicket);
-
-            response = GMTICKET_RESPONSE_CREATE_SUCCESS;
+                else
+                {
+                    TC_LOG_ERROR("network", "CMSG_GM_TICKET_CREATE possibly corrupt. Uncompression failed.");
+                    recvData.rfinish();
+                    delete ticket;
+                    return;
+                }
+            }
         }
-        else
-            response = GMTICKET_RESPONSE_ALREADY_EXIST;
-    }
-    else
-    {
-        GmTicket* newTicket = new GmTicket(GetPlayer(), recvData);
-        sTicketMgr->AddTicket(newTicket);
+
+        needResponse = recvData.ReadBit();
+        haveTicket = recvData.ReadBit();
+        messageLen = recvData.ReadBits(11);
+        message = recvData.ReadString(messageLen);
+
+        ticket->SetChatLog(times, chatLog);
+        ticket->SetMessage(message);
+        ticket->SetPosition(mapId, Position);
+        ticket->SetGmAction(needResponse, haveTicket);
+
+        sTicketMgr->AddTicket(ticket);
         sTicketMgr->UpdateLastChange();
 
-        sWorld->SendGMText(LANG_COMMAND_TICKETNEW, GetPlayer()->GetName(), newTicket->GetId());
-
-        sTicketMgr->SendTicket(this, newTicket);
+        sWorld->SendGMText(LANG_COMMAND_TICKETNEW, GetPlayer()->GetName().c_str(), ticket->GetTicketId());
 
         response = GMTICKET_RESPONSE_CREATE_SUCCESS;
     }
 
-    WorldPacket data(SMSG_GM_RESPONSE_STATUS_UPDATE, 2);
-    data << uint8(response);
-    SendPacket(&data);
+    sTicketMgr->SendGmTicketUpdate(SMSG_GM_TICKET_UPDATE, response, GetPlayer());
 }
 
 void WorldSession::HandleGMTicketUpdateOpcode(WorldPacket& recvData)
 {
     std::string message;
-    uint32 strLen = recvData.ReadBits(12);
+    uint8 messageLen = 0;
 
-    recvData.FlushBits();
+    messageLen = recvData.ReadBits(11);
+    message    = recvData.ReadString(messageLen);
 
-    message = recvData.ReadString(strLen / 2);
+	if (!message.empty())
+		for (uint8 X = 0; X < strlen(InvalidCharacters); ++X)
+			message.erase(std::remove(message.begin(), message.end(), InvalidCharacters[X]), message.end());
 
     GMTicketResponse response = GMTICKET_RESPONSE_UPDATE_ERROR;
-    if (GmTicket* ticket = sTicketMgr->GetTicketByPlayer(GetPlayer()->GetGUID()))
+    if (GmTicket* ticket = sTicketMgr->GetGmTicketByPlayerGuid(GetPlayer()->GetGUID()))
     {
         SQLTransaction trans = SQLTransaction(NULL);
         ticket->SetMessage(message);
         ticket->SaveToDB(trans);
 
-        sWorld->SendGMText(LANG_COMMAND_TICKETUPDATED, GetPlayer()->GetName(), ticket->GetId());
+        sWorld->SendGMText(LANG_COMMAND_TICKETUPDATED, GetPlayer()->GetName().c_str(), ticket->GetTicketId());
 
-        sTicketMgr->SendTicket(this, ticket);
         response = GMTICKET_RESPONSE_UPDATE_SUCCESS;
     }
 
-    WorldPacket data(SMSG_GM_RESPONSE_STATUS_UPDATE, 2);
-    data << uint8(response);
-    SendPacket(&data);
+    sTicketMgr->SendGmTicketUpdate(SMSG_GM_TICKET_UPDATE_TEXT, response, GetPlayer());
 }
 
-void WorldSession::HandleGMTicketDeleteOpcode(WorldPacket& /*recvData*/)
+void WorldSession::HandleGMTicketDeleteOpcode(WorldPacket & /*recvData*/)
 {
-    if (GmTicket* ticket = sTicketMgr->GetTicketByPlayer(GetPlayer()->GetGUID()))
+    if (GmTicket* ticket = sTicketMgr->GetGmTicketByPlayerGuid(GetPlayer()->GetGUID()))
     {
-        WorldPacket data(SMSG_GM_RESPONSE_STATUS_UPDATE, 4);
-        data << uint8(GMTICKET_RESPONSE_TICKET_DELETED);
-        SendPacket(&data);
+        sTicketMgr->SendGmTicketUpdate(SMSG_GM_TICKET_UPDATE, GMTICKET_RESPONSE_TICKET_DELETED, GetPlayer());
 
-        sWorld->SendGMText(LANG_COMMAND_TICKETPLAYERABANDON, GetPlayer()->GetName(), ticket->GetId());
+        sWorld->SendGMText(LANG_COMMAND_TICKETPLAYERABANDON, GetPlayer()->GetName().c_str(), ticket->GetTicketId());
 
-        sTicketMgr->CloseTicket(ticket->GetId(), GetPlayer()->GetGUID());
-        sTicketMgr->SendTicket(this, NULL);
+        sTicketMgr->CloseTicket<GmTicket>(ticket->GetTicketId(), GetPlayer()->GetGUID());
+        sTicketMgr->SendGmTicket(this, NULL);
     }
 }
 
-void WorldSession::HandleGMTicketGetTicketOpcode(WorldPacket& /*recvData*/)
+void WorldSession::HandleGMTicketGetTicketOpcode(WorldPacket & /*recvData*/)
 {
     SendQueryTimeResponse();
 
-    if (GmTicket* ticket = sTicketMgr->GetTicketByPlayer(GetPlayer()->GetGUID()))
+    if (GmTicket* ticket = sTicketMgr->GetGmTicketByPlayerGuid(GetPlayer()->GetGUID()))
     {
         if (ticket->IsCompleted())
-            ticket->SendResponse(this);
+            sTicketMgr->SendGmResponsee(this, ticket);
         else
-            sTicketMgr->SendTicket(this, ticket);
+            sTicketMgr->SendGmTicket(this, ticket);
     }
     else
-        sTicketMgr->SendTicket(this, NULL);
+        sTicketMgr->SendGmTicket(this, NULL);
 }
 
-void WorldSession::HandleGMTicketGetWebTicketOpcode(WorldPacket& /*recvPacket*/)
-{
-}
-
-void WorldSession::HandleGMTicketSystemStatusOpcode(WorldPacket& /*recvData*/)
+void WorldSession::HandleGMTicketSystemStatusOpcode(WorldPacket & /*recvData*/)
 {
     // Note: This only disables the ticket UI at client side and is not fully reliable
     // are we sure this is a uint32? Should ask Zor
     WorldPacket data(SMSG_GM_TICKET_SYSTEM_STATUS, 4);
-    data << uint32(sTicketMgr->GetStatus() ? GMTICKET_QUEUE_STATUS_ENABLED : GMTICKET_QUEUE_STATUS_DISABLED);
+    data << uint32(sTicketMgr->GetGmTicketSystemStatus() ? GMTICKET_QUEUE_STATUS_ENABLED : GMTICKET_QUEUE_STATUS_DISABLED);
+    SendPacket(&data);
+}
+
+void WorldSession::HandleGMTicketCaseStatusOpcode(WorldPacket & /*recvData*/)
+{
+    time_t UpdateTime = 0, OldestTicketTime = time(NULL);
+    WorldPacket data(SMSG_GM_TICKET_CASE_STATUS, 4+4+3);
+    data.WriteBits(0, 20);
+    data.FlushBits();
+    data.AppendPackedTime(UpdateTime);
+    data.AppendPackedTime(OldestTicketTime);
     SendPacket(&data);
 }
 
 void WorldSession::HandleGMSurveySubmit(WorldPacket& recvData)
 {
+    /*
     uint32 nextSurveyID = sTicketMgr->GetNextSurveyID();
     // just put the survey into the database
     uint32 mainSurvey; // GMSurveyCurrentSurvey.dbc, column 1 (all 9) ref to GMSurveySurveys.dbc
     recvData >> mainSurvey;
 
     // sub_survey1, r1, comment1, sub_survey2, r2, comment2, sub_survey3, r3, comment3, sub_survey4, r4, comment4, sub_survey5, r5, comment5, sub_survey6, r6, comment6, sub_survey7, r7, comment7, sub_survey8, r8, comment8, sub_survey9, r9, comment9, sub_survey10, r10, comment10,
-    for (uint8 i = 0; i < 10; i++)
+    for (uint8 i = 0; i < 15; i++)
     {
         uint32 subSurveyId; // ref to i'th GMSurveySurveys.dbc field (all fields in that dbc point to fields in GMSurveyQuestions.dbc)
         recvData >> subSurveyId;
@@ -190,6 +239,7 @@ void WorldSession::HandleGMSurveySubmit(WorldPacket& recvData)
     stmt->setString(3, comment);
 
     CharacterDatabase.Execute(stmt);
+    */
 }
 
 void WorldSession::HandleReportLag(WorldPacket& recvData)
@@ -219,13 +269,36 @@ void WorldSession::HandleReportLag(WorldPacket& recvData)
 void WorldSession::HandleGMResponseResolve(WorldPacket& /*recvPacket*/)
 {
     // empty packet
-    if (GmTicket* ticket = sTicketMgr->GetTicketByPlayer(GetPlayer()->GetGUID()))
+    if (GmTicket* ticket = sTicketMgr->GetGmTicketByPlayerGuid(GetPlayer()->GetGUID()))
     {
+        uint8 getSurvey = 0;
+        if (float(rand_chance()) < sWorld->getFloatConfig(CONFIG_CHANCE_OF_GM_SURVEY))
+            getSurvey = 1;
+
         WorldPacket data(SMSG_GM_RESPONSE_STATUS_UPDATE, 4);
-        data << uint8(GMTICKET_RESPONSE_TICKET_DELETED);
+        data << uint8(getSurvey);
         SendPacket(&data);
 
-        sTicketMgr->CloseTicket(ticket->GetId(), GetPlayer()->GetGUID());
-        sTicketMgr->SendTicket(this, NULL);
+        WorldPacket data2(SMSG_GM_TICKET_UPDATE, 4);
+        data2 << uint32(GMTICKET_RESPONSE_TICKET_DELETED);
+        SendPacket(&data2);
+
+        sTicketMgr->CloseTicket<GmTicket>(ticket->GetTicketId(), GetPlayer()->GetGUID());
+        sTicketMgr->SendGmTicket(this, NULL);
     }
+}
+
+void WorldSession::HandleSubmitBugOpcode(WorldPacket& recvPacket)
+{
+    if (!sTicketMgr->GetFeedBackSystemStatus())
+        return;
+
+    if (GetPlayer()->getLevel() < sWorld->getIntConfig(CONFIG_TICKET_LEVEL_REQ))
+    {
+        SendNotification(GetTrinityString(LANG_TICKET_REQ), sWorld->getIntConfig(CONFIG_TICKET_LEVEL_REQ));
+        return;
+    }
+
+    if (BugTicket* ticket = new BugTicket(GetPlayer(), recvPacket))
+        sTicketMgr->AddTicket(ticket);
 }

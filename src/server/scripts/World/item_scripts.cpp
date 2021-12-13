@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -33,14 +34,13 @@ EndContentData */
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "Spell.h"
-#include "GuildMgr.h"
-#include "Guild.h"
+#include "Player.h"
 
 /*#####
 # item_only_for_flight
 #####*/
 
-enum eOnlyForFlight
+enum OnlyForFlight
 {
     SPELL_ARCANE_CHARGES    = 45072
 };
@@ -50,7 +50,7 @@ class item_only_for_flight : public ItemScript
 public:
     item_only_for_flight() : ItemScript("item_only_for_flight") { }
 
-    bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/)
+    bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/) override
     {
         uint32 itemId = item->GetEntry();
         bool disabled = false;
@@ -68,12 +68,12 @@ public:
                     break;
            case 34475:
                 if (const SpellInfo* spellInfo = sSpellMgr->GetSpellInfo(SPELL_ARCANE_CHARGES))
-                    Spell::SendCastResult(player, spellInfo, NULL, 1, SPELL_FAILED_NOT_ON_GROUND);
+                    Spell::SendCastResult(player, spellInfo, 1, SPELL_FAILED_NOT_ON_GROUND);
                     break;
         }
 
         // allow use in flight only
-        if (player->isInFlight() && !disabled)
+        if (player->IsInFlight() && !disabled)
             return false;
 
         // error
@@ -91,7 +91,7 @@ class item_nether_wraith_beacon : public ItemScript
 public:
     item_nether_wraith_beacon() : ItemScript("item_nether_wraith_beacon") { }
 
-    bool OnUse(Player* player, Item* /*item*/, SpellCastTargets const& /*targets*/)
+    bool OnUse(Player* player, Item* /*item*/, SpellCastTargets const& /*targets*/) override
     {
         if (player->GetQuestStatus(10832) == QUEST_STATUS_INCOMPLETE)
         {
@@ -114,51 +114,13 @@ class item_gor_dreks_ointment : public ItemScript
 public:
     item_gor_dreks_ointment() : ItemScript("item_gor_dreks_ointment") { }
 
-    bool OnUse(Player* player, Item* item, SpellCastTargets const& targets)
+    bool OnUse(Player* player, Item* item, SpellCastTargets const& targets) override
     {
         if (targets.GetUnitTarget() && targets.GetUnitTarget()->GetTypeId() == TYPEID_UNIT &&
             targets.GetUnitTarget()->GetEntry() == 20748 && !targets.GetUnitTarget()->HasAura(32578))
             return false;
 
         player->SendEquipError(EQUIP_ERR_CLIENT_LOCKED_OUT, item, NULL);
-        return true;
-    }
-};
-
-/*#####
-# item_guild_level_25_item
-#####*/
-
-class item_guild_level_25_item : public ItemScript
-{
-public:
-    item_guild_level_25_item() : ItemScript("item_guild_level_25_item") { }
-
-    bool OnUse(Player* player, Item* item, SpellCastTargets const& targets)
-    {
-        if (Guild* guild = player->GetGuild())
-        {
-            if (guild->GetLevel() < 25)
-            {
-                uint32 experience = 0;
-                uint32 amount = 25;
-
-                for (uint8 i = 0; i < amount; ++i)
-                {
-                    if (guild->GetLevel() >= sWorld->getIntConfig(CONFIG_GUILD_MAX_LEVEL))
-                        break;
-
-                    experience = sGuildMgr->GetXPForGuildLevel(guild->GetLevel()) - guild->GetExperience();
-                    guild->GiveXP(experience, player->GetSession() ? player->GetSession()->GetPlayer() : NULL);
-                }
-
-                ChatHandler(player->GetSession()).SendSysMessage("You have leveled your guild to the level of 25!");
-            }
-            else
-            {
-                ChatHandler(player->GetSession()).SendSysMessage("You cannot use this item without having a Guild.");
-            }
-        }
         return true;
     }
 };
@@ -172,7 +134,7 @@ class item_incendiary_explosives : public ItemScript
 public:
     item_incendiary_explosives() : ItemScript("item_incendiary_explosives") { }
 
-    bool OnUse(Player* player, Item* item, SpellCastTargets const & /*targets*/)
+    bool OnUse(Player* player, Item* item, SpellCastTargets const & /*targets*/) override
     {
         if (player->FindNearestCreature(26248, 15) || player->FindNearestCreature(26249, 15))
             return false;
@@ -193,7 +155,7 @@ class item_mysterious_egg : public ItemScript
 public:
     item_mysterious_egg() : ItemScript("item_mysterious_egg") { }
 
-    bool OnExpire(Player* player, ItemTemplate const* /*pItemProto*/)
+    bool OnExpire(Player* player, ItemTemplate const* /*pItemProto*/) override
     {
         ItemPosCountVec dest;
         uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, 39883, 1); // Cracked Egg
@@ -211,9 +173,9 @@ public:
 class item_disgusting_jar : public ItemScript
 {
 public:
-    item_disgusting_jar() : ItemScript("item_disgusting_jar") {}
+    item_disgusting_jar() : ItemScript("item_disgusting_jar") { }
 
-    bool OnExpire(Player* player, ItemTemplate const* /*pItemProto*/)
+    bool OnExpire(Player* player, ItemTemplate const* /*pItemProto*/) override
     {
         ItemPosCountVec dest;
         uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, 44718, 1); // Ripe Disgusting Jar
@@ -228,7 +190,7 @@ public:
 # item_pile_fake_furs
 #####*/
 
-enum ePileFakeFur
+enum PileFakeFur
 {
     GO_CARIBOU_TRAP_1                                      = 187982,
     GO_CARIBOU_TRAP_2                                      = 187995,
@@ -262,7 +224,7 @@ class item_pile_fake_furs : public ItemScript
 public:
     item_pile_fake_furs() : ItemScript("item_pile_fake_furs") { }
 
-    bool OnUse(Player* player, Item* /*item*/, SpellCastTargets const & /*targets*/)
+    bool OnUse(Player* player, Item* /*item*/, SpellCastTargets const & /*targets*/) override
     {
         GameObject* go = NULL;
         for (uint8 i = 0; i < CaribouTrapsNum; ++i)
@@ -280,7 +242,7 @@ public:
 
         float x, y, z;
         go->GetClosePoint(x, y, z, go->GetObjectSize() / 3, 7.0f);
-        go->SummonGameObject(GO_HIGH_QUALITY_FUR, go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), 0, 0, 0, 0, 0, 1000);
+        go->SummonGameObject(GO_HIGH_QUALITY_FUR, go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), 0, { }, 1000);
         if (TempSummon* summon = player->SummonCreature(NPC_NESINGWARY_TRAPPER, x, y, z, go->GetOrientation(), TEMPSUMMON_DEAD_DESPAWN, 1000))
         {
             summon->SetVisible(false);
@@ -295,7 +257,7 @@ public:
 # item_petrov_cluster_bombs
 #####*/
 
-enum ePetrovClusterBombs
+enum PetrovClusterBombs
 {
     SPELL_PETROV_BOMB           = 42406,
     AREA_ID_SHATTERED_STRAITS   = 4064,
@@ -307,7 +269,7 @@ class item_petrov_cluster_bombs : public ItemScript
 public:
     item_petrov_cluster_bombs() : ItemScript("item_petrov_cluster_bombs") { }
 
-    bool OnUse(Player* player, Item* /*item*/, const SpellCastTargets & /*targets*/)
+    bool OnUse(Player* player, Item* /*item*/, const SpellCastTargets & /*targets*/) override
     {
         if (player->GetZoneId() != ZONE_ID_HOWLING)
             return false;
@@ -315,7 +277,7 @@ public:
         if (!player->GetTransport() || player->GetAreaId() != AREA_ID_SHATTERED_STRAITS)
         {
             if (const SpellInfo* spellInfo = sSpellMgr->GetSpellInfo(SPELL_PETROV_BOMB))
-                Spell::SendCastResult(player, spellInfo, NULL, 1, SPELL_FAILED_NOT_HERE);
+                Spell::SendCastResult(player, spellInfo, 1, SPELL_FAILED_NOT_HERE);
 
             return true;
         }
@@ -328,7 +290,7 @@ public:
 # item_dehta_trap_smasher
 # For quest 11876, Help Those That Cannot Help Themselves
 ######*/
-enum eHelpThemselves
+enum HelpThemselves
 {
     QUEST_CANNOT_HELP_THEMSELVES                  =  11876,
     NPC_TRAPPED_MAMMOTH_CALF                      =  25850,
@@ -371,7 +333,7 @@ class item_dehta_trap_smasher : public ItemScript
 public:
     item_dehta_trap_smasher() : ItemScript("item_dehta_trap_smasher") { }
 
-    bool OnUse(Player* player, Item* /*item*/, const SpellCastTargets & /*targets*/)
+    bool OnUse(Player* player, Item* /*item*/, const SpellCastTargets & /*targets*/) override
     {
         if (player->GetQuestStatus(QUEST_CANNOT_HELP_THEMSELVES) != QUEST_STATUS_INCOMPLETE)
             return false;
@@ -407,7 +369,7 @@ class item_trident_of_nazjan : public ItemScript
 public:
     item_trident_of_nazjan() : ItemScript("item_Trident_of_Nazjan") { }
 
-    bool OnUse(Player* player, Item* item, const SpellCastTargets & /*targets*/)
+    bool OnUse(Player* player, Item* item, const SpellCastTargets & /*targets*/) override
     {
         if (player->GetQuestStatus(QUEST_THE_EMISSARY) == QUEST_STATUS_INCOMPLETE)
         {
@@ -423,7 +385,7 @@ public:
     }
 };
 
-enum eCapturedFrog
+enum CapturedFrog
 {
     QUEST_THE_PERFECT_SPIES      = 25444,
     NPC_VANIRAS_SENTRY_TOTEM     = 40187
@@ -434,7 +396,7 @@ class item_captured_frog : public ItemScript
 public:
     item_captured_frog() : ItemScript("item_captured_frog") { }
 
-    bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/)
+    bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/) override
     {
         if (player->GetQuestStatus(QUEST_THE_PERFECT_SPIES) == QUEST_STATUS_INCOMPLETE)
         {
@@ -449,35 +411,42 @@ public:
     }
 };
 
-class item_sylvanas_music_box : public ItemScript
+// Primal Egg - 94295
+class item_primal_egg : public ItemScript
 {
     public:
-        item_sylvanas_music_box() : ItemScript("item_sylvanas_music_box") { }
+        item_primal_egg() : ItemScript("item_primal_egg") { }
 
-        bool OnUse(Player* player, Item* item, SpellCastTargets const& /*targets*/)
+        bool OnExpire(Player* player, ItemTemplate const* /*itemProto*/) override
         {
-            Map* map = player->GetMap();
-            if (!map)
-                return false;
+            ItemPosCountVec dest;
+            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, 94296, 1); // Cracked Primal Egg
+            if (msg == EQUIP_ERR_OK)
+                player->StoreNewItem(dest, 94296, true, Item::GenerateItemRandomPropertyId(94296));
 
-            Map::PlayerList const &_list = map->GetPlayers();
-            if (_list.isEmpty())
-                return false;
+            return true;
+        }
+};
 
-            for (Map::PlayerList::const_iterator i = _list.begin(); i != _list.end(); ++i)
-            {
-                if (Player* pPlayer = i->getSource())
-                    if (pPlayer->IsWithinDistInMap(player, 50.0f))
-                        pPlayer->SendPlaySound(10896, player->GetGUID());
-            }
+// Unhatched Jubling Egg - 19462
+class item_unhatched_jubling_egg : public ItemScript
+{
+    public:
+        item_unhatched_jubling_egg() : ItemScript("item_unhatched_jubling_egg") { }
 
-            return false;
+        bool OnExpire(Player* player, ItemTemplate const* /*itemProto*/) override
+        {
+            ItemPosCountVec dest;
+            uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, 19450, 1); // A Jubling's Tiny Home
+            if (msg == EQUIP_ERR_OK)
+                player->StoreNewItem(dest, 19450, true, Item::GenerateItemRandomPropertyId(19450));
+
+            return true;
         }
 };
 
 void AddSC_item_scripts()
 {
-    new item_guild_level_25_item();
     new item_only_for_flight();
     new item_nether_wraith_beacon();
     new item_gor_dreks_ointment();
@@ -489,5 +458,6 @@ void AddSC_item_scripts()
     new item_dehta_trap_smasher();
     new item_trident_of_nazjan();
     new item_captured_frog();
-    new item_sylvanas_music_box();
+    new item_primal_egg();
+    new item_unhatched_jubling_egg();
 }

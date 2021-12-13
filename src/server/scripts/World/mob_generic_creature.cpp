@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -36,26 +37,26 @@ public:
 
     struct generic_creatureAI : public ScriptedAI
     {
-        generic_creatureAI(Creature* creature) : ScriptedAI(creature) {}
+        generic_creatureAI(Creature* creature) : ScriptedAI(creature) { }
 
         uint32 GlobalCooldown;      //This variable acts like the global cooldown that players have (1.5 seconds)
         uint32 BuffTimer;           //This variable keeps track of buffs
         bool IsSelfRooted;
 
-        void Reset()
+        void Reset() override
         {
             GlobalCooldown = 0;
             BuffTimer = 0;          //Rebuff as soon as we can
             IsSelfRooted = false;
         }
 
-        void EnterCombat(Unit* who)
+        void EnterCombat(Unit* who) override
         {
             if (!me->IsWithinMeleeRange(who))
                 IsSelfRooted = true;
         }
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             //Always decrease our global cooldown first
             if (GlobalCooldown > diff)
@@ -63,7 +64,7 @@ public:
             else GlobalCooldown = 0;
 
             //Buff timer (only buff when we are alive and not in combat
-            if (!me->isInCombat() && me->isAlive())
+            if (!me->IsInCombat() && me->IsAlive())
             {
                 if (BuffTimer <= diff)
                 {
@@ -90,7 +91,7 @@ public:
                 return;
 
             //If we are within range melee the target
-            if (me->IsWithinMeleeRange(me->getVictim()))
+            if (me->IsWithinMeleeRange(me->GetVictim()))
             {
                 //Make sure our attack is ready and we arn't currently casting
                 if (me->isAttackReady() && !me->IsNonMeleeSpellCasted(false))
@@ -104,19 +105,19 @@ public:
 
                     //No healing spell available, select a hostile spell
                     if (info) Healing = true;
-                    else info = SelectSpell(me->getVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, 0, 0, 0, SELECT_EFFECT_DONTCARE);
+                    else info = SelectSpell(me->GetVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, 0, 0, 0, SELECT_EFFECT_DONTCARE);
 
                     //50% chance if elite or higher, 20% chance if not, to replace our white hit with a spell
                     if (info && (rand() % (me->GetCreatureTemplate()->rank > 1 ? 2 : 5) == 0) && !GlobalCooldown)
                     {
                         //Cast the spell
                         if (Healing)DoCastSpell(me, info);
-                        else DoCastSpell(me->getVictim(), info);
+                        else DoCastSpell(me->GetVictim(), info);
 
                         //Set our global cooldown
                         GlobalCooldown = GENERIC_CREATURE_COOLDOWN;
                     }
-                    else me->AttackerStateUpdate(me->getVictim());
+                    else me->AttackerStateUpdate(me->GetVictim());
 
                     me->resetAttackTimer();
                 }
@@ -135,7 +136,7 @@ public:
 
                     //No healing spell available, See if we can cast a ranged spell (Range must be greater than ATTACK_DISTANCE)
                     if (info) Healing = true;
-                    else info = SelectSpell(me->getVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, 0, NOMINAL_MELEE_RANGE, 0, SELECT_EFFECT_DONTCARE);
+                    else info = SelectSpell(me->GetVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, 0, NOMINAL_MELEE_RANGE, 0, SELECT_EFFECT_DONTCARE);
 
                     //Found a spell, check if we arn't on cooldown
                     if (info && !GlobalCooldown)
@@ -146,7 +147,7 @@ public:
 
                         //Cast spell
                         if (Healing) DoCastSpell(me, info);
-                        else DoCastSpell(me->getVictim(), info);
+                        else DoCastSpell(me->GetVictim(), info);
 
                         //Set our global cooldown
                         GlobalCooldown = GENERIC_CREATURE_COOLDOWN;
@@ -163,7 +164,7 @@ public:
         }
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new generic_creatureAI(creature);
     }
@@ -186,7 +187,7 @@ public:
         uint32 timer, interval;
         const SpellInfo* spell;
 
-        void UpdateAI(const uint32 diff)
+        void UpdateAI(uint32 diff) override
         {
             if (timer <= diff)
             {
@@ -199,7 +200,7 @@ public:
         }
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new trigger_periodicAI(creature);
     }
@@ -212,54 +213,22 @@ public:
 
     struct trigger_deathAI : public NullCreatureAI
     {
-        trigger_deathAI(Creature* creature) : NullCreatureAI(creature) {}
-        void JustDied(Unit* killer)
+        trigger_deathAI(Creature* creature) : NullCreatureAI(creature) { }
+        void JustDied(Unit* killer) override
         {
             if (me->m_spells[0])
                 me->CastSpell(killer, me->m_spells[0], true);
         }
     };
 
-    CreatureAI* GetAI(Creature* creature) const
+    CreatureAI* GetAI(Creature* creature) const override
     {
         return new trigger_deathAI(creature);
     }
 };
 
-class npc_gilthares_firebough : public CreatureScript
-{
-    public:
-        npc_gilthares_firebough() : CreatureScript("npc_gilthares_firebough")
-        {
-        }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_gilthares_fireboughAI(creature);
-        }
-
-        struct npc_gilthares_fireboughAI : public ScriptedAI
-        {
-            npc_gilthares_fireboughAI(Creature* creature) : ScriptedAI(creature)
-            {
-            }
-
-            EventMap events;
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-            }
-        };
-};
-
 void AddSC_generic_creature()
 {
-    new npc_gilthares_firebough();
     //new generic_creature;
     new trigger_periodic;
     //new trigger_death;

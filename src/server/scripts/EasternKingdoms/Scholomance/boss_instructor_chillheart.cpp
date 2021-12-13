@@ -1,1082 +1,735 @@
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
+#include "Vehicle.h"
+#include "VehicleDefines.h"
 #include "scholomance.h"
-#include "instance_scholomance.cpp"
 
-/*
-NORMAL ONLY FOR LOWBIES
-HEROIC FOR LEVEL 90
-
-DON'T FORGET THAT5
-*FARTS
-*/
-
-enum ePhases
-{
-    PHASE_1 = 60,
-    PHASE_2 = 61,
-    PHASE_D = 62,
-};
 enum Spells
 {
-    // ICE WAVE
-    SPELL_ICE_WAVE_BUFF = 105265, // aura for triggers
-    SPELL_ICE_WAVE_EVENT_START = 111854, // cast spell to display for players
-    SPELL_ICE_WAVE_DAMAGE = 105314, // modify it for normal, heroics and lowbies
-};
-enum Talk
-{
-    SAY_INTRO     = 0, // Class.. is now in session. (29455) yell 
-    SAY_AGGRO     = 1, // Class dismissed! (29455) yell
-    SAY_KILL      = 2, // Perhaps you should've studied more.. (29461 // 29462) yell
-    SAY_EVENT_01  = 3, // Your soul cannot withstand my power (29457)
-    SAY_EVENT_02  = 4, // I can never die... (29458)
-    SAY_EVENT_03  = 5, // You've learned... nothing. (29459)
-    SAY_DEAD = 6, // This... cannot... be! (29456)
-};
-enum Event
-{
-    EVENT_SUMMON_ICE_WALL = 10,
-    EVENT_MOVEMENT_START = 11,
-    EVENT_MOVEMENT_STOP = 12,
-    EVENT_SUMMON_BOOKS = 13,
-    EVENT_FRIGID_SPAWN = 14,
-    EVENT_TOUCH_OF_THE_GRAVE = 15,
-    EVENT_SPELL_WRACK_SOUL = 16,
-    EVENT_ICE_WRATH = 17,
-    EVENT_FIRE = 18,
-    EVENT_ARCANE = 19,
-    EVENT_PRE_ARCANE = 20,
-    EVENT_SHADOW = 21,
+    SPELL_WRACK_SOUL          = 111631, // debuff that jump to player from player
+    SPELL_ICE_WRATH           = 111610, // just periodic debuff
+    SPELL_TOUCH_OF_THE_GRAVE  = 111606, // self buff for diff attack
+    SPELL_FRIGID_GRASP_DAMAGE = 114886,
+    SPELL_FRIGID_GRASP        = 111239, // on dummy
+    SPELL_FROST_GRASP         = 109295, // Heroic only
 
+    SPELL_ARCANE_BOMG         = 113859,
+    SPELL_BURN                = 111574,
+    SPELL_SHADOW_BOLT         = 113809,
+    SPELL_PHYLACTERY_FILLED   = 111256, // cosmetic area aura
+    SPELL_SUMMON_BOOKS        = 111669, // should summon books only at hit this spell to triggers 58917
 };
+
+enum Events
+{
+    EVENT_WRACK_SOUL = 1,
+    EVENT_ICE_WRATH,
+    EVENT_TOUCH_OF_THE_GRAVE,
+    EVENT_FRIGID_GRASP,
+    EVENT_MOVE_WALL,
+
+    EVENT_ARCANE_BOMB,
+    EVENT_SHADOW_BOLT,
+    EVENT_COSMETIC,
+};
+
 enum Actions
 {
-    ACTION_PHASE_2 = 63,
-    ACTION_WIPE = 64,
-    ACTION_SAY_INTRO = 66,
-    ACTION_DEATH = 67,
+    ACTION_ACTIVATE = 0,
+    ACTION_DESTROY_WALL,
 };
 
-Position preadd[3] =
+enum Yells
 {
-    { 200.30f, 30.67f, 118.961f, 4.724240f },
-    { 211.29f, 21.61f, 118.626f, 3.141664f },
-    { 187.77f, 21.11f, 118.845f, 0.035404f },
+    TALK_INTRO = 0,
+    TALK_AGGRO,
+    TALK_WRACK_SOUL,
+    TALK_FAKE_DEATH,
+    TALK_DEATH,
+    TALK_WAVE_OF_ICE,
+    TALK_ESCAPE,
 };
 
-Position IceWallSpawn = { 193.41f, -18.68f, 119.225f, 1.452457 };
-
-Position IceWallBlockage[2] = 
-{
-    {157.25f, 42.24f, 119.224f, 4.729829f},
-    {240.51f, 42.12f, 119.228f, 4.675471f}, 
-};
-Position IceWallTarget = { 195.75f, 40.31f, 119.225f, 4.668602f };
-Position bossposition = {200.83f, 11.01f, 119.224f, 1.607877f};
-Position phylacterypos = {200.46f, 21.95f, 118.482f, 4.862535f};
-
-// Timers
-#define EVENT_SHADOW_INTERVAL 5000
-#define EVENT_PRE_ARCANE_INTERVAL 10000
-#define EVENT_ARCANE_BOMB 6000
-#define EVENT_ARCANE_INTERVAL 5000
-#define EVENT_FIRE_INTERVAL 5000
-#define ICE_WRATH 20000
-#define WRACK_SOUL 8000
-#define TOUCH_OF_THE_GRAVE 0
-#define FRIGID_SPAWN 12000
-#define STOP_INTERVAL 6000
-#define MOVEMENT_INTERVAL 500
-#define MONSTER_TEXT_EMOTE_ICE_WALL "A deadly wave of ice begins to sweep across the room!"
-#define MONSTER_TEXT_EMOTE_PHASE_2 "Instructor Chillheart soul escapes to her phylactery. Destroy it!"
-
-
-#define ORIENTATION_BLOCKAGE 4.733140
-#define ORIENTATION_MOVE 1.595474
-
-class first_iron_door : public GameObjectScript
-{
-public:
-first_iron_door() : GameObjectScript("first_iron_door") { }
-
-    bool OnGossipHello(Player* player, GameObject* gobject)
-    {
-        if (InstanceScript* instance = gobject->GetInstanceScript())
-        {
-            if (Creature* chill = instance->instance->GetCreature(instance->GetData64(DATA_BOSS_CHILLBORN)))
-                chill->AI()->Talk(SAY_INTRO);
-
-                gobject->UseDoorOrButton();
-                return true;
-        }
-        // always open gate incase server restart and it closes in itself so boss won't resay the sentence
-        return true;
-    }
-};
-
-class boss_chillheart : public CreatureScript
+class boss_instructor_chillheart : public CreatureScript
 {
     public:
-        boss_chillheart() : CreatureScript("boss_chillheart") { }
+        boss_instructor_chillheart() : CreatureScript("boss_instructor_chillheart") { }
 
-        struct boss_chillheartAI : public BossAI
+        struct boss_instructor_chillheartAI : public BossAI
         {
-            boss_chillheartAI(Creature* creature) : BossAI(creature, DATA_BOSS_CHILLBORN)
+            boss_instructor_chillheartAI(Creature* creature) : BossAI(creature, DATA_INSTRUCTOR_CHILLHEART) { }
+
+            bool fake, canDie;
+
+            void Reset() override
             {
-                Instance = creature->GetInstanceScript();
+                _Reset();
+                events.Reset();
+                me->setRegeneratingHealth(true);
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->SetStandState(UNIT_STAND_STATE_STAND);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                RemoveBooks();
+                me->CastSpell(me, SPELL_COSMETIC_SHADOW_CHANNEL, false);
+                fake = false;
+                canDie = false;
+                HandleDoors(true);
+
+                if (Creature* IceWallStalker = GetClosestCreatureWithEntry(me, NPC_ICE_WALL_STALKER, 100.0f))
+                    IceWallStalker->AI()->DoAction(ACTION_DESTROY_WALL);
+
+                if (Creature* Phylactery = GetClosestCreatureWithEntry(me, NPC_PHYLACTERY, 100.0f, true))
+                    Phylactery->AI()->Reset();
+            }
+
+            void InitializeAI() override
+            {
                 Reset();
             }
 
-            InstanceScript* Instance;
-            std::list<Creature*> creaturesingrid;
-            int32 entry = 0;
-            bool hasescaped;
-            int8 phase;
-
-            void Reset()
+            void JustDied(Unit* killer) override
             {
-                _Reset();
-                summons.DespawnAll();
-                SummonAdds();
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                me->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
+                _JustDied();
+                Talk(TALK_DEATH);
+                RemoveBooks();
 
-                me->SetDisplayId(40301); // original display
-                me->GetMotionMaster()->Clear();
-
-                hasescaped = false;
-                events.SetPhase(PHASE_1);
-                phase = PHASE_1;
-                me->CastSpell(me, SPELL_DARK_CHANNELING_VISUAL);
-
-                if (!me->FindNearestCreature(CREATURE_PHYLACTERY_TRIGGER, 100.0f, true))
-                    me->SummonCreature(CREATURE_PHYLACTERY_TRIGGER, phylacterypos, TEMPSUMMON_MANUAL_DESPAWN);
-
-                me->SetReactState(REACT_PASSIVE);
-         
-                if (!me->FindNearestCreature(CREATURE_ICE_WALL_DEST, 200.0f, true))
-                {
-                    Creature* ice_wall_dest = me->SummonCreature(CREATURE_ICE_WALL_DEST, IceWallTarget.GetPositionX(), IceWallTarget.GetPositionY(), IceWallTarget.GetPositionZ(), IceWallTarget.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                    ice_wall_dest->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                    ice_wall_dest->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                    ice_wall_dest->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                    ice_wall_dest->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                    ice_wall_dest->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                    ice_wall_dest->setFaction(35);
-                }
-            }
-            void DespawnCreaturesInArea(uint32 entry, WorldObject* object)
-            {
-                std::list<Creature*> creatures;
-                GetCreatureListWithEntryInGrid(creatures, object, entry, 300.0f);
-                if (creatures.empty())
-                    return;
-
-                for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-                    (*iter)->DespawnOrUnsummon();
-            }
-            void SummonAdds()
-            {
-                if (phase == PHASE_2)
-                    return;
-
-                // Handle Phyl spawn.
-                if (Creature* trigger = me->FindNearestCreature(CREATURE_PHYLACTERY_TRIGGER, 100.0f, true))
-                    me->SummonCreature(CREATURE_PHYLACTERY, trigger->GetPositionX(), trigger->GetPositionY(), trigger->GetPositionZ(), trigger->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                // Handle adds spawn.
-                for (int i = 0; i <= 2; i++)
-                {
-                    entry = 0;
-                    switch (urand(0, 1))
-                    {
-                    case 0:
-                        entry = CREATURE_ACOLYTE;
-                        break;
-                    case 1:
-                        entry = CREATURE_NEPHOLYTE;
-                        break;
-                    }
-                    Creature* Add = me->SummonCreature(entry, preadd[i].GetPositionX(), preadd[i].GetPositionY(), preadd[i].GetPositionZ(), preadd[i].GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                    if (Add)
-                    {
-                        // visuals
-                        Add->AddAura(SPELL_VISUAL_STRANGULATE_EMOTE, Add); // STRANGULATE
-
-                        if (Creature* trigger = me->FindNearestCreature(CREATURE_PHYLACTERY, 100.0f, true))
-                        {
-                            Add->AddAura(SPELL_SHADOW_FORM_VISUAL, Add);
-                            trigger->CastSpell(Add, SPELL_DRAIN_SOUL_VISUAL);
-                            me->CastSpell(trigger, SPELL_DRAIN_SOUL_VISUAL);
-                        }
-                    }
-                }              
-              }
-            void JustReachedHome()
-            {
-                _JustReachedHome();
-                //summons.DespawnAll();
-                summons.DespawnEntry(CREATURE_ICE_WALL);
-           
                 if (instance)
-                    instance->SetBossState(DATA_BOSS_CHILLBORN, FAIL);
+                {
+                    instance->SetData(DATA_INSTRUCTOR_CHILLHEART, DONE);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                }
+
+                if (Creature* IceWallStalker = GetClosestCreatureWithEntry(me, NPC_ICE_WALL_STALKER, 100.0f))
+                    IceWallStalker->AI()->DoAction(ACTION_DESTROY_WALL);
+
+                me->RemoveAllAreasTrigger();
             }
-            void EnterCombat(Unit* /*who*/)
+
+            void RemoveCosmeticEvent()
+            {
+                std::list<Creature*> Casters;
+                GetCreatureListWithEntryInGrid(Casters, me, NPC_SCHOLOMANCE_NEOPHYTE, 150.0f);
+                GetCreatureListWithEntryInGrid(Casters, me, NPC_SCHOLOMANCE_ACOLYTE, 150.0f);
+
+                for (auto&& itr : Casters)
+                    if (itr->IsAlive())
+                        me->DealDamage(itr, itr->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+            }
+
+            void RemoveBooks()
+            {
+                std::list<Creature*> books;
+                GetCreatureListWithEntryInGrid(books, me, NPC_ANARCHIST_ARCANIST, 150.0f);
+                GetCreatureListWithEntryInGrid(books, me, NPC_ANTONIDAS_GUIDE, 150.0f);
+                GetCreatureListWithEntryInGrid(books, me, NPC_WANDERS_BOOK, 150.0f);
+
+                for (auto&& itr : books)
+                    itr->DespawnOrUnsummon();
+            }
+
+            void HandleDoors(bool reset = false)
+            {
+                if (instance)
+                    if (GameObject* Idoor = GetClosestGameObjectWithEntry(me, GO_CHILLHEART_INTRO_DOOR, 150.0f))
+                    {
+                        instance->HandleGameObject(0, reset, Idoor);
+                        Idoor->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                    }
+            }
+
+            void EnterEvadeMode() override
+            {
+                BossAI::EnterEvadeMode();
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->SetData(DATA_INSTRUCTOR_CHILLHEART, FAIL);
+                }
+                summons.DespawnAll();
+                HandleDoors(true);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
-                Talk(SAY_AGGRO);
+                Talk(TALK_AGGRO);
+                events.ScheduleEvent(EVENT_ICE_WRATH, urand(6500, 8000));
+                events.ScheduleEvent(EVENT_FRIGID_GRASP, urand(10000, 15000));
+                events.ScheduleEvent(EVENT_TOUCH_OF_THE_GRAVE, 1000);
+                RemoveCosmeticEvent();
+                Talk(TALK_WAVE_OF_ICE);
+                HandleDoors();
 
-                events.Reset();
-                //summons.DespawnAll();
+                if (Creature* IceWallStalker = GetClosestCreatureWithEntry(me, NPC_ICE_WALL_STALKER, 100.0f))
+                    IceWallStalker->AI()->DoAction(ACTION_ACTIVATE);
 
-                me->MonsterTextEmote(MONSTER_TEXT_EMOTE_ICE_WALL, me->GetGUID(), false);
-                // Spawn ice triggers
-                me->CastSpell(me, SPELL_ICE_WAVE_EVENT_START, true);
-                events.ScheduleEvent(EVENT_SUMMON_ICE_WALL, 4000, 0, PHASE_1); // ice wall
-
-                JadeCore::AnyCreatureInObjectRangeCheck check(me, 30.0F);
-                JadeCore::CreatureListSearcher<JadeCore::AnyCreatureInObjectRangeCheck> searcher(me, creaturesingrid, check);
-                me->VisitNearbyObject(30.0F, searcher);
-
-                if (!creaturesingrid.empty())
+                if (instance)
                 {
-                    for (std::list<Creature*>::const_iterator itr = creaturesingrid.begin(); itr != creaturesingrid.end(); itr++)
-                    {
-                        if ((*itr) && (*itr)->IsInWorld() && (*itr)->isAlive())
-                            (*itr)->RemoveAura(SPELL_DRAIN_SOUL_VISUAL);
-                    }
+                    instance->SetData(DATA_INSTRUCTOR_CHILLHEART, IN_PROGRESS);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
                 }
 
-                events.ScheduleEvent(EVENT_FRIGID_SPAWN, FRIGID_SPAWN, 0, PHASE_1);
-                events.ScheduleEvent(EVENT_ICE_WRATH, ICE_WRATH, 0, PHASE_1);
-                if (instance->instance->IsHeroic())
-                    events.ScheduleEvent(EVENT_SPELL_WRACK_SOUL, WRACK_SOUL, 0,PHASE_1);
+                if (IsHeroic())
+                    events.ScheduleEvent(EVENT_WRACK_SOUL, 2500);
+            }
 
-                // Summon blockages
-                for (int i = 0; i <= 1; i++)
-                { 
-                    me->SummonGameObject(GAME_OBJECT_GHOST_GATE, IceWallBlockage[i].GetPositionX(), IceWallBlockage[i].GetPositionY(), IceWallBlockage[i].GetPositionZ(), ORIENTATION_BLOCKAGE, 0, 0, 0, 0, 0);
-                    Creature* blockage = me->SummonCreature(CREATURE_ICE_WALL_BLOCKAGE, IceWallBlockage[i].GetPositionX(), IceWallBlockage[i].GetPositionY(), IceWallBlockage[i].GetPositionZ(), ORIENTATION_BLOCKAGE, TEMPSUMMON_MANUAL_DESPAWN);
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon->GetEntry() == NPC_FROSTGRASP_STALKER)
+                {
+                    summon->CastSpell(summon, SPELL_FRIGID_GRASP, false);
+
+                    if (IsHeroic())
+                        summon->CastSpell(summon, SPELL_FROST_GRASP, true);
+
+                    summon->DespawnOrUnsummon(7000);
                 }
-                std::list<Creature*> livingaddlist;
+            }
 
-                me->GetCreatureListWithEntryInGrid(livingaddlist, CREATURE_ACOLYTE, 100.0f);
-                me->GetCreatureListWithEntryInGrid(livingaddlist, CREATURE_NEPHOLYTE, 100.0f);
+            void MovementInform(uint32 type, uint32 pointId) override { }
 
-                if (livingaddlist.empty())
+            void DoAction(int32 actionId) override
+            {
+                if (actionId == ACTION_INTRO)
+                    Talk(TALK_INTRO);
+
+                switch (actionId)
+                {
+                    case ACTION_INTRO:
+                        break;
+                    case ACTION_CHILLHEART_DEATH:
+                        canDie = false;
+                        me->DealDamage(me, me->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                        break;
+                }
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override 
+            {
+                if (canDie)
+                    damage = 0;
+
+                if (damage >= me->GetHealth() && !fake)
+                {
+                    damage = 0;
+                    Talk(TALK_FAKE_DEATH);
+                    me->SetReactState(REACT_PASSIVE);
+                    me->AttackStop();
+                    events.Reset();
+                    fake = true;
+                    canDie = true;
+                    Talk(TALK_ESCAPE);
+                    me->SetStandState(UNIT_STAND_STATE_DEAD);
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+
+                    if (Creature* IceWallStalker = GetClosestCreatureWithEntry(me, NPC_ICE_WALL_STALKER, 100.0f))
+                        IceWallStalker->AI()->DoAction(ACTION_DESTROY_WALL);
+
+                    if (Creature* Phylactery = GetClosestCreatureWithEntry(me, NPC_PHYLACTERY, 100.0f))
+                        Phylactery->AI()->DoAction(ACTION_ACTIVATE);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                if (!UpdateVictim())
                     return;
 
-                for (auto itr : livingaddlist)
-                {
-                    itr->CastSpell(me, SPELL_SUMMON_BOOKS, true); // hacing fixing the visual
-                }
-            }
-            void JustDied(Unit* /*killer*/)
-            {
-                _JustDied();  
-                Talk(SAY_DEAD);
-
-                DespawnCreaturesInArea(CREATURE_BOOK, me);
-                instance->SetBossState(DATA_BOSS_CHILLBORN, DONE);
-
-                summons.DespawnAll();
-            }
-            void KilledUnit(Unit* victim)
-            {
-                if (victim && victim->GetTypeId() == TYPEID_PLAYER)
-                me->Say(SAY_KILL, LANG_UNIVERSAL, me->GetGUID());
-            }
-            void DamageTaken(Unit* /*attacker*/, uint32& damage)
-            {
-                if (phase == PHASE_1)
-                {
-                    // boss starts passive and turns hostile upon damage
-                    if (me->GetReactState() == REACT_PASSIVE)
-                        me->SetReactState(REACT_AGGRESSIVE);
-
-                    if (me->HealthBelowPct(5) && !hasescaped && me->GetAI())
-                    {
-                        hasescaped = true;
-                        me->GetAI()->DoAction(ACTION_PHASE_2);
-                    }
-                }
-            }
-            void DoAction(int32 const action)
-            {
-                switch (action)
-                {
-                    case ACTION_DEATH:
-                    {
-                        summons.DespawnAll();
-                        DespawnCreaturesInArea(CREATURE_BOOK, me);
-                        break;
-                    }
-                    case ACTION_SAY_INTRO:
-                    {
-                        Talk(SAY_INTRO);
-                        break;
-                    }     
-                    case ACTION_PHASE_2:
-                    {
-                       // if (Creature* phylactery = me->FindNearestCreature(CREATURE_PHYLACTERY, 100.0f, true))
-                          me->CastSpell(me, SPELL_SUMMON_BOOKS, true);
-
-                          events.CancelEvent(EVENT_FRIGID_SPAWN);
-                          events.CancelEvent(EVENT_ICE_WRATH);
-     
-                         me->MonsterTextEmote(MONSTER_TEXT_EMOTE_PHASE_2, me->GetGUID(), true);
-
-                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                        me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                        me->SetReactState(REACT_PASSIVE);
-
-                        me->AddUnitState(UNIT_STATE_CANNOT_AUTOATTACK);
-                        
-                        if (Creature* trigger_phy = me->FindNearestCreature(CREATURE_PHYLACTERY_TRIGGER, 100.0f, true))
-                        {
-                            me->NearTeleportTo(trigger_phy->GetPositionX(), trigger_phy->GetPositionY(), trigger_phy->GetPositionZ(), me->GetOrientation());
-                            me->RemoveAllAuras();
-                            trigger_phy->CastSpell(trigger_phy, SPELL_PHYLACTERY_FILL);
-                        }
-                        if (Creature* phy = me->FindNearestCreature(CREATURE_PHYLACTERY, 100.0f, true))
-                        {
-                            phy->setFaction(16);
-                        }
-
-                        Talk(SAY_EVENT_02);
-
-                        summons.DespawnEntry(CREATURE_ICE_WALL);
-                        events.SetPhase(PHASE_2);
-                        phase = PHASE_2;            
-                        me->SetDisplayId(11686); // invis
-                        break;
-                    }
-                }
-            }
-            void UpdateAI(uint32 const diff)
-            {
-                if(!UpdateVictim())
+                if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
 
-                events.Update(diff);     
 
-                if (me->HasUnitState(UNIT_STATE_CASTING) && phase != 2)
-                    return;
-
-                if (!me->HasAura(SPELL_TOUCH_OF_THE_GRAVE))
-                    me->CastSpell(me, SPELL_TOUCH_OF_THE_GRAVE);
-
-                if(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_SUMMON_ICE_WALL:
-                        {
-                            me->SummonCreature(CREATURE_ICE_WALL, IceWallSpawn.GetPositionX(), IceWallSpawn.GetPositionY(), IceWallSpawn.GetPositionZ(), IceWallSpawn.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                        case EVENT_WRACK_SOUL:
+                            Talk(TALK_WRACK_SOUL);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST))
+                                me->CastSpell(target, SPELL_WRACK_SOUL, false);
                             break;
-                        }
-                        case EVENT_SPELL_WRACK_SOUL:
-                        {
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                me->CastSpell(target, SPELL_WRACK_SOUL);
+                        case EVENT_FRIGID_GRASP:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                if (target->IsAlive())
+                                    me->SummonCreature(NPC_FROSTGRASP_STALKER, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), target->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                            events.ScheduleEvent(EVENT_FRIGID_GRASP, urand(10000, 15000));
                             break;
-                        }
-                        case EVENT_FRIGID_SPAWN:
-                        {
-                            Position pos;
-
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                                target->GetPosition(&pos);
-
-                            if (Creature* frigid_spawn_Trigger = me->SummonCreature(CREATRUE_FRIGID_GRASP, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), pos.GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 4000))
-                            {
-                                frigid_spawn_Trigger->CastSpell(frigid_spawn_Trigger, SPELL_FRIGID_GRASP);
-
-                                frigid_spawn_Trigger->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                                frigid_spawn_Trigger->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                                frigid_spawn_Trigger->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                                frigid_spawn_Trigger->SetReactState(REACT_PASSIVE);
-
-                                frigid_spawn_Trigger->setFaction(16);
-                            }
-
-                            events.ScheduleEvent(EVENT_FRIGID_SPAWN, FRIGID_SPAWN, 0, PHASE_1);
+                        case EVENT_TOUCH_OF_THE_GRAVE:
+                            me->CastSpell(me, SPELL_TOUCH_OF_THE_GRAVE, false);
+                            events.ScheduleEvent(EVENT_TOUCH_OF_THE_GRAVE, urand(18000, 19000));
                             break;
-                        }
                         case EVENT_ICE_WRATH:
-                        {
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.0f, true))
-                            {
-                                me->CastSpell(target, SPELL_ICE_WRATH);
-                                
-                                if (target->HasAura(SPELL_ICE_WRATH_DAMAGE))
-                                {
-                                    AuraPtr aura = target->GetAura(SPELL_ICE_WRATH_DAMAGE);
-
-                                    if (aura)
-                                    {
-                                        aura->SetDuration(10 * IN_MILLISECONDS);
-                                    }
-                                }
-                            }
-
-                            events.ScheduleEvent(EVENT_ICE_WRATH, ICE_WRATH, 0, PHASE_1);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 70.0f, true))
+                                me->AddAura(SPELL_ICE_WRATH, target);
+                            events.ScheduleEvent(EVENT_ICE_WRATH, urand(11000, 16000));
                             break;
-                        }
-
                     }
                 }
+
                 DoMeleeAttackIfReady();
+                EnterEvadeIfOutOfCombatArea(diff, 53.0f);
             }
-        private:
-            bool soulphase;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new boss_chillheartAI(creature);
+            return new boss_instructor_chillheartAI(creature);
         }
 };
-class trigger_ice_wall_move : public CreatureScript
+
+// instructor chillhearts phylactery 58664
+class npc_instructor_chillhearts_phylactery : public CreatureScript
 {
-public:
-    trigger_ice_wall_move() : CreatureScript("trigger_ice_wall_move") { }
+    public:
+        npc_instructor_chillhearts_phylactery() : CreatureScript("npc_instructor_chillhearts_phylactery") { }
 
-    struct trigger_ice_wallAI : public ScriptedAI
-    {
-        trigger_ice_wallAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_instructor_chillhearts_phylacteryAI : public ScriptedAI
         {
-            Instance = creature->GetInstanceScript();
-        }
+            npc_instructor_chillhearts_phylacteryAI(Creature* creature) : ScriptedAI(creature) { }
 
-        InstanceScript* Instance;
+            uint32 timer;
+            EventMap nonCombatEvents;
 
-        void Reset()
-        {
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC);
-            me->GetMotionMaster()->Clear();
-            me->SetReactState(REACT_PASSIVE);
-       
-            me->SetFacingTo(ORIENTATION_BLOCKAGE);
-            me->CastSpell(me, SPELL_ICE_WALL_BOSS_FIGHT);
-            events.ScheduleEvent(50, 6000);
-        }
-        void UpdateAI(uint32 const diff)
-        {
-            events.Update(diff);
+            void IsSummonedBy(Unit* summoner) override { }
 
-            if (uint32 eventId = events.ExecuteEvent())
+            void Reset() override 
             {
-                switch (eventId)
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                me->RemoveAurasDueToSpell(SPELL_PHYLACTERY_FILLED);
+                // skip a bit of time for initialize our npc
+                nonCombatEvents.ScheduleEvent(EVENT_COSMETIC, 2 * IN_MILLISECONDS);
+            }
+
+            void InitializeAI() override 
+            { 
+                Reset();
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (me->GetHealth() <= damage)
+                    if (Creature* Chillheart = GetClosestCreatureWithEntry(me, NPC_INSTRUCTOR_CHILLHEART, 100.0f, true))
+                        Chillheart->AI()->DoAction(ACTION_CHILLHEART_DEATH);
+            }
+
+            void CosmeticEvent()
+            {
+                if (Creature* Chillheart = GetClosestCreatureWithEntry(me, NPC_INSTRUCTOR_CHILLHEART, 100.0f, true))
+                    Chillheart->CastSpell(me, SPELL_COSMETIC_SHADOW_CHANNEL, false);
+
+                std::list<Creature*> ScholomancePhanatics;
+                GetCreatureListWithEntryInGrid(ScholomancePhanatics, me, NPC_SCHOLOMANCE_ACOLYTE, 16.0f);
+                GetCreatureListWithEntryInGrid(ScholomancePhanatics, me, NPC_SCHOLOMANCE_NEOPHYTE, 16.0f);
+
+                for (auto&& itr : ScholomancePhanatics)
+                    if (itr->IsAlive())
+                        itr->CastSpell(me, SPELL_COSMETIC_SHADOW_CHANNEL, false);
+            }
+
+            void DoAction(int32 actionId) override 
+            {
+                if (actionId == ACTION_ACTIVATE)
                 {
-                    case 50:
-                        if (Creature* targethome = me->FindNearestCreature(CREATURE_ICE_WALL_DEST, 200.0f, true))
-                        me->GetMotionMaster()->MovePoint(1, targethome->GetPositionX(), targethome->GetPositionY(), targethome->GetPositionZ());  
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
 
-                        events.ScheduleEvent(51, 1000);
-                        break; 
-                   case 51:  
-                       me->GetMotionMaster()->MovePoint(1, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ());
-                           
-                        Creature* trigger_drop = me->SummonCreature(CREATURE_ICE_WALL_DROP, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), ORIENTATION_MOVE, TEMPSUMMON_TIMED_DESPAWN, 6000);
-                        trigger_drop->CastSpell(trigger_drop, SPELL_ICE_WALL_BOSS_FIGHT);
-                        
+                    // Cometic effects
+                    me->CastSpell(me, SPELL_FILL_PHYLACTERY, false);
+                    me->CastSpell(me, SPELL_PHYLACTERY_FILLED, false);
 
-                        me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                        me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                        events.ScheduleEvent(50, 6000);
-                       break;
+                    // Summon books
+                    me->CastSpell(me, SPELL_SUMMON_BOOKS, false);
                 }
             }
-        }
-    };
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_ice_wallAI(creature);
-    }
-};
+            void EnterCombat(Unit* /*who*/) override { }
 
-class trigger_ice_wall_blockage : public CreatureScript
-{
-public:
-    trigger_ice_wall_blockage() : CreatureScript("trigger_ice_wall_blockage") { }
-
-    struct trigger_ice_wall_blockageAI : public Scripted_NoMovementAI
-    {
-        trigger_ice_wall_blockageAI(Creature* creature) : Scripted_NoMovementAI(creature)
-        {
-            Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* Instance;
-
-        void Reset()
-        {
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-            me->CastSpell(me, SPELL_ICE_WALL_BOSS_BLOCKAGE);
-
-            if (AuraPtr aur = me->GetAura(SPELL_ICE_WALL_BOSS_BLOCKAGE))
-                aur->SetDuration(90000000);
-        }
-        void UpdateAI(uint32 const diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-        }
-    private:
-        EventMap events;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_ice_wall_blockageAI(creature);
-    }
-};
-
-class trigger_ice_wall_drop : public CreatureScript
-{
-public:
-    trigger_ice_wall_drop() : CreatureScript("trigger_ice_wall_blockage") { }
-
-    struct trigger_ice_wall_dropAI : public ScriptedAI
-    {
-        trigger_ice_wall_dropAI(Creature* creature) : ScriptedAI(creature)
-        {
-            Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* Instance;
-
-        void Reset()
-        {
-            me->CastSpell(me, SPELL_ICE_WALL_BOSS_FIGHT);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-            me->CastSpell(me, SPELL_ICE_WALL_BOSS_BLOCKAGE);
-
-            if (AuraPtr aur = me->GetAura(SPELL_ICE_WALL_BOSS_BLOCKAGE))
-                aur->SetDuration(90000000);
-        }
-        void UpdateAI(uint32 const diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-        }
-    private:
-        EventMap events;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_ice_wall_dropAI(creature);
-    }
-};
-class trigger_book : public CreatureScript
-{
-public:
-    trigger_book() : CreatureScript("trigger_book") { }
-
-    struct trigger_bookAI : public CreatureAI
-    {
-        trigger_bookAI(Creature* creature) : CreatureAI(creature)
-        {
-            Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* Instance;
-
-        void Reset()
-        {
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-            me->GetMotionMaster()->Clear();
-            me->setFaction(16);
-
-            switch (urand(0, 2))
+            void UpdateAI(uint32 diff) override 
             {
-            case 0:
-                events.ScheduleEvent(EVENT_FIRE, EVENT_FIRE_INTERVAL);
-                break;
-            case 1:
-                events.ScheduleEvent(EVENT_ARCANE, EVENT_ARCANE_INTERVAL);
-                break;
-            case 2:
-                events.ScheduleEvent(EVENT_SHADOW, EVENT_SHADOW_INTERVAL);
-                break;
-            }
+                nonCombatEvents.Update(diff);
 
-            me->SetSpeed(MOVE_RUN, 0.5f);
-            events.ScheduleEvent(EVENT_MOVEMENT_START, 1000);
-        }
-        void UpdateAI(uint32 const diff)
-        {
-            events.Update(diff);
-         
-            if (!me->isMoving() && !me->HasUnitState(UNIT_STATE_CASTING) && !me->HasAura(SPELL_ARCANE_BOMB_VISUAL_MOVING_RITUAL))
-                events.ScheduleEvent(EVENT_MOVEMENT_START, 7000);
-
-            if (me->GetSpeed(MOVE_RUN) > 0.5)
-                me->SetSpeed(MOVE_RUN, 0.5f);
-
-            me->SetDisableGravity(true);
-
-            if (uint32 eventId = events.ExecuteEvent())
-            {
-                switch (eventId)
+                while (uint32 eventId = nonCombatEvents.ExecuteEvent())
                 {
-                case EVENT_MOVEMENT_START:
-                    Position pos;
-
-                    me->GetRandomNearPosition(pos, 50.0f);//me->GetMotionMaster()->MoveRandom(50.0f);
-
-                    me->GetMotionMaster()->MovePoint(1, pos.GetPositionX(), pos.GetPositionY(), 124.243f);
-                    break;
-                case EVENT_ARCANE:
-                    me->CastSpell(me, SPELL_ARCANE_BOMB_CAST_HANDLER);
-
-                    me->RemoveAura(SPELL_ARCANE_BOMB_VISUAL_MOVING_RITUAL); 
-                      
-                    me->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-
-                    events.ScheduleEvent(EVENT_MOVEMENT_START, 4000);
-                    events.ScheduleEvent(EVENT_PRE_ARCANE, EVENT_ARCANE_INTERVAL);
-                    break;
-                case EVENT_PRE_ARCANE:
-                    me->SetUnitMovementFlags(MOVEMENTFLAG_ROOT);
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-
-                    me->SetDisplayId(CREATURE_THE_ARNARCHIST_ARCANIST_DISPLAY);
-
-                    me->CastSpell(me, SPELL_ARCANE_BOMB_VISUAL_MOVING_RITUAL);
-                    events.ScheduleEvent(EVENT_ARCANE, EVENT_PRE_ARCANE_INTERVAL);
-                    break;
-                case EVENT_FIRE:
-                    me->CastSpell(me, SPELL_FIRE_TOME);
-
-                    me->SetDisplayId(CREATURE_ANTONIAS_SELF_HELP_GUIDE_TO_STANDING_IN_FIRE_DISPLAY);
-                    break;
-                case EVENT_SHADOW:
-                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                        me->CastSpell(target, SPELL_SHADOW_BOLT_BOOK, true);
-
-                    me->SetDisplayId(CREATURE_WANDERS_COLOSSAL_BOOK_OF_SHADOW_PUPPETS_DISPLAY);
-     
-                    events.ScheduleEvent(EVENT_SHADOW, EVENT_SHADOW_INTERVAL);
+                    if (eventId == EVENT_COSMETIC)
+                        CosmeticEvent();
                     break;
                 }
             }
-        }
-    private:
-        EventMap events;
-    };
+        };
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_bookAI(creature);
-    }
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_instructor_chillhearts_phylacteryAI(creature);
+        }
 };
 
-class creature_phylactry : public CreatureScript
+// ice wall stalkers 68291
+class npc_ice_wall_stalker : public CreatureScript
 {
-public:
-    creature_phylactry() : CreatureScript("creature_phylactry") { }
+    public:
+        npc_ice_wall_stalker() : CreatureScript("npc_ice_wall_stalker") { }
 
-    struct creature_phylactryAI : public Scripted_NoMovementAI
-    {
-        creature_phylactryAI(Creature* creature) : Scripted_NoMovementAI(creature)
+        struct npc_ice_wall_stalkerAI : public ScriptedAI
         {
-            Instance = creature->GetInstanceScript();
-        }
+            npc_ice_wall_stalkerAI(Creature* creature) : ScriptedAI(creature), summons(me) { }
 
-        InstanceScript* Instance;
+            SummonList summons;
+            EventMap nonCombatEvents;
+            float PosY;
 
-        void Reset()
-        {
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-            me->SetReactState(REACT_PASSIVE);
-            me->setFaction(35);
-        }
-        void JustDied(Unit* killer)
-        {
-           // if (Creature* boss = me->FindNearestCreature(BOSS_CHILLHEART, 200.0f, true))
-           // {
-           // if (Creature* boss = Instance->instance->GetCreature(Instance->GetData64(BOSS_CHILLHEART)))
-           // {
-            if (TempSummon* tempo = me->ToTempSummon())
+            void IsSummonedBy(Unit* /*summoner*/) override { }
+
+            void Reset() override { }
+
+            void InitializeAI() override { }
+
+            void JustSummoned(Creature* summon) override
             {
-                if (Creature* boss = tempo->GetSummoner()->ToCreature())
+                summon->CastSpell(summon, SPELL_ICE_WALL_DUMMY_2, false);
+                summon->DespawnOrUnsummon(7000);
+            }
+
+            void DoAction(int32 actionId) override 
+            {
+                switch (actionId)
                 {
-                    me->Kill(boss);
-                    boss->DespawnOrUnsummon(6000);
-                    if (boss->GetAI())
-                        boss->GetAI()->DoAction(ACTION_DEATH);
+                    case ACTION_ACTIVATE:
+                        me->CastSpell(me, SPELL_ICE_WALL_DUMMY_1, false);
+                        CreateTriggerWall(me->GetGUID());
+                        PosY = me->GetPositionY() + 4.0f;
+                        nonCombatEvents.ScheduleEvent(EVENT_MOVE_WALL, 7000);
+                        break;
+                    case ACTION_DESTROY_WALL:
+                        nonCombatEvents.Reset();
+                        PosY = me->GetPositionY() + 4.0f;
+                        summons.DespawnAll();
+                        me->RemoveAllAreasTrigger();
+                        break;
+                    default:
+                        break;
                 }
             }
-        }
-        void UpdateAI(uint32 const diff)
-        {
-            if (!UpdateVictim())
-                return;
 
-            events.Update(diff);
-        }
-    private:
-        EventMap events;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new creature_phylactryAI(creature);
-    }
-};
-class trigger_arcane_bomb : public CreatureScript
-{
-public:
-    trigger_arcane_bomb() : CreatureScript("trigger_arcane_bomb") { }
-
-    struct trigger_arcane_bombAI : public Scripted_NoMovementAI
-    {
-        trigger_arcane_bombAI(Creature* creature) : Scripted_NoMovementAI(creature)
-        {
-            Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* Instance;
-
-        void Reset()
-        {
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-            me->GetMotionMaster()->Clear();
-            me->SetReactState(REACT_PASSIVE);
-            me->setFaction(16);
-
-            me->CastSpell(me, SPELL_ARCANE_BOMB_VISUAL_TURNING_RITUAL);
-
-            events.ScheduleEvent(EVENT_ARCANE, EVENT_ARCANE_BOMB);
-        }
-        void UpdateAI(uint32 const diff)
-        {
-            events.Update(diff);
-
-            if (uint32 eventId = events.ExecuteEvent())
+            void CreateTriggerWall(uint64 Main)
             {
-                switch (eventId)
+                uint32 mod = 1;
+
+                if (Creature* IceWall = ObjectAccessor::GetCreature(*me, Main))
                 {
-                case EVENT_ARCANE:
-                    me->CastSpell(me, SPELL_ARCANE_BOMB_EXPLOSION);
-                    me->DespawnOrUnsummon(2000);
+                    for (uint8 i = 0; i < 7; i++) // dist between walls ~ 70y [7*5*2~65]
+                    {
+                        me->SummonCreature(NPC_ICE_WALL_MOVE, IceWall->GetPositionX() + 5.0f*mod, IceWall->GetPositionY(), IceWall->GetPositionZ(), IceWall->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                        me->SummonCreature(NPC_ICE_WALL_MOVE, IceWall->GetPositionX() - 5.0f*mod, IceWall->GetPositionY(), IceWall->GetPositionZ(), IceWall->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                        mod++;
+                    }
+                }
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/) override { }
+
+            void EnterCombat(Unit* /*who*/) override { }
+
+            void UpdateAI(uint32 diff) override
+            {
+                nonCombatEvents.Update(diff);
+
+                while (uint32 eventId = nonCombatEvents.ExecuteEvent())
+                {
+                    if (eventId == EVENT_MOVE_WALL)
+                    {
+                        if (Creature* IceWallTrigger = me->SummonCreature(NPC_ICE_WALL_MOVE, me->GetPositionX(), me->GetPositionY() + PosY, me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN))
+                        {
+                            IceWallTrigger->CastSpell(IceWallTrigger, SPELL_ICE_WALL_DUMMY_1);
+                            CreateTriggerWall(IceWallTrigger->GetGUID());
+                        }
+                        PosY += 4.0f;
+                        nonCombatEvents.ScheduleEvent(EVENT_MOVE_WALL, 7000);
+                    }
                     break;
                 }
             }
-        }
-    private:
-        EventMap events;
-    };
+        };
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new trigger_arcane_bombAI(creature);
-    }
-};
-class bDropNonPlayers
-{
-public:
-    explicit bDropNonPlayers(WorldObject* _caster) : caster(_caster) { }
-    bool operator() (WorldObject* unit)
-    {
-        if (unit->GetTypeId() == TYPEID_PLAYER)
-            return false;
-
-        return true;
-    }
-private:
-    WorldObject* caster;
-};
-
-class spell_frigid_grasp : public SpellScriptLoader
-{
-public:
-    spell_frigid_grasp() : SpellScriptLoader("spell_frigid_grasp") { }
-
-    class spell_frigid_grasp_spellscript : public SpellScript
-    {
-        PrepareSpellScript(spell_frigid_grasp_spellscript);
-
-        void CheckTargetCount(std::list<WorldObject*>& targets)
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (targets.empty())
-                return;
-
-            if (!GetCaster())
-                return;
-
-            targets.remove_if(bDropNonPlayers(GetCaster()));
+            return new npc_ice_wall_stalkerAI(creature);
         }
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_frigid_grasp_spellscript::CheckTargetCount, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_frigid_grasp_spellscript();
-    }
 };
 
-class aura_wrack_soul : public SpellScriptLoader
+// Magical Tomes 59707, 66240, 59227, 59711
+class npc_magical_tomes : public CreatureScript
 {
-public:
-    aura_wrack_soul() : SpellScriptLoader("aura_wrack_soul") { }
+    public:
+        npc_magical_tomes() : CreatureScript("npc_magical_tomes") { }
 
-    class aura_wrack_soul_script : public AuraScript
-    {
-        PrepareAuraScript(aura_wrack_soul_script)
+        struct npc_magical_tomesAI : public ScriptedAI
+        {
+            npc_magical_tomesAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes mode)
+            EventMap events;
+
+            void IsSummonedBy(Unit* summoner) override 
+            { 
+                me->SetReactState(REACT_PASSIVE); 
+                DoZoneInCombat();
+                me->SetCanFly(true);
+                me->SetDisableGravity(true);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+
+                switch (me->GetEntry())
+                {
+                    case NPC_ANARCHIST_ARCANIST:
+                        events.ScheduleEvent(EVENT_ARCANE_BOMB, urand(100, 200));
+                        me->GetMotionMaster()->MovePoint(1, PhylateryPoint());
+                        break;
+                    case NPC_ANTONIDAS_GUIDE:
+                        me->CastSpell(me, SPELL_BURN, false);
+                        me->GetMotionMaster()->MovePoint(1, PhylateryPoint());
+                        break;
+                    case NPC_WANDERS_BOOK:
+                        events.ScheduleEvent(EVENT_SHADOW_BOLT, urand(100, 200));
+                        me->GetMotionMaster()->MovePoint(1, PhylateryPoint());
+                        break;
+                    case NPC_ARCANE_BOMB_CHASE:
+                        me->SummonCreature(NPC_ARCANE_BOMB, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() - 7.0f, TEMPSUMMON_MANUAL_DESPAWN);
+                        break;
+                }
+            }
+
+            void Reset() override
+            {
+                me->SetReactState(REACT_PASSIVE);
+            }
+
+            Position PhylateryPoint()
+            {
+                // Still wrong, just shutting up the analyzer
+                float x = me->GetPositionX(), y = me->GetPositionY();
+                Position pos;
+
+                if (Creature* Phylactery = GetClosestCreatureWithEntry(me, NPC_PHYLACTERY, 100.0f, true))
+                    GetPositionWithDistInOrientation(me, me->GetDistance2d(Phylactery), me->GetAngle(Phylactery), x, y);
+
+                pos = { x + frand(-6.0f, 6.0f), y + frand(-4.5f, 4.5f), me->GetPositionZ(), me->GetOrientation() };
+
+                return pos;
+            }
+
+            void InitializeAI() override { }
+
+            void JustSummoned(Creature* summon) override 
+            {
+                switch (summon->GetEntry())
+                {
+                    case NPC_ARCANE_BOMB:
+                        summon->CastSpell(summon, SPELL_ARCANE_BOMB_COSMETIC, false);
+                        break;
+                    case NPC_ARCANE_BOMB_CHASE:
+                        summon->SetSpeed(MOVE_RUN, 0.4f);
+                        summon->SetSpeed(MOVE_WALK, 0.4f);
+                        summon->SetSpeed(MOVE_FLIGHT, 0.4f);
+                        summon->CastSpell(summon, SPELL_ARCNE_BOMB_COSMETIC_SPHERE, false);
+                        summon->GetMotionMaster()->MovePoint(0, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() - 7.0f);
+                        break;
+                }
+            }
+
+            void DoAction(int32 /*actionId*/) override { }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override 
+            {
+                damage = 0;
+            }
+
+            void EnterCombat(Unit* /*who*/) override { }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE)
+                    return;
+
+                switch (pointId)
+                {
+                    case 0:
+                        me->CastSpell(me, SPELL_ARCANE_BOMG, false);
+
+                        if (Creature* arcane = GetClosestCreatureWithEntry(me, NPC_ARCANE_BOMB, 0.5f))
+                            arcane->DespawnOrUnsummon();
+
+                        me->DespawnOrUnsummon();
+                        break;
+                    case 1:
+                        me->SetHomePosition(*me);
+                        me->GetMotionMaster()->MoveRandom(18.0f);
+                        break;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override 
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_ARCANE_BOMB:
+                            me->SummonCreature(NPC_ARCANE_BOMB_CHASE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                            events.ScheduleEvent(EVENT_ARCANE_BOMB, urand(4000, 6000));
+                            break;
+                        case EVENT_SHADOW_BOLT:
+                            if (Unit* itr = SelectTarget(SELECT_TARGET_RANDOM, 0, 80.0f, true))
+                                me->CastSpell(itr, SPELL_SHADOW_BOLT, false);
+
+                            events.ScheduleEvent(EVENT_SHADOW_BOLT, urand(3000, 5000));
+                            break;
+                    }
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_magical_tomesAI(creature);
+        }
+};
+
+// Wrack soul 111631
+class spell_aura_wrack_soul : public SpellScriptLoader
+{
+    public:
+        spell_aura_wrack_soul() : SpellScriptLoader("spell_aura_wrack_soul") { }
+
+        class spell_aura_wrack_soul_script : public AuraScript
+        {
+            PrepareAuraScript(spell_aura_wrack_soul_script)
+
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* caster = GetCaster())
-                {
-                    if (Player* target = GetTarget()->ToPlayer())
-                    {
-                        target->CastSpell(target, SPELL_WRACK_SOUL_UNKNOWN); // dummy
-                    }
-                }
+                    if (caster->IsAlive())
+                        if (Player* target = GetTarget()->ToPlayer())
+                            caster->CastSpell(target, SPELL_WRACK_SOUL); // dummy
             }
 
-            void Register()
+            void Register() override
             {
-                OnEffectRemove += AuraEffectRemoveFn(aura_wrack_soul_script::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_aura_wrack_soul_script::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
-            return new aura_wrack_soul_script();
+            return new spell_aura_wrack_soul_script();
         }
-    };
-
-// Cosmetic, also responsible for book summoning
-class spell_wrack_soul : public SpellScriptLoader
-{
-public:
-    spell_wrack_soul() : SpellScriptLoader("spell_wrack_soul") { }
-
-    class spell_wrack_soul_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_wrack_soul_spell_script);
-
-        void CheckTargetCount(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            if (!GetCaster())
-                return;
-
-            targets.remove(GetCaster());
-        }
-        void HandleDummy(SpellEffIndex effIndex)
-        {
-            PreventHitDefaultEffect(effIndex);
-
-            if (GetExplTargetUnit() && GetCaster())
-            {
-                GetExplTargetUnit()->AddAura(111631, GetExplTargetUnit());
-            }
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_wrack_soul_spell_script::CheckTargetCount, EFFECT_0, TARGET_UNIT_SRC_AREA_PARTY);
-            OnEffectHitTarget += SpellEffectFn(spell_wrack_soul_spell_script::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_wrack_soul_spell_script();
-    }
 };
 
-class spell_burn_tome : public SpellScriptLoader
-{
-public:
-    spell_burn_tome() : SpellScriptLoader("spell_burn_tome") { }
-
-    class spell_burn_tome_aura_script : public AuraScript
-    {
-        PrepareAuraScript(spell_burn_tome_aura_script);
-
-        void DamagePeriodTimer(AuraEffectPtr aurEff)
-        {
-            if (GetCaster())
-            {
-                std::list<Player*> pl_list;
-
-                GetPlayerListInGrid(pl_list, GetCaster(), 5.0f /*radius*/);
-
-                for (auto itr : pl_list)
-                {
-                    if (!itr->HasAura(SPELL_FIRE_BURN))
-                        itr->CastSpell(itr, SPELL_FIRE_BURN);
-                }
-            }
-        }
-
-        void Register()
-        {
-            OnEffectUpdatePeriodic += AuraEffectUpdatePeriodicFn(spell_burn_tome_aura_script::DamagePeriodTimer, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_burn_tome_aura_script();
-    }
-};
-// Cosmetic, also responsible for book summoning
+// Summon Books 111669
 class spell_summon_books : public SpellScriptLoader
 {
-public:
-    spell_summon_books() : SpellScriptLoader("spell_summon_books") { }
+    public:
+        spell_summon_books() : SpellScriptLoader("spell_summon_books") { }
 
-    class spell_summon_books_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_summon_books_spell_script);
-
-        void CheckTargetCount(std::list<WorldObject*>& targets)
+        class spell_summon_books_SpellScript : public SpellScript
         {
-            if (targets.empty())
-                return;
+            PrepareSpellScript(spell_summon_books_SpellScript);
 
-            if (!GetCaster())
-                return;
-
-            if (InstanceScript* Instance = GetCaster()->GetInstanceScript())
+            void SelectTargets(std::list<WorldObject*>& targets)
             {
-                // include a hack for visuals.
-                if (GetCaster()->GetEntry() == BOSS_CHILLHEART || GetCaster()->GetTypeId() == TYPEID_PLAYER)
-                {
-                    targets.clear();
-
-                    std::list<Creature*> book_summon_triggers;
-
-                    GetCaster()->GetCreatureListWithEntryInGrid(book_summon_triggers, CREATURE_BOOK_TRIGGER_TARGET, 150.0f);
-
-                    if (book_summon_triggers.empty())
-                        return;
-
-                    for (auto itr : book_summon_triggers)
-                    {
-                        targets.push_back(itr);
-                    }
-                }
-                else
-                {
-                    targets.clear();
-
-                    // if (Creature* chillheart = GetCaster()->FindNearestCreature(BOSS_CHILLHEART, 100.0f, true))
-                    if (Creature* boss = Instance->instance->GetCreature(Instance->GetData64(DATA_BOSS_CHILLBORN)))
-                        targets.push_back(boss);
-                }
+                targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_BOOK_SPAWN_TARGET; });
             }
-        }
-        void HandleDummy(SpellEffIndex effIndex)
-        {
-            PreventHitDefaultEffect(effIndex);
-            
-            if (GetHitUnit() && GetCaster()) 
+
+            void HandleDummyEffect(SpellEffIndex effIndex)
             {
-                if (GetCaster()->GetEntry() == CREATURE_ACOLYTE || GetCaster()->GetEntry() == CREATURE_NEPHOLYTE)
-                    GetHitUnit()->Kill(GetCaster());
-
-                if (GetHitUnit()->GetEntry() != BOSS_CHILLHEART)
-                Creature* book = GetCaster()->SummonCreature(CREATURE_BOOK, GetHitUnit()->GetPositionX(), GetHitUnit()->GetPositionY(), GetHitUnit()->GetPositionZ(), GetHitUnit()->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                if (Unit* caster = GetCaster())
+                    if (Unit* target = GetHitUnit())
+                        caster->SummonCreature(GetAnyBook(), target->GetPositionX() + frand(-3.0f, 3.0f), target->GetPositionY() + frand(-2.0f, 2.0f), caster->GetPositionZ() + 7.0f, TEMPSUMMON_MANUAL_DESPAWN);
             }
-        }
 
-        void Register()
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_summon_books_spell_script::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_summon_books_spell_script::CheckTargetCount, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_summon_books_spell_script();
-    }
-};
-class spell_arcane_bomb : public SpellScriptLoader
-{
-public:
-    spell_arcane_bomb() : SpellScriptLoader("spell_arcane_bomb") { }
-
-    class spell_arcane_bomb_spell_script : public SpellScript
-    {
-        PrepareSpellScript(spell_arcane_bomb_spell_script);
-
-        void HandleForceCast(SpellEffIndex /*effIndex*/)
-        {
-            if (GetCaster())
+            // idea to get equal count of books each type
+            uint32 GetAnyBook()
             {
-                if (GetCaster()->HasAura(SPELL_ARCANE_BOMB_VISUAL_MOVING_RITUAL))
-                    GetCaster()->RemoveAura(SPELL_ARCANE_BOMB_VISUAL_MOVING_RITUAL);
+                std::map <uint32, uint32> Books;
 
-                GetCaster()->CastSpell(GetCaster(), SPELL_ARCANE_BOMB_SUMMON, true);
+                Books.insert(std::pair<uint32, uint32>(NPC_ANARCHIST_ARCANIST, GetCountExistedBook(NPC_ANARCHIST_ARCANIST)));
+                Books.insert(std::pair<uint32, uint32>(NPC_ANTONIDAS_GUIDE, GetCountExistedBook(NPC_ANTONIDAS_GUIDE)));
+                Books.insert(std::pair<uint32, uint32>(NPC_WANDERS_BOOK, GetCountExistedBook(NPC_WANDERS_BOOK)));
+
+                // doesn`t matter if 2 or 3 books have equal count of used books. It should select smth
+                uint8 selectedType = std::min(Books.begin()->second, Books.end()->second);
+                uint32 selectedBook = 0;
+
+                // map find doesn`t work, then use handle finder...
+                for (auto &&itr : Books)
+                    if (itr.second == selectedType)
+                        selectedBook = itr.first;
+
+                return selectedBook;
             }
-        }
 
-        void Register()
+            uint32 GetCountExistedBook(uint32 bookType)
+            {
+                std::list<Creature*> Books;
+                GetCreatureListWithEntryInGrid(Books, GetCaster(), bookType, 100.0f);
+
+                return Books.size();
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_summon_books_SpellScript::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+                OnEffectHitTarget += SpellEffectFn(spell_summon_books_SpellScript::HandleDummyEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
         {
-            OnEffectHitTarget += SpellEffectFn(spell_arcane_bomb_spell_script::HandleForceCast, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+            return new spell_summon_books_SpellScript();
         }
-
-    };
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_arcane_bomb_spell_script();
-    }
 };
 
-void AddSC_boss_chillheartAI()
+class sat_ice_wall : public SpellAreaTriggerScript
 {
-    // boss
-    new boss_chillheart();
-    new creature_phylactry();
-    // gob
-    new first_iron_door();
-    // spells
-    new spell_frigid_grasp();
-    new spell_wrack_soul();
-    new spell_burn_tome();
-    new spell_arcane_bomb();
+    public:
+        sat_ice_wall() : SpellAreaTriggerScript("sat_ice_wall") { }
+
+        class sat_ice_wall_IAreaTriggerOnce : public IAreaTriggerOnce
+        {
+            bool CheckTriggering(WorldObject* triggering) override
+            {
+                Player* player = triggering->ToPlayer();
+
+                if (!player)
+                    return false;
+
+                return player->IsAlive() && (m_target->GetExactDist2d(player) < m_range);
+            }
+
+            void OnTrigger(WorldObject* triggering) override
+            {
+                Unit* target = triggering->ToUnit();
+
+                if (target)
+                    target->CastSpell(target, SPELL_ICE_WALL_INSTA_KILL, true);
+            }
+        };
+
+        IAreaTrigger* GetInterface() const override
+        {
+            return new sat_ice_wall_IAreaTriggerOnce();
+        }
+};
+
+void AddSC_boss_instructor_chillheart()
+{
+    new boss_instructor_chillheart();
+    new npc_instructor_chillhearts_phylactery();
+    new npc_ice_wall_stalker();
+    new npc_magical_tomes();
+    new spell_aura_wrack_soul();
     new spell_summon_books();
-    new aura_wrack_soul();
-    // triggers
-    new trigger_ice_wall_drop();
-    new trigger_arcane_bomb();
-    new trigger_ice_wall_blockage();
-    new trigger_ice_wall_move();
-    new trigger_book();
+    new sat_ice_wall();
 }

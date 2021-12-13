@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,11 +17,14 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __TRINITY_VEHICLE_H
-#define __TRINITY_VEHICLE_H
+#ifndef SF_TRINITY_VEHICLE_H
+#define SF_TRINITY_VEHICLE_H
 
 #include "ObjectDefines.h"
+#include "Object.h"
 #include "VehicleDefines.h"
+#include "Unit.h"
+#include <list>
 
 struct VehicleEntry;
 class Unit;
@@ -29,12 +33,17 @@ typedef std::set<uint64> GuidSet;
 
 class Vehicle : public TransportBase
 {
+    protected:
+        friend bool Unit::CreateVehicleKit(uint32 id, uint32 creatureEntry, bool);
+        Vehicle(Unit* unit, VehicleEntry const* vehInfo, uint32 creatureEntry);
+
+        friend void Unit::RemoveVehicleKit(bool);
+
     public:
-        explicit Vehicle(Unit* unit, VehicleEntry const* vehInfo, uint32 creatureEntry);
-        virtual ~Vehicle();
+        ~Vehicle();
 
         void Install();
-        void Uninstall(bool dismount = false);
+        void Uninstall();
         void Reset(bool evading = false);
         void InstallAllAccessories(bool evading);
         void ApplyAllImmunities();
@@ -49,25 +58,21 @@ class Vehicle : public TransportBase
         int8 GetNextEmptySeat(int8 seatId, bool next) const;
         uint8 GetAvailableSeatCount() const;
 
-        bool CheckCustomCanEnter();
         bool AddPassenger(Unit* passenger, int8 seatId = -1);
-        void EjectPassenger(Unit* passenger, Unit* controller);
-        void RemovePassenger(Unit* passenger);
+        Vehicle* RemovePassenger(Unit* passenger, Position* exitPosition = NULL);
         void RelocatePassengers();
-        void RemoveAllPassengers(bool dismount = false);
-        void Dismiss();
-        void TeleportVehicle(float x, float y, float z, float ang);
+        void RemoveAllPassengers();
         bool IsVehicleInUse() const;
 
-        inline bool ArePassengersSpawnedByAI() const { return _passengersSpawnedByAI; }
-        void SetPassengersSpawnedByAI(bool passengersSpawnedByAI) { _passengersSpawnedByAI = passengersSpawnedByAI; }
+        void SetLastShootPos(Position const& pos) { _lastShootPos.Relocate(pos); }
+        Position const& GetLastShootPos() const { return _lastShootPos; }
 
-        inline bool CanBeCastedByPassengers() const { return _canBeCastedByPassengers; }
-        void SetCanBeCastedByPassengers(bool canBeCastedByPassengers) { _canBeCastedByPassengers = canBeCastedByPassengers; }
+        SeatMap Seats;                                      ///< The collection of all seats on the vehicle. Including vacant ones.
 
-        SeatMap Seats;
+        VehicleSeatEntry const* GetSeatForPassenger(Unit const* passenger) const;
 
-        VehicleSeatEntry const* GetSeatForPassenger(Unit const* passenger);
+    protected:
+        uint32 UsableSeatNum;                               ///< Number of seats that match VehicleSeatEntry::UsableByPlayer, used for proper display flags
 
     private:
         enum Status
@@ -81,22 +86,29 @@ class Vehicle : public TransportBase
         void InitMovementInfoForBase();
 
         /// This method transforms supplied transport offsets into global coordinates
-        void CalculatePassengerPosition(float& x, float& y, float& z, float& o);
+        void CalculatePassengerPosition(float& x, float& y, float& z, float* o /*= NULL*/) const
+        {
+            TransportBase::CalculatePassengerPosition(x, y, z, o,
+                GetBase()->GetPositionX(), GetBase()->GetPositionY(),
+                GetBase()->GetPositionZ(), GetBase()->GetOrientation());
+        }
 
         /// This method transforms supplied global coordinates into local offsets
-        void CalculatePassengerOffset(float& x, float& y, float& z, float& o);
+        void CalculatePassengerOffset(float& x, float& y, float& z, float* o /*= NULL*/) const
+        {
+            TransportBase::CalculatePassengerOffset(x, y, z, o,
+                GetBase()->GetPositionX(), GetBase()->GetPositionY(),
+                GetBase()->GetPositionZ(), GetBase()->GetOrientation());
+        }
 
-        Unit* _me;
-        VehicleEntry const* _vehicleInfo;
+    private:
+        Unit* _me;                                          ///< The underlying unit with the vehicle kit. Can be player or creature.
+        VehicleEntry const* _vehicleInfo;                   ///< DBC data for vehicle
         GuidSet vehiclePlayers;
-        uint32 _usableSeatNum;         // Number of seats that match VehicleSeatEntry::UsableByPlayer, used for proper display flags
-        uint32 _creatureEntry;         // Can be different than me->GetBase()->GetEntry() in case of players
-        Status _status;
 
-        bool _passengersSpawnedByAI;
-        bool _canBeCastedByPassengers;
-        typedef ACE_RW_Thread_Mutex LockType;
-
-        LockType i_lock;
+        uint32 _creatureEntry;                              ///< Can be different than the entry of _me in case of players
+        Status _status;                                     ///< Internal variable for sanity checks
+        Position _lastShootPos;
 };
+
 #endif

@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,16 +17,34 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "Battleground.h"
 #include "BattlegroundSA.h"
 #include "Language.h"
 #include "Player.h"
 #include "GameObject.h"
 #include "ObjectMgr.h"
 #include "WorldPacket.h"
+#include "WorldSession.h"
+#include "Chat.h"
+
+// Achievements
+enum
+{
+    WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_A = 6450,
+    WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_H = 6451,
+    WORLD_STATE_NOT_EVEN_A_SCRATCH_A      = 6449,
+    WORLD_STATE_NOT_EVEN_A_SCRATCH_H      = 6448,
+    WORLD_STATE_STORM_THE_BEACH_A         = 5668,
+    WORLD_STATE_STORM_THE_BEACH_H         = 5669,
+};
 
 BattlegroundSA::BattlegroundSA()
 {
+    // temp hack for ships
+    StartDelayTimes[BG_STARTING_EVENT_FIRST]  = BG_START_DELAY_1M;
+    StartDelayTimes[BG_STARTING_EVENT_SECOND] = BG_START_DELAY_30S;
+    StartDelayTimes[BG_STARTING_EVENT_THIRD]  = BG_START_DELAY_15S;
+    StartDelayTimes[BG_STARTING_EVENT_FOURTH] = BG_START_DELAY_NONE;
+
     StartMessageIds[BG_STARTING_EVENT_FIRST]  = LANG_BG_SA_START_TWO_MINUTES;
     StartMessageIds[BG_STARTING_EVENT_SECOND] = LANG_BG_SA_START_ONE_MINUTE;
     StartMessageIds[BG_STARTING_EVENT_THIRD]  = LANG_BG_SA_START_HALF_MINUTE;
@@ -34,6 +53,7 @@ BattlegroundSA::BattlegroundSA()
     BgCreatures.resize(BG_SA_MAXNPC + BG_SA_MAX_GY);
     TimerEnabled = false;
     UpdateWaitTimer = 0;
+    EndTimestamp = 0;
     SignaledRoundTwo = false;
     SignaledRoundTwoHalfMin = false;
     InitSecondRound = false;
@@ -44,9 +64,7 @@ BattlegroundSA::BattlegroundSA()
     memset(&GraveyardStatus, 0, sizeof(GraveyardStatus));
 }
 
-BattlegroundSA::~BattlegroundSA()
-{
-}
+BattlegroundSA::~BattlegroundSA() { }
 
 void BattlegroundSA::Reset()
 {
@@ -56,8 +74,8 @@ void BattlegroundSA::Reset()
         GateStatus[i] = BG_SA_GATE_OK;
     ShipsStarted = false;
     gateDestroyed = false;
-    _notEvenAScratch[TEAM_ALLIANCE] = true;
-    _notEvenAScratch[TEAM_HORDE] = true;
+    _allVehiclesAlive[TEAM_ALLIANCE] = true;
+    _allVehiclesAlive[TEAM_HORDE] = true;
     Status = BG_SA_WARMUP;
 }
 
@@ -68,9 +86,9 @@ bool BattlegroundSA::SetupBattleground()
 
 bool BattlegroundSA::ResetObjs()
 {
-    /*for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
+    for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
         if (Player* player = ObjectAccessor::FindPlayer(itr->first))
-            SendTransportsRemove(player);*/
+            SendTransportsRemove(player);
 
     uint32 atF = BG_SA_Factions[Attackers];
     uint32 defF = BG_SA_Factions[Attackers ? TEAM_ALLIANCE : TEAM_HORDE];
@@ -93,7 +111,7 @@ bool BattlegroundSA::ResetObjs()
             return false;
     }
 
-    /*for (uint8 i = BG_SA_BOAT_ONE; i <= BG_SA_BOAT_TWO; i++)
+    for (uint8 i = BG_SA_BOAT_ONE; i <= BG_SA_BOAT_TWO; i++)
     {
         uint32 boatid = 0;
         switch (i)
@@ -112,7 +130,7 @@ bool BattlegroundSA::ResetObjs()
           BG_SA_ObjSpawnlocs[i][2]+(Attackers ? -3.750f: 0),
           BG_SA_ObjSpawnlocs[i][3], 0, 0, 0, 0, RESPAWN_ONE_DAY))
             return false;
-    }*/
+    }
 
     for (uint8 i = BG_SA_SIGIL_1; i <= BG_SA_LEFT_FLAGPOLE; i++)
     {
@@ -124,10 +142,8 @@ bool BattlegroundSA::ResetObjs()
     }
 
     // MAD props for Kiper for discovering those values - 4 hours of his work.
-    //GetBGObject(BG_SA_BOAT_ONE)->UpdateRotationFields(1.0f, 0.0002f);
-    //GetBGObject(BG_SA_BOAT_TWO)->UpdateRotationFields(1.0f, 0.00001f);
-    //SpawnBGObject(BG_SA_BOAT_ONE, RESPAWN_IMMEDIATELY);
-    //SpawnBGObject(BG_SA_BOAT_TWO, RESPAWN_IMMEDIATELY);
+    GetBGObject(BG_SA_BOAT_ONE)->SetParentRotation({ 0.0f, 0.0f, 1.0f, 0.0002f });
+    GetBGObject(BG_SA_BOAT_TWO)->SetParentRotation({ 0.0f, 0.0f, 1.0f, 0.00001f });
 
     //Cannons and demolishers - NPCs are spawned
     //By capturing GYs.
@@ -135,9 +151,14 @@ bool BattlegroundSA::ResetObjs()
     {
         if (!AddCreature(BG_SA_NpcEntries[i], i, (Attackers == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE),
               BG_SA_NpcSpawnlocs[i][0], BG_SA_NpcSpawnlocs[i][1],
-              BG_SA_NpcSpawnlocs[i][2], BG_SA_NpcSpawnlocs[i][3], 600))
+              BG_SA_NpcSpawnlocs[i][2], BG_SA_NpcSpawnlocs[i][3], i >= BG_SA_GUN_1 && i <= BG_SA_GUN_10 ? 1 : 600))
         return false;
     }
+
+    // Hack to make cannons not miss because for some reason SPELL_ATTR3_IGNORE_HIT_RESULT is handled after miss chance handling for SPELL_DAMAGE_CLASS_MAGIC spells
+    for (uint32 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; ++i)
+        if (Creature* cannon = GetBGCreature(i))
+            cannon->m_modSpellHitChance = 1000.0f;
 
     OverrideGunFaction();
     DemolisherStartState(true);
@@ -145,10 +166,10 @@ bool BattlegroundSA::ResetObjs()
     for (uint8 i = 0; i <= BG_SA_PORTAL_DEFFENDER_RED; i++)
     {
         SpawnBGObject(i, RESPAWN_IMMEDIATELY);
-        GetBGObject(i)->SetUInt32Value(GAMEOBJECT_FACTION, defF);
+        GetBGObject(i)->SetFaction(defF);
     }
 
-    GetBGObject(BG_SA_TITAN_RELIC)->SetUInt32Value(GAMEOBJECT_FACTION, atF);
+    GetBGObject(BG_SA_TITAN_RELIC)->SetFaction(atF);
     GetBGObject(BG_SA_TITAN_RELIC)->Refresh();
 
     for (uint8 i = 0; i <= 5; i++)
@@ -156,7 +177,6 @@ bool BattlegroundSA::ResetObjs()
 
     TotalTime = 0;
     ShipsStarted = false;
-    gateDestroyed = false;
 
     //Graveyards
     for (uint8 i = 0; i < BG_SA_MAX_GY; i++)
@@ -165,7 +185,10 @@ bool BattlegroundSA::ResetObjs()
         sg = sWorldSafeLocsStore.LookupEntry(BG_SA_GYEntries[i]);
 
         if (!sg)
+        {
+            TC_LOG_ERROR("bg.battleground", "SOTA: Can't find GY entry %u", BG_SA_GYEntries[i]);
             return false;
+        }
 
         if (i == BG_SA_BEACH_GY)
         {
@@ -175,7 +198,8 @@ bool BattlegroundSA::ResetObjs()
         else
         {
             GraveyardStatus[i] = ((Attackers == TEAM_HORDE)? TEAM_ALLIANCE : TEAM_HORDE);
-            AddSpiritGuide(i + BG_SA_MAXNPC, sg->x, sg->y, sg->z, BG_SA_GYOrientation[i], ((Attackers == TEAM_HORDE)? ALLIANCE : HORDE));
+            if (!AddSpiritGuide(i + BG_SA_MAXNPC, sg->x, sg->y, sg->z, BG_SA_GYOrientation[i], ((Attackers == TEAM_HORDE)? ALLIANCE : HORDE)))
+                TC_LOG_ERROR("bg.battleground", "SOTA: couldn't spawn GY: %u", i);
         }
     }
 
@@ -186,19 +210,10 @@ bool BattlegroundSA::ResetObjs()
             BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1],
             BG_SA_ObjSpawnlocs[i][2], BG_SA_ObjSpawnlocs[i][3],
             0, 0, 0, 0, RESPAWN_ONE_DAY);
-        GetBGObject(i)->SetUInt32Value(GAMEOBJECT_FACTION, atF);
+        GetBGObject(i)->SetFaction(atF);
     }
 
-    for (uint8 i = BG_SA_BOMB; i < BG_SA_MAXOBJ; i++)
-    {
-        AddObject(i, BG_SA_ObjEntries[BG_SA_BOMB],
-            BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1],
-            BG_SA_ObjSpawnlocs[i][2], BG_SA_ObjSpawnlocs[i][3],
-            0, 0, 0, 0, RESPAWN_ONE_DAY);
-        GetBGObject(i)->SetUInt32Value(GAMEOBJECT_FACTION, atF);
-        if (i > 46)
-            GetBGObject(i)->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-    }
+    UpdateBombSpawns();
 
     //Player may enter BEFORE we set up BG - lets update his worldstates anyway...
     UpdateWorldState(BG_SA_RIGHT_GY_HORDE, GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0);
@@ -243,10 +258,10 @@ bool BattlegroundSA::ResetObjs()
     UpdateWorldState(BG_SA_YELLOW_GATEWS, 1);
     UpdateWorldState(BG_SA_ANCIENT_GATEWS, 1);
 
-    /*for (int i = BG_SA_BOAT_ONE; i <= BG_SA_BOAT_TWO; i++)
+    for (int i = BG_SA_BOAT_ONE; i <= BG_SA_BOAT_TWO; i++)
         for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
             if (Player* player = ObjectAccessor::FindPlayer(itr->first))
-                SendTransportInit(player);*/
+                SendTransportInit(player);
 
     // set status manually so preparation is cast correctly in 2nd round too
     SetStatus(STATUS_WAIT_JOIN);
@@ -260,23 +275,23 @@ void BattlegroundSA::StartShips()
     if (ShipsStarted)
         return;
 
-    /*DoorOpen(BG_SA_BOAT_ONE);
-    DoorOpen(BG_SA_BOAT_TWO);
-
-    for (int i = BG_SA_BOAT_ONE; i <= BG_SA_BOAT_TWO; i++)
-    {
-        for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
-        {
-            if (Player* p = ObjectAccessor::FindPlayer(itr->first))
-            {
-                UpdateData data(GetMapId());
-                WorldPacket pkt;
-                GetBGObject(i)->BuildValuesUpdateBlockForPlayer(&data, p);
-                if (data.BuildPacket(&pkt))
-                    p->GetSession()->SendPacket(&pkt);
-            }
-        }
-    }*/
+    //DoorOpen(BG_SA_BOAT_ONE);
+    //DoorOpen(BG_SA_BOAT_TWO);
+    //
+    //for (int i = BG_SA_BOAT_ONE; i <= BG_SA_BOAT_TWO; i++)
+    //{
+    //    for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
+    //    {
+    //        if (Player* p = ObjectAccessor::FindPlayer(itr->first))
+    //        {
+    //            UpdateData data(p->GetMapId());
+    //            WorldPacket pkt;
+    //            GetBGObject(i)->BuildValuesUpdateBlockForPlayer(&data, p);
+    //            data.BuildPacket(&pkt);
+    //            p->SendDirectMessage(&pkt);
+    //        }
+    //    }
+    //}
     ShipsStarted = true;
 }
 
@@ -301,7 +316,7 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
     }
     TotalTime += diff;
 
-    if (Status == BG_SA_WARMUP )
+    if (Status == BG_SA_WARMUP)
     {
         EndRoundTimer = BG_SA_ROUNDLENGTH;
         if (TotalTime >= BG_SA_WARMUPLENGTH)
@@ -310,10 +325,28 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
             ToggleTimer();
             DemolisherStartState(false);
             Status = BG_SA_ROUND_ONE;
-            StartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, (Attackers == TEAM_ALLIANCE)? 23748 : 21702);
+            StartCriteria(CRITERIA_START_TYPE_EVENT, (Attackers == TEAM_ALLIANCE) ? 23748 : 21702);
+
+            EndTimestamp = time(nullptr) + BG_SA_ROUNDLENGTH / IN_MILLISECONDS;
+            UpdateWorldState(BG_SA_ENABLE_TIMER, 1);
+            UpdateWorldState(BG_SA_TIMER, EndTimestamp);
         }
         if (TotalTime >= BG_SA_BOAT_START)
             StartShips();
+        if (TotalTime >= 59000) // temp hack for ships
+        {
+            for (auto&& itr : GetPlayers())
+            {
+                if (Player* player = ObjectAccessor::FindPlayer(itr.first))
+                    if (player->GetBGTeamId() == Attackers && (player->IsInWater() || player->IsUnderWater() || player->GetTransport()))
+                    {
+                        if (player->GetPositionY() < 0) // left
+                            player->TeleportTo(607, 1598.571f, -106.671f, 8.873f, 4.1359f, 0);
+                        else // right
+                            player->TeleportTo(607, 1607.596f, 49.766f, 7.5795f, 2.31865f, 0);
+                    }
+            }
+        }
         return;
     }
     else if (Status == BG_SA_SECOND_WARMUP)
@@ -329,8 +362,14 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
             TotalTime = 0;
             ToggleTimer();
             DemolisherStartState(false);
+            gateDestroyed = false;
             Status = BG_SA_ROUND_TWO;
-            StartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, (Attackers == TEAM_ALLIANCE) ? 23748 : 21702);
+
+            EndTimestamp = time(nullptr) + EndRoundTimer / IN_MILLISECONDS;
+            UpdateWorldState(BG_SA_ENABLE_TIMER, 1);
+            UpdateWorldState(BG_SA_TIMER, EndTimestamp);
+
+            StartCriteria(CRITERIA_START_TYPE_EVENT, (Attackers == TEAM_ALLIANCE) ? 23748 : 21702);
             // status was set to STATUS_WAIT_JOIN manually for Preparation, set it back now
             SetStatus(STATUS_IN_PROGRESS);
             for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
@@ -346,6 +385,20 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
             }
         }
         StartShips();
+        if (TotalTime >= 53000) // temp hack for ships
+        {
+            for (auto&& itr : GetPlayers())
+            {
+                if (Player* player = ObjectAccessor::FindPlayer(itr.first))
+                    if (player->GetBGTeamId() == Attackers && (player->IsInWater() || player->IsUnderWater() || player->GetTransport()))
+                    {
+                        if (player->GetPositionY() < 0) // left
+                            player->TeleportTo(607, 1598.571f, -106.671f, 8.873f, 4.1359f, 0);
+                        else // right
+                            player->TeleportTo(607, 1607.596f, 49.766f, 7.5795f, 2.31865f, 0);
+                    }
+            }
+        }
         return;
     }
     else if (GetStatus() == STATUS_IN_PROGRESS)
@@ -354,14 +407,18 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
         {
             if (TotalTime >= BG_SA_ROUNDLENGTH)
             {
-                for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
-                    if (Player* player = ObjectAccessor::FindPlayer(itr->first))
-                        player->CastSpell(player, 52459, true);
+                // Defense of the Ancients (1757 / 2200)
+                if (!gateDestroyed)
+                    GetBgMap()->SetWorldState(GetDefenerTeam() == TEAM_ALLIANCE ? WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_A : WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_H, 1);
+
+                CastSpellOnTeam(SPELL_END_OF_ROUND, ALLIANCE);
+                CastSpellOnTeam(SPELL_END_OF_ROUND, HORDE);
 
                 RoundScores[0].winner = Attackers;
                 RoundScores[0].time = BG_SA_ROUNDLENGTH;
                 TotalTime = 0;
                 Status = BG_SA_SECOND_WARMUP;
+                EndTimestamp = 0;
                 Attackers = (Attackers == TEAM_ALLIANCE) ? TEAM_HORDE : TEAM_ALLIANCE;
                 UpdateWaitTimer = 5000;
                 SignaledRoundTwo = false;
@@ -376,12 +433,20 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
         {
             if (TotalTime >= EndRoundTimer)
             {
-                for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
-                    if (Player* player = ObjectAccessor::FindPlayer(itr->first))
-                        player->CastSpell(player, 52459, true);
+                // Defense of the Ancients (1757 / 2200)
+                if (!gateDestroyed)
+                    GetBgMap()->SetWorldState(GetDefenerTeam() == TEAM_ALLIANCE ? WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_A : WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_H, 1);
+
+                CastSpellOnTeam(SPELL_END_OF_ROUND, ALLIANCE);
+                CastSpellOnTeam(SPELL_END_OF_ROUND, HORDE);
+
+                EndTimestamp = 0;
+                UpdateWorldState(BG_SA_WorldStates::BG_SA_ENABLE_TIMER, 0);
+                UpdateWorldState(BG_SA_WorldStates::BG_SA_TIMER, EndTimestamp);
 
                 RoundScores[1].time = BG_SA_ROUNDLENGTH;
                 RoundScores[1].winner = (Attackers == TEAM_ALLIANCE) ? TEAM_HORDE : TEAM_ALLIANCE;
+
                 if (RoundScores[0].time == RoundScores[1].time)
                     EndBattleground(0);
                 else if (RoundScores[0].time < RoundScores[1].time)
@@ -393,91 +458,125 @@ void BattlegroundSA::PostUpdateImpl(uint32 diff)
         }
         if (Status == BG_SA_ROUND_ONE || Status == BG_SA_ROUND_TWO)
         {
-            SendTime();
+            timeUpdateTimer.Update(diff);
+            if (timeUpdateTimer.Passed())
+            {
+                timeUpdateTimer.Reset(IN_MILLISECONDS);
+                SendTime();
+            }
             UpdateDemolisherSpawns();
         }
     }
 }
 
-void BattlegroundSA::StartingEventCloseDoors()
+void BattlegroundSA::StartingEventCloseDoors() { }
+
+void BattlegroundSA::StartingEventOpenDoors() { }
+
+void BattlegroundSA::FillInitialWorldStates(WorldStateBuilder& builder)
 {
-}
+    uint32 ally_attacks = uint32(Attackers == TEAM_ALLIANCE ? 1 : 0);
+    uint32 horde_attacks = uint32(Attackers == TEAM_HORDE ? 1 : 0);
 
-void BattlegroundSA::StartingEventOpenDoors()
-{
-}
+    builder.AppendState(BG_SA_ANCIENT_GATEWS, GateStatus[BG_SA_ANCIENT_GATE]);
+    builder.AppendState(BG_SA_YELLOW_GATEWS, GateStatus[BG_SA_YELLOW_GATE]);
+    builder.AppendState(BG_SA_GREEN_GATEWS, GateStatus[BG_SA_GREEN_GATE]);
+    builder.AppendState(BG_SA_BLUE_GATEWS, GateStatus[BG_SA_BLUE_GATE]);
+    builder.AppendState(BG_SA_RED_GATEWS, GateStatus[BG_SA_RED_GATE]);
+    builder.AppendState(BG_SA_PURPLE_GATEWS, GateStatus[BG_SA_PURPLE_GATE]);
 
-void BattlegroundSA::FillInitialWorldStates(WorldPacket& data)
-{
-  uint32 ally_attacks = uint32(Attackers == TEAM_ALLIANCE ? 1 : 0);
-  uint32 horde_attacks = uint32(Attackers == TEAM_HORDE ? 1 : 0);
+    builder.AppendState(BG_SA_BONUS_TIMER, 0);
 
-  Player::AppendWorldState(data, uint32(BG_SA_ANCIENT_GATEWS), uint32(GateStatus[BG_SA_ANCIENT_GATE]));
-  Player::AppendWorldState(data, uint32(BG_SA_YELLOW_GATEWS), uint32(GateStatus[BG_SA_YELLOW_GATE]));
-  Player::AppendWorldState(data, uint32(BG_SA_GREEN_GATEWS), uint32(GateStatus[BG_SA_GREEN_GATE]));
-  Player::AppendWorldState(data, uint32(BG_SA_BLUE_GATEWS), uint32(GateStatus[BG_SA_BLUE_GATE]));
-  Player::AppendWorldState(data, uint32(BG_SA_RED_GATEWS), uint32(GateStatus[BG_SA_RED_GATE]));
-  Player::AppendWorldState(data, uint32(BG_SA_PURPLE_GATEWS), uint32(GateStatus[BG_SA_PURPLE_GATE]));
+    builder.AppendState(BG_SA_HORDE_ATTACKS, horde_attacks);
+    builder.AppendState(BG_SA_ALLY_ATTACKS, ally_attacks);
 
-  //Player::AppendWorldState(data, uint32(BG_SA_BONUS_TIMER), uint32(0));
+    //Time will be sent on first update...
+    /*
+    builder.AppendState(BG_SA_ENABLE_TIMER, TimerEnabled ? 1 : 0);
+    builder.AppendState(BG_SA_TIMER_MINS, 0);
+    builder.AppendState(BG_SA_TIMER_SEC_TENS, 0);
+    builder.AppendState(BG_SA_TIMER_SEC_DECS, 0);
+    */
 
-  Player::AppendWorldState(data, uint32(BG_SA_HORDE_ATTACKS), horde_attacks);
-  Player::AppendWorldState(data, uint32(BG_SA_ALLY_ATTACKS), ally_attacks);
+    builder.AppendState(BG_SA_RIGHT_GY_HORDE, GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0);
+    builder.AppendState(BG_SA_LEFT_GY_HORDE, GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0);
+    builder.AppendState(BG_SA_CENTER_GY_HORDE, GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0);
 
-  //Time will be sent on first update...
-  /*Player::AppendWorldState(data, uint32(BG_SA_ENABLE_TIMER), ((TimerEnabled) ? uint32(1) : uint32(0)));
-  Player::AppendWorldState(data, uint32(BG_SA_TIMER_MINS), uint32(0));
-  Player::AppendWorldState(data, uint32(BG_SA_TIMER_SEC_TENS), uint32(0));
-  Player::AppendWorldState(data, uint32(BG_SA_TIMER_SEC_DECS), uint32(0));*/
+    builder.AppendState(BG_SA_RIGHT_GY_ALLIANCE, GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == TEAM_ALLIANCE ? 1 : 0);
+    builder.AppendState(BG_SA_LEFT_GY_ALLIANCE, GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] == TEAM_ALLIANCE ? 1 : 0);
+    builder.AppendState(BG_SA_CENTER_GY_ALLIANCE, GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] == TEAM_ALLIANCE ? 1 : 0);
 
-  Player::AppendWorldState(data, uint32(BG_SA_RIGHT_GY_HORDE), uint32(GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0));
-  Player::AppendWorldState(data, uint32(BG_SA_LEFT_GY_HORDE), uint32(GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0));
-  Player::AppendWorldState(data, uint32(BG_SA_CENTER_GY_HORDE), uint32(GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] == TEAM_HORDE ? 1 : 0));
+    builder.AppendState(BG_SA_HORDE_DEFENCE_TOKEN, ally_attacks);
+    builder.AppendState(BG_SA_ALLIANCE_DEFENCE_TOKEN, horde_attacks);
 
-  Player::AppendWorldState(data, uint32(BG_SA_RIGHT_GY_ALLIANCE), uint32(GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == TEAM_ALLIANCE ? 1 : 0));
-  Player::AppendWorldState(data, uint32(BG_SA_LEFT_GY_ALLIANCE), uint32(GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] == TEAM_ALLIANCE ? 1 : 0));
-  Player::AppendWorldState(data, uint32(BG_SA_CENTER_GY_ALLIANCE), uint32(GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] == TEAM_ALLIANCE ? 1 : 0));
+    builder.AppendState(BG_SA_LEFT_ATT_TOKEN_HRD, horde_attacks);
+    builder.AppendState(BG_SA_RIGHT_ATT_TOKEN_HRD, horde_attacks);
+    builder.AppendState(BG_SA_RIGHT_ATT_TOKEN_ALL, ally_attacks);
+    builder.AppendState(BG_SA_LEFT_ATT_TOKEN_ALL, ally_attacks);
 
-  Player::AppendWorldState(data, uint32(BG_SA_HORDE_DEFENCE_TOKEN), ally_attacks);
-  Player::AppendWorldState(data, uint32(BG_SA_ALLIANCE_DEFENCE_TOKEN), horde_attacks);
-
-  Player::AppendWorldState(data, uint32(BG_SA_LEFT_ATT_TOKEN_HRD), horde_attacks);
-  Player::AppendWorldState(data, uint32(BG_SA_RIGHT_ATT_TOKEN_HRD), horde_attacks);
-  Player::AppendWorldState(data, uint32(BG_SA_RIGHT_ATT_TOKEN_ALL), ally_attacks);
-  Player::AppendWorldState(data, uint32(BG_SA_LEFT_ATT_TOKEN_ALL), ally_attacks);
+    if (EndTimestamp)
+    {
+        builder.AppendState(BG_SA_ENABLE_TIMER, 1);
+        builder.AppendState(BG_SA_TIMER, EndTimestamp);
+    }
 }
 
 void BattlegroundSA::AddPlayer(Player* player)
 {
     Battleground::AddPlayer(player);
     //create score and add it to map, default values are set in constructor
-    BattlegroundSAScore* sc = new BattlegroundSAScore;
+    BattlegroundSAScore* sc = new BattlegroundSAScore{};
+    sc->Team = player->GetBGTeam();
 
-    if (!ShipsStarted)
+    if (player->GetBGTeamId() == Attackers)
     {
-        if (player->GetTeamId() == Attackers)
+        if (TotalTime <= 5000 || GetPlayers().size() <= 2)
         {
             player->CastSpell(player, 12438, true);//Without this player falls before boat loads...
 
-            player->TeleportTo(607, 1828.809f, -28.069f, 57.951f, 3.11f, 0);
+            if (urand(0, 1)) // left ship
+                player->TeleportTo(607, 2682.936f, -830.368f, 15.0f, 2.895f, 0);
+            else  // right ship
+                player->TeleportTo(607, 2577.003f, 980.261f, 15.0f, 0.807f, 0);
+        }
+        else if (!ShipsStarted) // ship not arrived yet, but already deported
+        {
+            player->CastSpell(player, 12438, true);//Without this player falls before boat loads...
 
+            // teleport to nearest mate
+            for (auto&& itr : GetPlayers())
+            {
+                if (Player* mate = ObjectAccessor::FindPlayer(itr.first))
+                    if (mate->GetBGTeamId() == Attackers)
+                        if (player != mate)
+                        {
+                            player->TeleportTo(607, mate->GetPositionX(), mate->GetPositionY(), mate->GetPositionZ() + 5.0f, 0.0f, 0);
+                            continue;
+                        }
+            }
         }
         else
-            player->TeleportTo(607, 1209.7f, -65.16f, 70.1f, 0.0f, 0);
+        {
+            if (urand(0, 1))
+                player->TeleportTo(607, 1598.571f, -106.671f, 8.873f, 4.1359f, 0);
+            else
+                player->TeleportTo(607, 1607.596f, 49.766f, 7.5795f, 2.31865f, 0);
+        }
     }
     else
-    {
-        if (player->GetTeamId() == Attackers)
-            player->TeleportTo(607, 1600.381f, -106.263f, 8.8745f, 3.78f, 0);
-        else
-            player->TeleportTo(607, 1209.7f, -65.16f, 70.1f, 0.0f, 0);
-    }
-    //SendTransportInit(player);
+        player->TeleportTo(607, 1209.7f, -65.16f, 70.1f, 0.0f, 0);
+
+    SendTransportInit(player);
     PlayerScores[player->GetGUID()] = sc;
 }
 
-void BattlegroundSA::RemovePlayer(Player* /*player*/, uint64 /*guid*/, uint32 /*team*/)
+void BattlegroundSA::RemovePlayer(Player* player, uint64 guid, uint32 team)
 {
+    if (player)
+    {
+        player->RemoveAura(52418);
+    }
+    Battleground::RemovePlayer(player, guid, team);
 }
 
 void BattlegroundSA::HandleAreaTrigger(Player* /*Source*/, uint32 /*Trigger*/)
@@ -498,7 +597,7 @@ void BattlegroundSA::UpdatePlayerScore(Player* Source, uint32 type, uint32 value
     else if (type == SCORE_DESTROYED_WALL)
         ((BattlegroundSAScore*)itr->second)->gates_destroyed += value;
     else
-        Battleground::UpdatePlayerScore(Source, NULL, type, value, doAddHonor);
+        Battleground::UpdatePlayerScore(Source, type, value, doAddHonor);
 }
 
 void BattlegroundSA::TeleportPlayers()
@@ -507,15 +606,28 @@ void BattlegroundSA::TeleportPlayers()
     {
         if (Player* player = ObjectAccessor::FindPlayer(itr->first))
         {
-            player->RemoveAurasDueToSpell(52459);
+            player->StopMoving();
+            player->GetMotionMaster()->Clear();
+            player->GetMotionMaster()->MoveIdle();
 
             // should remove spirit of redemption
             if (player->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION))
                 player->RemoveAurasByType(SPELL_AURA_MOD_SHAPESHIFT);
 
-            player->RemoveAurasByType(SPELL_AURA_MOD_FEAR);
+            // remove all negative auras before start new round
+            for (auto itr = player->GetAppliedAuras().begin(); itr != player->GetAppliedAuras().end();)
+            {
+                AuraApplication const* aurApp = itr->second;
+                ++itr;
+                Aura* aura = aurApp->GetBase();
+                if (!aurApp->IsPositive() && aura->GetDuration() <= 30 * IN_MILLISECONDS && !aura->IsPermanent())
+                {
+                    player->RemoveAura(aura);
+                    itr = player->GetAppliedAuras().begin();
+                }
+            }
 
-            if (!player->isAlive())
+            if (!player->IsAlive())
             {
                 player->ResurrectPlayer(1.0f);
                 player->SpawnCorpseBones();
@@ -524,16 +636,43 @@ void BattlegroundSA::TeleportPlayers()
             player->ResetAllPowers();
             player->CombatStopWithPets(true);
 
-            for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
-                if (Player* p = ObjectAccessor::FindPlayer(itr->first))
-                    p->CastSpell(p, SPELL_PREPARATION, true);
+            player->RemoveAllControlled();
+            player->CastSpell(player, SPELL_PREPARATION, true);
 
-            if (player->GetTeamId() == Attackers)
+            if (player->GetBGTeamId() == Attackers)
             {
-                player->CastSpell(player, 12438, true);     //Without this player falls before boat loads...
+                if (TotalTime <= 5000 || GetPlayers().size() <= 2)
+                {
+                    player->CastSpell(player, 12438, true);//Without this player falls before boat loads...
 
-                player->TeleportTo(607, 1828.809f, -28.069f, 57.951f, 3.11f, 0);
+                    if (urand(0, 1)) // left ship
+                        player->TeleportTo(607, 2682.936f, -830.368f, 15.0f, 2.895f, 0);
+                    else  // right ship
+                        player->TeleportTo(607, 2577.003f, 980.261f, 15.0f, 0.807f, 0);
+                }
+                else if (!ShipsStarted) // ship not arrived yet, but already deported
+                {
+                    player->CastSpell(player, 12438, true);//Without this player falls before boat loads...
 
+                    // teleport to nearest mate
+                    for (auto&& itr : GetPlayers())
+                    {
+                        if (Player* mate = ObjectAccessor::FindPlayer(itr.first))
+                            if (mate->GetBGTeamId() == Attackers)
+                                if (player != mate)
+                                {
+                                    player->TeleportTo(607, mate->GetPositionX(), mate->GetPositionY(), mate->GetPositionZ() + 5.0f, 0.0f, 0);
+                                    continue;
+                                }
+                    }
+                }
+                else
+                {
+                    if (urand(0, 1))
+                        player->TeleportTo(607, 1598.571f, -106.671f, 8.873f, 4.1359f, 0);
+                    else
+                        player->TeleportTo(607, 1607.596f, 49.766f, 7.5795f, 2.31865f, 0);
+                }
             }
             else
                 player->TeleportTo(607, 1209.7f, -65.16f, 70.1f, 0.0f, 0);
@@ -553,16 +692,18 @@ void BattlegroundSA::EventPlayerDamagedGO(Player* /*player*/, GameObject* go, ui
         uint32 uws = getWorldStateFromGateId(i);
         if (uws)
             UpdateWorldState(uws, GateStatus[i]);
-
-        SendWarningToAll(LANG_BG_SA_IS_UNDER_ATTACK, go->GetNameForLocaleIdx(sObjectMgr->GetDBCLocaleIndex()));
     }
-    else if (eventType == go->GetGOInfo()->building.destroyedEvent)
+
+    if (eventType == go->GetGOInfo()->building.destroyedEvent)
     {
         if (go->GetGOInfo()->building.destroyedEvent == BG_SA_EVENT_ANCIENT_GATE_DESTROYED)
             SendWarningToAll(LANG_BG_SA_CHAMBER_BREACHED);
         else
-            SendWarningToAll(LANG_BG_SA_WAS_DESTROYED, go->GetNameForLocaleIdx(sObjectMgr->GetDBCLocaleIndex()));
+            SendGateDestroyed(LANG_BG_SA_WAS_DESTROYED, go->GetGOInfo()->entry);
     }
+
+    if (eventType == go->GetGOInfo()->building.damagedEvent)
+        SendGateDestroyed(LANG_BG_SA_IS_UNDER_ATTACK, go->GetGOInfo()->entry);
 }
 
 void BattlegroundSA::HandleKillUnit(Creature* creature, Player* killer)
@@ -570,7 +711,7 @@ void BattlegroundSA::HandleKillUnit(Creature* creature, Player* killer)
     if (creature->GetEntry() == NPC_DEMOLISHER_SA)
     {
         UpdatePlayerScore(killer, SCORE_DESTROYED_DEMOLISHER, 1);
-        _notEvenAScratch[Attackers] = false;
+        _allVehiclesAlive[Attackers] = false;
     }
 }
 
@@ -583,13 +724,13 @@ void BattlegroundSA::OverrideGunFaction()
     if (!BgCreatures[0])
         return;
 
-    for (uint8 i = BG_SA_GUN_1; i <= BG_SA_GUN_10;i++)
+    for (uint8 i = BG_SA_GUN_1; i <= BG_SA_GUN_10; i++)
     {
         if (Creature* gun = GetBGCreature(i))
-            gun->setFaction(BG_SA_Factions[Attackers? TEAM_ALLIANCE : TEAM_HORDE]);
+            gun->setFaction(BG_SA_Factions[Attackers ? TEAM_ALLIANCE : TEAM_HORDE]);
     }
 
-    for (uint8 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_4;i++)
+    for (uint8 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_4; i++)
     {
         if (Creature* dem = GetBGCreature(i))
             dem->setFaction(BG_SA_Factions[Attackers]);
@@ -635,45 +776,34 @@ void BattlegroundSA::DestroyGate(Player* player, GameObject* go)
                 case BG_SA_GREEN_GATE:
                     if (GateStatus[BG_SA_BLUE_GATE] == BG_SA_GATE_DESTROYED)
                         rewardHonor = false;
-                    for (uint8 bombIndex = 47; bombIndex < 59; bombIndex++)
-                    {
-                        if (GetBGObject(bombIndex))
-                            GetBGObject(bombIndex)->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                    }
                     break;
                 case BG_SA_BLUE_GATE:
                     if (GateStatus[BG_SA_GREEN_GATE] == BG_SA_GATE_DESTROYED)
                         rewardHonor = false;
-                    for (uint8 bombIndex = 59; bombIndex < 68; bombIndex++)
-                    {
-                        if (GetBGObject(bombIndex))
-                            GetBGObject(bombIndex)->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                    }
                     break;
                 case BG_SA_RED_GATE:
                     if (GateStatus[BG_SA_PURPLE_GATE] == BG_SA_GATE_DESTROYED)
                         rewardHonor = false;
-                    for (uint8 bombIndex = 68; bombIndex < 77; bombIndex++)
-                    {
-                        if (GetBGObject(bombIndex))
-                            GetBGObject(bombIndex)->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                    }
                     break;
                 case BG_SA_PURPLE_GATE:
                     if (GateStatus[BG_SA_RED_GATE] == BG_SA_GATE_DESTROYED)
                         rewardHonor = false;
-                    for (uint8 bombIndex = 68; bombIndex < 77; bombIndex++)
-                    {
-                        if (GetBGObject(bombIndex))
-                            GetBGObject(bombIndex)->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                    }
                     break;
-                case BG_SA_YELLOW_GATE:
-                    for (uint8 bombIndex = 77; bombIndex < 93; bombIndex++)
-                    {
-                        if (GetBGObject(bombIndex))
-                            GetBGObject(bombIndex)->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-                    }
+                default:
+                    break;
+            }
+            // Delete teleport triggers
+            switch (i)
+            {
+                case BG_SA_GREEN_GATE:
+                case BG_SA_BLUE_GATE:
+                    for (uint32 i = BG_SA_NPC_TRIGGER_1; i <= BG_SA_NPC_TRIGGER_2; ++i)
+                        DelCreature(i);
+                    break;
+                case BG_SA_RED_GATE:
+                case BG_SA_PURPLE_GATE:
+                    for (uint32 i = BG_SA_NPC_TRIGGER_3; i <= BG_SA_NPC_TRIGGER_4; ++i)
+                        DelCreature(i);
                     break;
                 default:
                     break;
@@ -681,9 +811,13 @@ void BattlegroundSA::DestroyGate(Player* player, GameObject* go)
 
             if (i < 5)
                 DelObject(i + 14);
-            UpdatePlayerScore(player, SCORE_DESTROYED_WALL, 1);
-            if (rewardHonor)
-                UpdatePlayerScore(player, SCORE_BONUS_HONOR, GetBonusHonorFromKill(1));
+
+            if (player)
+            {
+                UpdatePlayerScore(player, SCORE_DESTROYED_WALL, 1);
+                if (rewardHonor)
+                    UpdatePlayerScore(player, SCORE_BONUS_HONOR, GetBonusHonorFromKill(1));
+            }
         }
     }
 }
@@ -698,21 +832,21 @@ WorldSafeLocsEntry const* BattlegroundSA::GetClosestGraveYard(Player* player)
 
     player->GetPosition(x, y, z);
 
-    if (player->GetTeamId() == Attackers)
+    if (player->GetBGTeamId() == Attackers)
         safeloc = BG_SA_GYEntries[BG_SA_BEACH_GY];
     else
         safeloc = BG_SA_GYEntries[BG_SA_DEFENDER_LAST_GY];
 
     closest = sWorldSafeLocsStore.LookupEntry(safeloc);
-    nearest = sqrt((closest->x - x)*(closest->x - x) + (closest->y - y)*(closest->y - y)+(closest->z - z)*(closest->z - z));
+    nearest = sqrt((closest->x - x)*(closest->x - x) + (closest->y - y)*(closest->y - y) + (closest->z - z)*(closest->z - z));
 
     for (uint8 i = BG_SA_RIGHT_CAPTURABLE_GY; i < BG_SA_MAX_GY; i++)
     {
-        if (GraveyardStatus[i] != player->GetTeamId())
+        if (GraveyardStatus[i] != player->GetBGTeamId())
             continue;
 
         ret = sWorldSafeLocsStore.LookupEntry(BG_SA_GYEntries[i]);
-        dist = sqrt((ret->x - x)*(ret->x - x) + (ret->y - y)*(ret->y - y)+(ret->z - z)*(ret->z - z));
+        dist = sqrt((ret->x - x)*(ret->x - x) + (ret->y - y)*(ret->y - y) + (ret->z - z)*(ret->z - z));
         if (dist < nearest)
         {
             closest = ret;
@@ -725,10 +859,13 @@ WorldSafeLocsEntry const* BattlegroundSA::GetClosestGraveYard(Player* player)
 
 void BattlegroundSA::SendTime()
 {
-    /*uint32 end_of_round = (EndRoundTimer - TotalTime);
+    // moved to BG_SA_TIMER in MoP
+    /*
+    uint32 end_of_round = (EndRoundTimer - TotalTime);
     UpdateWorldState(BG_SA_TIMER_MINS, end_of_round/60000);
     UpdateWorldState(BG_SA_TIMER_SEC_TENS, (end_of_round%60000)/10000);
-    UpdateWorldState(BG_SA_TIMER_SEC_DECS, ((end_of_round%60000)%10000)/1000);*/
+    UpdateWorldState(BG_SA_TIMER_SEC_DECS, ((end_of_round%60000)%10000)/1000);
+    */
 }
 
 void BattlegroundSA::EventPlayerClickedOnFlag(Player* Source, GameObject* target_obj)
@@ -739,20 +876,26 @@ void BattlegroundSA::EventPlayerClickedOnFlag(Player* Source, GameObject* target
         case 191308:
             if (GateStatus[BG_SA_GREEN_GATE] == BG_SA_GATE_DESTROYED || GateStatus[BG_SA_BLUE_GATE] == BG_SA_GATE_DESTROYED)
                 CaptureGraveyard(BG_SA_LEFT_CAPTURABLE_GY, Source);
+            else
+                target_obj->SendUpdateToPlayer(Source);
             break;
         case 191305:
         case 191306:
             if (GateStatus[BG_SA_GREEN_GATE] == BG_SA_GATE_DESTROYED || GateStatus[BG_SA_BLUE_GATE] == BG_SA_GATE_DESTROYED)
                 CaptureGraveyard(BG_SA_RIGHT_CAPTURABLE_GY, Source);
+            else
+                target_obj->SendUpdateToPlayer(Source);
             break;
         case 191310:
         case 191309:
             if ((GateStatus[BG_SA_GREEN_GATE] == BG_SA_GATE_DESTROYED || GateStatus[BG_SA_BLUE_GATE] == BG_SA_GATE_DESTROYED) && (GateStatus[BG_SA_RED_GATE] == BG_SA_GATE_DESTROYED || GateStatus[BG_SA_PURPLE_GATE] == BG_SA_GATE_DESTROYED))
             {
+                CaptureGraveyard(BG_SA_CENTRAL_CAPTURABLE_GY, Source);
                 CaptureGraveyard(BG_SA_LEFT_CAPTURABLE_GY, Source);
                 CaptureGraveyard(BG_SA_RIGHT_CAPTURABLE_GY, Source);
-                CaptureGraveyard(BG_SA_CENTRAL_CAPTURABLE_GY, Source);
             }
+            else
+                target_obj->SendUpdateToPlayer(Source);
             break;
         default:
             return;
@@ -764,11 +907,16 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
     if (GraveyardStatus[i] == Attackers)
         return;
 
+    uint64 spiritGuideGUID = BgCreatures[BG_SA_MAXNPC + i];
+
     DelCreature(BG_SA_MAXNPC + i);
-    GraveyardStatus[i] = Source->GetTeamId();
+    GraveyardStatus[i] = Source->GetBGTeamId();
     WorldSafeLocsEntry const* sg = sWorldSafeLocsStore.LookupEntry(BG_SA_GYEntries[i]);
     if (!sg)
+    {
+        TC_LOG_ERROR("bg.battleground", "BattlegroundSA::CaptureGraveyard: non-existant GY entry: %u", BG_SA_GYEntries[i]);
         return;
+    }
 
     AddSpiritGuide(i + BG_SA_MAXNPC, sg->x, sg->y, sg->z, BG_SA_GYOrientation[i], (GraveyardStatus[i] == TEAM_ALLIANCE?  ALLIANCE : HORDE));
     uint32 npc = 0;
@@ -779,7 +927,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
         case BG_SA_LEFT_CAPTURABLE_GY:
             flag = BG_SA_LEFT_FLAG;
             DelObject(flag);
-            AddObject(flag, (BG_SA_ObjEntries[flag] - (Source->GetTeamId() == TEAM_ALLIANCE ? 0:1)),
+            AddObject(flag, (BG_SA_ObjEntries[flag] - (Source->GetBGTeamId() == TEAM_ALLIANCE ? 0 : 1)),
             BG_SA_ObjSpawnlocs[flag][0], BG_SA_ObjSpawnlocs[flag][1],
             BG_SA_ObjSpawnlocs[flag][2], BG_SA_ObjSpawnlocs[flag][3], 0, 0, 0, 0, RESPAWN_ONE_DAY);
 
@@ -800,7 +948,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
 
             UpdateWorldState(BG_SA_LEFT_GY_ALLIANCE, (GraveyardStatus[i] == TEAM_ALLIANCE ? 1 : 0));
             UpdateWorldState(BG_SA_LEFT_GY_HORDE, (GraveyardStatus[i] == TEAM_ALLIANCE ? 0 : 1));
-            if (Source->GetTeamId() == TEAM_ALLIANCE)
+            if (Source->GetBGTeamId() == TEAM_ALLIANCE)
                 SendWarningToAll(LANG_BG_SA_A_GY_WEST);
             else
                 SendWarningToAll(LANG_BG_SA_H_GY_WEST);
@@ -808,7 +956,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
         case BG_SA_RIGHT_CAPTURABLE_GY:
             flag = BG_SA_RIGHT_FLAG;
             DelObject(flag);
-            AddObject(flag, (BG_SA_ObjEntries[flag] - (Source->GetTeamId() == TEAM_ALLIANCE ? 0:1)),
+            AddObject(flag, (BG_SA_ObjEntries[flag] - (Source->GetBGTeamId() == TEAM_ALLIANCE ? 0 : 1)),
               BG_SA_ObjSpawnlocs[flag][0], BG_SA_ObjSpawnlocs[flag][1],
               BG_SA_ObjSpawnlocs[flag][2], BG_SA_ObjSpawnlocs[flag][3], 0, 0, 0, 0, RESPAWN_ONE_DAY);
 
@@ -829,7 +977,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
 
             UpdateWorldState(BG_SA_RIGHT_GY_ALLIANCE, (GraveyardStatus[i] == TEAM_ALLIANCE ? 1 : 0));
             UpdateWorldState(BG_SA_RIGHT_GY_HORDE, (GraveyardStatus[i] == TEAM_ALLIANCE ? 0 : 1));
-            if (Source->GetTeamId() == TEAM_ALLIANCE)
+            if (Source->GetBGTeamId() == TEAM_ALLIANCE)
                 SendWarningToAll(LANG_BG_SA_A_GY_EAST);
             else
                 SendWarningToAll(LANG_BG_SA_H_GY_EAST);
@@ -837,13 +985,13 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
         case BG_SA_CENTRAL_CAPTURABLE_GY:
             flag = BG_SA_CENTRAL_FLAG;
             DelObject(flag);
-            AddObject(flag, (BG_SA_ObjEntries[flag] - (Source->GetTeamId() == TEAM_ALLIANCE ? 0:1)),
+            AddObject(flag, (BG_SA_ObjEntries[flag] - (Source->GetBGTeamId() == TEAM_ALLIANCE ? 0 : 1)),
               BG_SA_ObjSpawnlocs[flag][0], BG_SA_ObjSpawnlocs[flag][1],
               BG_SA_ObjSpawnlocs[flag][2], BG_SA_ObjSpawnlocs[flag][3], 0, 0, 0, 0, RESPAWN_ONE_DAY);
 
-            UpdateWorldState(BG_SA_CENTER_GY_ALLIANCE, (GraveyardStatus[i] == TEAM_ALLIANCE? 1:0));
-            UpdateWorldState(BG_SA_CENTER_GY_HORDE, (GraveyardStatus[i] == TEAM_ALLIANCE? 0:1));
-            if (Source->GetTeamId() == TEAM_ALLIANCE)
+            UpdateWorldState(BG_SA_CENTER_GY_ALLIANCE, (GraveyardStatus[i] == TEAM_ALLIANCE ? 1 : 0));
+            UpdateWorldState(BG_SA_CENTER_GY_HORDE, (GraveyardStatus[i] == TEAM_ALLIANCE ? 0 : 1));
+            if (Source->GetBGTeamId() == TEAM_ALLIANCE)
                 SendWarningToAll(LANG_BG_SA_A_GY_SOUTH);
             else
                 SendWarningToAll(LANG_BG_SA_H_GY_SOUTH);
@@ -852,35 +1000,60 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
             ASSERT(false);
             break;
     };
+
+    UpdateBombSpawns();
+
+    // Those who are waiting to resurrect at this node are taken to the closest own node's graveyard
+    WorldSafeLocsEntry const* grave = nullptr;
+    std::vector<uint64> guids = m_ReviveQueue[spiritGuideGUID];
+    for (auto&& guid : guids)
+    {
+        Player* player = ObjectAccessor::FindPlayer(guid);
+        if (!player)
+            continue;
+
+        if (!grave)
+            grave = GetClosestGraveYard(player);
+
+        if (grave)
+            player->TeleportTo(GetMapId(), grave->x, grave->y, grave->z, player->GetOrientation());
+    }
 }
 
 void BattlegroundSA::EventPlayerUsedGO(Player* Source, GameObject* object)
 {
-    if (object->GetEntry() == BG_SA_ObjEntries[BG_SA_TITAN_RELIC] && GateStatus[BG_SA_ANCIENT_GATE] == BG_SA_GATE_DESTROYED && GateStatus[BG_SA_YELLOW_GATE] == BG_SA_GATE_DESTROYED && (GateStatus[BG_SA_PURPLE_GATE] == BG_SA_GATE_DESTROYED || GateStatus[BG_SA_RED_GATE] == BG_SA_GATE_DESTROYED) && (GateStatus[BG_SA_GREEN_GATE] == BG_SA_GATE_DESTROYED || GateStatus[BG_SA_BLUE_GATE] == BG_SA_GATE_DESTROYED))
+    if (object->GetEntry() == BG_SA_ObjEntries[BG_SA_TITAN_RELIC] && GateStatus[BG_SA_ANCIENT_GATE] == BG_SA_GATE_DESTROYED)
     {
-        if (Source->GetTeamId() == Attackers)
+        if (Source->GetBGTeamId() == Attackers)
         {
-            if (Source->GetTeamId() == TEAM_ALLIANCE)
+            if (Source->GetBGTeamId() == TEAM_ALLIANCE)
                 SendMessageToAll(LANG_BG_SA_ALLIANCE_CAPTURED_RELIC, CHAT_MSG_BG_SYSTEM_NEUTRAL);
             else SendMessageToAll(LANG_BG_SA_HORDE_CAPTURED_RELIC, CHAT_MSG_BG_SYSTEM_NEUTRAL);
 
             if (Status == BG_SA_ROUND_ONE)
             {
+                // Defense of the Ancients (1757 / 2200)
+                if (!gateDestroyed)
+                    GetBgMap()->SetWorldState(GetDefenerTeam() == TEAM_ALLIANCE ? WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_A : WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_H, 1);
+
+                CastSpellOnTeam(SPELL_END_OF_ROUND, ALLIANCE);
+                CastSpellOnTeam(SPELL_END_OF_ROUND, HORDE);
+
                 RoundScores[0].winner = Attackers;
                 RoundScores[0].time = TotalTime;
-                //Achievement Storm the Beach (1310)
-                for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
+                // Achievement Storm the Beach (1310)
+                if (RoundScores[0].winner == Attackers && TotalTime <= 240000)
                 {
-                    if (Player* player = ObjectAccessor::FindPlayer(itr->first))
-                    {
-                        player->CastSpell(player, 52459, true);
-                        if (player->GetTeamId() == Attackers)
-                            player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, 65246);
-                    }
+                    GetBgMap()->SetWorldState(Attackers == TEAM_ALLIANCE ? WORLD_STATE_STORM_THE_BEACH_A : WORLD_STATE_STORM_THE_BEACH_H, 1);
+                    for (auto&& itr : GetPlayers())
+                        if (Player* player = ObjectAccessor::FindPlayer(itr.first))
+                            if (player->GetBGTeamId() == Attackers)
+                                player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, 65246);
                 }
 
                 Attackers = (Attackers == TEAM_ALLIANCE) ? TEAM_HORDE : TEAM_ALLIANCE;
                 Status = BG_SA_SECOND_WARMUP;
+                EndTimestamp = 0;
                 TotalTime = 0;
                 ToggleTimer();
                 SendWarningToAll(LANG_BG_SA_ROUND_ONE_END);
@@ -892,16 +1065,29 @@ void BattlegroundSA::EventPlayerUsedGO(Player* Source, GameObject* object)
             }
             else if (Status == BG_SA_ROUND_TWO)
             {
+                // Defense of the Ancients (1757 / 2200)
+                if (!gateDestroyed)
+                    GetBgMap()->SetWorldState(GetDefenerTeam() == TEAM_ALLIANCE ? WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_A : WORLD_STATE_DEFENCE_OF_THE_ANCIENTS_H, 1);
+
+                CastSpellOnTeam(SPELL_END_OF_ROUND, ALLIANCE);
+                CastSpellOnTeam(SPELL_END_OF_ROUND, HORDE);
+
                 RoundScores[1].winner = Attackers;
                 RoundScores[1].time = TotalTime;
                 ToggleTimer();
-                //Achievement Storm the Beach (1310)
-                for (BattlegroundPlayerMap::const_iterator itr = GetPlayers().begin(); itr != GetPlayers().end(); ++itr)
+                // Achievement Storm the Beach (1310)
+                if (RoundScores[1].winner == Attackers && TotalTime <= 240000)
                 {
-                    if (Player* player = ObjectAccessor::FindPlayer(itr->first))
-                        if (player->GetTeamId() == Attackers && RoundScores[1].winner == Attackers)
-                            player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, 65246);
+                    GetBgMap()->SetWorldState(Attackers == TEAM_ALLIANCE ? WORLD_STATE_STORM_THE_BEACH_A : WORLD_STATE_STORM_THE_BEACH_H, 1);
+                    for (auto&& itr : GetPlayers())
+                        if (Player* player = ObjectAccessor::FindPlayer(itr.first))
+                            if (player->GetBGTeamId() == Attackers)
+                                player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, 65246);
                 }
+
+                EndTimestamp = 0;
+                UpdateWorldState(BG_SA_ENABLE_TIMER, 0);
+                UpdateWorldState(BG_SA_TIMER, 0);
 
                 if (RoundScores[0].time == RoundScores[1].time)
                     EndBattleground(0);
@@ -917,12 +1103,16 @@ void BattlegroundSA::EventPlayerUsedGO(Player* Source, GameObject* object)
 void BattlegroundSA::ToggleTimer()
 {
     TimerEnabled = !TimerEnabled;
-    //UpdateWorldState(BG_SA_ENABLE_TIMER, (TimerEnabled) ? 1 : 0);
+    UpdateWorldState(BG_SA_ENABLE_TIMER, (TimerEnabled) ? 1 : 0);
 }
 
 void BattlegroundSA::EndBattleground(uint32 winner)
 {
-    //honor reward for winning
+    // Not Even a Scratch (1762 / 2192)
+    if (_allVehiclesAlive[winner == ALLIANCE ? TEAM_ALLIANCE : TEAM_HORDE])
+        GetBgMap()->SetWorldState(winner == ALLIANCE ? WORLD_STATE_NOT_EVEN_A_SCRATCH_A : WORLD_STATE_NOT_EVEN_A_SCRATCH_H, 1);
+
+    // honor reward for winning
     if (winner == ALLIANCE)
         RewardHonorToTeam(GetBonusHonorFromKill(1), ALLIANCE);
     else if (winner == HORDE)
@@ -939,6 +1129,11 @@ void BattlegroundSA::UpdateDemolisherSpawns()
 {
     for (uint8 i = BG_SA_DEMOLISHER_1; i <= BG_SA_DEMOLISHER_8; i++)
     {
+        if (i >= BG_SA_DEMOLISHER_1 && i <= BG_SA_DEMOLISHER_2 && GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == Attackers)
+            continue;
+        if (i >= BG_SA_DEMOLISHER_3 && i <= BG_SA_DEMOLISHER_4 && GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] == Attackers)
+            continue;
+
         if (BgCreatures[i])
         {
             if (Creature* Demolisher = GetBGCreature(i))
@@ -967,47 +1162,87 @@ void BattlegroundSA::UpdateDemolisherSpawns()
     }
 }
 
+void BattlegroundSA::UpdateBombSpawns()
+{
+    for (uint8 i = BG_SA_BOMB; i < BG_SA_MAXOBJ; i++)
+    {
+        if (GetBGObject(i))
+            continue;
+
+        if (bombsLocationWest.GetExactDist2d(BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1]) < 50.0f && GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] != Attackers)
+            continue;
+        if (bombsLocationEast.GetExactDist2d(BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1]) < 50.0f && GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] != Attackers)
+            continue;
+        if (bombsLocationSouth.GetExactDist2d(BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1]) < 50.0f && GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] != Attackers)
+            continue;
+        if (bombsLocationRelic.GetExactDist2d(BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1]) < 50.0f && GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] != Attackers) // Which graveyard?
+            continue;
+
+        AddObject(i, BG_SA_ObjEntries[BG_SA_BOMB],
+            BG_SA_ObjSpawnlocs[i][0], BG_SA_ObjSpawnlocs[i][1],
+            BG_SA_ObjSpawnlocs[i][2], BG_SA_ObjSpawnlocs[i][3],
+            0,0,0,0,RESPAWN_ONE_DAY);
+        GetBGObject(i)->SetUInt32Value(GAMEOBJECT_FIELD_FACTION_TEMPLATE, BG_SA_Factions[Attackers]);
+    }
+}
+
 void BattlegroundSA::SendTransportInit(Player* player)
 {
-    /*if (BgObjects[BG_SA_BOAT_ONE] ||  BgObjects[BG_SA_BOAT_TWO])
+    if (BgObjects[BG_SA_BOAT_ONE] ||  BgObjects[BG_SA_BOAT_TWO])
     {
-        UpdateData transData(GetMapId());
+        UpdateData transData(player->GetMapId());
         if (BgObjects[BG_SA_BOAT_ONE])
+
             GetBGObject(BG_SA_BOAT_ONE)->BuildCreateUpdateBlockForPlayer(&transData, player);
         if (BgObjects[BG_SA_BOAT_TWO])
             GetBGObject(BG_SA_BOAT_TWO)->BuildCreateUpdateBlockForPlayer(&transData, player);
         WorldPacket packet;
-        if (transData.BuildPacket(&packet))
-            player->GetSession()->SendPacket(&packet);
-    }*/
+        transData.BuildPacket(&packet);
+        player->SendDirectMessage(&packet);
+    }
 }
 
 void BattlegroundSA::SendTransportsRemove(Player* player)
 {
-    /*if (BgObjects[BG_SA_BOAT_ONE] ||  BgObjects[BG_SA_BOAT_TWO]
-        || BgObjects[BG_SA_GREEN_GATE] || BgObjects[BG_SA_YELLOW_GATE]
-        || BgObjects[BG_SA_BLUE_GATE] || BgObjects[BG_SA_RED_GATE]
-        || BgObjects[BG_SA_PURPLE_GATE] || BgObjects[BG_SA_ANCIENT_GATE])
+    if (BgObjects[BG_SA_BOAT_ONE] ||  BgObjects[BG_SA_BOAT_TWO])
     {
-        UpdateData transData(GetMapId());
+        UpdateData transData(player->GetMapId());
         if (BgObjects[BG_SA_BOAT_ONE])
             GetBGObject(BG_SA_BOAT_ONE)->BuildOutOfRangeUpdateBlock(&transData);
         if (BgObjects[BG_SA_BOAT_TWO])
             GetBGObject(BG_SA_BOAT_TWO)->BuildOutOfRangeUpdateBlock(&transData);
-        if (BgObjects[BG_SA_GREEN_GATE])
-            GetBGObject(BG_SA_GREEN_GATE)->BuildOutOfRangeUpdateBlock(&transData);
-        if (BgObjects[BG_SA_YELLOW_GATE])
-            GetBGObject(BG_SA_YELLOW_GATE)->BuildOutOfRangeUpdateBlock(&transData);
-        if (BgObjects[BG_SA_BLUE_GATE])
-            GetBGObject(BG_SA_BLUE_GATE)->BuildOutOfRangeUpdateBlock(&transData);
-        if (BgObjects[BG_SA_RED_GATE])
-            GetBGObject(BG_SA_RED_GATE)->BuildOutOfRangeUpdateBlock(&transData);
-        if (BgObjects[BG_SA_PURPLE_GATE])
-            GetBGObject(BG_SA_PURPLE_GATE)->BuildOutOfRangeUpdateBlock(&transData);
-        if (BgObjects[BG_SA_ANCIENT_GATE])
-            GetBGObject(BG_SA_ANCIENT_GATE)->BuildOutOfRangeUpdateBlock(&transData);
         WorldPacket packet;
-        if (transData.BuildPacket(&packet))
-            player->GetSession()->SendPacket(&packet);
-    }*/
+        transData.BuildPacket(&packet);
+        player->SendDirectMessage(&packet);
+    }
+}
+
+void BattlegroundSA::SendGateDestroyed(uint32 text, uint32 entry)
+{
+    auto go = sObjectMgr->GetGameObjectTemplate(entry);
+    if (!go)
+        return;
+
+    std::string name = go->name;
+
+    std::map<uint32, WorldPacket> localizedPackets;
+
+    for (BattlegroundPlayerMap::const_iterator itr = m_Players.begin(); itr != m_Players.end(); ++itr)
+        if (Player* player = ObjectAccessor::FindPlayer(itr->first))
+        {
+            if (localizedPackets.find(player->GetSession()->GetSessionDbLocaleIndex()) == localizedPackets.end())
+            {
+                char const* format = sObjectMgr->GetTrinityString(text, player->GetSession()->GetSessionDbLocaleIndex());
+
+                if (auto locale = sObjectMgr->GetGameObjectLocale(entry))
+                    sObjectMgr->GetLocaleString(locale->Name, player->GetSession()->GetSessionDbLocaleIndex(), name);
+
+                char buf[256];
+                sprintf(buf, format, name.c_str());
+
+                ChatHandler::BuildChatPacket(localizedPackets[player->GetSession()->GetSessionDbLocaleIndex()], CHAT_MSG_RAID_BOSS_EMOTE, LANG_UNIVERSAL, NULL, NULL, buf);
+            }
+
+            player->SendDirectMessage(&localizedPackets[player->GetSession()->GetSessionDbLocaleIndex()]);
+        }
 }

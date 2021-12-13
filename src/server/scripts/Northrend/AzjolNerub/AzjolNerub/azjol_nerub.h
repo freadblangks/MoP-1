@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -25,7 +28,10 @@ enum Data64
     DATA_ANUBARAK,
     DATA_WATCHER_GASHRA,
     DATA_WATCHER_SILTHIK,
-    DATA_WATCHER_NARJIL
+    DATA_WATCHER_NARJIL,
+    DATA_HADRONOX_FRONT_DOOR_1,
+    DATA_HADRONOX_FRONT_DOOR_2,
+    DATA_HADRONOX_SIDE_DOOR,
 };
 
 enum Data
@@ -33,22 +39,54 @@ enum Data
     DATA_KRIKTHIR_THE_GATEWATCHER_EVENT,
     DATA_HADRONOX_EVENT,
     DATA_ANUBARAK_EVENT,
-    DATA_ENGAGED,
-    DATA_DENIED
+    DATA_TRASH_LEFT,
 };
 
-enum CreatureIds
+enum InstanceCreatures
 {
-    NPC_RECLAIMER_AZAK      = 55564,
-    NPC_AZJOL_ANAK_WARRIOR  = 55566,
-    NPC_NERUBIAN_FLYER      = 55573,
+    NPC_KRIKTHIR                    = 28684,
+    NPC_HADRONOX                    = 28921,
+    NPC_ANUBARAK                    = 29120,
+    NPC_WATCHER_GASHRA              = 28730,
+    NPC_WATCHER_SILTHIK             = 28731,
+    NPC_WATCHER_NARJIL              = 28729,
+
+    // Hadronox event
+    NPC_WORLD_TRIGGER_LARGE_AOI     = 23472,
+    NPC_ANUBAR_CRUSHER              = 28922,
+    NPC_ANUBAR_CHAMPION             = 29117,
+    NPC_ANUBAR_CRYPT_FIEND          = 29118,
+    NPC_ANUBAR_CHAMPION_TRASH       = 29096,
+    NPC_ANUBAR_CRYPT_FIEND_TRASH    = 29097,
+
+    NPC_RECLAIMER_AZAK              = 55564,
+    NPC_AZJOL_ANAK_WARRIOR          = 55566,
+    NPC_NERUBIAN_FLYER              = 55573,
 };
 
-const Position questPos[3] = 
+enum InstanceGameObjects
 {
-    {551.382751f, 271.983917f, 223.45f, 4.73f}, // Reclaimer Azak
-    {567.213135f, 265.146698f, 223.45f, 3.88f}, // Azjol-Anak Warrior
-    {539.976807f, 267.492340f, 223.45f, 5.65f}  // Azjol-Anak Warrior
+    GO_KRIKTHIR_DOOR                = 192395,
+    GO_ANUBARAK_DOOR_1              = 192396,
+    GO_ANUBARAK_DOOR_2              = 192397,
+    GO_ANUBARAK_DOOR_3              = 192398,
+};
+
+enum InstanceScriptEvents
+{
+    SCRIPT_EVENT_WEB_FRONT_DOORS    = 19101,
+    SCRIPT_EVENT_WEB_SIDE_DOOR      = 19102,
+};
+
+enum InstanceSpells
+{
+    SPELL_WEB_FRONT_DOORS           = 53177,
+    SPELL_WEB_SIDE_DOORS            = 53185,
+};
+
+enum
+{
+    WORLD_STATE_HADRONOX_DENIED = 5820,
 };
 
 #endif

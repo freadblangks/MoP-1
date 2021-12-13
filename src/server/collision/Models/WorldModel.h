@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -58,14 +59,19 @@ namespace VMAP
             uint32 GetFileSize();
             bool writeToFile(FILE* wf);
             static bool readFromFile(FILE* rf, WmoLiquid* &liquid);
+            void BuildGeometry();
+            bool IntersectRay(G3D::Ray const& ray, float& distance) const;
+
         private:
-            WmoLiquid(): iTilesX(0), iTilesY(0), iType(0), iHeight(0), iFlags(0) { }
+            WmoLiquid() : iTilesX(0), iTilesY(0), iCorner(), iType(0), iHeight(NULL), iFlags(NULL) { }
             uint32 iTilesX;       //!< number of tiles in x direction, each
             uint32 iTilesY;
             G3D::Vector3 iCorner; //!< the lower corner
             uint32 iType;         //!< liquid type
             float *iHeight;       //!< (tilesX + 1)*(tilesY + 1) height values
             uint8 *iFlags;        //!< info if liquid tile is used
+            std::vector<G3D::Vector3> iLiquidVertices;
+            std::vector<MeshTriangle> iLiquidTriangles;
         public:
             void getPosInfo(uint32 &tilesX, uint32 &tilesY, G3D::Vector3 &corner) const;
     };
@@ -74,7 +80,7 @@ namespace VMAP
     class GroupModel
     {
         public:
-            GroupModel(): iMogpFlags(0), iGroupWMOID(0), iLiquid(0) { }
+            GroupModel() : iBound(), iMogpFlags(0), iGroupWMOID(0), iLiquid(NULL) { }
             GroupModel(const GroupModel &other);
             GroupModel(uint32 mogpFlags, uint32 groupWMOID, const G3D::AABox &bound):
                         iBound(bound), iMogpFlags(mogpFlags), iGroupWMOID(groupWMOID), iLiquid(0) { }
@@ -86,6 +92,7 @@ namespace VMAP
             bool IntersectRay(const G3D::Ray &ray, float &distance, bool stopAtFirstHit) const;
             bool IsInsideObject(const G3D::Vector3 &pos, const G3D::Vector3 &down, float &z_dist) const;
             bool GetLiquidLevel(const G3D::Vector3 &pos, float &liqHeight) const;
+            bool GetLiquidLevel(G3D::Ray const& ray, float& liqHeight) const;
             uint32 GetLiquidType() const;
             bool writeToFile(FILE* wf);
             bool readFromFile(FILE* rf);

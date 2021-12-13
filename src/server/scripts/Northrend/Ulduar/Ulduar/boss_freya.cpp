@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,14 +19,7 @@
  */
 
 #include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "SpellScript.h"
-#include "Cell.h"
-#include "CellImpl.h"
-#include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
 #include "ulduar.h"
-
 
 enum FreyaYells
 {
@@ -58,16 +54,20 @@ enum FreyaSpells
     // Freya
     SPELL_ATTUNED_TO_NATURE                      = 62519,
     SPELL_TOUCH_OF_EONAR                         = 62528,
+    SPELL_TOUCH_OF_EONAR_25                      = 62892,
     SPELL_SUNBEAM                                = 62623,
     SPELL_ENRAGE                                 = 47008,
     SPELL_FREYA_GROUND_TREMOR                    = 62437,
     SPELL_ROOTS_FREYA_10                         = 62438,
     SPELL_ROOTS_FREYA_25                         = 62861,
     SPELL_STONEBARK_ESSENCE                      = 62483,
+    SPELL_STONEBARK_ESSENCE_25                   = 65589,
     SPELL_STONEBARK_ESSENCE_AURA                 = 62386,
     SPELL_IRONBRANCH_ESSENCE                     = 62484,
-    SPELL_IRONBRANCH_ESSENCE_AURA               = 62387,
+    SPELL_IRONBRANCH_ESSENCE_25                  = 65588,
+    SPELL_IRONBRANCH_ESSENCE_AURA                = 62387,
     SPELL_BRIGHTLEAF_ESSENCE                     = 62485,
+    SPELL_BRIGHTLEAF_ESSENCE_25                  = 65587,
     SPELL_BRIGHTLEAF_ESSENCE_AURA                = 62385,
     SPELL_DRAINED_OF_POWER                       = 62467,
     SPELL_SUMMON_EONAR_GIFT                      = 62572,
@@ -120,6 +120,7 @@ enum FreyaSpells
 
     // Snaplasher
     SPELL_HARDENED_BARK                          = 62664,
+    SPELL_HARDENED_BARK_25                       = 64191,
     SPELL_BARK_AURA                              = 62663,
 
     // Ancient Conservator
@@ -247,95 +248,6 @@ enum Data
 #define WAVE_TIME                                60000 // Normal wave is one minute
 #define TIME_DIFFERENCE                          10000 // If difference between waveTime and WAVE_TIME is bigger then TIME_DIFFERENCE, schedule EVENT_WAVE in 10 seconds
 
-class StartMovementEvent : public BasicEvent
-{
-    public:
-        StartMovementEvent(Creature* summoner, Creature* owner)
-            : _summoner(summoner), _owner(owner)
-        {
-        }
-
-        bool Execute(uint64 /*time*/, uint32 /*diff*/)
-        {
-            _owner->AI()->DoAction(ACTION_BEGIN_ATTACK);
-            return true;
-        }
-
-    private:
-        Creature* _summoner;
-        Creature* _owner;
-};
-
-class npc_iron_roots : public CreatureScript
-{
-    public:
-        npc_iron_roots() : CreatureScript("npc_iron_roots") { }
-
-        struct npc_iron_rootsAI : public Scripted_NoMovementAI
-        {
-            npc_iron_rootsAI(Creature* creature) : Scripted_NoMovementAI(creature)
-            {
-            }
-            
-            void InitializeAI()
-            {
-                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-                me->ApplySpellImmune(0, IMMUNITY_ID, 49560, true);  // Death Grip
-                me->setFaction(14);
-                me->SetReactState(REACT_PASSIVE);
-                Reset();
-            }
-
-            void Reset()
-            {
-                _summonerGUID = 0;
-            }
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                if (summoner->GetTypeId() != TYPEID_PLAYER)
-                    return;
-                // Summoner is a player, who should have root aura on self
-                _summonerGUID = summoner->GetGUID();
-                me->SetFacingToObject(summoner);
-                me->SetInCombatWith(summoner);
-            }
-
-            void JustDied(Unit* /*who*/)
-            {
-                if (Player* target = ObjectAccessor::GetPlayer(*me, _summonerGUID))
-                {
-                    target->RemoveAurasDueToSpell(SPELL_IRON_ROOTS);
-                    target->RemoveAurasDueToSpell(SPELL_ROOTS_FREYA);
-                }
-
-                me->RemoveCorpse(false);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (_checkTimer <= diff)
-                {
-                    if (Player* victim = ObjectAccessor::GetPlayer(*me, _summonerGUID))
-                        if (!victim->HasAura(SPELL_IRON_ROOTS) && !victim->HasAura(SPELL_ROOTS_FREYA))
-                            me->DespawnOrUnsummon(2*IN_MILLISECONDS);
-                    _checkTimer = 3*IN_MILLISECONDS;
-                }
-                else
-                    _checkTimer -= diff;
-            }
-
-        private:
-                uint32 _checkTimer;
-                uint64 _summonerGUID;
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_iron_rootsAI(creature);
-        }
-};
-
 class boss_freya : public CreatureScript
 {
     public:
@@ -349,7 +261,7 @@ class boss_freya : public CreatureScript
             }
 
             bool _checkElementalAlive[2];
-            void Reset()
+            void Reset() override
             {
                 _encounterFinished = _encounterFinished || (instance && instance->GetBossState(BOSS_FREYA) == DONE);
                 if (_encounterFinished) // May be called during fight if Freya gets outfight... hm, should _not_ happen regularly
@@ -362,6 +274,10 @@ class boss_freya : public CreatureScript
                 _trioWaveController = 0;
                 _waveNumber = 0;
                 _elderCount = 0;
+                me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD, 0);
+                me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD_x2, 0);
+                me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD_x3, 0);
+                me->GetMap()->SetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE, 0);
 
                 for (uint8 i = 0; i < 3; ++i)
                     for (uint8 n = 0; n < 2; ++n)
@@ -383,7 +299,7 @@ class boss_freya : public CreatureScript
 
                     if (Creature* elder = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_BRIGHTLEAF + n)))
                     {
-                        if (elder->isAlive())
+                        if (elder->IsAlive())
                         {
                             elder->ResetLootMode();
                             elder->AI()->EnterEvadeMode();
@@ -392,13 +308,13 @@ class boss_freya : public CreatureScript
                 } 
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* who) override
             {
                 if (who->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_SLAY);
             }
 
-            void DamageTaken(Unit* who, uint32& damage)
+            void DamageTaken(Unit* who, uint32& damage) override
             {
                 if (damage >= me->GetHealth())
                 {
@@ -414,32 +330,34 @@ class boss_freya : public CreatureScript
 
                 _encounterFinished = true;
 
-                //! Freya's chest is dynamically spawned on death by different spells.
+                // Freya's chest is dynamically spawned on death by different spells.
                 const uint32 summonSpell[2][4] =
                 {
                     /* 0Elder, 1Elder, 2Elder, 3Elder killed */
-                    /* 10N */ {62957, 62955, 62953, 62950},
-                    /* 25N */ {62958, 62956, 62954, 62952}
+                    /* 10N */ {62950, 62952, 62953, 62954},
+                    /* 25N */ {62955, 62956, 62957, 62958}
                 };
-                me->CastSpell((Unit*)NULL, summonSpell[me->GetMap()->GetDifficulty()][_elderCount], true); // GetDifficulty should return 0 or 1 (numeric)
+                    me->CastSpell((Unit*)nullptr, summonSpell[RAID_MODE(0, 1)][_elderCount], true); // RAID_MODE should return 0 or 1 (numeric)
 
                 Talk(SAY_DEATH);
                 me->SetReactState(REACT_PASSIVE);
                 me->RemoveAllAuras();
                 me->AttackStop();
                 me->setFaction(35);
+                DoCastAOE(SPELL_KNOCK_ON_WOOD_CREDIT, true); // Requires friendly targets, but must be used before CombatStop in which the boss will reset its encounter state
                 me->DeleteThreatList();
                 me->CombatStop(true);
-                me->CastSpell(me, SPELL_KNOCK_ON_WOOD_CREDIT, true);
 
                 // getting back to nature achievement
                 _attunedToNature = me->GetAuraCount(SPELL_ATTUNED_TO_NATURE);
+
+                _JustDied();
 
                 Creature* Elder[3];
                 for (uint8 n = 0; n < 3; ++n)
                 {
                     Elder[n] = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_BRIGHTLEAF + n));
-                    if (Elder[n] && Elder[n]->isAlive())
+                    if (Elder[n] && Elder[n]->IsAlive())
                     {
                         Elder[n]->RemoveAllAuras();
                         Elder[n]->AttackStop();
@@ -449,10 +367,9 @@ class boss_freya : public CreatureScript
                     }
                 }
                 me->DespawnOrUnsummon(7.5*IN_MILLISECONDS);
-                _JustDied();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 if (!instance->CheckRequiredBosses(BOSS_FREYA, who->ToPlayer()))
                 {
@@ -466,43 +383,49 @@ class boss_freya : public CreatureScript
 
                 _elderCount = 0;
                 if (Creature* Brightleaf = me->GetCreature(*me, instance->GetData64(BOSS_BRIGHTLEAF)))
-                    if (Brightleaf->isAlive())
+                    if (Brightleaf->IsAlive())
                     {
                         _elderCount++;
                         Brightleaf->AI()->AttackStart(who);
                         Brightleaf->AddThreat(who, 250.0f);
                         Brightleaf->SetInCombatWith(who);
-                        Brightleaf->CastSpell(me, SPELL_BRIGHTLEAF_ESSENCE, true);
-                        me->AddAura(SPELL_BRIGHTLEAF_ESSENCE_AURA, me);
-                        Brightleaf->AddAura(SPELL_DRAINED_OF_POWER, Brightleaf);
+                        Brightleaf->CastSpell(Brightleaf, SPELL_DRAINED_OF_POWER, true);
+                        Brightleaf->CastSpell(me, Is25ManRaid() ? SPELL_BRIGHTLEAF_ESSENCE_25 : SPELL_BRIGHTLEAF_ESSENCE, true);
                         events.ScheduleEvent(EVENT_UNSTABLE_ENERGY, urand(15000, 30000));
                     }
-            
+
                 if (Creature* Ironbranch = me->GetCreature(*me, instance->GetData64(BOSS_IRONBRANCH)))
-                    if (Ironbranch->isAlive())
+                    if (Ironbranch->IsAlive())
                     {
                         _elderCount++;
                         Ironbranch->AI()->AttackStart(who);
                         Ironbranch->AddThreat(who, 250.0f);
                         Ironbranch->SetInCombatWith(who);
-                        Ironbranch->CastSpell(me, SPELL_IRONBRANCH_ESSENCE, true);
-                        me->AddAura(SPELL_IRONBRANCH_ESSENCE_AURA, me);
-                        Ironbranch->AddAura(SPELL_DRAINED_OF_POWER, Ironbranch);
+                        Ironbranch->CastSpell(Ironbranch, SPELL_DRAINED_OF_POWER, true);
+                        Ironbranch->CastSpell(me, Is25ManRaid() ? SPELL_IRONBRANCH_ESSENCE_25 : SPELL_IRONBRANCH_ESSENCE, true);
                         events.ScheduleEvent(EVENT_STRENGTHENED_IRON_ROOTS, urand(45000, 60000));
                     }
-            
+
                 if (Creature* Stonebark = me->GetCreature(*me, instance->GetData64(BOSS_STONEBARK)))
-                    if (Stonebark->isAlive())
+                    if (Stonebark->IsAlive())
                     {
                         _elderCount++;
                         Stonebark->AI()->AttackStart(who);
                         Stonebark->AddThreat(who, 250.0f);
                         Stonebark->SetInCombatWith(who);
-                        Stonebark->CastSpell(me, SPELL_STONEBARK_ESSENCE, true);
-                        me->AddAura(SPELL_STONEBARK_ESSENCE_AURA, me);
-                        Stonebark->AddAura(SPELL_DRAINED_OF_POWER, Stonebark);
+                        Stonebark->CastSpell(Stonebark, SPELL_DRAINED_OF_POWER, true);
+                        Stonebark->CastSpell(me, Is25ManRaid() ? SPELL_STONEBARK_ESSENCE_25 : SPELL_STONEBARK_ESSENCE, true);
                         events.ScheduleEvent(EVENT_GROUND_TREMOR, urand(35000, 45000));
                     }
+
+                if (_elderCount >= 1)
+                    me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD, 1);
+
+                if (_elderCount >= 2)
+                    me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD_x2, 1);
+
+                if (_elderCount == 3)
+                    me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD_x3, 1);
 
                 if (_elderCount == 0)
                     Talk(SAY_AGGRO);
@@ -517,7 +440,7 @@ class boss_freya : public CreatureScript
                 events.ScheduleEvent(EVENT_SUNBEAM, urand(5000, 15000));
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 switch (type)
                 {
@@ -534,7 +457,7 @@ class boss_freya : public CreatureScript
                 return 0;
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -560,12 +483,12 @@ class boss_freya : public CreatureScript
                         case EVENT_NATURE_BOMB:
                         {
                             // On every player
-                            std::list<Player*> PlayerList;
-                            JadeCore::AnyPlayerInObjectRangeCheck checker(me, 50.0f);
-                            JadeCore::PlayerListSearcher<JadeCore::AnyPlayerInObjectRangeCheck> searcher(me, PlayerList, checker);
+                            std::list<Player*> playerList;
+                            Trinity::AnyPlayerInObjectRangeCheck checker(me, 50.0f);
+                            Trinity::PlayerListSearcher<Trinity::AnyPlayerInObjectRangeCheck> searcher(me, playerList, checker);
                             me->VisitNearbyWorldObject(50.0f, searcher);
-                            for (std::list<Player*>::const_iterator itr = PlayerList.begin(); itr != PlayerList.end(); ++itr)
-                                (*itr)->CastSpell(*itr, SPELL_SUMMON_NATURE_BOMB, true);
+                            for (auto&& player : playerList)
+                                player->CastSpell(player, SPELL_SUMMON_NATURE_BOMB, true);
                             events.ScheduleEvent(EVENT_NATURE_BOMB, urand(10000, 12000));
                             break;
                         }
@@ -607,14 +530,26 @@ class boss_freya : public CreatureScript
                     }
                 }
 
-                if (!me->HasAura(SPELL_TOUCH_OF_EONAR))
-                    me->CastSpell(me, SPELL_TOUCH_OF_EONAR, true);
+                if (!me->HasAura(Is25ManRaid() ? SPELL_TOUCH_OF_EONAR_25 : SPELL_TOUCH_OF_EONAR))
+                    me->CastSpell(me, Is25ManRaid() ? SPELL_TOUCH_OF_EONAR_25 : SPELL_TOUCH_OF_EONAR, true);
 
                 // For achievement check
-                if (AuraPtr aura = me->GetAura(SPELL_ATTUNED_TO_NATURE))
+                if (Aura* aura = me->GetAura(SPELL_ATTUNED_TO_NATURE))
+                {
                     _attunedToNature = aura->GetStackAmount();
+
+                    if (_attunedToNature >= 25 && me->GetMap()->GetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE) != 1)
+                        me->GetMap()->SetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE, 1);
+                    else if (_attunedToNature < 25 && me->GetMap()->GetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE) > 0)
+                        me->GetMap()->SetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE, 0);
+                }
                 else
+                {
+                    if (me->GetMap()->GetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE) > 0)
+                        me->GetMap()->SetWorldState(WORLDSTATE_GETTING_BACK_TO_NATURE, 0);
+
                     _attunedToNature = 0;
+                }
 
                 _diffTimer += diff;                                               // For getting time difference for Deforestation achievement
 
@@ -637,7 +572,7 @@ class boss_freya : public CreatureScript
                                 {
                                     for (uint8 n = 0; n < 3; ++n)
                                     {
-                                        if (Elemental[n][i]->isAlive())
+                                        if (Elemental[n][i]->IsAlive())
                                             Elemental[n][i]->SetHealth(Elemental[n][i]->GetMaxHealth());
                                         else
                                             Elemental[n][i]->Respawn();
@@ -656,7 +591,7 @@ class boss_freya : public CreatureScript
                                     {
                                         for (uint8 n = 0; n < 3; ++n)
                                         {
-                                            summons.remove(Elemental[n][i]->GetGUID());
+                                            summons.Despawn(Elemental[n][i]);
                                             Elemental[n][i]->DespawnOrUnsummon(5000);
                                             _trioDefeated[i] = true;
                                             Elemental[n][i]->CastSpell(me, SPELL_REMOVE_10STACK, true);
@@ -741,7 +676,7 @@ class boss_freya : public CreatureScript
                 }
             }
 
-            void JustSummoned(Creature* summoned)
+            void JustSummoned(Creature* summoned) override
             {
                 switch (summoned->GetEntry())
                 {
@@ -756,8 +691,8 @@ class boss_freya : public CreatureScript
                         // DO NOT BREAK!!!
                     case NPC_DETONATING_LASHER:
                         summoned->SetReactState(REACT_PASSIVE);
-                        summoned->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_SUBMERGED);
-                        summoned->m_Events.AddEvent(new StartMovementEvent(me, summoned), summoned->m_Events.CalculateTime(5000));
+                        summoned->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, EMOTE_STATE_SUBMERGED);
+                        summoned->m_Events.Schedule(5000, [summoned]() { summoned->AI()->DoAction(ACTION_BEGIN_ATTACK); });
                         return;
                     case NPC_ANCIENT_CONSERVATOR:
                         break;
@@ -775,7 +710,7 @@ class boss_freya : public CreatureScript
                 }
             }
 
-            void SummonedCreatureDespawn(Creature* summoned)
+            void SummonedCreatureDespawn(Creature* summoned) override
             {
                 switch (summoned->GetEntry())
                 {
@@ -789,13 +724,13 @@ class boss_freya : public CreatureScript
                 }
             }
 
-            void SummonedCreatureDies(Creature* summoned, Unit* who)
+            void SummonedCreatureDies(Creature* summoned, Unit* killer) override
             {
                 switch (summoned->GetEntry())
                 {
                     case NPC_DETONATING_LASHER:
                         summoned->CastSpell(me, SPELL_REMOVE_2STACK, true);
-                        summoned->CastSpell(who, SPELL_DETONATE, true);
+                        summoned->CastSpell(killer, SPELL_DETONATE, true);
                         summoned->DespawnOrUnsummon(5*IN_MILLISECONDS);
                         summons.Despawn(summoned);
                         break;
@@ -807,15 +742,15 @@ class boss_freya : public CreatureScript
                 }
             }
 
-            void SetData(uint32 type, uint32 value)
+            void SetData(uint32 type, uint32 data) override
             {
                 switch (type)
                 {
                     case DATA_ELEMENTAL_DIED:
-                        _checkElementalAlive[value] = false;
+                        _checkElementalAlive[data] = false;
                         break;
                     case DATA_LASHER_DIED:
-                        LasherDead(value);
+                        LasherDead(data);
                         break;
                     default:
                         break;
@@ -850,6 +785,16 @@ class boss_freya : public CreatureScript
                     case ACTION_ELDER_DEATH: // For each dying elder, Freya looses one ability.
                         if (_elderCount > 0)
                             --_elderCount;
+
+                        if (_elderCount < 1)
+                            me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD, 0);
+
+                        if (_elderCount < 2)
+                            me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD_x2, 0);
+
+                        if (_elderCount < 3)
+                            me->GetMap()->SetWorldState(WORLDSTATE_KNOCK_ON_WOOD_x3, 0);
+
                         if (Creature* c = ObjectAccessor::GetCreature(*me, guid))
                         {
                             switch (c->GetEntry())
@@ -890,9 +835,9 @@ class boss_freya : public CreatureScript
                 bool _encounterFinished;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<boss_freyaAI>(creature);
+            return GetInstanceAI<boss_freyaAI>(creature);
         }
 };
 
@@ -903,11 +848,9 @@ class boss_elder_brightleaf : public CreatureScript
 
         struct boss_elder_brightleafAI : public BossAI
         {
-            boss_elder_brightleafAI(Creature* creature) : BossAI(creature, BOSS_BRIGHTLEAF)
-            {
-            }
+            boss_elder_brightleafAI(Creature* creature) : BossAI(creature, BOSS_BRIGHTLEAF) { }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 if (me->HasAura(SPELL_DRAINED_OF_POWER))
@@ -919,18 +862,18 @@ class boss_elder_brightleaf : public CreatureScript
                 _lumberjack = false;
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* who) override
             {
                 if (who->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_BRIGHTLEAF_SLAY);
             }
 
-            void JustDied(Unit* who)
+            void JustDied(Unit* killer) override
             {
                 _JustDied();
                 Talk(SAY_BRIGHTLEAF_DEATH);
 
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (killer && killer->GetTypeId() == TYPEID_PLAYER)
                 {
                     if (Creature* Ironbranch = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_IRONBRANCH)))
                         Ironbranch->AI()->DoAction(ACTION_ELDER_DEATH);
@@ -943,14 +886,14 @@ class boss_elder_brightleaf : public CreatureScript
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
                 if (!me->HasAura(SPELL_DRAINED_OF_POWER))
                     Talk(SAY_BRIGHTLEAF_AGGRO);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim() || me->HasAura(SPELL_DRAINED_OF_POWER))
                     return;
@@ -966,7 +909,7 @@ class boss_elder_brightleaf : public CreatureScript
                     {
                         case EVENT_UNSTABLE_SUN_BEAM:
                             if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
-                                if (target->isAlive())
+                                if (target->IsAlive())
                                     me->SummonCreature(NPC_UNSTABLE_SUN_BEAM, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0, TEMPSUMMON_TIMED_DESPAWN, 10000);
                             events.ScheduleEvent(EVENT_UNSTABLE_SUN_BEAM, 8000);
                             break;
@@ -985,7 +928,7 @@ class boss_elder_brightleaf : public CreatureScript
                             me->RemoveAurasDueToSpell(SPELL_FLUX_MINUS);
 
                             me->AddAura(SPELL_FLUX_AURA, me);
-                            if (AuraPtr Flux = me->GetAura(SPELL_FLUX_AURA))
+                            if (Aura* Flux = me->GetAura(SPELL_FLUX_AURA))
                                 Flux->SetStackAmount(urand(1, 8));
                             events.ScheduleEvent(EVENT_FLUX, 7500);
                             break;
@@ -998,7 +941,7 @@ class boss_elder_brightleaf : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -1019,9 +962,9 @@ class boss_elder_brightleaf : public CreatureScript
             bool _lumberjack;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<boss_elder_brightleafAI>(creature);
+            return GetInstanceAI<boss_elder_brightleafAI>(creature);
         }
 };
 
@@ -1032,11 +975,9 @@ class boss_elder_stonebark : public CreatureScript
 
         struct boss_elder_stonebarkAI : public BossAI
         {
-            boss_elder_stonebarkAI(Creature* creature) : BossAI(creature, BOSS_STONEBARK)
-            {
-            }
+            boss_elder_stonebarkAI(Creature* creature) : BossAI(creature, BOSS_STONEBARK) { }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 if (me->HasAura(SPELL_DRAINED_OF_POWER))
@@ -1048,18 +989,18 @@ class boss_elder_stonebark : public CreatureScript
                 _lumberjack = false;
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* who) override
             {
                 if (who->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_STONEBARK_SLAY);
             }
 
-            void JustDied(Unit* who)
+            void JustDied(Unit* killer) override
             {
                 _JustDied();
                 Talk(SAY_STONEBARK_DEATH);
 
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (killer && killer->GetTypeId() == TYPEID_PLAYER)
                 {
                     if (Creature* Ironbranch = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_IRONBRANCH)))
                         Ironbranch->AI()->DoAction(ACTION_ELDER_DEATH);
@@ -1072,14 +1013,14 @@ class boss_elder_stonebark : public CreatureScript
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
                 if (!me->HasAura(SPELL_DRAINED_OF_POWER))
                     Talk(SAY_STONEBARK_AGGRO);
             }
 
-            void DamageTaken(Unit* who, uint32& damage, SpellInfo const* spellProto)
+            void DamageTaken(Unit* who, uint32& damage) override
             {
                 if (who == me)
                     return;
@@ -1087,12 +1028,12 @@ class boss_elder_stonebark : public CreatureScript
                 if (me->HasAura(SPELL_PETRIFIED_BARK))
                 {
                     int32 reflect = damage;
-                    who->CastCustomSpell(who, SPELL_PETRIFIED_BARK_DMG, &reflect, NULL, NULL, true);
+                    who->CastCustomSpell(who, SPELL_PETRIFIED_BARK_DMG, &reflect, nullptr, nullptr, true);
                     damage = 0;
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim() || me->HasAura(SPELL_DRAINED_OF_POWER))
                     return;
@@ -1128,7 +1069,7 @@ class boss_elder_stonebark : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -1149,9 +1090,9 @@ class boss_elder_stonebark : public CreatureScript
             bool _lumberjack;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<boss_elder_stonebarkAI>(creature);
+            return GetInstanceAI<boss_elder_stonebarkAI>(creature);
         }
 };
 
@@ -1162,11 +1103,9 @@ class boss_elder_ironbranch : public CreatureScript
 
         struct boss_elder_ironbranchAI : public BossAI
         {
-            boss_elder_ironbranchAI(Creature* creature) : BossAI(creature, BOSS_IRONBRANCH)
-            {
-            }
+            boss_elder_ironbranchAI(Creature* creature) : BossAI(creature, BOSS_IRONBRANCH) { }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 if (me->HasAura(SPELL_DRAINED_OF_POWER))
@@ -1178,18 +1117,18 @@ class boss_elder_ironbranch : public CreatureScript
                 _lumberjack = false;
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* who) override
             {
                 if (who->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_IRONBRANCH_SLAY);
             }
 
-            void JustDied(Unit* who)
+            void JustDied(Unit* killer) override
             {
                 _JustDied();
                 Talk(SAY_IRONBRANCH_DEATH);
 
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (killer && killer->GetTypeId() == TYPEID_PLAYER)
                 {
                     if (Creature* Brightleaf = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_BRIGHTLEAF)))
                         Brightleaf->AI()->DoAction(ACTION_ELDER_DEATH);
@@ -1202,14 +1141,14 @@ class boss_elder_ironbranch : public CreatureScript
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
                 if (!me->HasAura(SPELL_DRAINED_OF_POWER))
                     Talk(SAY_IRONBRANCH_AGGRO);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim() || me->HasAura(SPELL_DRAINED_OF_POWER))
                     return;
@@ -1245,7 +1184,7 @@ class boss_elder_ironbranch : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -1266,29 +1205,102 @@ class boss_elder_ironbranch : public CreatureScript
             bool _lumberjack;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<boss_elder_ironbranchAI>(creature);
+            return GetInstanceAI<boss_elder_ironbranchAI>(creature);
+        }
+};
+
+class npc_iron_roots : public CreatureScript
+{
+    public:
+        npc_iron_roots() : CreatureScript("npc_iron_roots") { }
+
+        struct npc_iron_rootsAI : public ScriptedAI
+        {
+            npc_iron_rootsAI(Creature* creature) : ScriptedAI(creature)
+            {
+                SetCombatMovement(false);
+            }
+            
+            void InitializeAI() override
+            {
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+                me->ApplySpellImmune(0, IMMUNITY_ID, 49560, true);  // Death Grip
+                me->setFaction(14);
+                me->SetReactState(REACT_PASSIVE);
+                Reset();
+            }
+
+            void Reset() override
+            {
+                _summonerGUID = 0;
+            }
+
+            void IsSummonedBy(Unit* summoner) override
+            {
+                if (summoner->GetTypeId() != TYPEID_PLAYER)
+                    return;
+                // Summoner is a player, who should have root aura on self
+                _summonerGUID = summoner->GetGUID();
+                me->SetFacingToObject(summoner);
+                me->SetInCombatWith(summoner);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                if (Player* target = ObjectAccessor::GetPlayer(*me, _summonerGUID))
+                {
+                    target->RemoveAurasDueToSpell(SPELL_IRON_ROOTS);
+                    target->RemoveAurasDueToSpell(SPELL_ROOTS_FREYA);
+                }
+
+                me->RemoveCorpse(false);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (_checkTimer <= diff)
+                {
+                    if (Player* victim = ObjectAccessor::GetPlayer(*me, _summonerGUID))
+                        if (!victim->HasAura(SPELL_IRON_ROOTS) && !victim->HasAura(SPELL_ROOTS_FREYA))
+                            me->DespawnOrUnsummon(2*IN_MILLISECONDS);
+                    _checkTimer = 3*IN_MILLISECONDS;
+                }
+                else
+                    _checkTimer -= diff;
+            }
+
+        private:
+                uint32 _checkTimer;
+                uint64 _summonerGUID;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_iron_rootsAI>(creature);
         }
 };
 
 class npc_detonating_lasher : public CreatureScript
 {
     public:
-        npc_detonating_lasher() : CreatureScript("npc_detonating_lasher") {}
+        npc_detonating_lasher() : CreatureScript("npc_detonating_lasher") { }
 
         struct npc_detonating_lasherAI : public ScriptedAI
         {
-            npc_detonating_lasherAI(Creature* creature) : ScriptedAI(creature) {}
+            npc_detonating_lasherAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
-                _instance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
                 /*if (Unit* target = me->SelectNearbyTarget(0, 100.0f)) // Try to find another target
                     AttackStart(target);*/
@@ -1297,7 +1309,7 @@ class npc_detonating_lasher : public CreatureScript
                 _events.ScheduleEvent(EVENT_CHANGE_TARGET, 12.5 * IN_MILLISECONDS);
             }
 
-            void DamageTaken(Unit* /*attacker*/, uint32 &damage) // TODO: Check possible double-call
+            void DamageTaken(Unit* /*who*/, uint32& damage) override // TODO: Check possible double-call
             {
                 if (damage >= me->GetHealth())
                 {
@@ -1308,13 +1320,13 @@ class npc_detonating_lasher : public CreatureScript
                     me->DespawnOrUnsummon(1);
                 }
             }
-            
-            void DoAction(int32 const action)
+
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
                     case ACTION_BEGIN_ATTACK:
-                        me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
+                        me->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, 0);
                         me->SetReactState(REACT_AGGRESSIVE);
                         if (Unit* target = me->SelectNearestPlayer(100.0f))
                             me->AI()->AttackStart(target);
@@ -1324,9 +1336,9 @@ class npc_detonating_lasher : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
 
                 if (!UpdateVictim())
@@ -1346,7 +1358,7 @@ class npc_detonating_lasher : public CreatureScript
                             if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 60.0f, true))
                             {
                                 // Switching to other target - modify aggro of new target by 20% from current target's aggro
-                                me->AddThreat(target, me->getThreatManager().getThreat(me->getVictim(), false) * 1.2f);
+                                me->AddThreat(target, me->getThreatManager().getThreat(me->GetVictim(), false) * 1.2f);
                                 me->AI()->AttackStart(target);
                             }
                             _events.ScheduleEvent(EVENT_CHANGE_TARGET, urand(5*IN_MILLISECONDS, 10*IN_MILLISECONDS));
@@ -1361,53 +1373,53 @@ class npc_detonating_lasher : public CreatureScript
 
             private:
                 EventMap _events;
-                InstanceScript* _instance;
+                InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_detonating_lasherAI>(creature);
+            return GetInstanceAI<npc_detonating_lasherAI>(creature);
         }
 };
 
 class npc_ancient_water_spirit : public CreatureScript
 {
     public:
-        npc_ancient_water_spirit() : CreatureScript("npc_ancient_water_spirit") {}
+        npc_ancient_water_spirit() : CreatureScript("npc_ancient_water_spirit") { }
 
         struct npc_ancient_water_spiritAI : public ScriptedAI
         {
-            npc_ancient_water_spiritAI(Creature* creature) : ScriptedAI(creature) {}
+            npc_ancient_water_spiritAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
-                _instance = me->GetInstanceScript();
-                if (_instance)
-                    if (Creature* Freya = ObjectAccessor::GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                instance = me->GetInstanceScript();
+                if (instance)
+                    if (Creature* Freya = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                         _waveCount = Freya->AI()->GetData(DATA_TRIO_WAVE_COUNT);
                 Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
                 _tidalWaveTimer = 10*IN_MILLISECONDS;
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (Creature* Freya = ObjectAccessor::GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                if (Creature* Freya = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                 {
                     CAST_AI(boss_freya::boss_freyaAI, Freya->AI())->_checkElementalAlive[_waveCount] = false;
                     CAST_AI(boss_freya::boss_freyaAI, Freya->AI())->LasherDead(1);
                 }
             }
             
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
                     case ACTION_BEGIN_ATTACK:
-                        me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
+                        me->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, 0);
                         me->SetReactState(REACT_AGGRESSIVE);
                         if (Unit* target = me->SelectNearestPlayer(100.0f))
                             me->AI()->AttackStart(target);
@@ -1417,9 +1429,9 @@ class npc_ancient_water_spirit : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
 
                 if (!UpdateVictim())
@@ -1443,54 +1455,54 @@ class npc_ancient_water_spirit : public CreatureScript
             private:
                 uint32 _tidalWaveTimer;
                 uint8 _waveCount;
-                InstanceScript* _instance;
+                InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_ancient_water_spiritAI>(creature);
+            return GetInstanceAI<npc_ancient_water_spiritAI>(creature);
         }
 };
 
 class npc_storm_lasher : public CreatureScript
 {
     public:
-        npc_storm_lasher() : CreatureScript("npc_storm_lasher") {}
+        npc_storm_lasher() : CreatureScript("npc_storm_lasher") { }
 
         struct npc_storm_lasherAI : public ScriptedAI
         {
-            npc_storm_lasherAI(Creature* creature) : ScriptedAI(creature) {}
+            npc_storm_lasherAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
-                _instance = me->GetInstanceScript();
-                if (_instance)
-                    if (Creature* Freya = ObjectAccessor::GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                instance = me->GetInstanceScript();
+                if (instance)
+                    if (Creature* Freya = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                         _waveCount = Freya->AI()->GetData(DATA_TRIO_WAVE_COUNT);
                 Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
                 _events.ScheduleEvent(EVENT_LIGHTNING_LASH, 10*IN_MILLISECONDS);
                 _events.ScheduleEvent(EVENT_STORMBOLT, 5*IN_MILLISECONDS);
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (Creature* Freya = ObjectAccessor::GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                if (Creature* Freya = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                 {
                     CAST_AI(boss_freya::boss_freyaAI, Freya->AI())->_checkElementalAlive[_waveCount] = false;
                     CAST_AI(boss_freya::boss_freyaAI, Freya->AI())->LasherDead(2);
                 }
             }
             
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
                     case ACTION_BEGIN_ATTACK:
-                        me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
+                        me->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, 0);
                         me->SetReactState(REACT_AGGRESSIVE);
                         if (Unit* target = me->SelectNearestPlayer(100.0f))
                             me->AI()->AttackStart(target);
@@ -1500,9 +1512,9 @@ class npc_storm_lasher : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
 
                 if (!UpdateVictim())
@@ -1534,52 +1546,50 @@ class npc_storm_lasher : public CreatureScript
             private:
                 EventMap _events;
                 uint8 _waveCount;
-                InstanceScript* _instance;
+                InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_storm_lasherAI>(creature);
+            return GetInstanceAI<npc_storm_lasherAI>(creature);
         }
 };
 
 class npc_snaplasher : public CreatureScript
 {
     public:
-        npc_snaplasher() : CreatureScript("npc_snaplasher") {}
+        npc_snaplasher() : CreatureScript("npc_snaplasher") { }
 
         struct npc_snaplasherAI : public ScriptedAI
         {
-            npc_snaplasherAI(Creature* creature) : ScriptedAI(creature) {}
+            npc_snaplasherAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
-                _instance = me->GetInstanceScript();
-                if (_instance)
-                    if (Creature* Freya = ObjectAccessor::GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                instance = me->GetInstanceScript();
+                if (instance)
+                    if (Creature* Freya = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                         _waveCount = Freya->AI()->GetData(DATA_TRIO_WAVE_COUNT);
                 Reset();
             }
 
-            void Reset()
-            {
-            }
+            void Reset() override { }
             
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (Creature* Freya = ObjectAccessor::GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                if (Creature* Freya = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                 {
                     CAST_AI(boss_freya::boss_freyaAI, Freya->AI())->_checkElementalAlive[_waveCount] = false;
                     CAST_AI(boss_freya::boss_freyaAI, Freya->AI())->LasherDead(4);
                 }
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
                     case ACTION_BEGIN_ATTACK:
-                        me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
+                        me->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, 0);
                         me->SetReactState(REACT_AGGRESSIVE);
                         if (Unit* target = me->SelectNearestPlayer(100.0f))
                             me->AI()->AttackStart(target);
@@ -1589,47 +1599,47 @@ class npc_snaplasher : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const /*diff*/)
+            void UpdateAI(uint32 /*diff*/) override
             {
-                if (_instance && _instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
 
                 if (!UpdateVictim())
                     return;
 
-                if (!me->HasAura(SPELL_BARK_AURA))
-                    DoCast(SPELL_HARDENED_BARK);
+                if (!me->HasAura(Is25ManRaid() ? SPELL_HARDENED_BARK_25 : SPELL_HARDENED_BARK))
+                    DoCast(Is25ManRaid() ? SPELL_HARDENED_BARK_25 : SPELL_HARDENED_BARK);
 
                 DoMeleeAttackIfReady();
             }
 
             private:
                 uint8 _waveCount;
-                InstanceScript* _instance;
+                InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_snaplasherAI>(creature);
+            return GetInstanceAI<npc_snaplasherAI>(creature);
         }
 };
 
 class npc_ancient_conservator : public CreatureScript
 {
     public:
-        npc_ancient_conservator() : CreatureScript("npc_ancient_conservator") {}
+        npc_ancient_conservator() : CreatureScript("npc_ancient_conservator") { }
 
         struct npc_ancient_conservatorAI : public ScriptedAI
         {
-            npc_ancient_conservatorAI(Creature* creature) : ScriptedAI(creature) {}
+            npc_ancient_conservatorAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
-                _instance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
                 _events.ScheduleEvent(EVENT_NATURES_FURY, 7.5*IN_MILLISECONDS);
                 _events.ScheduleEvent(EVENT_HEALTHY_SPORE, 3.5*IN_MILLISECONDS);
@@ -1648,25 +1658,25 @@ class npc_ancient_conservator : public CreatureScript
                 }
             }
 
-            void DamageTaken(Unit* /*attacker*/, uint32 &damage)
+            void DamageTaken(Unit* /*who*/, uint32& damage) override
             {
                 if (damage >= me->GetHealth())
                 {
-                    if (_instance)
-                        if (Creature* freya = me->GetCreature(*me, _instance->GetData64(BOSS_FREYA)))
+                    if (instance)
+                        if (Creature* freya = me->GetCreature(*me, instance->GetData64(BOSS_FREYA)))
                             freya->AI()->SetGUID(me->GetGUID(), ACTION_ELEMENTAL_DEAD);
                     me->DespawnOrUnsummon(1);
                 }
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 DoCast(who, SPELL_CONSERVATOR_GRIP);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_FREYA) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
 
                 if (!UpdateVictim())
@@ -1701,32 +1711,35 @@ class npc_ancient_conservator : public CreatureScript
 
             private:
                 EventMap _events;
-                InstanceScript* _instance;
+                InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_ancient_conservatorAI>(creature);
+            return GetInstanceAI<npc_ancient_conservatorAI>(creature);
         }
 };
 
 class npc_sun_beam : public CreatureScript
 {
     public:
-        npc_sun_beam() : CreatureScript("npc_sun_beam") {}
+        npc_sun_beam() : CreatureScript("npc_sun_beam") { }
 
-        struct npc_sun_beamAI : public Scripted_NoMovementAI
+        struct npc_sun_beamAI : public ScriptedAI
         {
-            npc_sun_beamAI(Creature* creature) : Scripted_NoMovementAI(creature) {}
+            npc_sun_beamAI(Creature* creature) : ScriptedAI(creature)
+            {
+                SetCombatMovement(false);
+            }
 
-            void InitializeAI()
+            void InitializeAI() override
             {
                 me->SetReactState(REACT_PASSIVE);
                 DoCast(SPELL_FREYA_UNSTABLE_ENERGY);
                 Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
@@ -1734,27 +1747,30 @@ class npc_sun_beam : public CreatureScript
                 me->DespawnOrUnsummon(12*IN_MILLISECONDS);
                 DoCast(me, SPELL_FREYA_UNSTABLE_ENERGY_VISUAL, true); // visual
             }
+
+            void UpdateAI(uint32 diff) override { }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_sun_beamAI>(creature);
+            return GetInstanceAI<npc_sun_beamAI>(creature);
         }
 };
 
 class npc_healthy_spore : public CreatureScript
 {
     public:
-        npc_healthy_spore() : CreatureScript("npc_healthy_spore") {}
+        npc_healthy_spore() : CreatureScript("npc_healthy_spore") { }
 
-        struct npc_healthy_sporeAI : public Scripted_NoMovementAI
+        struct npc_healthy_sporeAI : public ScriptedAI
         {
-            npc_healthy_sporeAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_healthy_sporeAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->SetReactState(REACT_PASSIVE);
                 DoCast(me, SPELL_HEALTHY_SPORE_VISUAL);
@@ -1763,7 +1779,7 @@ class npc_healthy_spore : public CreatureScript
                 _lifeTimer = urand(22*IN_MILLISECONDS, 30*IN_MILLISECONDS);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (InstanceScript* inst = me->GetInstanceScript())
                 {
@@ -1787,35 +1803,38 @@ class npc_healthy_spore : public CreatureScript
                 uint32 _lifeTimer;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_healthy_sporeAI>(creature);
+            return GetInstanceAI<npc_healthy_sporeAI>(creature);
         }
 };
 
 class npc_eonars_gift : public CreatureScript
 {
     public:
-        npc_eonars_gift() : CreatureScript("npc_eonars_gift") {}
+        npc_eonars_gift() : CreatureScript("npc_eonars_gift") { }
 
-        struct npc_eonars_giftAI : public Scripted_NoMovementAI
+        struct npc_eonars_giftAI : public ScriptedAI
         {
-            npc_eonars_giftAI(Creature* creature) : Scripted_NoMovementAI(creature) {}
+            npc_eonars_giftAI(Creature* creature) : ScriptedAI(creature)
+            {
+                SetCombatMovement(false);
+            }
 
-            void Reset()
+            void Reset() override
             {
                 _lifeBindersGiftTimer = 12*IN_MILLISECONDS;
                 _cast = false;
             }
 
-            void IsSummonedBy(Unit* /* summoner */)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 DoCast(me, SPELL_GROW);
                 DoCast(me, SPELL_PHEROMONES, true);
                 DoCast(me, SPELL_EONAR_VISUAL, true);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (InstanceScript* inst = me->GetInstanceScript())
                 {
@@ -1844,33 +1863,34 @@ class npc_eonars_gift : public CreatureScript
                 bool _cast;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_eonars_giftAI>(creature);
+            return GetInstanceAI<npc_eonars_giftAI>(creature);
         }
 };
 
 class npc_nature_bomb : public CreatureScript
 {
     public:
-        npc_nature_bomb() : CreatureScript("npc_nature_bomb") {}
+        npc_nature_bomb() : CreatureScript("npc_nature_bomb") { }
 
-        struct npc_nature_bombAI : public Scripted_NoMovementAI
+        struct npc_nature_bombAI : public ScriptedAI
         {
-            npc_nature_bombAI(Creature* creature) : Scripted_NoMovementAI(creature) {}
+            npc_nature_bombAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void Reset()
+            void Reset() override
             {
                 _bombTimer = urand(8*IN_MILLISECONDS, 10*IN_MILLISECONDS);
                 DoCast(SPELL_OBJECT_BOMB);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
+                SetCombatMovement(false);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (GameObject* go = me->FindNearestGameObject(GO_NATURE_BOMB, 5.0f))
-                    go->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                    go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
 
                 if (_bombTimer <= diff)
                 {
@@ -1890,9 +1910,9 @@ class npc_nature_bomb : public CreatureScript
                 uint32 _bombTimer;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<npc_nature_bombAI>(creature);
+            return GetInstanceAI<npc_nature_bombAI>(creature);
         }
 };
 
@@ -1901,9 +1921,9 @@ class npc_unstable_sun_beam : public CreatureScript
     public:
         npc_unstable_sun_beam() : CreatureScript("npc_unstable_sun_beam") { }
 
-        struct npc_unstable_sun_beamAI : public Scripted_NoMovementAI
+        struct npc_unstable_sun_beamAI : public ScriptedAI
         {
-            npc_unstable_sun_beamAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_unstable_sun_beamAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
@@ -1911,6 +1931,7 @@ class npc_unstable_sun_beam : public CreatureScript
                 DoCast(me, SPELL_PHOTOSYNTHESIS);
                 DoCast(me, SPELL_UNSTABLE_SUN_BEAM);
                 me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
+                SetCombatMovement(false);
             }
             
             void MoveInLineOfSight(Unit* target)
@@ -1933,7 +1954,7 @@ class npc_unstable_sun_beam : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (_despawnTimer <= diff)
                 {
@@ -1944,7 +1965,7 @@ class npc_unstable_sun_beam : public CreatureScript
                     _despawnTimer -= diff;
             }
 
-            void SpellHitTarget(Unit* target, SpellInfo const* spell)
+            void SpellHitTarget(Unit* target, SpellInfo const* spell) override
             {
                 if (target && spell->Id == SPELL_UNSTABLE_ENERGY)
                 {
@@ -1957,15 +1978,17 @@ class npc_unstable_sun_beam : public CreatureScript
             uint32 _despawnTimer;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_unstable_sun_beamAI(creature);
+            return GetInstanceAI<npc_unstable_sun_beamAI>(creature);
         }
 };
 
 class IsNoAllyOfNature
 {
     public:
+        IsNoAllyOfNature(bool freya = false) : _freya(freya) { }
+
         bool operator() (WorldObject* unit)
         {
             if (unit->ToCreature())
@@ -1978,18 +2001,23 @@ class IsNoAllyOfNature
                     case NPC_SNAPLASHER:
                     case NPC_ANCIENT_CONSERVATOR:
                         return false;
+                    case NPC_FREYA:
+                        return !_freya;
                     default:
                         break;
                 }
             }
             return true;
         }
+
+    private:
+        bool _freya;
 };
 
 class spell_essence_targeting_ironbranch : public SpellScriptLoader
 {
     public:
-        spell_essence_targeting_ironbranch() : SpellScriptLoader("spell_elder_ironbranch_essence_targeting") {}
+        spell_essence_targeting_ironbranch() : SpellScriptLoader("spell_elder_ironbranch_essence_targeting") { }
 
         class spell_essence_targeting_SpellScript : public SpellScript
         {
@@ -2000,13 +2028,13 @@ class spell_essence_targeting_ironbranch : public SpellScriptLoader
                 targets.remove_if(IsNoAllyOfNature());
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_essence_targeting_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_essence_targeting_SpellScript();
         }
@@ -2015,7 +2043,7 @@ class spell_essence_targeting_ironbranch : public SpellScriptLoader
 class spell_essence_targeting_brightleaf : public SpellScriptLoader
 {
     public:
-        spell_essence_targeting_brightleaf() : SpellScriptLoader("spell_elder_brightleaf_essence_targeting") {}
+        spell_essence_targeting_brightleaf() : SpellScriptLoader("spell_elder_brightleaf_essence_targeting") { }
 
         class spell_essence_targeting_SpellScript : public SpellScript
         {
@@ -2023,17 +2051,23 @@ class spell_essence_targeting_brightleaf : public SpellScriptLoader
 
             void FilterTargets(std::list<WorldObject*>& targets)
             {
-                targets.remove_if(IsNoAllyOfNature());
+                targets.remove_if(IsNoAllyOfNature(true));
             }
 
-            void Register()
+            void EmptyTargets(std::list<WorldObject*>& targets)
+            {
+                // Because we don't know who should be affected by it. +50% damage in 10-man mode, +60% damage in 25-man mode.
+                targets.clear();
+            }
+
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_essence_targeting_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_essence_targeting_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ALLY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_essence_targeting_SpellScript::EmptyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ALLY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_essence_targeting_SpellScript();
         }
@@ -2043,7 +2077,7 @@ class spell_essence_targeting_brightleaf : public SpellScriptLoader
 class spell_aggregation_pheromones_targeting : public SpellScriptLoader
 {
     public:
-        spell_aggregation_pheromones_targeting() : SpellScriptLoader("spell_aggregation_pheromones_targeting") {}
+        spell_aggregation_pheromones_targeting() : SpellScriptLoader("spell_aggregation_pheromones_targeting") { }
 
         class spell_aggregation_pheromones_targeting_SpellScript : public SpellScript
         {
@@ -2056,7 +2090,7 @@ class spell_aggregation_pheromones_targeting : public SpellScriptLoader
                     targets.clear();
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_aggregation_pheromones_targeting_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_aggregation_pheromones_targeting_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ALLY);
@@ -2064,7 +2098,7 @@ class spell_aggregation_pheromones_targeting : public SpellScriptLoader
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_aggregation_pheromones_targeting_SpellScript();
         }
@@ -2074,7 +2108,7 @@ class spell_aggregation_pheromones_targeting : public SpellScriptLoader
 class spell_elder_brightleaf_unstable_sun_beam : public SpellScriptLoader
 {
     public:
-        spell_elder_brightleaf_unstable_sun_beam() : SpellScriptLoader("spell_elder_brightleaf_unstable_sun_beam") {}
+        spell_elder_brightleaf_unstable_sun_beam() : SpellScriptLoader("spell_elder_brightleaf_unstable_sun_beam") { }
 
         class spell_elder_brightleaf_unstable_sun_beam_SpellScript : public SpellScript
         {
@@ -2093,13 +2127,13 @@ class spell_elder_brightleaf_unstable_sun_beam : public SpellScriptLoader
                     target->CastSpell(target, triggered_spell_id, true, 0, 0, caster->GetGUID());
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_elder_brightleaf_unstable_sun_beam_SpellScript::HandleForceCast, EFFECT_1, SPELL_EFFECT_FORCE_CAST);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_elder_brightleaf_unstable_sun_beam_SpellScript();
         }
@@ -2108,9 +2142,7 @@ class spell_elder_brightleaf_unstable_sun_beam : public SpellScriptLoader
 class spell_freya_attuned_to_nature_dose_reduction : public SpellScriptLoader
 {
     public:
-        spell_freya_attuned_to_nature_dose_reduction() : SpellScriptLoader("spell_freya_attuned_to_nature_dose_reduction")
-        {
-        }
+        spell_freya_attuned_to_nature_dose_reduction() : SpellScriptLoader("spell_freya_attuned_to_nature_dose_reduction") { }
 
         class spell_freya_attuned_to_nature_dose_reduction_SpellScript : public SpellScript
         {
@@ -2142,13 +2174,13 @@ class spell_freya_attuned_to_nature_dose_reduction : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_freya_attuned_to_nature_dose_reduction_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_freya_attuned_to_nature_dose_reduction_SpellScript();
         }
@@ -2157,9 +2189,7 @@ class spell_freya_attuned_to_nature_dose_reduction : public SpellScriptLoader
 class spell_freya_iron_roots : public SpellScriptLoader
 {
     public:
-        spell_freya_iron_roots() : SpellScriptLoader("spell_freya_iron_roots")
-        {
-        }
+        spell_freya_iron_roots() : SpellScriptLoader("spell_freya_iron_roots") { }
 
         class spell_freya_iron_roots_SpellScript : public SpellScript
         {
@@ -2177,98 +2207,24 @@ class spell_freya_iron_roots : public SpellScriptLoader
                     GetCaster()->NearTeleportTo(Roots->GetPositionX(), Roots->GetPositionY(), Roots->GetPositionZ(), GetCaster()->GetOrientation());
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHit += SpellEffectFn(spell_freya_iron_roots_SpellScript::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_freya_iron_roots_SpellScript();
-        }
-};
-
-class achievement_getting_back_to_nature : public AchievementCriteriaScript
-{
-    public:
-        achievement_getting_back_to_nature(const char* name) : AchievementCriteriaScript(name) {}
-
-        bool OnCheck(Player* /*player*/, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (Creature* Freya = target->ToCreature())
-                if (Freya->AI()->GetData(DATA_GETTING_BACK_TO_NATURE) >= 25)
-                    return true;
-
-            return false;
-        }
-};
-
-class achievement_knock_on_wood : public AchievementCriteriaScript
-{
-    public:
-        achievement_knock_on_wood(const char* name) : AchievementCriteriaScript(name) {}
-
-        bool OnCheck(Player* /*player*/, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (Creature* Freya = target->ToCreature())
-                if (Freya->AI()->GetData(DATA_KNOCK_ON_WOOD) >= 1)
-                    return true;
-
-            return false;
-        }
-};
-
-class achievement_knock_knock_on_wood : public AchievementCriteriaScript
-{
-    public:
-        achievement_knock_knock_on_wood(const char* name) : AchievementCriteriaScript(name) {}
-
-        bool OnCheck(Player* /*player*/, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (Creature* Freya = target->ToCreature())
-                if (Freya->AI()->GetData(DATA_KNOCK_ON_WOOD) >= 2)
-                    return true;
-
-            return false;
-        }
-};
-
-class achievement_knock_knock_knock_on_wood : public AchievementCriteriaScript
-{
-    public:
-        achievement_knock_knock_knock_on_wood(const char* name) : AchievementCriteriaScript(name) {}
-
-        bool OnCheck(Player* /*player*/, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (Creature* Freya = target->ToCreature())
-                if (Freya->AI()->GetData(DATA_KNOCK_ON_WOOD) == 3)
-                    return true;
-
-            return false;
         }
 };
 
 void AddSC_boss_freya()
 {
     new boss_freya();
-
     new boss_elder_brightleaf();
     new boss_elder_ironbranch();
     new boss_elder_stonebark();
-
     new npc_ancient_conservator();
     new npc_snaplasher();
     new npc_storm_lasher();
@@ -2280,20 +2236,10 @@ void AddSC_boss_freya()
     new npc_healthy_spore();
     new npc_unstable_sun_beam();
     new npc_iron_roots();
-
     new spell_essence_targeting_ironbranch();
     new spell_essence_targeting_brightleaf();
     new spell_aggregation_pheromones_targeting();
     new spell_freya_attuned_to_nature_dose_reduction();
     new spell_freya_iron_roots();
     new spell_elder_brightleaf_unstable_sun_beam();
-
-    new achievement_getting_back_to_nature("achievement_getting_back_to_nature");
-    new achievement_getting_back_to_nature("achievement_getting_back_to_nature_25");
-    new achievement_knock_on_wood("achievement_knock_on_wood");
-    new achievement_knock_on_wood("achievement_knock_on_wood_25");
-    new achievement_knock_knock_on_wood("achievement_knock_knock_on_wood");
-    new achievement_knock_knock_on_wood("achievement_knock_knock_on_wood_25");
-    new achievement_knock_knock_knock_on_wood("achievement_knock_knock_knock_on_wood");
-    new achievement_knock_knock_knock_on_wood("achievement_knock_knock_knock_on_wood_25");
 }

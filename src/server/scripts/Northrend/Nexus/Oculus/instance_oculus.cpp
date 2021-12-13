@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,16 +18,13 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "InstanceScript.h"
-#include "WorldPacket.h"
+#include "ScriptPCH.h"
 #include "oculus.h"
+#include "LFGMgr.h"
 
-DoorData const doorData[] =
+static std::vector<DoorData> const doorData =
 {
     { GO_DRAGON_CAGE_DOOR,  DATA_DRAKOS,    DOOR_TYPE_PASSAGE,  BOUNDARY_NONE },
-    { 0,                    0,              DOOR_TYPE_ROOM,     BOUNDARY_NONE }
 };
 
 Position const VerdisaMove       = { 949.188f, 1032.91f, 359.967f, 1.093027f  };
@@ -36,7 +36,7 @@ class instance_oculus : public InstanceMapScript
     public:
         instance_oculus() : InstanceMapScript(OculusScriptName, 578) { }
 
-        struct instance_oculus_InstanceMapScript : public InstanceScript
+        struct instance_oculus_InstanceMapScript : public InstanceScript, public CacheEligibilityCheckAccessor
         {
             instance_oculus_InstanceMapScript(Map* map) : InstanceScript(map)
             {
@@ -51,15 +51,20 @@ class instance_oculus : public InstanceMapScript
                 CentrifugueConstructCounter = 0;
 
                 EregosCacheGUID     = 0;
+                EregosCacheSpotlightGUID = 0;
 
                 GreaterWhelpList.clear();
 
                 BelgaristraszGUID   = 0;
                 EternosGUID         = 0;
                 VerdisaGUID         = 0;
+
+                instance->SetWorldState(WORLDSTATE_RUBY_VOID, 1);
+                instance->SetWorldState(WORLDSTATE_EMERALD_VOID, 1);
+                instance->SetWorldState(WORLDSTATE_AMBER_VOID, 1);
             }
 
-            void OnCreatureCreate(Creature* creature) 
+            void OnCreatureCreate(Creature* creature) override
             {
                 switch (creature->GetEntry())
                 {
@@ -69,7 +74,7 @@ class instance_oculus : public InstanceMapScript
                     case NPC_VAROS:
                         VarosGUID = creature->GetGUID();
                         if (GetBossState(DATA_DRAKOS) == DONE)
-                           creature->SetPhaseMask(1, true);
+                            creature->SetPhaseMask(1, true);
                         break;
                     case NPC_UROM:
                         UromGUID = creature->GetGUID();
@@ -82,14 +87,14 @@ class instance_oculus : public InstanceMapScript
                             creature->SetPhaseMask(1, true);
                         break;
                     case NPC_CENTRIFUGE_CONSTRUCT:
-                        if (creature->isAlive())
+                        if (creature->IsAlive())
                             DoUpdateWorldState(WORLD_STATE_CENTRIFUGE_CONSTRUCT_AMOUNT, ++CentrifugueConstructCounter);
                         break;
                     case NPC_BELGARISTRASZ:
                         BelgaristraszGUID = creature->GetGUID();
                         if (GetBossState(DATA_DRAKOS) == DONE)
                         {
-                            creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            creature->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                             creature->Relocate(BelgaristraszMove);
                         }
                         break;
@@ -97,7 +102,7 @@ class instance_oculus : public InstanceMapScript
                         EternosGUID = creature->GetGUID();
                         if (GetBossState(DATA_DRAKOS) == DONE)
                         {
-                            creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            creature->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                             creature->Relocate(EternosMove);
                         }
                         break;
@@ -105,7 +110,7 @@ class instance_oculus : public InstanceMapScript
                         VerdisaGUID = creature->GetGUID();
                         if (GetBossState(DATA_DRAKOS) == DONE)
                         {
-                            creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            creature->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                             creature->Relocate(VerdisaMove);
                         }
                         break;
@@ -116,12 +121,15 @@ class instance_oculus : public InstanceMapScript
                             GreaterWhelpList.push_back(creature->GetGUID());
                         }
                         break;
+                    case NPC_AZURE_RING_GUARDIAN_2:
+                        creature->SetFlying(true);
+                        break;
                     default:
                         break;
                 }
             }
 
-            void OnGameObjectCreate(GameObject* go) 
+            void OnGameObjectCreate(GameObject* go) override
             {
                 switch (go->GetEntry())
                 {
@@ -130,26 +138,18 @@ class instance_oculus : public InstanceMapScript
                         break;
                     case GO_EREGOS_CACHE_N:
                     case GO_EREGOS_CACHE_H:
-                        EregosCacheGUID = go->GetGUID();
+                        if (instance->IsHeroic() == (go->GetEntry() == GO_EREGOS_CACHE_H))
+                            EregosCacheGUID = go->GetGUID();
+                        break;
+                    case GO_SPOTLIGHT:
+                        EregosCacheSpotlightGUID = go->GetGUID();
                         break;
                     default:
                         break;
                 }
             }
 
-            void OnGameObjectRemove(GameObject* go) 
-            {
-                switch (go->GetEntry())
-                {
-                    case GO_DRAGON_CAGE_DOOR:
-                        AddDoor(go, false);
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            void OnUnitDeath(Unit* unit) 
+            void OnUnitDeath(Unit* unit) override
             {
                 Creature* creature = unit->ToCreature();
                 if (!creature)
@@ -165,21 +165,34 @@ class instance_oculus : public InstanceMapScript
                 }
             }
 
-            void FillInitialWorldStates(WorldPacket& data) 
+            void OnPlayerEnter(Player* player) override
+            {
+                if (GetBossState(DATA_EREGOS) == IN_PROGRESS)
+                    if (Creature* eregos = instance->GetCreature(EregosGUID))
+                        eregos->SetInCombatWithZone();
+
+                if (uint32 queueId = sLFGMgr->GetActiveQueueId(player->GetGUID()))
+                    if (uint32 random = sLFGMgr->GetRandomDungeon(player->GetGUID(), queueId))
+                        if (auto dungeon = sLFGMgr->GetLFGDungeon(random))
+                            if (dungeon->map == player->GetMap()->GetId())
+                                playersEligibleForCache.insert(player->GetGUID());
+            }
+
+            void FillInitialWorldStates(WorldStateBuilder& builder) override
             {
                 if (GetBossState(DATA_DRAKOS) == DONE && GetBossState(DATA_VAROS) != DONE)
                 {
-                    data << uint32(WORLD_STATE_CENTRIFUGE_CONSTRUCT_SHOW) << uint32(1);
-                    data << uint32(WORLD_STATE_CENTRIFUGE_CONSTRUCT_AMOUNT) << uint32(CentrifugueConstructCounter);
+                    builder.AppendState(WORLD_STATE_CENTRIFUGE_CONSTRUCT_SHOW, 1);
+                    builder.AppendState(WORLD_STATE_CENTRIFUGE_CONSTRUCT_AMOUNT, CentrifugueConstructCounter);
                 }
                 else
                 {
-                    data << uint32(WORLD_STATE_CENTRIFUGE_CONSTRUCT_SHOW) << uint32(0);
-                    data << uint32(WORLD_STATE_CENTRIFUGE_CONSTRUCT_AMOUNT) << uint32(0);
+                    builder.AppendState(WORLD_STATE_CENTRIFUGE_CONSTRUCT_SHOW, 0);
+                    builder.AppendState(WORLD_STATE_CENTRIFUGE_CONSTRUCT_AMOUNT, 0);
                 }
             }
 
-            void ProcessEvent(WorldObject* /*unit*/, uint32 eventId)
+            void ProcessEvent(WorldObject* /*unit*/, uint32 eventId) override
             {
                 if (eventId != EVENT_CALL_DRAGON)
                     return;
@@ -189,7 +202,7 @@ class instance_oculus : public InstanceMapScript
                         drake->AI()->DoAction(ACTION_CALL_DRAGON_EVENT);
             }
 
-            bool SetBossState(uint32 type, EncounterState state) 
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
@@ -204,13 +217,16 @@ class instance_oculus : public InstanceMapScript
                             FreeDragons();
                             if (Creature* varos = instance->GetCreature(VarosGUID))
                                 varos->SetPhaseMask(1, true);
+                            events.ScheduleEvent(EVENT_VAROS_INTRO, 15000);
                         }
                         break;
                     case DATA_VAROS:
                         if (state == DONE)
+                        {
                             DoUpdateWorldState(WORLD_STATE_CENTRIFUGE_CONSTRUCT_SHOW, 0);
                             if (Creature* urom = instance->GetCreature(UromGUID))
                                 urom->SetPhaseMask(1, true);
+                        }
                         break;
                     case DATA_UROM:
                         if (state == DONE)
@@ -219,6 +235,7 @@ class instance_oculus : public InstanceMapScript
                             {
                                 eregos->SetPhaseMask(1, true);
                                 GreaterWhelps();
+                                events.ScheduleEvent(EVENT_EREGOS_INTRO, 5000);
                             }
                         }
                         break;
@@ -227,9 +244,11 @@ class instance_oculus : public InstanceMapScript
                         {
                             if (GameObject* cache = instance->GetGameObject(EregosCacheGUID))
                             {
-                                cache->SetRespawnTime(cache->GetRespawnDelay());
-                                cache->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                                cache->SetRespawnTime(1 * DAY);
+                                cache->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
                             }
+                            if (GameObject* spotlight = instance->GetGameObject(EregosCacheSpotlightGUID))
+                                spotlight->SetRespawnTime(1 * DAY);
                         }
                         break;
                 }
@@ -237,7 +256,20 @@ class instance_oculus : public InstanceMapScript
                 return true;
             }
 
-            uint64 GetData64(uint32 type) const 
+            uint32 GetData(uint32 type) const override
+            {
+                switch (type)
+                {
+                    case DATA_CENTRIFUGUE_CONSTRUCTS:
+                        return CentrifugueConstructCounter;
+                    default:
+                        break;
+                }
+
+                return 0;
+            }
+
+            uint64 GetData64(uint32 type) const override
             {
                 switch (type)
                 {
@@ -256,6 +288,11 @@ class instance_oculus : public InstanceMapScript
                 return 0;
             }
 
+            bool IsPlayerEligibleForCache(uint64 playerGuid) const
+            {
+                return playersEligibleForCache.find(playerGuid) != playersEligibleForCache.end();
+            }
+
             void FreeDragons()
             {
                 if (Creature* belgaristrasz = instance->GetCreature(BelgaristraszGUID))
@@ -263,13 +300,11 @@ class instance_oculus : public InstanceMapScript
                     belgaristrasz->SetWalk(true);
                     belgaristrasz->GetMotionMaster()->MovePoint(POINT_MOVE_OUT, BelgaristraszMove);
                 }
-
                 if (Creature* eternos = instance->GetCreature(EternosGUID))
                 {
                     eternos->SetWalk(true);
                     eternos->GetMotionMaster()->MovePoint(POINT_MOVE_OUT, EternosMove);
                 }
-
                 if (Creature* verdisa = instance->GetCreature(VerdisaGUID))
                 {
                     verdisa->SetWalk(true);
@@ -277,42 +312,67 @@ class instance_oculus : public InstanceMapScript
                 }
             }
 
+            void Update(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_VAROS_INTRO:
+                            if (Creature* varos = instance->GetCreature(VarosGUID))
+                                varos->AI()->Talk(SAY_VAROS_INTRO_TEXT);
+                            break;
+                        case EVENT_EREGOS_INTRO:
+                            if (Creature* eregos = instance->GetCreature(EregosGUID))
+                                eregos->AI()->Talk(SAY_EREGOS_INTRO_TEXT);
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+
             void GreaterWhelps()
             {
-                for (std::list<uint64>::const_iterator itr = GreaterWhelpList.begin(); itr != GreaterWhelpList.end(); ++itr)
-                    if (Creature* gwhelp = instance->GetCreature(*itr))
+                for (uint64 guid : GreaterWhelpList)
+                    if (Creature* gwhelp = instance->GetCreature(guid))
                         gwhelp->SetPhaseMask(1, true);
             }
 
-            std::string GetSaveData() 
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
                 std::ostringstream saveStream;
                 saveStream << "T O " << GetBossSaveData();
 
+                str_data = saveStream.str();
+
                 OUT_SAVE_INST_DATA_COMPLETE;
-                return saveStream.str();
+                return str_data;
             }
 
-            void Load(char const* str) 
+            void Load(const char* in) override
             {
-                if (!str)
+                if (!in)
                 {
                     OUT_LOAD_INST_DATA_FAIL;
                     return;
                 }
 
-                OUT_LOAD_INST_DATA(str);
+                OUT_LOAD_INST_DATA(in);
 
                 char dataHead1, dataHead2;
 
-                std::istringstream loadStream(str);
+
+                std::istringstream loadStream(in);
                 loadStream >> dataHead1 >> dataHead2;
 
                 if (dataHead1 == 'T' && dataHead2 == 'O')
                 {
-                    for (uint32 i = 0; i < EncounterCount; ++i)
+                    for (uint8 i = 0; i < EncounterCount; ++i)
                     {
                         uint32 tmpState;
                         loadStream >> tmpState;
@@ -340,11 +400,17 @@ class instance_oculus : public InstanceMapScript
             uint8 CentrifugueConstructCounter;
 
             uint64 EregosCacheGUID;
+            uint64 EregosCacheSpotlightGUID;
+
+            std::string str_data;
 
             std::list<uint64> GreaterWhelpList;
+            std::set<uint64> playersEligibleForCache;
+
+            EventMap events;
         };
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const 
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
         {
             return new instance_oculus_InstanceMapScript(map);
         }

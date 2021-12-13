@@ -1,442 +1,603 @@
-/*
-    Dungeon : Stormstout Brewery 85-87
-    Instance Script
-	www.pandawow.ir
-	stefan2008@ymail.com
-	it's a work of me and my friend
-*/
-
-#include "ObjectMgr.h"
+#include "stormstout_brewery.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
-#include "SpellAuras.h"
-#include "SpellAuraEffects.h"
-#include "Player.h"
-#include "Vehicle.h"
-#include "Group.h"
 
-#include "stormstout_brewery.h"
-
-/* Yells and events
-
-First Alemental after Hoptallus:
-
-Ancient Brewmaster says: Whatzit... are they... what are they doin' to our alementals?
-Ancient Brewmaster yells: Hey... hey YOU! Those are OUR, flying... beer monsters?
-
-The Tasting Room:
-
-// Check Intro in Boss script, each line corresponds to a spawn. //
-Meteor-like shower. Two Bloated Brew Alementals spawn in the mid.
-Meteor-like shower. Nine Bubbling Brew Alementals spawn in the mid.
-Meteor-like shower. Four Sudsy Brew Alementals spawn in the mid.
-Meteor-like shower. Boss Yan-zhu the Uncasked spawn in the mid.
-*/
-
-// Chen Stormstout / Auntie Stormstout intro yells.
-enum IntroYells
+enum eHabaneroBeer
 {
-    AUNTIE_ENTRANCE_SAY_1 = 0, // Auntie Stormstout says: Oh, hello Zan, it is good of you to visit ol' Auntie Stormstout.
-    CHEN_ENTRANCE_SAY_1   = 0, // Chen Stormstout   says: I am not Zan - I am Chen Stormstout!
-    AUNTIE_ENTRANCE_SAY_2 = 1, // Auntie Stormstout says: Oh, Zan! You remind me so much of your father.
-    CHEN_ENTRANCE_SAY_2   = 1, // Chen Stormstout   says: Tell me, what has happened here?
-    AUNTIE_ENTRANCE_SAY_3 = 2, // Auntie Stormstout says: It is certainly a nice day outside!
-    CHEN_ENTRANCE_SAY_3   = 2, // Chen Stormstout   says: Where are the other Stormstouts? Why are hozen all over the brewery?
-    AUNTIE_ENTRANCE_SAY_4 = 3, // Auntie Stormstout says: Have you seen the size of Esme's turnips?
-    CHEN_ENTRANCE_SAY_4   = 3, // Chen Stormstout   says: Auntie Stormstout... why is the brewery abandoned?
-    AUNTIE_ENTRANCE_SAY_5 = 4, // Auntie Stormstout says: Abandoned? Oh heavens no! Uncle Gao is in charge while the others are beyond the wall. Isn't that exciting?
-    CHEN_ENTRANCE_SAY_5   = 4, // Chen Stormstout   says: I see - and where is Uncle Gao?
-    AUNTIE_ENTRANCE_SAY_6 = 5, // Auntie Stormstout says: I have some cookies for you!
-    CHEN_ENTRANCE_SAY_6   = 5, // Chen Stormstout   says: There is no time for cookies! Well, one cookie. Just one.
-    CHEN_ENTRANCE_SAY_7   = 6  // Chen Stormstout   says: Wait - these are ghost cookies. These aren't filling at all!
+    NPC_BARREL              = 56731,
+
+    SPELL_PROC_EXPLOSION    = 106787
 };
 
-// Hozen Bouncer yells.
-enum BouncerYells
+static const Position aPartyWps[]=
 {
-    SAY_OOK_KILLED = 0, // You take down Ook-Ook...
-    SAY_MEANS      = 1, // You know what dat mean...
-    SAY_NEW_OOK    = 2, // You da new Ook!
-    SAY_PARTY      = 3  // Get da party started for da new Ook!
+    { -766.2f,  1390.8f,  146.7f, 1.8f  },
+    { -775.55f, 1422.47f, 139.5f, 3.4f  },
+    { -801.81f, 1415.04f, 139.7f, 3.38f },
+    { -814.9f,  1411.7f,  134.6f, 3.38f },
+    { -811.6f,  1399.9f,  132.3f, 4.98f },
+    { -804.4f,  1383.6f,  126.7f, 5.9f  },
+    { -783.2f,  1383.4f,  126.7f, 4.9f  }
 };
 
-enum Spells
-{
-    // FRIENDLY
-    SPELL_AUNTIE_VISUAL     = 115618, // Auntie Stormstout visual.
-
-    SPELL_GUSHING_BREW_BVIS = 114379, // Gushing Brew beam visual (The Great Wheel).
-    SPELL_GUSHING_BREW_A    = 114380, // Gushing Brew aura (NPC that has beam cast on).
-    SPELL_LEAKING_BEER_B_A  = 146604, // Dummy for NPC on Keg.
-
-    // HOSTILE
-
-    // Aqua Dancer - Once killed, their deaths will damage the Sodden Hozen Brawlers for half their health.
-    SPELL_AQUATIC_ILLUSION  = 107044, // Gives Sodden Hozen Brawler SPELL_WATER_STRIKE.
-    SPELL_AQUAT_ILLUSION_R  = 114655, // Removal damage.
-
-    // Fiery Trickster - Once killed, their deaths will damage the Inflamed Hozen Brawlers for half their health.
-    SPELL_FIERY_ILLUSION    = 107175, // Gives Inflamed Hozen Brawler SPELL_FIRE_STRIKE.
-    SPELL_FIERY_ILLUSION_R  = 114656, // Removal damage.
-
-    // Sodded Hozen Brawler
-    SPELL_WATER_STRIKE      = 107046,
-
-    // Inflamed Hozen Brawler
-    SPELL_FIRE_STRIKE       = 107176,
-
-    // Hozen Bouncer - 2 bouncers only, after Ook-Ook. After yells they run, crash into each other, die.
-    SPELL_HOZEN_DOORGUARD   = 107019,
-
-    // Sleepy Hozen Brawler, Drunken Hozen Brawler.
-    SPELL_COSMETIC_SLEEP    = 124557, // Used by Sleepy.
-    SPELL_UPPERCUT          = 80182,
-
-    // Habanero Brew
-    SPELL_PROC_EXPLOSION    = 106787,
-    SPELL_SPICY_EXPLOSION   = 107205,
-
-    SPELL_BREW_BARREL_EXPL  = 107351, // Barrel monkey explosion.
-
-    // Stout Brew Alemental
-    SPELL_BREW_BOLT         = 115652,
-    SPELL_BLACKOUT_BREW     = 106851,
-    SPELL_BLACKOUT_DRUNK    = 106857, // At 10 stacks of SPELL_BLACKOUT_BREW.
-
-    // Sudsy Brew Alemental
-    SPELL_BREW_BOLT2        = 115650,
-    SPELL_SUDS              = 116178, // Creates NPC_POOL_OF_SUDS at target location.
-    AURA_SUDS               = 116179, // Periodic dmg trigger aura.
-
-    // Unruly Alemental
-    SPELL_BREW_BOLT3        = 118104,
-    SPELL_BREWHAHA          = 118099,
-
-    // Bubbling Brew Alemental
-    SPELL_BREW_BOLT4        = 116155,
-    SPELL_BUBBLE_SHIELD     = 128708,
-
-    // Fizzy Brew Alemental
-    // Uses SPELL_BREW_BOLT2.
-    SPELL_CARBONATION_M     = 116162, // Missile.
-    SPELL_CARBONATION_S     = 116164, // Creates NPC_CARBONATION_POOL at target location.
-    AURA_CARBONATION        = 116168, // Periodic dmg trigger aura.
-
-    // Bloated Brew Alemental
-    // Uses SPELL_BREW_BOLT.
-    SPELL_BLOAT             = 106546
-
-    // Yeasty Brew Alemental
-    // Uses SPELL_BREW_BOLT4.
-};
-
-enum Events
-{
-    // Trash
-
-    EVENT_UPPERCUT          = 1,
-    EVENT_WATER_STRIKE,
-    EVENT_FIRE_STRIKE,
-
-    EVENT_BREW_BOLT,
-    EVENT_BLACKOUT_BREW,
-    EVENT_BREW_BOLT2,
-    EVENT_SUDS,
-    EVENT_BREW_BOLT3,
-    EVENT_CARBONATION,
-    EVENT_BLOAT,
-    EVENT_BUBBLE_SHIELD,
-    EVENT_BREW_BOLT4,
-
-    // Hozen Bouncer
-    EVENT_CHECK_OOK,
-    EVENT_SAY_OOK_KILLED,
-    EVENT_SAY_MEANS,
-    EVENT_SAY_NEW_OOK,
-    EVENT_SAY_PARTY,
-    EVENT_RUN_AND_CRASH,
-
-    // Chen Stormstout / Auntie Stormstout intro event.
-    EVENT_AUNTIE_ENTRANCE_SAY_1,
-    EVENT_CHEN_ENTRANCE_SAY_1,
-    EVENT_AUNTIE_ENTRANCE_SAY_2,
-    EVENT_CHEN_ENTRANCE_SAY_2,
-    EVENT_AUNTIE_ENTRANCE_SAY_3,
-    EVENT_CHEN_ENTRANCE_SAY_3,
-    EVENT_AUNTIE_ENTRANCE_SAY_4,
-    EVENT_CHEN_ENTRANCE_SAY_4,
-    EVENT_AUNTIE_ENTRANCE_SAY_5,
-    EVENT_CHEN_ENTRANCE_SAY_5,
-    EVENT_AUNTIE_ENTRANCE_SAY_6,
-    EVENT_CHEN_ENTRANCE_SAY_6,
-    EVENT_CHEN_ENTRANCE_SAY_7
-};
-
-enum Actions
-{
-    ACTION_START_INTRO      = 0, // Chen Stormstout intro start.
-};
-
-// Instance Scripted events and dialogues.
-
-class at_stormstout_brewery_entrance : public AreaTriggerScript
+class spell_spicy_explosion : public SpellScriptLoader
 {
     public:
-        at_stormstout_brewery_entrance() : AreaTriggerScript("at_stormstout_brewery_entrance") { }
+        spell_spicy_explosion() : SpellScriptLoader("spell_spicy_explosion") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/)
+        class spell_spicy_explosion_SpellScript : public SpellScript
         {
-            InstanceScript* instance = player->GetInstanceScript();
-            if (!instance)
-                return true;
+            PrepareSpellScript(spell_spicy_explosion_SpellScript);
 
-            // Add the Hozen Counter aura.
-            if (instance->GetBossState(DATA_OOKOOK_EVENT) != DONE)
+            bool Validate(SpellInfo const* /*spellInfo*/) override
             {
-                if (player)
-                    player->AddAura(SPELL_BANANA_BAR, player);
+                if (!sSpellMgr->GetSpellInfo(SPELL_SPICY_EXPLOSION))
+                    return false;
 
-                // Make the intro event start, once.
-                if (Creature* auntieStormstout = player->FindNearestCreature(NPC_AUNTIE_STORMSTOUT, 100.0f, true))
-                {
-                    if (!auntieStormstout->HasAura(SPELL_AUNTIE_VISUAL))
-                    {
-                        auntieStormstout->AddAura(SPELL_AUNTIE_VISUAL, auntieStormstout);
-                        if (Creature* chenStormstout = player->FindNearestCreature(NPC_CHEN_STORMSTOUT_ENTRANCE, 100.0f, true))
-                            chenStormstout->AI()->DoAction(ACTION_START_INTRO);
-                    }
-                }
+                return true;
             }
 
-            return true;
+            void SelectTargets(std::list<WorldObject*>&targets)
+            {
+                targets.remove_if([=](WorldObject* obj) { return  obj && obj->GetTypeId() == TYPEID_PLAYER; });
+            }
+
+            void OnAfterCast()
+            {
+                if (GetCaster()->ToCreature())
+                    GetCaster()->ToCreature()->DespawnOrUnsummon(1000);
+            }
+
+            void Register() override
+            {
+                AfterCast += SpellCastFn(spell_spicy_explosion_SpellScript::OnAfterCast);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_spicy_explosion_SpellScript::SelectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_spicy_explosion_SpellScript::SelectTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_spicy_explosion_SpellScript();
         }
 };
 
-// Chen Stormstout entrance 59704.
-class npc_chen_stormstout_entrance : public CreatureScript
+class npc_chen_stormstout : public CreatureScript
 {
-    public :
-        npc_chen_stormstout_entrance() : CreatureScript("npc_chen_stormstout_entrance") { }
+    public:
+        npc_chen_stormstout() : CreatureScript("npc_chen_stormstout") { }
 
-        struct npc_chen_stormstout_entrance_AI : public ScriptedAI
+        enum Talks
         {
-            npc_chen_stormstout_entrance_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
+            TALK_NOT_ZAN,
+            TALK_HAPPENED,
+            TALK_WHERE,
+            TALK_ABANDONED,
+            TALK_GAO,
+            TALK_COOKIES,
+            TALK_GHOST
+        };
 
-            InstanceScript* instance;
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_TALK_1,
+            EVENT_TALK_2,
+            EVENT_TALK_3,
+            EVENT_TALK_4,
+            EVENT_TALK_5,
+            EVENT_TALK_6,
+            EVENT_TALK_7,
+        };
+
+        struct npc_chen_stormstoutAI : public ScriptedAI
+        {
+            npc_chen_stormstoutAI(Creature* creature) : ScriptedAI(creature) { }
+
             EventMap events;
-            Creature* auntieStormstout;
-            bool introStarted;
 
-            void InitializeAI()
+            void GetAuntieAndDoAction(int8 action)
             {
-                if (!me->isDead())
-                    Reset();
+                if (Creature* auntie = GetClosestCreatureWithEntry(me, NPC_AUNTIE_STORMSTOUT, 12.f))
+                    auntie->AI()->DoAction(action);
             }
 
-            void Reset()
+            void DoAction(int32 actionId) override
             {
                 events.Reset();
-                me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                auntieStormstout = NULL;
-                introStarted = false;
+
+                switch (actionId)
+                {
+                    case 0:
+                        events.ScheduleEvent(EVENT_TALK_1, 8000);
+                        break;
+                    case 1:
+                        events.ScheduleEvent(EVENT_TALK_2, 6000);
+                        break;
+                    case 2:
+                        events.ScheduleEvent(EVENT_TALK_3, 7400);
+                        break;
+                    case 3:
+                        events.ScheduleEvent(EVENT_TALK_4, 7000);
+                        break;
+                    case 4:
+                        events.ScheduleEvent(EVENT_TALK_5, 13000);
+                        break;
+                    case 5:
+                        events.ScheduleEvent(EVENT_TALK_6, 4000);
+                        break;
+                }
             }
 
-            void DoAction(int32 const action)
-            {
-                if (action == ACTION_START_INTRO && introStarted)
-                    return;
-
-                switch (action)
-                {
-                    case ACTION_START_INTRO:
-                        if (Creature* auntie = me->FindNearestCreature(NPC_AUNTIE_STORMSTOUT, 100.0f, true))
-                            auntieStormstout = auntie;
-                        introStarted = true;
-                        events.ScheduleEvent(EVENT_AUNTIE_ENTRANCE_SAY_1, 1000);
-                        break;
-
-                    default: break;
-                }
-            };
-
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
-                while(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_AUNTIE_ENTRANCE_SAY_1:
-                            auntieStormstout->AI()->Talk(AUNTIE_ENTRANCE_SAY_1);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_1, 8000);
+                        case EVENT_TALK_1:
+                            Talk(TALK_NOT_ZAN);
+                            GetAuntieAndDoAction(1);
                             break;
-
-                        case EVENT_CHEN_ENTRANCE_SAY_1:
-                            Talk(CHEN_ENTRANCE_SAY_1);
-                            events.ScheduleEvent(EVENT_AUNTIE_ENTRANCE_SAY_2, 5000);
+                        case EVENT_TALK_2:
+                            Talk(TALK_HAPPENED);
+                            GetAuntieAndDoAction(2);
                             break;
-
-                        case EVENT_AUNTIE_ENTRANCE_SAY_2:
-                            auntieStormstout->AI()->Talk(AUNTIE_ENTRANCE_SAY_2);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_2, 6000);
+                        case EVENT_TALK_3:
+                            Talk(TALK_WHERE);
+                            GetAuntieAndDoAction(3);
                             break;
-
-                        case EVENT_CHEN_ENTRANCE_SAY_2:
-                            Talk(CHEN_ENTRANCE_SAY_2);
-                            events.ScheduleEvent(EVENT_AUNTIE_ENTRANCE_SAY_3, 5000);
+                        case EVENT_TALK_4:
+                            Talk(TALK_ABANDONED);
+                            GetAuntieAndDoAction(4);
                             break;
-
-                        case EVENT_AUNTIE_ENTRANCE_SAY_3:
-                            auntieStormstout->AI()->Talk(AUNTIE_ENTRANCE_SAY_3);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_3, 5000);
+                        case EVENT_TALK_5:
+                            Talk(TALK_GAO);
+                            GetAuntieAndDoAction(5);
                             break;
-
-                        case EVENT_CHEN_ENTRANCE_SAY_3:
-                            Talk(CHEN_ENTRANCE_SAY_3);
-                            events.ScheduleEvent(EVENT_AUNTIE_ENTRANCE_SAY_4, 9000);
+                        case EVENT_TALK_6:
+                            Talk(TALK_COOKIES);
+                            events.ScheduleEvent(EVENT_TALK_7, 7000);
                             break;
-
-                        case EVENT_AUNTIE_ENTRANCE_SAY_4:
-                            auntieStormstout->AI()->Talk(AUNTIE_ENTRANCE_SAY_4);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_4, 5500);
+                        case EVENT_TALK_7:
+                            Talk(TALK_GHOST);
                             break;
+                    }
+                }
 
-                        case EVENT_CHEN_ENTRANCE_SAY_4:
-                            Talk(CHEN_ENTRANCE_SAY_4);
-                            events.ScheduleEvent(EVENT_AUNTIE_ENTRANCE_SAY_5, 6500);
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_chen_stormstoutAI(creature);
+        }
+};
+
+class npc_auntie_stormstout : public CreatureScript
+{
+    public:
+        npc_auntie_stormstout() : CreatureScript("npc_auntie_stormstout") { }
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_TALK_1,
+            EVENT_TALK_2,
+            EVENT_TALK_3,
+            EVENT_TALK_4,
+            EVENT_TALK_5,
+            EVENT_TALK_6
+        };
+
+        enum Talks
+        {
+            TALK_HELLO,
+            TALK_ZAN,
+            TALK_DAY,
+            TALK_SIZE,
+            TALK_ABANDONED,
+            TALK_COOKIES
+        };
+
+        struct npc_auntie_stormstoutAI : public ScriptedAI
+        {
+            npc_auntie_stormstoutAI(Creature* creature) : ScriptedAI(creature)
+            {
+                eventStarted = false;
+            }
+
+            bool eventStarted;
+            EventMap events;
+
+            void GetChenAndDoAction(int8 action)
+            {
+                if (Creature* pChen = GetClosestCreatureWithEntry(me, NPC_CHEN_STORMSTOUT, 12.f))
+                    pChen->AI()->DoAction(action);
+            }
+
+            void MoveInLineOfSight(Unit* who) override
+            {
+                if (!eventStarted && who && who->ToPlayer())
+                {
+                    HandleEventStart();
+                    eventStarted = true;
+                }
+            }
+
+            void HandleEventStart()
+            {
+                if (eventStarted)
+                    return;
+
+                events.ScheduleEvent(EVENT_TALK_1, 5000);
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                events.Reset();
+
+                switch (actionId)
+                {
+                    case 1:
+                        events.ScheduleEvent(EVENT_TALK_2, 6000);
+                        break;
+                    case 2:
+                        events.ScheduleEvent(EVENT_TALK_3, 4500);
+                        break;        
+                    case 3:
+                        events.ScheduleEvent(EVENT_TALK_4, 7000);
+                        break;
+                    case 4:
+                        events.ScheduleEvent(EVENT_TALK_5, 6500);
+                        break;
+                    case 5:
+                        events.ScheduleEvent(EVENT_TALK_6, 5000);
+                        break;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_TALK_1:
+                            Talk(TALK_HELLO);
+                            GetChenAndDoAction(0);
                             break;
-
-                        case EVENT_AUNTIE_ENTRANCE_SAY_5:
-                            auntieStormstout->AI()->Talk(AUNTIE_ENTRANCE_SAY_5);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_5, 11000);
+                        case EVENT_TALK_2:
+                            Talk(TALK_ZAN);
+                            GetChenAndDoAction(1);
                             break;
-
-                        case EVENT_CHEN_ENTRANCE_SAY_5:
-                            Talk(CHEN_ENTRANCE_SAY_5);
-                            events.ScheduleEvent(EVENT_AUNTIE_ENTRANCE_SAY_6, 4500);
+                        case EVENT_TALK_3:
+                            Talk(TALK_DAY);
+                            GetChenAndDoAction(2);
                             break;
-
-                        case EVENT_AUNTIE_ENTRANCE_SAY_6:
-                            auntieStormstout->AI()->Talk(AUNTIE_ENTRANCE_SAY_6);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_6, 4500);
+                        case EVENT_TALK_4:
+                            Talk(TALK_SIZE);
+                            GetChenAndDoAction(3);
                             break;
-
-                        case EVENT_CHEN_ENTRANCE_SAY_6:
-                            Talk(CHEN_ENTRANCE_SAY_6);
-                            events.ScheduleEvent(EVENT_CHEN_ENTRANCE_SAY_7, 30000);
+                        case EVENT_TALK_5:
+                            Talk(TALK_ABANDONED);
+                            GetChenAndDoAction(4);
                             break;
-
-                        case EVENT_CHEN_ENTRANCE_SAY_7:
-                            Talk(CHEN_ENTRANCE_SAY_7);
+                        case EVENT_TALK_6:
+                            Talk(TALK_COOKIES);
+                            GetChenAndDoAction(5);
                             break;
-
-                        default: break;
                     }
                 }
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_chen_stormstout_entrance_AI(creature);
+            return new npc_auntie_stormstoutAI(creature);
         }
 };
 
-// Instance trash scripts.
 
-// Sodden Hozen Brawler 59605.
-class npc_sodden_hozen_brawler : public CreatureScript
+class npc_aqua_dancer : public CreatureScript
 {
-    public :
-        npc_sodden_hozen_brawler() : CreatureScript("npc_sodden_hozen_brawler") { }
+    public:
+        npc_aqua_dancer() : CreatureScript("npc_aqua_dancer") { }
 
-        struct npc_sodden_hozen_brawler_AI : public ScriptedAI
+        enum Spells
         {
-            npc_sodden_hozen_brawler_AI(Creature* creature) : ScriptedAI(creature), summons(me)
+            SPELL_SPLASH                = 107030,
+            SPELL_AQUATIC_ILLUSION      = 107044
+        };
+
+        enum Talks
+        {
+            TALK_DEATH
+        };
+
+        struct npc_aqua_dancerAI : public ScriptedAI
+        {
+            npc_aqua_dancerAI(Creature* creature) : ScriptedAI(creature) { }
+
+            uint64 hozenGuid;
+
+            void Reset() override { }
+
+            void InitializeAI() override
             {
-                instance = creature->GetInstanceScript();
-                summonedFirstHelper = false;
+                me->SetUnitMovementFlags(MOVEMENTFLAG_DISABLE_GRAVITY);
+
+                if (Creature* hozen = GetClosestCreatureWithEntry(me, NPC_SODDEN_HOZEN_BRAWLER, 30.f))
+                {
+                    DoCast(hozen, SPELL_AQUATIC_ILLUSION, true);
+                    hozenGuid = hozen->GetGUID();
+                }
+
+                me->SetReactState(REACT_PASSIVE);
             }
 
-            InstanceScript* instance;
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                damage = me->GetHealth();
+            }
+
+            void JustDied(Unit* killer) override
+            {
+                DoCast(me, SPELL_SPLASH, true);
+
+                if (Creature* hozen = ObjectAccessor::GetCreature(*me, hozenGuid))
+                {
+                    Talk(TALK_DEATH);
+
+                    me->DealDamage(hozen, (uint32)hozen->GetMaxHealth() / 2, 0, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FROST);
+
+                    if (hozen->AI())
+                        hozen->AI()->DoZoneInCombat();
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+            }
+
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_aqua_dancerAI(creature);
+        }
+};
+
+class npc_fiery_trickster : public CreatureScript
+{
+    public:
+        npc_fiery_trickster() : CreatureScript("npc_fiery_trickster") { }
+
+        enum Spells
+        {
+            SPELL_FIERY_ILLUSION        = 107175,
+            SPELL_BLAZING_SPARK         = 107071
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_INIT,
+            EVENT_FIRE_SPARK
+        };
+
+        enum Talks
+        {
+            TALK_DEATH
+        };
+
+        struct npc_fiery_tricksterAI : public ScriptedAI
+        {
+            npc_fiery_tricksterAI(Creature* creature) : ScriptedAI(creature)
+            {
+                me->SetUnitMovementFlags(MOVEMENTFLAG_DISABLE_GRAVITY);
+                events.ScheduleEvent(EVENT_INIT, urand(400, 800));
+                events.ScheduleEvent(EVENT_FIRE_SPARK, urand(4000, 9000));
+            }
+
+            uint64 hozenGuid;
             EventMap events;
-            SummonList summons;
-            bool summonedFirstHelper, helperDead;
 
-            void InitializeAI()
+            void Initialize()
             {
-                if (!me->isDead())
-                    Reset();
+                Creature* hozen = GetClosestCreatureWithEntry(me, NPC_INFLAMED_HOZEN_BRAWLER, 39.f);
+
+                if (hozen && !hozen->HasAura(SPELL_FIERY_ILLUSION))
+                {
+                    DoCast(hozen, SPELL_FIERY_ILLUSION, true);
+                    hozenGuid = hozen->GetGUID();
+                }
+
+                me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
-                events.Reset();
-                summons.DespawnAll();
-                helperDead = false;
+                damage = me->GetHealth();
+            }
 
-                // Summon the "helper".
-                if (!summonedFirstHelper)
+            void JustDied(Unit* killer) override
+            {
+                if (Creature* hozen = ObjectAccessor::GetCreature(*me, hozenGuid))
                 {
-                    me->SummonCreature(NPC_AQUA_DANCER, me->GetPositionX(), me->GetPositionY() - 3.0f, me->GetPositionZ() + 8.0f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                    summonedFirstHelper = true;
+                    Talk(TALK_DEATH);
+                    me->DealDamage(hozen, (uint32)hozen->GetMaxHealth() / 2, 0, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FIRE);
+
+                    if (hozen->AI())
+                        hozen->AI()->DoZoneInCombat();
                 }
             }
 
-            void EnterCombat(Unit* /*who*/) { }
-
-            void EnterEvadeMode()
+            void UpdateAI(uint32 diff) override
             {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
+                events.Update(diff);
 
-            void JustReachedHome()
-            {
-                if (helperDead)
-                    me->SummonCreature(NPC_AQUA_DANCER, me->GetPositionX(), me->GetPositionY() - 3.0f, me->GetPositionZ() + 8.0f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                summons.DespawnAll();
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-                summon->setActive(true);
-
-		        if (me->isInCombat())
-                    summon->SetInCombatWithZone();
-
-                if (summon->GetEntry() == NPC_AQUA_DANCER)
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    summon->SetCanFly(true);
-                    summon->SetDisableGravity(true);
-                    summon->SetReactState(REACT_PASSIVE);
-                    summon->CastSpell(me, SPELL_AQUATIC_ILLUSION, false);
+                    switch (eventId)
+                    {
+                        case EVENT_INIT:
+                            Initialize();
+                            break;
+                        case EVENT_FIRE_SPARK:
+                            DoCast(me, SPELL_BLAZING_SPARK, true);
+                            events.ScheduleEvent(EVENT_FIRE_SPARK, urand(6000, 11000));
+                            break;
+                    }
                 }
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_fiery_tricksterAI(creature);
+        }
+};
+
+static const uint32 auiEmotes[] =
+{
+    EMOTE_ONESHOT_TALK,
+    EMOTE_ONESHOT_CHEER,
+    EMOTE_ONESHOT_EAT,
+    EMOTE_ONESHOT_LAUGH,
+};
+
+class npc_hozen_party_animal : public CreatureScript
+{
+    public:
+        npc_hozen_party_animal() : CreatureScript("npc_hozen_party_animal") { }
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_MOVE,
+            EVENT_FIREWORK,
+        };
+
+        struct npc_hozen_party_animalAI : public ScriptedAI
+        {
+            npc_hozen_party_animalAI(Creature* creature) : ScriptedAI(creature) { }
+
+            bool canAggroMore;
+            uint32 waypoint;
+            EventMap events;
+
+            void Initialize()
+            {
+                me->CombatStop(true);
+                me->AttackStop();
+                me->SetReactState(REACT_PASSIVE);
+                canAggroMore = true;
+                me->HandleEmoteCommand(auiEmotes[(urand(0, 3))]);
+
+                me->GetMotionMaster()->Clear(false);
+
+                waypoint = (me->GetDistance(aPartyWps[0]) > me->GetDistance(aPartyWps[1])) ? 1 : 0;
+
+                events.ScheduleEvent(EVENT_MOVE, 100);
+                events.ScheduleEvent(EVENT_FIREWORK, urand(2, 28) * IN_MILLISECONDS);
+
             }
 
-            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+            void Reset() override
             {
-                summons.Despawn(summon);
-                me->RemoveAurasDueToSpell(SPELL_AQUATIC_ILLUSION);
-                DoCast(me, SPELL_AQUAT_ILLUSION_R);
-                helperDead = true;
+                events.ScheduleEvent(EVENT_FIREWORK, urand(2, 28)*IN_MILLISECONDS);
+
+                if (uint32 hatId = Trinity::Containers::SelectRandomContainerElement(hats))
+                    me->CastSpell(me, hatId, false);
             }
 
-            void UpdateAI(const uint32 diff)
+            void DoAction(int32 actionId) override
             {
+                if (actionId == 0)
+                    Initialize();
+                else if (actionId == 1)
+                    canAggroMore = false;
+            }
+
+            void Move()
+            {
+                me->GetMotionMaster()->MovePoint(waypoint, aPartyWps[waypoint]);
+            }
+
+            void EnterCombat(Unit* who) override
+            {
+                std::list<Creature*> temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 15.f);
+
+                if (canAggroMore)
+                {
+                    for (auto creature : temp)
+                    {
+                        if (creature->AI() && creature->IsAlive() && !creature->IsInCombat())
+                        {
+                            creature->AI()->DoAction(1);
+                            creature->AI()->DoZoneInCombat();
+                        }
+                    }
+                }
+
+                events.CancelEvent(EVENT_FIREWORK);
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE)
+                    return;
+
+                switch (pointId)
+                {
+                    case 0:
+                    case 1:
+                    case 2:
+                    case 3:
+                    case 4:
+                    case 5:
+                        events.ScheduleEvent(EVENT_MOVE, 100);
+                        break;
+                    case 6:
+                        me->DespawnOrUnsummon();
+                        break;
+                }
+
+                waypoint++;
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_MOVE:
+                            Move();
+                            break;
+                        case EVENT_FIREWORK:
+                            if (uint32 fireworkId = Trinity::Containers::SelectRandomContainerElement(fireworks))
+                                me->CastSpell(me, fireworkId, false);
+
+                            events.ScheduleEvent(EVENT_FIREWORK, urand(2, 28)*IN_MILLISECONDS);
+                            break;
+                    }
+                }
+
                 if (!UpdateVictim())
                     return;
 
@@ -444,1059 +605,183 @@ class npc_sodden_hozen_brawler : public CreatureScript
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_sodden_hozen_brawler_AI(creature);
+            return new npc_hozen_party_animalAI(creature);
         }
 };
 
-// Inflamed Hozen Brawler 56924.
-class npc_inflamed_hozen_brawler : public CreatureScript
-{
-    public :
-        npc_inflamed_hozen_brawler() : CreatureScript("npc_inflamed_hozen_brawler") { }
-
-        struct npc_inflamed_hozen_brawler_AI : public ScriptedAI
-        {
-            npc_inflamed_hozen_brawler_AI(Creature* creature) : ScriptedAI(creature), summons(me)
-            {
-                instance = creature->GetInstanceScript();
-                summonedFirstHelper = false;
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-            SummonList summons;
-            bool summonedFirstHelper, helperDead;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-                helperDead = false;
-
-                // Summon the "helper".
-                if (!summonedFirstHelper)
-                {
-                    me->SummonCreature(NPC_FIERY_TRICKSTER, me->GetPositionX(), me->GetPositionY() - 3.0f, me->GetPositionZ() + 8.0f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                    summonedFirstHelper = true;
-                }
-            }
-
-            void EnterCombat(Unit* /*who*/) { }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void JustReachedHome()
-            {
-                if (helperDead)
-                    me->SummonCreature(NPC_FIERY_TRICKSTER, me->GetPositionX(), me->GetPositionY() - 3.0f, me->GetPositionZ() + 8.0f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                summons.DespawnAll();
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-                summon->setActive(true);
-
-		        if (me->isInCombat())
-                    summon->SetInCombatWithZone();
-
-                if (summon->GetEntry() == NPC_FIERY_TRICKSTER)
-                {
-                    summon->SetCanFly(true);
-                    summon->SetDisableGravity(true);
-                    summon->SetReactState(REACT_PASSIVE);
-                    summon->CastSpell(me, SPELL_FIERY_ILLUSION, false);
-                }
-            }
-
-            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
-            {
-                summons.Despawn(summon);
-                me->RemoveAurasDueToSpell(SPELL_FIERY_ILLUSION);
-                DoCast(me, SPELL_FIERY_ILLUSION_R);
-                helperDead = true;
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_inflamed_hozen_brawler_AI(creature);
-        }
-};
-
-// Hozen Bouncer 56849.
 class npc_hozen_bouncer : public CreatureScript
 {
-    public :
+    public:
         npc_hozen_bouncer() : CreatureScript("npc_hozen_bouncer") { }
 
-        struct npc_hozen_bouncer_AI : public ScriptedAI
+        enum Events
         {
-            npc_hozen_bouncer_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
+            EVENT_NONE,
+            EVENT_TALK
+        };
 
-            InstanceScript* instance;
-            EventMap events;
-            bool isInCombat;
+        enum Talks
+        {
+            TALK_DOWN,
+            TALK_MEAN,
+            TALK_NEW,
+            TALK_PARTY
+        };
 
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
+        enum Spells
+        {
+            SPELL_BOUNCE    = 107019
+        };
 
-            void Reset()
+        struct npc_hozen_bouncerAI : public ScriptedAI
+        {
+            npc_hozen_bouncerAI(Creature* creature) : ScriptedAI(creature)
             {
-                events.Reset();
-                isInCombat = false;
+                instance = me->GetInstanceScript();
+
+                if (instance && instance->GetBossState(DATA_OOK_OOK) == DONE)
+                    me->AddAura(SPELL_BOUNCE, me);
+
                 me->SetReactState(REACT_PASSIVE);
-                me->AddAura(SPELL_HOZEN_DOORGUARD, me);
-
-                events.ScheduleEvent(EVENT_CHECK_OOK, 10000);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
             }
 
-            void EnterCombat(Unit* /*who*/)
-            {
-                isInCombat = true;
-                me->SetReactState(REACT_AGGRESSIVE);
-                events.CancelEvent(EVENT_CHECK_OOK);
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-                events.ScheduleEvent(EVENT_CHECK_OOK, 10000);
-            }
-
-            void MovementInform(uint32 type, uint32 id)
-            {
-                if (!me->isAlive() || type != POINT_MOTION_TYPE || id != 1)
-                    return;
-
-                me->Kill(me); // Die.
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim() && isInCombat)
-                    return;
-
-                events.Update(diff);
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_CHECK_OOK:
-                            // Check for Ook-ook killed.
-                            if (instance->GetBossState(DATA_OOKOOK_EVENT) == DONE)
-                            {
-                                events.CancelEvent(EVENT_CHECK_OOK);
-
-                                // Check on Y position (only one does the talking).
-                                if (me->GetPositionY() > 1303.0f)
-                                    events.ScheduleEvent(EVENT_SAY_OOK_KILLED, 2000);
-
-                                events.ScheduleEvent(EVENT_RUN_AND_CRASH, 18000);
-                            }
-                            events.ScheduleEvent(EVENT_CHECK_OOK, 10000);
-                            break;
-
-                        case EVENT_SAY_OOK_KILLED:
-                            Talk(SAY_OOK_KILLED);
-                            events.ScheduleEvent(EVENT_SAY_MEANS, 4000);
-                            break;
-
-                        case EVENT_SAY_MEANS:
-                            Talk(SAY_MEANS);
-                            events.ScheduleEvent(EVENT_SAY_NEW_OOK, 4000);
-                            break;
-
-                        case EVENT_SAY_NEW_OOK:
-                            Talk(SAY_NEW_OOK);
-                            events.ScheduleEvent(EVENT_SAY_PARTY, 3000);
-                            break;
-
-                        case EVENT_SAY_PARTY:
-                            Talk(SAY_PARTY);
-                            break;
-
-                        case EVENT_RUN_AND_CRASH:
-                            me->GetMotionMaster()->MovePoint(1, -747.929f, 1323.334f, 146.715f);
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                if (isInCombat)
-                    DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_hozen_bouncer_AI(creature);
-        }
-};
-
-// Sleepy Hozen Brawler 56863, Drunken Hozen Brawler 56862.
-class npc_drunken_sleepy_hozen_brawler : public CreatureScript
-{
-    public :
-        npc_drunken_sleepy_hozen_brawler() : CreatureScript("npc_drunken_sleepy_hozen_brawler") { }
-
-        struct npc_drunken_sleepy_hozen_brawler_AI : public ScriptedAI
-        {
-            npc_drunken_sleepy_hozen_brawler_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
+            uint32 talk;
             EventMap events;
+            InstanceScript* instance;
 
-            void InitializeAI()
+            void DoAction(int32 actionId) override
             {
-                if (!me->isDead())
-                    Reset();
+                talk = actionId;
+                me->RemoveAllAuras();
+
+                float x, y;
+
+                GetPositionWithDistInOrientation(me, 18.f, me->GetOrientation(), x, y);
+                me->SetWalk(true);
+                me->GetMotionMaster()->MovePoint(0, x, y, me->GetMap()->GetHeight(x, y, me->GetPositionZ()));
             }
 
-            void Reset()
+            void MovementInform(uint32 type, uint32 /*pointId*/) override
             {
-                events.Reset();
-
-                // Add Sleep cosmetic to the Sleepy Hozen Brawlers.
-                if (me->GetEntry() == NPC_SLEEPY_HOZEN_BRAWLER && !me->HasAura(SPELL_COSMETIC_SLEEP))
-                    me->AddAura(SPELL_COSMETIC_SLEEP, me);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                if (me->GetEntry() == NPC_SLEEPY_HOZEN_BRAWLER)
-                {
-                    // Remove Sleep cosmetic from the Sleepy Hozen Brawlers.
-                    me->RemoveAurasDueToSpell(SPELL_COSMETIC_SLEEP);
-
-                    // Check the Habanero Brew barrels.
-                    if (Creature* habanero = me->FindNearestCreature(NPC_HABANERO_BREW, 10.0f))
-                        habanero->CastSpell(habanero, SPELL_SPICY_EXPLOSION, false);
-                }
-
-                events.ScheduleEvent(EVENT_UPPERCUT, urand(4000, 8000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void JustReachedHome()
-            {
-                // Add Sleep cosmetic to the Sleepy Hozen Brawlers.
-                if (me->GetEntry() == NPC_SLEEPY_HOZEN_BRAWLER && !me->HasAura(SPELL_COSMETIC_SLEEP))
-                    me->AddAura(SPELL_COSMETIC_SLEEP, me);
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
+                if (type != POINT_MOTION_TYPE)
                     return;
 
+                me->SetFacingTo(1.83f);
+                events.ScheduleEvent(EVENT_TALK, 2000*(talk+1)*2);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
                 events.Update(diff);
 
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_UPPERCUT:
-                            DoCastVictim(SPELL_UPPERCUT);
-                            events.ScheduleEvent(EVENT_UPPERCUT, urand(6000, 11000));
+                        case EVENT_TALK:
+                            Talk(talk);
+                            if (talk < 2)
+                                events.ScheduleEvent(EVENT_TALK, 5000);
+                            talk += 2;
                             break;
-
-                        default: break;
                     }
+                    
                 }
-
-                DoMeleeAttackIfReady();
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_drunken_sleepy_hozen_brawler_AI(creature);
+            return new npc_hozen_bouncerAI(creature);
         }
 };
 
-// Stout Brew Alemental 59519.
-class npc_stout_brew_alemental : public CreatureScript
-{
-    public :
-        npc_stout_brew_alemental() : CreatureScript("npc_stout_brew_alemental") { }
-
-        struct npc_stout_brew_alemental_AI : public ScriptedAI
-        {
-            npc_stout_brew_alemental_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT, urand(2000, 6000));
-                events.ScheduleEvent(EVENT_BLACKOUT_BREW, urand(12000, 17000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT);
-                            events.ScheduleEvent(EVENT_BREW_BOLT, urand(7000, 11000));
-                            break;
-
-                        case EVENT_BLACKOUT_BREW:
-                            DoCast(me, SPELL_BLACKOUT_BREW);
-                            events.ScheduleEvent(EVENT_BLACKOUT_BREW, urand(18000, 23000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_stout_brew_alemental_AI(creature);
-        }
-};
-
-// Sudsy Brew Alemental 59522.
-class npc_sudsy_brew_alemental : public CreatureScript
-{
-    public :
-        npc_sudsy_brew_alemental() : CreatureScript("npc_sudsy_brew_alemental") { }
-
-        struct npc_sudsy_brew_alemental_AI : public ScriptedAI
-        {
-            npc_sudsy_brew_alemental_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT2, urand(2000, 6000));
-                events.ScheduleEvent(EVENT_SUDS, urand(9000, 12000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT2:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT2);
-                            events.ScheduleEvent(EVENT_BREW_BOLT2, urand(7000, 11000));
-                            break;
-
-                        case EVENT_SUDS:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_SUDS);
-                            events.ScheduleEvent(EVENT_SUDS, urand(18000, 22000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_sudsy_brew_alemental_AI(creature);
-        }
-};
-
-// Pool of Suds 56748.
-class npc_pool_of_suds : public CreatureScript
-{
-    public :
-        npc_pool_of_suds() : CreatureScript("npc_pool_of_suds") { }
-
-        struct npc_pool_of_suds_AI : public ScriptedAI
-        {
-            npc_pool_of_suds_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-
-            void IsSummonedBy(Unit* /*summoner*/)
-            {
-                Reset();
-            }
-
-            void Reset()
-            {
-                me->AddAura(AURA_SUDS, me);
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(const uint32 diff) { } // No melee.
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_pool_of_suds_AI(creature);
-        }
-};
-
-// Unruly Alemental 56684.
-class npc_unruly_alemental : public CreatureScript
-{
-    public :
-        npc_unruly_alemental() : CreatureScript("npc_unruly_alemental") { }
-
-        struct npc_unruly_alemental_AI : public ScriptedAI
-        {
-            npc_unruly_alemental_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-
-                if (!me->HasAura(SPELL_BREWHAHA))
-                    me->AddAura(SPELL_BREWHAHA, me);
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT3, urand(2000, 6000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void JustReachedHome()
-            {
-                if (!me->HasAura(SPELL_BREWHAHA))
-                    me->AddAura(SPELL_BREWHAHA, me);
-            }
-
-            void UpdateAI(uint32 const diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT3:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT3);
-                            events.ScheduleEvent(EVENT_BREW_BOLT3, urand(7000, 11000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_unruly_alemental_AI(creature);
-        }
-};
-
-// Fizzy Brew Alemental 59520.
-class npc_fizzy_brew_alemental : public CreatureScript
-{
-    public :
-        npc_fizzy_brew_alemental() : CreatureScript("npc_fizzy_brew_alemental") { }
-
-        struct npc_fizzy_brew_alemental_AI : public ScriptedAI
-        {
-            npc_fizzy_brew_alemental_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT2, urand(2000, 6000));
-                events.ScheduleEvent(EVENT_CARBONATION, urand(9000, 12000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT2:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT2);
-                            events.ScheduleEvent(EVENT_BREW_BOLT2, urand(7000, 11000));
-                            break;
-
-                        case EVENT_CARBONATION:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_CARBONATION_M);
-                            events.ScheduleEvent(EVENT_CARBONATION, urand(22000, 26000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_fizzy_brew_alemental_AI(creature);
-        }
-};
-
-// Pool of Carbonation 56746.
-class npc_pool_of_carbonation : public CreatureScript
-{
-    public :
-        npc_pool_of_carbonation() : CreatureScript("npc_pool_of_carbonation") { }
-
-        struct npc_pool_of_carbonation_AI : public ScriptedAI
-        {
-            npc_pool_of_carbonation_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-
-            void IsSummonedBy(Unit* /*summoner*/)
-            {
-                Reset();
-            }
-
-            void Reset()
-            {
-                me->AddAura(AURA_CARBONATION, me);
-                me->SetReactState(REACT_PASSIVE);
-            }
-
-            void UpdateAI(uint32 const diff) { } // No melee.
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_pool_of_carbonation_AI(creature);
-        }
-};
-
-// Bloated Brew Alemental 59518.
-class npc_bloated_brew_alemental : public CreatureScript
-{
-    public :
-        npc_bloated_brew_alemental() : CreatureScript("npc_bloated_brew_alemental") { }
-
-        struct npc_bloated_brew_alemental_AI : public ScriptedAI
-        {
-            npc_bloated_brew_alemental_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT, urand(2000, 6000));
-                events.ScheduleEvent(EVENT_BLOAT, urand(10000, 14000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT);
-                            events.ScheduleEvent(EVENT_BREW_BOLT, urand(7000, 11000));
-                            break;
-
-                        case EVENT_BLOAT:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BLOAT);
-                            events.ScheduleEvent(EVENT_BLOAT, urand(32000, 37000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_bloated_brew_alemental_AI(creature);
-        }
-};
-
-// Bubbling Brew Alemental 59521.
-class npc_bubbling_brew_alemental : public CreatureScript
-{
-    public :
-        npc_bubbling_brew_alemental() : CreatureScript("npc_bubbling_brew_alemental") { }
-
-        struct npc_bubbling_brew_alemental_AI : public ScriptedAI
-        {
-            npc_bubbling_brew_alemental_AI(Creature* creature) : ScriptedAI(creature), summons(me)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-            SummonList summons;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT4, urand(2000, 6000));
-                events.ScheduleEvent(EVENT_BUBBLE_SHIELD, urand(9000, 17000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                summons.DespawnAll();
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-                summon->setActive(true);
-
-		        if (me->isInCombat())
-                    summon->SetInCombatWithZone();
-
-                if (summon->GetEntry() == NPC_BUBBLE_SHIELD_TRASH)
-                {
-                    summon->SetReactState(REACT_PASSIVE);
-                    summon->AddAura(SPELL_BUBBLE_SHIELD, me);
-                }
-            }
-
-            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
-            {
-                summons.Despawn(summon);
-
-				if (AuraPtr aura = me->GetAura(SPELL_BUBBLE_SHIELD))
-                {
-                    if (aura->GetStackAmount() > 1)
-                        me->SetAuraStack(SPELL_BUBBLE_SHIELD, me, aura->GetStackAmount() - 1);
-                    else
-                        me->RemoveAurasDueToSpell(SPELL_BUBBLE_SHIELD);
-                }
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT4:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT4);
-                            events.ScheduleEvent(EVENT_BREW_BOLT4, urand(7000, 11000));
-                            break;
-
-                        case EVENT_BUBBLE_SHIELD:
-                            for (uint8 i = 0; i < 4; i++)
-                                me->SummonCreature(NPC_BUBBLE_SHIELD_TRASH, me->GetPositionX() + frand(3.0f, -3.0f), me->GetPositionX() + frand(3.0f, -3.0f), me->GetPositionZ() + 0.1f, 0, TEMPSUMMON_MANUAL_DESPAWN);
-                            events.ScheduleEvent(EVENT_BUBBLE_SHIELD, urand(42000, 54000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_bubbling_brew_alemental_AI(creature);
-        }
-};
-
-// Yeasty Brew Alemental 59494.
-class npc_yeasty_brew_alemental : public CreatureScript
-{
-    public :
-        npc_yeasty_brew_alemental() : CreatureScript("npc_yeasty_brew_alemental") { }
-
-        struct npc_yeasty_brew_alemental_AI : public ScriptedAI
-        {
-            npc_yeasty_brew_alemental_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                events.ScheduleEvent(EVENT_BREW_BOLT4, urand(2000, 6000));
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        case EVENT_BREW_BOLT4:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BREW_BOLT4);
-                            events.ScheduleEvent(EVENT_BREW_BOLT4, urand(7000, 11000));
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_yeasty_brew_alemental_AI(creature);
-        }
-};
-
-// Spicy Explosion 107205, triggered by SPELL_PROC_EXPLOSION.
-class spell_stormstout_brewery_habanero_beer : public SpellScriptLoader
+class npc_controlled_hozen : public CreatureScript
 {
     public:
-        spell_stormstout_brewery_habanero_beer() : SpellScriptLoader("spell_stormstout_brewery_habanero_beer") { }
+        npc_controlled_hozen() : CreatureScript("npc_controlled_hozen") { }
 
-        class spell_stormstout_brewery_habanero_beer_SpellScript : public SpellScript
+        struct npc_controlled_hozenAI : public ScriptedAI
         {
-            PrepareSpellScript(spell_stormstout_brewery_habanero_beer_SpellScript);
+            npc_controlled_hozenAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void HandleInstaKill(SpellEffIndex /*effIndex*/)
+            void EnterEvadeMode() override
             {
-                if (!GetCaster())
-                    return;
-
-                std::list<Creature*> creatureList;
-                GetCreatureListWithEntryInGrid(creatureList, GetCaster(), NPC_HABANERO_BREW, 10.0f);
-
-                GetCaster()->RemoveAurasDueToSpell(SPELL_PROC_EXPLOSION);
-
-                for (std::list<Creature*>::iterator barrel = creatureList.begin(); barrel != creatureList.end(); barrel++)
-                {
-                    if ((*barrel)->HasAura(SPELL_PROC_EXPLOSION))
-                    {
-                        (*barrel)->RemoveAurasDueToSpell(SPELL_PROC_EXPLOSION);
-                        (*barrel)->CastSpell(*barrel, SPELL_SPICY_EXPLOSION, true);
-                    }
-                }
+                me->CombatStop(true);
+                me->AttackStop();
+                me->RemoveAllAurasExceptType(SPELL_AURA_PROC_TRIGGER_SPELL);
+                me->GetMotionMaster()->MoveTargetedHome();
             }
 
-            void HandleAfterCast()
+            void EnterCombat(Unit* /*who*/) override
             {
-                if (Unit* caster = GetCaster())
-                    if (caster->ToCreature())
-                        caster->ToCreature()->DespawnOrUnsummon(1000);
-            }
+                std::list<Creature*> temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 60.f);
 
-            void Register()
-            {
-                OnEffectHit += SpellEffectFn(spell_stormstout_brewery_habanero_beer_SpellScript::HandleInstaKill, EFFECT_1, SPELL_EFFECT_INSTAKILL);
-                AfterCast += SpellCastFn(spell_stormstout_brewery_habanero_beer_SpellScript::HandleAfterCast);
+                for (auto&& creature : temp)
+                    if (creature->IsAlive() && !creature->IsInCombat())
+                        creature->AI()->DoZoneInCombat();
             }
         };
 
-        SpellScript* GetSpellScript() const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new spell_stormstout_brewery_habanero_beer_SpellScript();
+            return new npc_controlled_hozenAI(creature);
+        }
+};
+
+// Habanero Brew 56731
+class npc_habanero_brew : public CreatureScript
+{
+    public:
+        npc_habanero_brew() : CreatureScript("npc_habanero_brew") { }
+
+        struct npc_habanero_brewAI : public ScriptedAI
+        {
+            npc_habanero_brewAI(Creature* creature) : ScriptedAI(creature) {}
+
+            void InitializeAI() override
+            {
+                if (!me->HasAura(SPELL_PROC_EXPLOSION))
+                    me->AddAura(SPELL_PROC_EXPLOSION, me);
+
+                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                me->DespawnOrUnsummon(1000);
+            }
+
+            void DoAction(int32 /*actionId*/) override { }
+
+            void OnSpellClick(Unit* /*clicker*/, bool& /*result*/) override
+            {
+                me->CastSpell(me, SPELL_SPICY_EXPLOSION, false);
+                me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+            }
+
+            void UpdateAI(uint32 /*diff*/) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_habanero_brewAI(creature);
         }
 };
 
 void AddSC_stormstout_brewery()
 {
-    new at_stormstout_brewery_entrance();
-    new npc_chen_stormstout_entrance();
-    new npc_sodden_hozen_brawler();
-    new npc_inflamed_hozen_brawler();
+    new spell_spicy_explosion();
+    new npc_chen_stormstout();
+    new npc_auntie_stormstout();
+    new npc_aqua_dancer();
+    new npc_fiery_trickster();
+    new npc_hozen_party_animal();
     new npc_hozen_bouncer();
-    new npc_drunken_sleepy_hozen_brawler();
-    new npc_stout_brew_alemental();
-    new npc_sudsy_brew_alemental();
-    new npc_pool_of_suds();
-    new npc_unruly_alemental();
-    new npc_fizzy_brew_alemental();
-    new npc_pool_of_carbonation();
-    new npc_bloated_brew_alemental();
-    new npc_bubbling_brew_alemental();
-    new npc_yeasty_brew_alemental();
-    new spell_stormstout_brewery_habanero_beer();
+    new npc_controlled_hozen();
+    new npc_habanero_brew();
 }

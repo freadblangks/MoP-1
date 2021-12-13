@@ -66,17 +66,11 @@ enum Actions
 class boss_halazzi : public CreatureScript
 {
     public:
-
-        boss_halazzi(): CreatureScript("boss_halazzi") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_halazziAI(pCreature);
-        }
+        boss_halazzi(): CreatureScript("boss_halazzi") { }
 
         struct boss_halazziAI : public BossAI
         {
-            boss_halazziAI(Creature* pCreature) : BossAI(pCreature, DATA_HALAZZI)
+            boss_halazziAI(Creature* creature) : BossAI(creature, DATA_HALAZZI)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -96,7 +90,7 @@ class boss_halazzi : public CreatureScript
             uint32 health;
             bool isLynx; 
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -106,21 +100,23 @@ class boss_halazzi : public CreatureScript
                 
                 me->RemoveAurasDueToSpell(SPELL_TRANSFORM_HUMAN2);
                 DoCast(me, SPELL_TRANSFORM_LYNX, true);
+
+                me->GetMap()->SetWorldState(WORLDSTATE_TUNNEL_VISION, 1);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 phase = 0;
                 isLynx = true;
                 health = me->GetHealth();
-                me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_NONE);
+                me->HandleEmoteStateCommand(EMOTE_STATE_NONE);
                 events.ScheduleEvent(EVENT_WATER_TOTEM, urand(5000, 15000));
                 DoZoneInCombat();
                 instance->SetBossState(DATA_HALAZZI, IN_PROGRESS);
             }
 
-            void SpellHit(Unit*, const SpellInfo* spell)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
                 if (spell->Id == SPELL_TRANSFORM_LYNX)
                     EnterPhase(PHASE_LYNX);
@@ -130,8 +126,9 @@ class boss_halazzi : public CreatureScript
 
             void EnterPhase(Phases NextPhase)
             {
-                if (!me->isInCombat())
+                if (!me->IsInCombat())
                     return;
+
                 switch (NextPhase)
                 {
                     case PHASE_LYNX:
@@ -155,13 +152,13 @@ class boss_halazzi : public CreatureScript
                 }
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 Talk(SAY_DEATH);
                 _JustDied();
             }
             
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_COMBINE)
                 {
@@ -172,7 +169,7 @@ class boss_halazzi : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -226,13 +223,13 @@ class boss_halazzi : public CreatureScript
                             events.ScheduleEvent(EVENT_LIGHTNING_TOTEM, urand(20000, 25000));
                             break;
                         case EVENT_EARTH_SHOCK:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_EARTH_SHOCK);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_EARTH_SHOCK);
                             events.ScheduleEvent(EVENT_EARTH_SHOCK, urand(10000, 20000));
                             break;
                         case EVENT_FLAME_SHOCK:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_FLAME_SHOCK);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_FLAME_SHOCK);
                             events.ScheduleEvent(EVENT_FLAME_SHOCK, urand(10000, 20000));
                             break;
                      }
@@ -241,22 +238,21 @@ class boss_halazzi : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_halazziAI>(creature);
+        }
 };
 
 class npc_halazzi_lynx : public CreatureScript
 {
     public:
-
-        npc_halazzi_lynx() : CreatureScript("npc_halazzi_lynx") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_halazzi_lynxAI(pCreature);
-        }
+        npc_halazzi_lynx() : CreatureScript("npc_halazzi_lynx") { }
 
         struct npc_halazzi_lynxAI : public ScriptedAI
         {
-            npc_halazzi_lynxAI(Creature* pCreature) : ScriptedAI(pCreature) 
+            npc_halazzi_lynxAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -271,24 +267,24 @@ class npc_halazzi_lynx : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
-            
+
             bool bDespawn;
             EventMap events;
-            
-            void Reset()
+
+            void Reset() override
             {
                 events.Reset();
                 bDespawn = false;
             }
-            
-            void EnterCombat(Unit* who)
+
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_SHRED_ARMOR, urand(3000, 10000));
                 events.ScheduleEvent(EVENT_LYNX_FLURRY, urand(5000, 8000));
                 events.ScheduleEvent(EVENT_FIXATE, urand(6000, 9000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -309,10 +305,10 @@ class npc_halazzi_lynx : public CreatureScript
                      {
                         case EVENT_FIXATE:
                             DoResetThreat();
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
                             {
                                 DoCastVictim(SPELL_FIXATE, true);
-                                AttackStart(pTarget);
+                                AttackStart(target);
                             }
                             events.ScheduleEvent(EVENT_FIXATE, 10000);
                             break;
@@ -326,62 +322,71 @@ class npc_halazzi_lynx : public CreatureScript
                             break;
                      }
                 }
-
                 DoMeleeAttackIfReady();
             }
-
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_halazzi_lynxAI>(creature);
+        }
 };
 
 class npc_halazzi_water_totem : public CreatureScript
 {
     public:
-        npc_halazzi_water_totem() : CreatureScript("npc_halazzi_water_totem") {}
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_halazzi_water_totemAI(pCreature);
-        }
+        npc_halazzi_water_totem() : CreatureScript("npc_halazzi_water_totem") { }
 
         struct npc_halazzi_water_totemAI : public ScriptedAI
         {
-            npc_halazzi_water_totemAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_halazzi_water_totemAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 DoCast(me, SPELL_REFRESHING_STREAM, true);
             }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                me->GetMap()->SetWorldState(WORLDSTATE_TUNNEL_VISION, 0);
+            }
       };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_halazzi_water_totemAI>(creature);
+        }
 };
 
 class npc_halazzi_lightning_totem : public CreatureScript
 {
     public:
-        npc_halazzi_lightning_totem() : CreatureScript("npc_halazzi_lightning_totem") {}
+        npc_halazzi_lightning_totem() : CreatureScript("npc_halazzi_lightning_totem") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_halazzi_lightning_totemAI : public ScriptedAI
         {
-            return new npc_halazzi_lightning_totemAI(pCreature);
-        }
-
-        struct npc_halazzi_lightning_totemAI : public Scripted_NoMovementAI
-        {
-            npc_halazzi_lightning_totemAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_halazzi_lightning_totemAI(Creature* creature) : ScriptedAI(creature)
             {
+                SetCombatMovement(false);
             }
             
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_LIGHTNING, 1000);
             }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                me->GetMap()->SetWorldState(WORLDSTATE_TUNNEL_VISION, 0);
+            }
             
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -402,8 +407,12 @@ class npc_halazzi_lightning_totem : public CreatureScript
                      }
                 }
             }
-
       };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_halazzi_lightning_totemAI>(creature);
+        }
 };
 
 void AddSC_boss_halazzi()
@@ -413,4 +422,3 @@ void AddSC_boss_halazzi()
     new npc_halazzi_water_totem();
     new npc_halazzi_lightning_totem();
 }
-

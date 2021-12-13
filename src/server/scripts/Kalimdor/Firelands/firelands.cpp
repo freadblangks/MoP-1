@@ -5,6 +5,7 @@
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "firelands.h"
+#include "PassiveAI.h"
 
 enum Spells
 {
@@ -90,6 +91,18 @@ enum Spells
 
     // Volcanus
     SPELL_FLAMEWAKE                             = 100191,
+
+    // Achievement
+    SPELL_ONLY_THE_PENITENT                     = 99763,
+    SPELL_ORB_EVENT_2                           = 99759,
+    SPELL_ORB_EVENT_1                           = 99751,
+
+    // Alysra Event
+    SPELL_SMOULDERING_ROOT                      = 100559,
+    SPELL_SMOULDERING_ROOT_EFF                  = 100555,
+    SPELL_REMOVE_SMOULDERING_ROOT               = 100561,
+    SPELL_SACRIFICE_TO_THE_FLAME                = 100557,
+    SPELL_FANDRAL_TRANSFORM                     = 100565,
 };
 
 enum Adds
@@ -154,19 +167,21 @@ enum MiscData
     ANIM_KIT_BIRD_TURN          = 1473,
 };
 
+enum AlysraEventYells
+{
+    TALK_INTRO,
+    TALK_SPECIAL_1,
+    TALK_SPECIAL_2,
+};
+
 class npc_firelands_ancient_core_hound : public CreatureScript
 {
     public:
         npc_firelands_ancient_core_hound() : CreatureScript("npc_firelands_ancient_core_hound") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_ancient_core_houndAI (pCreature);
-        }
-
         struct npc_firelands_ancient_core_houndAI : public ScriptedAI
         {
-            npc_firelands_ancient_core_houndAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_firelands_ancient_core_houndAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -183,19 +198,19 @@ class npc_firelands_ancient_core_hound : public CreatureScript
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_DINNER_TIME, urand (15000, 20000));
                 events.ScheduleEvent(EVENT_TERRIFYING_ROAR, urand(8000, 20000));
                 events.ScheduleEvent(EVENT_FLAME_BREATH, urand(5000, 10000));
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -227,6 +242,11 @@ class npc_firelands_ancient_core_hound : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_ancient_core_houndAI>(creature);
+        }
 };
 
 class npc_firelands_ancient_lava_dweller : public CreatureScript
@@ -234,30 +254,23 @@ class npc_firelands_ancient_lava_dweller : public CreatureScript
     public:
         npc_firelands_ancient_lava_dweller() : CreatureScript("npc_firelands_ancient_lava_dweller") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_firelands_ancient_lava_dwellerAI : public ScriptedAI
         {
-            return new npc_firelands_ancient_lava_dwellerAI (pCreature);
-        }
-
-        struct npc_firelands_ancient_lava_dwellerAI : public Scripted_NoMovementAI
-        {
-            npc_firelands_ancient_lava_dwellerAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
-            {
-            }
+            npc_firelands_ancient_lava_dwellerAI(Creature* creature) : ScriptedAI(creature) { }
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_LAVA_SHOWER, urand(15000, 20000));
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -281,6 +294,11 @@ class npc_firelands_ancient_lava_dweller : public CreatureScript
                 DoSpellAttackIfReady(SPELL_LAVA_SPIT);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_ancient_lava_dwellerAI>(creature);
+        }
 };
 
 class npc_firelands_fire_scorpion : public CreatureScript
@@ -288,23 +306,23 @@ class npc_firelands_fire_scorpion : public CreatureScript
     public:
         npc_firelands_fire_scorpion() : CreatureScript("npc_firelands_fire_scorpion") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_fire_scorpionAI (pCreature);
-        }
-
         struct npc_firelands_fire_scorpionAI : public ScriptedAI
         {
-            npc_firelands_fire_scorpionAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_firelands_fire_scorpionAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SNARE, true);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 DoCast(me, SPELL_FIERY_BLOOD);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_fire_scorpionAI>(creature);
+        }
 };
 
 class npc_firelands_fire_turtle_hatchling : public CreatureScript
@@ -312,14 +330,9 @@ class npc_firelands_fire_turtle_hatchling : public CreatureScript
     public:
         npc_firelands_fire_turtle_hatchling() : CreatureScript("npc_firelands_fire_turtle_hatchling") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_fire_turtle_hatchlingAI (pCreature);
-        }
-
         struct npc_firelands_fire_turtle_hatchlingAI : public ScriptedAI
         {
-            npc_firelands_fire_turtle_hatchlingAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_firelands_fire_turtle_hatchlingAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -336,17 +349,17 @@ class npc_firelands_fire_turtle_hatchling : public CreatureScript
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_SHELL_SPIN, urand(10000, 20000));
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -370,6 +383,11 @@ class npc_firelands_fire_turtle_hatchling : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_fire_turtle_hatchlingAI>(creature);
+        }
 };
 
 class npc_firelands_flame_archon : public CreatureScript
@@ -377,14 +395,9 @@ class npc_firelands_flame_archon : public CreatureScript
     public:
         npc_firelands_flame_archon() : CreatureScript("npc_firelands_flame_archon") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_flame_archonAI (pCreature);
-        }
-
         struct npc_firelands_flame_archonAI : public ScriptedAI
         {
-            npc_firelands_flame_archonAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_firelands_flame_archonAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -401,18 +414,18 @@ class npc_firelands_flame_archon : public CreatureScript
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_FLAME_TORRENT, 10000);
                 events.ScheduleEvent(EVENT_FIERY_TORMENT, 20000);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -440,6 +453,11 @@ class npc_firelands_flame_archon : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_flame_archonAI>(creature);
+        }
 };
 
 class npc_firelands_molten_lord : public CreatureScript
@@ -447,14 +465,9 @@ class npc_firelands_molten_lord : public CreatureScript
     public:
         npc_firelands_molten_lord() : CreatureScript("npc_firelands_molten_lord") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_molten_lordAI (pCreature);
-        }
-
         struct npc_firelands_molten_lordAI : public ScriptedAI
         {
-            npc_firelands_molten_lordAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_firelands_molten_lordAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -467,58 +480,30 @@ class npc_firelands_molten_lord : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
             
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (pInstance)
-                {
-                    Map::PlayerList const& PlayerList = pInstance->instance->GetPlayers();
-                    if (!PlayerList.isEmpty())
-                    {
-                        for (Map::PlayerList::const_iterator itr = PlayerList.begin(); itr != PlayerList.end(); ++itr)
-                        {
-                            if (Player* pPlayer = itr->getSource())
-                            {
-                                if (!pPlayer->IsAtGroupRewardDistance(me))
-                                    continue;
-
-                                // Only mages, warlocks priests, shamans and druids
-                                // in caster specialization can accept quest
-                                if (!(pPlayer->getClass() == CLASS_MAGE ||
-                                    pPlayer->getClass() == CLASS_WARLOCK ||
-                                    pPlayer->getClass() == CLASS_PRIEST ||
-                                    (pPlayer->getClass() == CLASS_SHAMAN && (pPlayer->GetPrimaryTalentTree(pPlayer->GetActiveSpec()) == TALENT_TREE_SHAMAN_ELEMENTAL || pPlayer->GetPrimaryTalentTree(pPlayer->GetActiveSpec()) == TALENT_TREE_SHAMAN_RESTORATION)) ||
-                                    (pPlayer->getClass() == CLASS_DRUID && (pPlayer->GetPrimaryTalentTree(pPlayer->GetActiveSpec()) == TALENT_TREE_DRUID_BALANCE || pPlayer->GetPrimaryTalentTree(pPlayer->GetActiveSpec()) == TALENT_TREE_DRUID_RESTORATION))))
-                                    continue;
-
-                                if (pPlayer->GetTeam() == ALLIANCE && pPlayer->GetQuestStatus(29453) == QUEST_STATUS_NONE)
-                                    pPlayer->AddQuest(sObjectMgr->GetQuestTemplate(29453), NULL);
-                                else if (pPlayer->GetTeam() == HORDE && pPlayer->GetQuestStatus(29452) == QUEST_STATUS_NONE)
-                                    pPlayer->AddQuest(sObjectMgr->GetQuestTemplate(29452), NULL);
-                            }
-                        }
-                    }
-                }
+                AllowAcceptLegendaryQuest();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_FLAME_STOMP, 5000);
                 events.ScheduleEvent(EVENT_MELT_ARMOR, urand(3000, 7000));
                 events.ScheduleEvent(EVENT_SUMMON_LAVA_JETS, 10000);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -549,7 +534,42 @@ class npc_firelands_molten_lord : public CreatureScript
                 
                 DoMeleeAttackIfReady();
             }
+
+            private:
+                void AllowAcceptLegendaryQuest()
+                {
+                    if (instance)
+                    {
+                        for (auto&& itr : instance->instance->GetPlayers())
+                        {
+                            if (Player* target = itr.GetSource())
+                            {
+                                if (!target->IsAtGroupRewardDistance(me))
+                                    continue;
+
+                                if (target->getClass() == CLASS_MAGE || target->getClass() == CLASS_PRIEST || target->getClass() == CLASS_WARLOCK || target->GetTalentSpecialization() == SPEC_MONK_MISTWEAVER ||
+                                    target->GetTalentSpecialization() == SPEC_DRUID_BALANCE || target->GetTalentSpecialization() == SPEC_DRUID_RESTORATION ||
+                                    target->GetTalentSpecialization() == SPEC_SHAMAN_ELEMENTAL || target->GetTalentSpecialization() == SPEC_SHAMAN_RESTORATION)
+                                {
+                                    uint32 questId = target->GetTeam() == ALLIANCE ? 29453 : 29452;
+                                    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+
+                                    if (target->GetQuestStatus(questId) == QUEST_STATUS_NONE && target->CanTakeQuest(quest, false) && target->CanAddQuest(quest, false))
+                                    {
+                                        target->AddQuest(quest, NULL);
+                                        target->PlayerTalkClass->SendQuestGiverQuestDetails(quest, target->GetGUID(), true, true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_molten_lordAI>(creature);
+        }
 };
 
 class npc_firelands_molten_flamefather : public CreatureScript
@@ -557,14 +577,9 @@ class npc_firelands_molten_flamefather : public CreatureScript
     public:
         npc_firelands_molten_flamefather() : CreatureScript("npc_firelands_molten_flamefather") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_molten_flamefatherAI (pCreature);
-        }
-
         struct npc_firelands_molten_flamefatherAI : public ScriptedAI
         {
-            npc_firelands_molten_flamefatherAI(Creature* pCreature) : ScriptedAI(pCreature), summons(me)
+            npc_firelands_molten_flamefatherAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -582,31 +597,31 @@ class npc_firelands_molten_flamefather : public CreatureScript
             EventMap events;
             SummonList summons;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
                 summons.DespawnAll();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_EARTHQUAKE, urand(5000, 10000));
                 events.ScheduleEvent(EVENT_MAGMA_CONDUIT, urand(6000, 7000));
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 summons.Despawn(summon);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -629,10 +644,14 @@ class npc_firelands_molten_flamefather : public CreatureScript
                             break;
                     }
                 }
-                
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_molten_flamefatherAI>(creature);
+        }
 };
 
 class npc_firelands_magma_conduit : public CreatureScript
@@ -640,43 +659,39 @@ class npc_firelands_magma_conduit : public CreatureScript
     public:
         npc_firelands_magma_conduit() : CreatureScript("npc_firelands_magma_conduit") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_firelands_magma_conduitAI : public ScriptedAI
         {
-            return new npc_firelands_magma_conduitAI (pCreature);
-        }
-
-        struct npc_firelands_magma_conduitAI : public Scripted_NoMovementAI
-        {
-            npc_firelands_magma_conduitAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature), summons(me)
+            npc_firelands_magma_conduitAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
             SummonList summons;
 
-            void Reset()
+            void Reset() override
             {
                 summons.DespawnAll();
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 summons.Despawn(summon);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->DespawnOrUnsummon();
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 /*diff*/) override
             {
                 if (!UpdateVictim())
                 {
@@ -685,6 +700,11 @@ class npc_firelands_magma_conduit : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_magma_conduitAI>(creature);
+        }
 };
 
 class npc_firelands_magmakin : public CreatureScript
@@ -692,19 +712,14 @@ class npc_firelands_magmakin : public CreatureScript
     public:
         npc_firelands_magmakin() : CreatureScript("npc_firelands_magmakin") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_firelands_magmakinAI (pCreature);
-        }
-
         struct npc_firelands_magmakinAI : public ScriptedAI
         {
-            npc_firelands_magmakinAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_firelands_magmakinAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetSpeed(MOVE_RUN, 2.0f);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 /*diff*/) override
             {
                 if (!UpdateVictim())
                 {
@@ -712,10 +727,15 @@ class npc_firelands_magmakin : public CreatureScript
                     return;
                 }
 
-                if (me->GetDistance(me->getVictim()) < 2.0f)
+                if (me->GetDistance(me->GetVictim()) < 2.0f)
                     DoCastAOE(SPELL_ERUPTION, true);                
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_magmakinAI>(creature);
+        }
 };
 
 class spell_firelands_ancient_core_hound_dinner_time : public SpellScriptLoader
@@ -727,7 +747,7 @@ class spell_firelands_ancient_core_hound_dinner_time : public SpellScriptLoader
         {
             PrepareAuraScript(spell_firelands_ancient_core_hound_dinner_time_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -735,7 +755,7 @@ class spell_firelands_ancient_core_hound_dinner_time : public SpellScriptLoader
                 GetTarget()->SetControlled(true, UNIT_STATE_STUNNED);
             }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -743,14 +763,14 @@ class spell_firelands_ancient_core_hound_dinner_time : public SpellScriptLoader
                 GetTarget()->SetControlled(false, UNIT_STATE_STUNNED);                
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_firelands_ancient_core_hound_dinner_time_AuraScript::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_firelands_ancient_core_hound_dinner_time_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_firelands_ancient_core_hound_dinner_time_AuraScript();
         }
@@ -765,7 +785,7 @@ class spell_firelands_ancient_core_hound_flame_breath : public SpellScriptLoader
         {
             PrepareAuraScript(spell_firelands_ancient_core_hound_flame_breath_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -773,7 +793,7 @@ class spell_firelands_ancient_core_hound_flame_breath : public SpellScriptLoader
                 GetTarget()->SetControlled(true, UNIT_STATE_STUNNED);
             }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -781,14 +801,14 @@ class spell_firelands_ancient_core_hound_flame_breath : public SpellScriptLoader
                 GetTarget()->SetControlled(false, UNIT_STATE_STUNNED);                
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_firelands_ancient_core_hound_flame_breath_AuraScript::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_firelands_ancient_core_hound_flame_breath_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_firelands_ancient_core_hound_flame_breath_AuraScript();
         }
@@ -803,23 +823,23 @@ class spell_firelands_ancient_lava_dweller_lava_shower : public SpellScriptLoade
         {
             PrepareAuraScript(spell_firelands_ancient_lava_dweller_lava_shower_AuraScript);
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
 
                 if (GetCaster()->GetAI())
-                    if (Unit* pTarget = GetCaster()->GetAI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                        GetCaster()->CastSpell(pTarget, SPELL_LAVA_SHOWER_MISSILE, true);
+                    if (Unit* target = GetCaster()->GetAI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                        GetCaster()->CastSpell(target, SPELL_LAVA_SHOWER_MISSILE, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_firelands_ancient_lava_dweller_lava_shower_AuraScript::PeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_firelands_ancient_lava_dweller_lava_shower_AuraScript();
         }
@@ -834,7 +854,7 @@ class spell_firelands_fire_turtle_hatchling_shell_spin : public SpellScriptLoade
         {
             PrepareAuraScript(spell_firelands_fire_turtle_hatchling_shell_spin_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -842,7 +862,7 @@ class spell_firelands_fire_turtle_hatchling_shell_spin : public SpellScriptLoade
                 GetTarget()->SetControlled(true, UNIT_STATE_ROOT);
             }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -850,14 +870,14 @@ class spell_firelands_fire_turtle_hatchling_shell_spin : public SpellScriptLoade
                 GetTarget()->SetControlled(false, UNIT_STATE_ROOT);                
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_firelands_fire_turtle_hatchling_shell_spin_AuraScript::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_firelands_fire_turtle_hatchling_shell_spin_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_firelands_fire_turtle_hatchling_shell_spin_AuraScript();
         }
@@ -872,7 +892,7 @@ class spell_firelands_flame_archon_fiery_torment : public SpellScriptLoader
         {
             PrepareAuraScript(spell_firelands_flame_archon_fiery_torment_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -880,7 +900,7 @@ class spell_firelands_flame_archon_fiery_torment : public SpellScriptLoader
                 GetTarget()->SetControlled(true, UNIT_STATE_STUNNED);
             }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -888,18 +908,18 @@ class spell_firelands_flame_archon_fiery_torment : public SpellScriptLoader
                 GetTarget()->SetControlled(false, UNIT_STATE_STUNNED);                
             }
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
 
                 if (GetCaster()->GetAI())
-                    if (Unit* pTarget = GetCaster()->GetAI()->SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
-                        GetCaster()->CastSpell(pTarget, SPELL_FIERY_TORMENT_DMG, true);
+                    if (Unit* target = GetCaster()->GetAI()->SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+                        GetCaster()->CastSpell(target, SPELL_FIERY_TORMENT_DMG, true);
             }
 
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_firelands_flame_archon_fiery_torment_AuraScript::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_firelands_flame_archon_fiery_torment_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
@@ -907,7 +927,7 @@ class spell_firelands_flame_archon_fiery_torment : public SpellScriptLoader
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_firelands_flame_archon_fiery_torment_AuraScript();
         }
@@ -932,13 +952,13 @@ class spell_firelands_molten_lord_summon_lava_jets : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), 99538, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_firelands_molten_lord_summon_lava_jets_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_firelands_molten_lord_summon_lava_jets_SpellScript();
         }
@@ -1005,7 +1025,7 @@ class TrashRespawnWorker
                 case NPC_EGG_PILE:
                 case NPC_HARBINGER_OF_FLAME:
                 case NPC_MOLTEN_EGG_TRASH:
-                    if (!creature->isAlive())
+                    if (!creature->IsAlive())
                         creature->Respawn(true);
                     break;
                 case NPC_SMOULDERING_HATCHLING:
@@ -1018,7 +1038,7 @@ class TrashRespawnWorker
 static void AlysrazorTrashEvaded(Creature* creature)
 {
     TrashRespawnWorker check;
-    JadeCore::CreatureWorker<TrashRespawnWorker> worker(creature, check);
+    Trinity::CreatureWorker<TrashRespawnWorker> worker(creature, check);
     creature->VisitNearbyGridObject(SIZE_OF_GRIDS, worker);
 }
 
@@ -1029,11 +1049,9 @@ class npc_harbinger_of_flame : public CreatureScript
 
         struct npc_harbinger_of_flameAI : public ScriptedAI
         {
-            npc_harbinger_of_flameAI(Creature* creature) : ScriptedAI(creature)
-            {
-            }
+            npc_harbinger_of_flameAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void EnterCombat(Unit* /*target*/)
+            void EnterCombat(Unit* /*who*/)
             {
                 if (Creature* bird = ObjectAccessor::GetCreature(*me, me->GetUInt64Value(UNIT_FIELD_CHANNEL_OBJECT)))
                     DoZoneInCombat(bird, 200.0f);
@@ -1044,25 +1062,25 @@ class npc_harbinger_of_flame : public CreatureScript
                 _events.ScheduleEvent(EVENT_FIEROCLAST_BARRAGE, 6000);
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 AlysrazorTrashEvaded(me);
             }
 
-            void MoveInLineOfSight(Unit* unit)
+            void MoveInLineOfSight(Unit* who) override
             {
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     return;
 
-                if (!unit->isCharmedOwnedByPlayerOrPlayer())
+                if (!who->IsCharmedOwnedByPlayerOrPlayer())
                     return;
 
-                ScriptedAI::MoveInLineOfSight(unit);
+                ScriptedAI::MoveInLineOfSight(who);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!me->isInCombat())
+                if (!me->IsInCombat())
                     if (!me->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
                         if (Creature* fireBird = me->FindNearestCreature((me->GetHomePosition().GetPositionY() > -275.0f ? NPC_BLAZING_MONSTROSITY_LEFT : NPC_BLAZING_MONSTROSITY_RIGHT), 100.0f))
                             DoCast(fireBird, SPELL_FIRE_CHANNELING);
@@ -1098,9 +1116,9 @@ class npc_harbinger_of_flame : public CreatureScript
             EventMap _events;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_harbinger_of_flameAI(creature);
+            return GetInstanceAI<npc_harbinger_of_flameAI>(creature);
         }
 };
 
@@ -1111,67 +1129,65 @@ class npc_blazing_monstrosity : public CreatureScript
 
         struct npc_blazing_monstrosityAI : public PassiveAI
         {
-            npc_blazing_monstrosityAI(Creature* creature) : PassiveAI(creature), _summons(creature)
-            {
-            }
+            npc_blazing_monstrosityAI(Creature* creature) : PassiveAI(creature), _summons(creature) { }
 
-            void EnterEvadeMode()
+            void EnterEvadeMode() override
             {
                 _summons.DespawnAll();
                 _events.Reset();
                 PassiveAI::EnterEvadeMode();
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _summons.DespawnAll();
                 _events.Reset();
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 AlysrazorTrashEvaded(me);
             }
 
-            void EnterCombat(Unit* /*target*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 DoZoneInCombat();
                 me->RemoveAurasDueToSpell(SPELL_SLEEP_ULTRA_HIGH_PRIORITY);
-                me->PlayOneShotAnimKit(ANIM_KIT_BIRD_WAKE);
+                me->PlayOneShotAnimKitId(ANIM_KIT_BIRD_WAKE);
                 _events.Reset();
                 _events.ScheduleEvent(EVENT_START_SPITTING, 6000);
                 _events.ScheduleEvent(EVENT_CONTINUE_SPITTING, 9000);
             }
 
-            void PassengerBoarded(Unit* passenger, int8 /*seat*/, bool apply)
+            void PassengerBoarded(Unit* who, int8 /*seat*/, bool apply) override
             {
                 if (!apply)
                     return;
 
                 // Our passenger is another vehicle (boardable by players)
-                DoCast(passenger, SPELL_SHARE_HEALTH, true);
-                passenger->setFaction(35);
-                passenger->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                DoCast(who, SPELL_SHARE_HEALTH, true);
+                who->setFaction(35);
+                who->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
 
                 // Hack to relocate vehicle on vehicle so exiting players are not moved under map
-                Movement::MoveSplineInit init(*passenger);
+                Movement::MoveSplineInit init(who);
                 init.DisableTransportPathTransformations();
-                init.MoveTo(0.6654003f, 0.0f, 1.9815f);
+                init.MoveTo(0.6654003f, 0.0f, 1.9815f, false);
                 init.SetFacing(0.0f);
                 init.Launch();
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 _summons.Summon(summon);
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 _summons.Despawn(summon);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1200,9 +1216,9 @@ class npc_blazing_monstrosity : public CreatureScript
             EventMap _events;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_blazing_monstrosityAI(creature);
+            return GetInstanceAI<npc_blazing_monstrosityAI>(creature);
         }
 };
 
@@ -1213,26 +1229,24 @@ class npc_molten_barrage : public CreatureScript
 
         struct npc_molten_barrageAI : public NullCreatureAI
         {
-            npc_molten_barrageAI(Creature* creature) : NullCreatureAI(creature)
-            {
-            }
+            npc_molten_barrageAI(Creature* creature) : NullCreatureAI(creature) { }
 
-            void AttackStart(Unit* target)
+            void AttackStart(Unit* target) override
             {
                 if (target)
                     me->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f, MOTION_SLOT_IDLE);
             }
 
-            void IsSummonedBy(Unit* /*summoner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 DoCastAOE(SPELL_AGGRO_CLOSEST, true);
                 DoCast(me, SPELL_MOLTEN_BARRAGE_VISUAL);
                 DoCast(me, SPELL_INVISIBILITY_AND_STEALTH_DETECTION, true);
             }
 
-            void MovementInform(uint32 movementType, uint32 /*pointId*/)
+            void MovementInform(uint32 type, uint32 /*pointId*/) override
             {
-                if (movementType != EFFECT_MOTION_TYPE)
+                if (type != EFFECT_MOTION_TYPE)
                     return;
 
                 DoCastAOE(SPELL_AGGRO_CLOSEST);
@@ -1240,9 +1254,9 @@ class npc_molten_barrage : public CreatureScript
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_molten_barrageAI(creature);
+            return GetInstanceAI<npc_molten_barrageAI>(creature);
         }
 };
 
@@ -1253,20 +1267,18 @@ class npc_egg_pile : public CreatureScript
 
         struct npc_egg_pileAI : public CreatureAI
         {
-            npc_egg_pileAI(Creature* creature) : CreatureAI(creature)
-            {
-            }
+            npc_egg_pileAI(Creature* creature) : CreatureAI(creature) { }
 
-            void AttackStart(Unit* /*target*/) { }
+            void AttackStart(Unit* /*target*/) override { }
 
-            void Reset()
+            void Reset() override
             {
                 me->SetReactState(REACT_PASSIVE);
                 _events.Reset();
                 _callHatchlingSpell = 0;
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _events.Reset();
                 std::list<Creature*> eggs;
@@ -1277,12 +1289,12 @@ class npc_egg_pile : public CreatureScript
                 DoCast(me, SPELL_ALYSRAZOR_COSMETIC_EGG_XPLOSION, true);
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 AlysrazorTrashEvaded(me);
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 if (action != NPC_BLAZING_MONSTROSITY_LEFT &&
                     action != NPC_BLAZING_MONSTROSITY_RIGHT)
@@ -1297,7 +1309,7 @@ class npc_egg_pile : public CreatureScript
                 _events.ScheduleEvent(EVENT_SUMMON_SMOULDERING_HATCHLING, 1);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1315,11 +1327,11 @@ class npc_egg_pile : public CreatureScript
                         {
                             std::list<Creature*> eggs;
                             MoltenEggCheck check(me);
-                            JadeCore::CreatureListSearcher<MoltenEggCheck> searcher(me, eggs, check);
+                            Trinity::CreatureListSearcher<MoltenEggCheck> searcher(me, eggs, check);
                             me->VisitNearbyGridObject(20.0f, searcher);
                             if (!eggs.empty())
                             {
-                                Creature* egg = JadeCore::Containers::SelectRandomContainerElement(eggs);
+                                Creature* egg = Trinity::Containers::SelectRandomContainerElement(eggs);
                                 egg->CastSpell(egg, SPELL_SUMMON_SMOULDERING_HATCHLING, TRIGGERED_FULL_MASK);
                                 egg->SetDisplayId(MODEL_INVISIBLE_STALKER);
                                 egg->m_Events.AddEvent(new RespawnEggEvent(egg), egg->m_Events.CalculateTime(5000));
@@ -1343,9 +1355,9 @@ class npc_egg_pile : public CreatureScript
             uint32 _callHatchlingSpell;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_egg_pileAI(creature);
+            return GetInstanceAI<npc_egg_pileAI>(creature);
         }
 };
 
@@ -1355,21 +1367,21 @@ class npc_firelands_dull_focus : public CreatureScript
 
         npc_firelands_dull_focus() : CreatureScript("npc_firelands_dull_focus") { }
 
-        bool OnGossipHello(Player* pPlayer, Creature* pCreature)
+        bool OnGossipHello(Player* player, Creature* creature) override
         {
-            InstanceScript* pInstance = pCreature->GetInstanceScript();
-            if (!pInstance)
+            InstanceScript* instance = creature->GetInstanceScript();
+            if (!instance)
                 return true;
 
-            if (!pPlayer)
+            if (!player)
                 return true;
 
-            if (pPlayer->GetQuestStatus(29234) != QUEST_STATUS_INCOMPLETE)
+            if (player->GetQuestStatus(29234) != QUEST_STATUS_INCOMPLETE)
                 return true;
 
             uint32 spellId = 0;
 
-            switch (pCreature->GetEntry())
+            switch (creature->GetEntry())
             {
                 case NPC_DULL_RHYOLITH_FOCUS: spellId = SPELL_CHARGED_RHYOLITH_FOCUS; break;
                 case NPC_DULL_EMBERSTONE_FOCUS: spellId = SPELL_CHARGED_EMBERSTONE_FOCUS; break;
@@ -1380,8 +1392,8 @@ class npc_firelands_dull_focus : public CreatureScript
 
             if (spellId)
             {
-                pPlayer->CastSpell(pPlayer, spellId, true);
-                pCreature->DespawnOrUnsummon();
+                player->CastSpell(player, spellId, true);
+                creature->DespawnOrUnsummon();
             }
             return true;
         }
@@ -1393,24 +1405,24 @@ class npc_firelands_circle_of_thorns_portal : public CreatureScript
 
         npc_firelands_circle_of_thorns_portal() : CreatureScript("npc_firelands_circle_of_thorns_portal") { }
 
-        bool OnGossipHello(Player* pPlayer, Creature* pCreature)
+        bool OnGossipHello(Player* player, Creature* creature) override
         {
-            InstanceScript* pInstance = pCreature->GetInstanceScript();
-            if (!pInstance)
+            InstanceScript* instance = creature->GetInstanceScript();
+            if (!instance)
                 return true;
 
-            if (!pPlayer)
+            if (!player)
                 return true;
 
-            if (pInstance->GetData(DATA_EVENT) != DONE)
+            if (instance->GetData(DATA_EVENT) != DONE)
                 return true;
 
-            bool bIn = (pCreature->GetPositionZ() <= 100.0f);
+            bool bIn = (creature->GetPositionZ() <= 100.0f);
 
             if (bIn)
-                pPlayer->NearTeleportTo(504.063416f, 476.256317f, 246.745483f, 2.30f, false);
+                player->NearTeleportTo(504.063416f, 476.256317f, 246.745483f, 2.30f, false);
             else
-                pPlayer->NearTeleportTo(173.153091f, 283.155334f, 84.603622f, 3.69f, false); 
+                player->NearTeleportTo(173.153091f, 283.155334f, 84.603622f, 3.69f, false); 
 
             return true;
         }
@@ -1420,11 +1432,6 @@ class npc_firelands_volcanus : public CreatureScript
 {
     public:
         npc_firelands_volcanus() : CreatureScript("npc_firelands_volcanus") { }
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_firelands_volcanusAI(creature);
-        }
 
         struct npc_firelands_volcanusAI : public CreatureAI
         {
@@ -1444,19 +1451,19 @@ class npc_firelands_volcanus : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            void Reset()
+            void Reset() override
             {
-                me->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, 7);
-                me->SetFloatValue(UNIT_FIELD_COMBATREACH, 7);
+                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, 7);
+                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, 7);
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_FLAMEWAKE, 3000);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 if (Creature* pStalker = me->SummonCreature(NPC_STALKER, me->GetHomePosition(), TEMPSUMMON_TIMED_DESPAWN, 10000))
                 {
@@ -1466,7 +1473,7 @@ class npc_firelands_volcanus : public CreatureScript
                 me->DespawnOrUnsummon(500);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1496,6 +1503,11 @@ class npc_firelands_volcanus : public CreatureScript
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_volcanusAI>(creature);
+        }
 };
 
 class spell_alysrazor_cosmetic_egg_xplosion : public SpellScriptLoader
@@ -1511,6 +1523,7 @@ class spell_alysrazor_cosmetic_egg_xplosion : public SpellScriptLoader
             {
                 if (!sCreatureDisplayInfoStore.LookupEntry(MODEL_INVISIBLE_STALKER))
                     return false;
+
                 return true;
             }
 
@@ -1522,13 +1535,13 @@ class spell_alysrazor_cosmetic_egg_xplosion : public SpellScriptLoader
                     creature->DespawnOrUnsummon(4000);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_alysrazor_cosmetic_egg_xplosion_SpellScript::HandleExplosion, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_alysrazor_cosmetic_egg_xplosion_SpellScript();
         }
@@ -1555,6 +1568,7 @@ class spell_alysrazor_turn_monstrosity : public SpellScriptLoader
                     return false;
                 if (!sSpellMgr->GetSpellInfo(SPELL_KNOCKBACK_BACK))
                     return false;
+
                 return true;
             }
 
@@ -1607,17 +1621,17 @@ class spell_alysrazor_turn_monstrosity : public SpellScriptLoader
             void TurnBird(SpellEffIndex effIndex)
             {
                 PreventHitDefaultEffect(effIndex);
-                GetHitUnit()->PlayOneShotAnimKit(ANIM_KIT_BIRD_TURN);
+                GetHitUnit()->PlayOneShotAnimKitId(ANIM_KIT_BIRD_TURN);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_alysrazor_turn_monstrosity_SpellScript::KnockBarrage, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
                 OnEffectHitTarget += SpellEffectFn(spell_alysrazor_turn_monstrosity_SpellScript::TurnBird, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_alysrazor_turn_monstrosity_SpellScript();
         }
@@ -1632,7 +1646,7 @@ class spell_alysrazor_aggro_closest : public SpellScriptLoader
         {
             PrepareSpellScript(spell_alysrazor_aggro_closest_SpellScript);
 
-            bool Load()
+            bool Load() override
             {
                 return GetCaster()->GetTypeId() == TYPEID_UNIT;
             }
@@ -1650,14 +1664,14 @@ class spell_alysrazor_aggro_closest : public SpellScriptLoader
                 GetCaster()->GetAI()->AttackStart(GetCaster()->ToCreature()->SelectVictim());
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_alysrazor_aggro_closest_SpellScript::HandleEffect, EFFECT_0, SPELL_EFFECT_DUMMY);
                 AfterCast += SpellCastFn(spell_alysrazor_aggro_closest_SpellScript::UpdateThreat);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_alysrazor_aggro_closest_SpellScript();
         }
@@ -1680,16 +1694,197 @@ class spell_firelands_siphon_essence : public SpellScriptLoader
                 GetCaster()->CastSpell(GetCaster(), SPELL_SIPHON_ESSENCE_CREDIT, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_firelands_siphon_essence_SpellScript::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_firelands_siphon_essence_SpellScript();
         }
+};
+
+class npc_firelands_instance_portal : public CreatureScript
+{
+    public:
+        npc_firelands_instance_portal() : CreatureScript("npc_firelands_instance_portal") { }
+
+        struct npc_firelands_instance_portalAI : public CreatureAI
+        {
+            npc_firelands_instance_portalAI(Creature* creature) : CreatureAI(creature) { }
+
+            void OnSpellClick(Unit* clicker, bool& result) override
+            {
+                if (InstanceScript* instance = me->GetInstanceScript())
+                    if (instance->GetBossState(DATA_BALEROC) != DONE)
+                        return;
+
+                if (me->GetEntry() == 54348)
+                    clicker->NearTeleportTo(362.498f, -97.7795f, 78.3288f, 3.64774f, false);
+                else if (me->GetEntry() == 54367)
+                    clicker->NearTeleportTo(-359.944f, 206.012f, 52.32f, 3.64774f, false);
+            }
+
+            void UpdateAI(uint32 diff) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_firelands_instance_portalAI>(creature);
+        }
+};
+
+// Majordomo Stagheim Event 54015
+struct npc_firelands_majordomo_stagheim_event : public CreatureAI
+{
+    npc_firelands_majordomo_stagheim_event(Creature* creature) : CreatureAI(creature) { }
+
+    TaskScheduler scheduler;
+    bool hasInitialize;
+
+    void InitializeAI() override
+    {
+        hasInitialize = false;
+
+        if (!me->IsAlive() && me->GetInstanceScript() && me->GetInstanceScript()->GetBossState(DATA_ALYSRAZOR) != DONE)
+            me->Respawn();
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        if (hasInitialize)
+            return;
+
+        hasInitialize = true;
+        Talk(TALK_INTRO);
+
+        uint32 delay = 3500;
+        scheduler
+            .Schedule(Milliseconds(delay), [this](TaskContext context)
+        {
+            DoCast(me, SPELL_SMOULDERING_ROOT);
+            me->GetMotionMaster()->MovePoint(0, majordomoEventPos);
+        });
+
+        scheduler
+            .Schedule(Milliseconds(delay+=6700), [this](TaskContext context)
+        {
+            Talk(TALK_SPECIAL_1);
+        });
+
+        scheduler
+            .Schedule(Milliseconds(delay += 9000), [this](TaskContext context)
+        {
+            DoCast(me, SPELL_SACRIFICE_TO_THE_FLAME);
+        });
+
+        scheduler
+            .Schedule(Milliseconds(delay += 6400), [this](TaskContext context)
+        {
+            Talk(TALK_SPECIAL_2);
+        });
+
+        scheduler
+            .Schedule(Milliseconds(delay += 3700), [this](TaskContext context)
+        {
+            DoCast(me, SPELL_FANDRAL_TRANSFORM);
+
+            // Fly into Air
+            me->OverrideInhabitType(INHABIT_AIR);
+            me->UpdateMovementFlags();
+            me->GetMotionMaster()->MovePoint(0, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 10.0f);
+        });
+
+        scheduler
+            .Schedule(Milliseconds(delay += 5500), [this](TaskContext context)
+        {
+            // Summon Alysrazor
+            if (Creature* firelandsEventBunny = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(DATA_FIRELANDS_EVENT_BUNNY) : 0))
+                firelandsEventBunny->SummonCreature(NPC_ALYSRAZOR, *firelandsEventBunny, TEMPSUMMON_MANUAL_DESPAWN);
+
+            // Leave this
+            me->GetMotionMaster()->MovePoint(0, fandralLeavePoint);
+            me->DespawnOrUnsummon(me->GetSplineDuration());
+        });
+    }
+
+    void UpdateAI(uint32 diff) override 
+    {
+        scheduler.Update(diff);
+    }
+};
+
+class spell_firelands_kneel_to_the_flame : public SpellScriptLoader
+{
+    public:
+        spell_firelands_kneel_to_the_flame() : SpellScriptLoader("spell_firelands_kneel_to_the_flame") { }
+
+        class spell_firelands_kneel_to_the_flame_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_firelands_kneel_to_the_flame_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if(KneelCheck());
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_firelands_kneel_to_the_flame_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+
+        private:
+            struct KneelCheck
+            {
+                bool operator()(WorldObject* u) const
+                {
+                    Unit* unit = u->ToUnit();
+                    if (!unit)
+                        return true;
+
+                    uint32 emote = unit->GetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE);
+                    UnitStandStateType stand = (UnitStandStateType)unit->getStandState();
+                    if (emote == EMOTE_STATE_KNEEL ||
+                        emote == EMOTE_STATE_SIT ||
+                        emote == EMOTE_STATE_SLEEP ||
+                        stand == UNIT_STAND_STATE_KNEEL ||
+                        stand == UNIT_STAND_STATE_SIT ||
+                        stand == UNIT_STAND_STATE_SLEEP)
+                        return true;
+
+                    return false;
+                }
+            };
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_firelands_kneel_to_the_flame_SpellScript();
+        }
+};
+
+// Firelands Object Channel 99750
+class spell_firelands_object_channel : public AuraScript
+{
+    PrepareAuraScript(spell_firelands_object_channel);
+
+    void HandleAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+        {
+            if (GameObject* orb = owner->FindNearestGameObject(GO_RITUAL_OF_FLAMES_2, 10.0f))
+                owner->CastSpell(owner, SPELL_ORB_EVENT_2, true);
+            else
+                owner->CastSpell(owner, SPELL_ORB_EVENT_1, true);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_firelands_object_channel::HandleAuraEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 void AddSC_firelands()
@@ -1724,4 +1919,9 @@ void AddSC_firelands()
     new npc_firelands_circle_of_thorns_portal();
     new npc_firelands_volcanus();
     new spell_firelands_siphon_essence();
+    new npc_firelands_instance_portal();
+    new creature_script<npc_firelands_majordomo_stagheim_event>("npc_firelands_majordomo_stagheim_event");
+
+    new spell_firelands_kneel_to_the_flame();
+    new aura_script<spell_firelands_object_channel>("spell_firelands_object_channel");
 }

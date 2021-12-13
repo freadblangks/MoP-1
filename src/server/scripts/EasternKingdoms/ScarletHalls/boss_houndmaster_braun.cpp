@@ -2,56 +2,56 @@
 #include "ScriptedCreature.h"
 #include "scarlet_halls.h"
 
-enum Spells
+enum spells
 {
-    SPELL_BLOODY_RAGE    = 116140,
-    SPELL_CALL_DOG       = 114259, // will be done soon
-    SPELL_DEATH_BLOSSOM  = 114242,
-    SPELL_BLOSSOM_JUMP   = 114241,
-    SPELL_PIERCING_THROW = 114004,
-    SPELL_THROW_LINKED   = 114020,
+    SPELL_PIERCING_THROW          = 114004,
+    SPELL_DEATH_BLOSSOM           = 114242, // damage in 8y
+    SPELL_DEATH_BLOSSOM_LEAP      = 114241, // only leap to target
+    SPELL_BLOODY_MESS             = 114056,
+    SPELL_BLOODY_RAGE             = 116140, // at 50% healh
+    SPELL_RAKE_NORMAL             = 24331,
+    SPELL_RAKE_HEROIC             = 120560,
+    SPELL_HOUNDMASTER_BRAUN_EATEN = 122916
 };
 
-enum Texts
+enum Yells
 {
-    SAY_AGGRO1           = 0,
-    SAY_AGGRO2           = 1,
-    SAY_CALL_DOG1        = 2,
-    SAY_CALL_DOG2        = 3,
-    SAY_BLOSSOM1         = 4,
-    SAY_BLOSSOM2         = 5,
-    SAY_MESS1            = 6,
-    SAY_MESS2            = 7,
-    SAY_RAGE1            = 8,
-    SAY_RAGE2            = 9,
-    SAY_KILL_DOG1        = 10,
-    SAY_KILL_DOG2        = 11,
-    SAY_KILL_DOG3        = 12,
-    SAY_KILLER           = 13,
-    SAY_RESET            = 14,
-    SAY_DEATH            = 15,
+    TALK_INTO                     = 0,
+    TALK_SUDENDEATH_01            = 1,
+    TALK_SUDENDEATH_02            = 2,
+    TALK_DEATH                    = 3,
+    TALK_DOGFAIL                  = 4,
 };
 
-enum Events
+enum events
 {
-    EVENT_RAGE           = 0,
-    EVENT_DOG,
-    EVENT_BLOSSOM,
-    EVENT_THROW,
-    EVENT_CLOSE_GATE,
+    /*Braun*/
+    EVENT_PIERCING_THROW          = 1,
+    EVENT_DEATH_BLOSSOM           = 2,
+    EVENT_CALL_DOG                = 3,
+    EVENT_AT_END                  = 4,
+    EVENT_CALL_DOG_INTO           = 5,
+
+    /*Dogs*/
+    EVENT_RAKE                    = 1,
+    EVENT_RAKE_AT_END             = 2
 };
 
-enum Actions
+enum  Actions
 {
-    ACTION_ATTACK_BRAUN
+    ACTION_ACTIVATE_DOG           = 1,
+    ACTION_FINISH_HIM             = 2,
+    ACTION_MOVE_TO                = 3,
+    ACTION_EATING                 = 4
 };
 
-Position const PosObedientHound[3] =
+Creature* SelectedObedientHound(WorldObject* owner)
 {
-    { 991.761f, 519.f,     13.488f, 6.262798f },
-    { 991.724f, 517.511f, 13.488f, 6.262798f },
-    { 991.894f, 515.835f, 13.488f, 6.262798f },
-};
+    std::list<Creature*> ObediendHounds;
+    GetCreatureListWithEntryInGrid(ObediendHounds, owner, NPC_OBEDIEND_HOUND, 200.0f);
+
+    return Trinity::Containers::SelectRandomContainerElement(ObediendHounds);
+}
 
 class boss_houndmaster_braun : public CreatureScript
 {
@@ -60,203 +60,362 @@ class boss_houndmaster_braun : public CreatureScript
 
         struct boss_houndmaster_braunAI : public BossAI
         {
-            boss_houndmaster_braunAI(Creature* creature) : BossAI(creature, DATA_HOUNDMASTER_BRAUN) { }
+            boss_houndmaster_braunAI(Creature* creature) : BossAI(creature, BOSS_HOUNDMASTER_BRAUN) { }
 
-            void Reset()
+            bool GetRage;
+            bool Scenario;
+            bool SudenDeath;
+            int Phase;
+
+            void InitializeAI() override
+            {
+                me->setActive(true);
+                Reset();
+            }
+
+            void Reset() override
             {
                 _Reset();
-                me->SetReactState(REACT_DEFENSIVE);
-                wave1 = false;
-                wave2 = false;
-                wave3 = false;
-                wave4 = false;
-                enraged = false;
-                releasedogs = false;
+                events.Reset();
+                me->setRegeneratingHealth(true);
+                me->SetReactState(REACT_AGGRESSIVE);
+                GetRage = false;
+                Scenario = false;
+                SudenDeath = false;
+                Phase = 0;
+                HandleDoors(true);
             }
 
-            void EnterCombat(Unit* /*who*/)
-            {
-                _EnterCombat();
-                events.ScheduleEvent(EVENT_THROW, 18000);
-                events.ScheduleEvent(EVENT_BLOSSOM, 15000);
-                events.ScheduleEvent(EVENT_CLOSE_GATE, 3000);
-            }
-
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+                Talk(TALK_DEATH);
+                if (instance)
+                {
+                    instance->SetData(BOSS_HOUNDMASTER_BRAUN, DONE);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                }
+                me->RemoveAllAuras();
+                HandleSendActionOnHounds(ACTION_MOVE_TO);
+                HandleDoors(true);
             }
 
-            void KilledUnit(Unit* victim)
+            void EnterEvadeMode() override
             {
+                BossAI::EnterEvadeMode();
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->SetData(BOSS_HOUNDMASTER_BRAUN, FAIL);
+                }
+                summons.DespawnAll();
+                HandleDoors(true);
             }
 
-            void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/) // percent 90/80/70/60 will be done by Call Dogs (soon)
+            void EnterCombat(Unit* /*who*/) override
             {
-                if(!wave1 && !me->IsNonMeleeSpellCasted(false) && HealthBelowPct(90))
+                _EnterCombat();
+                Talk(TALK_INTO);
+                if (instance)
                 {
-                    wave1 = true;
+                    instance->SetData(BOSS_HOUNDMASTER_BRAUN, IN_PROGRESS);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
                 }
-                if(!wave2 && !me->IsNonMeleeSpellCasted(false) && HealthBelowPct(80))
-                {
-                    wave2 = true;
-                }
-                if(!wave3 && !me->IsNonMeleeSpellCasted(false) && HealthBelowPct(70))
-                {
-                    wave3 = true;
-                }
-                if(!wave4 && !me->IsNonMeleeSpellCasted(false) && HealthBelowPct(60))
-                {
-                    wave4 = true;
-                }
-                if(!enraged && !me->IsNonMeleeSpellCasted(false) && HealthBelowPct(50))
-                {
-                    enraged = true;
-                    DoCast(me, SPELL_BLOODY_RAGE);
-                }
-                if(!releasedogs && !me->IsNonMeleeSpellCasted(false) && HealthBelowPct(10))
-                {
-                    releasedogs = true;
-                    ReleaseDogs();
-                }
+                events.ScheduleEvent(EVENT_PIERCING_THROW, 7000);
+                events.ScheduleEvent(EVENT_DEATH_BLOSSOM, urand(11000, 12000));
+                HandleDoors();
             }
 
-            void CloseGate() // summon 3 Dogs for the last gate after combat start
+            void HandleDoors(bool reset = false)
             {
-                for (uint8 i = 0; i < 3; ++i)
-                    me->SummonCreature(MOB_OBEDIENT_HOUND, PosObedientHound[i], TEMPSUMMON_DEAD_DESPAWN, 0);
+                if (instance)
+                    if (GameObject* Idoor = GetClosestGameObjectWithEntry(me, GO_COMANDER_LINDON_EXIT, 150.0f))
+                        instance->HandleGameObject(0, reset, Idoor);
             }
 
-            void ReleaseDogs()
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
-                std::list<Creature*> templist;
-                float x, y, z;
-                me->GetPosition(x, y, z);
-
-                {
-                    CellCoord pair(JadeCore::ComputeCellCoord(x, y));
-                    Cell cell(pair);
-                    cell.SetNoCreate();
-
-                    JadeCore::AllCreaturesOfEntryInRange check(me, MOB_OBEDIENT_HOUND, 200);
-                    JadeCore::CreatureListSearcher<JadeCore::AllCreaturesOfEntryInRange> searcher(me, templist, check);
-                    TypeContainerVisitor<JadeCore::CreatureListSearcher<JadeCore::AllCreaturesOfEntryInRange>, GridTypeMapContainer> cSearcher(searcher);
-                    cell.Visit(pair, cSearcher, *me->GetMap(), *me, me->GetGridActivationRange());
+                if (HealthBelowPct(50) && !GetRage) 
+                { 
+                    me->CastSpell(me, SPELL_BLOODY_RAGE, false); 
+                    GetRage = true; 
+                    Talk(TALK_DOGFAIL); 
                 }
 
-                if (templist.empty())
-                return;
-
-                for (std::list<Creature*>::const_iterator i = templist.begin(); i != templist.end(); ++i)
+                if (HealthBelowPct(15) && !Scenario)
                 {
-                   // (*i)->setFaction(35);
-                    (*i)->SetReactState(REACT_AGGRESSIVE);
-                    (*i)->AI()->DoAction(ACTION_ATTACK_BRAUN);
+                    damage = 0;
+                    Scenario = true;
+                    Talk(TALK_SUDENDEATH_01);
+                    events.Reset();
+                    events.ScheduleEvent(EVENT_AT_END, 5000);
+                    me->RemoveAllAuras();
+                    HandleSendActionOnHounds(ACTION_FINISH_HIM);
+                    me->SetReactState(REACT_PASSIVE);
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    me->AttackStop();
+
                 }
+
+                if ((Phase == 0 && HealthBelowPct(90))
+                    || (Phase == 1 && HealthBelowPct(80))
+                    || (Phase == 2 && HealthBelowPct(70))
+                    || (Phase == 3 && HealthBelowPct(60)))
+                {
+                    Phase++;
+                }            
             }
 
-            void UpdateAI(uint32 const diff)
+            void HandleSendActionOnHounds(uint32 actionId)
             {
-                if(!UpdateVictim())
-                    return;
+                std::list<Creature*> ObedientHounds;
+                GetCreatureListWithEntryInGrid(ObedientHounds, me, NPC_OBEDIEND_HOUND, 200.0f);
 
+                for (auto&& itr : ObedientHounds)
+                    itr->AI()->DoAction(actionId);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
                 events.Update(diff);
 
-                if(me->HasUnitState(UNIT_STATE_CASTING))
+                if (!UpdateVictim())
                     return;
 
-                if(uint32 eventId = events.ExecuteEvent())
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_CLOSE_GATE:
-                            CloseGate();
+                        case EVENT_PIERCING_THROW:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                me->CastSpell(target, SPELL_PIERCING_THROW, false);
+                            events.ScheduleEvent(EVENT_PIERCING_THROW, 7000);
                             break;
-                        case EVENT_THROW:
-                            DoCast(SPELL_PIERCING_THROW);
-                            events.ScheduleEvent(EVENT_THROW, 28000);
+                        case EVENT_DEATH_BLOSSOM:
+                            if (Unit* target = me->SelectNearestTarget())
+                                me->CastSpell(target, SPELL_DEATH_BLOSSOM_LEAP, false);
+                            events.ScheduleEvent(EVENT_DEATH_BLOSSOM, urand(11000, 12000));
                             break;
-                        case EVENT_BLOSSOM:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 40, true))
+                        case EVENT_AT_END:
+                            if (!SudenDeath)
                             {
-                                DoCast(target, SPELL_BLOSSOM_JUMP);
-                                DoCastAOE(SPELL_DEATH_BLOSSOM);
-                                events.ScheduleEvent(EVENT_BLOSSOM, 25000);
+                                me->CastSpell(me, SPELL_HOUNDMASTER_BRAUN_EATEN, false);
+                                Talk(TALK_SUDENDEATH_02);
+                                SudenDeath = true;
+                                HandleSendActionOnHounds(ACTION_EATING);
+                                events.ScheduleEvent(EVENT_AT_END, urand(7000, 10000));
+                                return;
                             }
-                            break;
-                        default:
+
+                            if (SudenDeath)
+                                if (Player* originalCaster = me->FindNearestPlayer(50.0f))
+                                {
+                                    me->SetLootRecipient(originalCaster);
+                                    originalCaster->DealDamage(me, me->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                                    events.Reset();
+                                }
                             break;
                     }
                 }
                 DoMeleeAttackIfReady();
             }
-        private:
-            bool wave1;
-            bool wave2;
-            bool wave3;
-            bool wave4;
-            bool enraged;
-            bool releasedogs;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new boss_houndmaster_braunAI(creature);
         }
 };
 
-class mob_obedient_hound : public CreatureScript
+// Obediend Hound 59309
+class npc_obediend_hound : public CreatureScript
 {
-public:
-    mob_obedient_hound() : CreatureScript("mob_obedient_hound") { }
+    public:
+        npc_obediend_hound() : CreatureScript("npc_obediend_hound") { }
 
-    struct mob_obedient_houndAI : public ScriptedAI
-    {
-        mob_obedient_houndAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_obediend_houndAI : public ScriptedAI
         {
-            me->ApplySpellImmune(0, IMMUNITY_ID, 114056, true);
-        }
+            npc_obediend_houndAI(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()) { }
 
-        void Reset() 
-        {
-            me->SetReactState(REACT_PASSIVE);
-        }
+            EventMap events;
 
-        void IsSummonedBy(Unit* /*summoner*/)
-        {
-            me->SetReactState(REACT_PASSIVE);
-        }
+            void IsSummonedBy(Unit* summoner) override { }
 
-        void DoAction(int32 const param)
-        {
-            switch (param)
+            void Reset() override 
             {
-                case ACTION_ATTACK_BRAUN:
-                    if (Creature* braun = me->FindNearestCreature(BOSS_HOUNDMASTER_BRAUN, 150, true))
-                        me->Attack(braun, true);
-                    break;
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
             }
-        }
 
-        void EnterCombat(Unit* /*who*/) { }
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type == POINT_MOTION_TYPE && pointId == 1)
+                    KillThemAll();
+            }
 
-        void UpdateAI(const uint32 diff)
+            void KillThemAll()
+            {
+                std::list<Creature*> Guardians;
+                GetCreatureListWithEntryInGrid(Guardians, me, NPC_SCARLET_GUARDIAN, 15.0f);
+
+                for (auto&& itr : Guardians)
+                    itr->DealDamage(itr, itr->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+
+                if (Creature* Verdone = GetClosestCreatureWithEntry(me, NPC_SERGEANT_VERDONE, 20.0f, true))
+                    Verdone->DealDamage(Verdone, Verdone->GetHealth(), NULL, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, NULL, false);
+                me->DespawnOrUnsummon(1500);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                me->GetMap()->SetWorldState(WORLDSTATE_HUMANE_SOCIETY, 0);
+            }
+
+            void DoAction(int32 actionId) override 
+            {
+                switch (actionId)
+                {
+                    case ACTION_ACTIVATE_DOG:
+                        me->SetReactState(REACT_AGGRESSIVE);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        if (Unit* target = me->SelectNearestTarget(100.0f))
+                        {
+                            me->GetMotionMaster()->MoveChase(target);
+                            me->Attack(target, true);
+                        }
+                        break;
+                    case ACTION_FINISH_HIM:
+                        events.Reset();
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IN_COMBAT);
+                        me->setFaction(35);
+
+                        if (_instance)
+                        {
+                            if (Unit* Braun = ObjectAccessor::GetUnit(*me, _instance->GetData64(BOSS_HOUNDMASTER_BRAUN)))
+                            {
+                                me->Attack(Braun, true);
+                                me->GetMotionMaster()->MoveChase(Braun);
+                            }
+                        }
+
+                        events.ScheduleEvent(EVENT_RAKE, 3500);
+                        break;
+                    case ACTION_MOVE_TO:
+                        events.Reset();
+                        me->GetMotionMaster()->MovePoint(1, EndScenario);
+                        break;
+                    case ACTION_EATING:
+                        if (_instance)
+                            if (Unit* Braun = ObjectAccessor::GetUnit(*me, _instance->GetData64(BOSS_HOUNDMASTER_BRAUN)))
+                                me->CastSpell(Braun, IsHeroic() ? SPELL_RAKE_HEROIC : SPELL_RAKE_NORMAL, true);
+                        break;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override 
+            {
+                events.Update(diff);
+
+                if (!UpdateVictim())
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                    if (eventId == EVENT_RAKE)
+                    {
+                        if (Unit* target = me->GetVictim())
+                            me->CastSpell(target, IsHeroic() ? SPELL_RAKE_HEROIC : SPELL_RAKE_NORMAL, true);
+
+                        events.ScheduleEvent(EVENT_RAKE, 3500);
+                    }
+                   
+                DoMeleeAttackIfReady();
+            }
+
+        private:
+            InstanceScript* _instance;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if(!UpdateVictim())
-                return;
-
-            DoMeleeAttackIfReady();
+            return new npc_obediend_houndAI(creature);
         }
-    };
+};
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_obedient_houndAI (creature);
-    }
+// Bloody mess 114020
+class spell_bloody_mess : public SpellScriptLoader
+{
+    public:
+        spell_bloody_mess() : SpellScriptLoader("spell_bloody_mess") { }
+
+        class spell_bloody_mess_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_bloody_mess_SpellScript);
+
+            void HandleOnHit()
+            {
+                Unit* caster = GetCaster();
+                Unit* target = GetHitUnit();
+
+                if (!caster || !target)
+                    return;
+        
+                std::list<Player*> PlayersInArea;
+                GetPlayerListInGrid(PlayersInArea, caster, 100.0f);
+
+                for (auto&& itr : PlayersInArea)
+                {
+                    if (itr->IsInBetween(caster, target, 3.0f) && itr->GetGUID() != target->GetGUID())
+                        caster->AddAura(SPELL_BLOODY_MESS, itr);
+                }
+            }
+
+            void Register() override
+            {
+                OnHit += SpellHitFn(spell_bloody_mess_SpellScript::HandleOnHit);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_bloody_mess_SpellScript();
+        }
+};
+
+// Crushing Leap Visual 108481
+class spell_crushing_leap_visual : public SpellScriptLoader
+{
+    public:
+        spell_crushing_leap_visual() : SpellScriptLoader("spell_crushing_leap_visual") { }
+
+        class spell_crushing_leap_visual_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_crushing_leap_visual_AuraScript);
+
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (Unit* m_caster = GetCaster())
+                    m_caster->CastSpell(m_caster, SPELL_DEATH_BLOSSOM, false);
+            }
+
+            void Register() override
+            {
+                OnEffectApply += AuraEffectApplyFn(spell_crushing_leap_visual_AuraScript::OnApply, EFFECT_0, SPELL_AURA_MOD_MELEE_HASTE_2, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_crushing_leap_visual_AuraScript();
+        }
 };
 
 void AddSC_boss_houndmaster_braun()
 {
     new boss_houndmaster_braun();
-    new mob_obedient_hound();
+    new npc_obediend_hound(); 
+    new spell_bloody_mess();
+    new spell_crushing_leap_visual();
 }

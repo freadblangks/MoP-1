@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -24,28 +26,31 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
+#include "Creature.h"
+#include "Language.h"
+#include "Player.h"
 
 class cast_commandscript : public CommandScript
 {
 public:
     cast_commandscript() : CommandScript("cast_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand castCommandTable[] =
+        static std::vector<ChatCommand> castCommandTable =
         {
-            { "back",           SEC_ADMINISTRATOR,  false, &HandleCastBackCommand,              "", NULL },
-            { "dist",           SEC_ADMINISTRATOR,  false, &HandleCastDistCommand,              "", NULL },
-            { "self",           SEC_ADMINISTRATOR,  false, &HandleCastSelfCommand,              "", NULL },
-            { "target",         SEC_ADMINISTRATOR,  false, &HandleCastTargetCommad,             "", NULL },
-            { "dest",           SEC_ADMINISTRATOR,  false, &HandleCastDestCommand,              "", NULL },
-            { "",               SEC_ADMINISTRATOR,  false, &HandleCastCommand,                  "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "back",   SEC_GAMEMASTER, false,  &HandleCastBackCommand,     },
+            { "dist",   SEC_GAMEMASTER, false,  &HandleCastDistCommand,     },
+            { "self",   SEC_GAMEMASTER, false,  &HandleCastSelfCommand,     },
+            { "target", SEC_GAMEMASTER, false,  &HandleCastTargetCommad,    },
+            { "dest",   SEC_GAMEMASTER, false,  &HandleCastDestCommand,     },
+            { "",       SEC_GAMEMASTER, false,  &HandleCastCommand,         },
+            
         };
-        static ChatCommand commandTable[] =
+        static std::vector<ChatCommand> commandTable =
         {
-            { "cast",           SEC_ADMINISTRATOR,  false, NULL,                                "", castCommandTable },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "cast",   SEC_GAMEMASTER, false,  castCommandTable            },
+            
         };
         return commandTable;
     }
@@ -100,7 +105,7 @@ public:
 
     static bool HandleCastBackCommand(ChatHandler* handler, char const* args)
     {
-        Creature* caster = handler->getSelectedCreature();
+        Unit* caster = handler->getSelectedUnit();
         if (!caster)
         {
             handler->SendSysMessage(LANG_SELECT_CHAR_OR_CREATURE);
@@ -227,7 +232,7 @@ public:
             return false;
         }
 
-        if (!caster->getVictim())
+        if (!caster->GetVictim())
         {
             handler->SendSysMessage(LANG_SELECTED_TARGET_NOT_HAVE_VICTIM);
             handler->SetSentErrorMessage(true);
@@ -253,7 +258,7 @@ public:
 
         bool triggered = (triggeredStr != NULL);
 
-        caster->CastSpell(caster->getVictim(), spellId, triggered);
+        caster->CastSpell(caster->GetVictim(), spellId, triggered);
 
         return true;
     }

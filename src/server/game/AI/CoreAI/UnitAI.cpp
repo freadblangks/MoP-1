@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -25,6 +26,7 @@
 #include "SpellInfo.h"
 #include "Spell.h"
 #include "CreatureAIImpl.h"
+#include "Player.h"
 
 void UnitAI::AttackStart(Unit* victim)
 {
@@ -35,50 +37,45 @@ void UnitAI::AttackStart(Unit* victim)
 void UnitAI::AttackStartCaster(Unit* victim, float dist)
 {
     if (victim && me->Attack(victim, false))
-        me->GetMotionMaster()->MoveChase(victim, dist);
+        me->GetMotionMaster()->MoveChase(victim, dist, 0.0f);
 }
 
-void UnitAI::DoMeleeAttackIfReady()
+void UnitAI::DoMeleeAttackIfReady(bool ignoreLos)
 {
     if (me->HasUnitState(UNIT_STATE_CASTING))
         return;
 
-    Unit* victim = me->getVictim();
+    Unit* victim = me->GetVictim();
     //Make sure our attack is ready and we aren't currently casting before checking distance
     if (me->isAttackReady() && me->IsWithinMeleeRange(victim))
     {
-        me->AttackerStateUpdate(victim);
+        me->AttackerStateUpdate(victim, ignoreLos);
         me->resetAttackTimer();
     }
 
-    if (me->haveOffhandWeapon() && me->isAttackReady(OFF_ATTACK) && me->IsWithinMeleeRange(victim))
+    if (me->HasOffhandWeapon() && me->isAttackReady(OFF_ATTACK) && me->IsWithinMeleeRange(victim))
     {
-        me->AttackerStateUpdate(victim, OFF_ATTACK);
+        me->AttackerStateUpdate(victim, ignoreLos, OFF_ATTACK);
         me->resetAttackTimer(OFF_ATTACK);
     }
 }
 
 bool UnitAI::DoSpellAttackIfReady(uint32 spell)
 {
-    if (me->HasUnitState(UNIT_STATE_CASTING))
+    if (me->HasUnitState(UNIT_STATE_CASTING) || !me->isAttackReady())
         return true;
 
-    if (me->isAttackReady())
+    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell))
     {
-        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spell))
+        if (me->IsWithinCombatRange(me->GetVictim(), spellInfo->GetMaxRange(false)))
         {
-            if (me->IsWithinCombatRange(me->getVictim(), spellInfo->GetMaxRange(false)))
-            {
-                me->CastSpell(me->getVictim(), spell, false);
-                me->resetAttackTimer();
-            }
-            else
-                return false;
+            me->CastSpell(me->GetVictim(), spell, false);
+            me->resetAttackTimer();
+            return true;
         }
-        else
-            return false;
     }
-    return true;
+
+    return false;
 }
 
 Unit* UnitAI::SelectTarget(SelectAggroTarget targetType, uint32 position, float dist, bool playerOnly, int32 aura)
@@ -99,48 +96,44 @@ float UnitAI::DoGetSpellMaxRange(uint32 spellId, bool positive)
 
 void UnitAI::DoAddAuraToAllHostilePlayers(uint32 spellid)
 {
-    if (me->isInCombat())
+    if (me->IsInCombat())
     {
-        std::list<HostileReference*>& threatlist = me->getThreatManager().getThreatList();
-        for (std::list<HostileReference*>::iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
+        ThreatContainer::StorageType threatlist = me->getThreatManager().getThreatList();
+        for (ThreatContainer::StorageType::const_iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
         {
             if (Unit* unit = Unit::GetUnit(*me, (*itr)->getUnitGuid()))
                 if (unit->GetTypeId() == TYPEID_PLAYER)
                     me->AddAura(spellid, unit);
         }
     }
-    else
-        return;
 }
 
 void UnitAI::DoCastToAllHostilePlayers(uint32 spellid, bool triggered)
 {
-    if (me->isInCombat())
+    if (me->IsInCombat())
     {
-        std::list<HostileReference*>& threatlist = me->getThreatManager().getThreatList();
-        for (std::list<HostileReference*>::iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
+        ThreatContainer::StorageType threatlist = me->getThreatManager().getThreatList();
+        for (ThreatContainer::StorageType::const_iterator itr = threatlist.begin(); itr != threatlist.end(); ++itr)
         {
             if (Unit* unit = Unit::GetUnit(*me, (*itr)->getUnitGuid()))
                 if (unit->GetTypeId() == TYPEID_PLAYER)
                     me->CastSpell(unit, spellid, triggered);
         }
     }
-    else
-        return;
 }
 
 void UnitAI::DoCast(uint32 spellId)
 {
     Unit* target = NULL;
-    //sLog->outError(LOG_FILTER_GENERAL, "aggre %u %u", spellId, (uint32)AISpellInfo[spellId].target);
+
     switch (AISpellInfo[spellId].target)
     {
         default:
         case AITARGET_SELF:
-           target = me;
-           break;
+            target = me;
+            break;
         case AITARGET_VICTIM:
-            target = me->getVictim();
+            target = me->GetVictim();
             break;
         case AITARGET_ENEMY:
         {
@@ -156,7 +149,7 @@ void UnitAI::DoCast(uint32 spellId)
             break;
         case AITARGET_BUFF:
             target = me;
-                break;
+            break;
         case AITARGET_DEBUFF:
         {
             if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
@@ -165,9 +158,9 @@ void UnitAI::DoCast(uint32 spellId)
                 float range = spellInfo->GetMaxRange(false);
 
                 DefaultTargetSelector targetSelector(me, range, playerOnly, -(int32)spellId);
-                if (!(spellInfo->AuraInterruptFlags & AURA_INTERRUPT_FLAG_NOT_VICTIM)
-                    && targetSelector(me->getVictim()))
-                    target = me->getVictim();
+                if (!spellInfo->HasAuraInterruptFlag(AURA_INTERRUPT_FLAG_NOT_VICTIM)
+                    && targetSelector(me->GetVictim()))
+                    target = me->GetVictim();
                 else
                     target = SelectTarget(SELECT_TARGET_RANDOM, 0, targetSelector);
             }
@@ -177,6 +170,46 @@ void UnitAI::DoCast(uint32 spellId)
 
     if (target)
         me->CastSpell(target, spellId, false);
+}
+
+void UnitAI::DoCast(Unit* victim, uint32 spellId, bool triggered)
+{
+    if (!victim || (me->HasUnitState(UNIT_STATE_CASTING) && !triggered))
+        return;
+
+    me->CastSpell(victim, spellId, triggered);
+}
+
+void UnitAI::DoCast(SelectAggroTarget targetType, uint32 spellId, bool triggered, uint32 position, float dist, bool playerOnly, int32 aura)
+{
+    Unit * target = SelectTarget(targetType, position, DefaultTargetSelector(me, dist, playerOnly, aura));
+
+    if (!target)
+    {
+        if (position)
+            target = SelectTarget(targetType, 0, DefaultTargetSelector(me, dist, playerOnly, aura));
+        else if (dist > 0.0f)
+            target = SelectTarget(targetType, position, DefaultTargetSelector(me, 0.0f, playerOnly, aura));
+    }
+
+    if (target)
+        me->CastSpell(target, spellId, triggered);
+}
+
+void UnitAI::DoCastVictim(uint32 spellId, bool triggered)
+{
+    if (!me->GetVictim() || (me->HasUnitState(UNIT_STATE_CASTING) && !triggered))
+        return;
+
+    me->CastSpell(me->GetVictim(), spellId, triggered);
+}
+
+void UnitAI::DoCastAOE(uint32 spellId, bool triggered)
+{
+    if (!triggered && me->HasUnitState(UNIT_STATE_CASTING))
+        return;
+
+    me->CastSpell((Unit*)NULL, spellId, triggered);
 }
 
 #define UPDATE_TARGET(a) {if (AIInfo->target<a) AIInfo->target=a;}
@@ -232,33 +265,6 @@ void UnitAI::FillAISpellInfo()
     }
 }
 
-//Enable PlayerAI when charmed
-void PlayerAI::OnCharmed(bool apply) { me->IsAIEnabled = apply; }
-
-void SimpleCharmedAI::UpdateAI(const uint32 /*diff*/)
-{
-  Creature* charmer = me->GetCharmer()->ToCreature();
-
-    //kill self if charm aura has infinite duration
-    if (charmer->IsInEvadeMode())
-    {
-        Unit::AuraEffectList const& auras = me->GetAuraEffectsByType(SPELL_AURA_MOD_CHARM);
-        for (Unit::AuraEffectList::const_iterator iter = auras.begin(); iter != auras.end(); ++iter)
-            if ((*iter)->GetCasterGUID() == charmer->GetGUID() && (*iter)->GetBase()->IsPermanent())
-            {
-                charmer->Kill(me);
-                return;
-            }
-    }
-
-    if (!charmer->isInCombat())
-        me->GetMotionMaster()->MoveFollow(charmer, PET_FOLLOW_DIST, me->GetFollowAngle());
-
-    Unit* target = me->getVictim();
-    if (!target || !charmer->IsValidAttackTarget(target))
-        AttackStart(charmer->SelectNearestTargetInAttackDistance());
-}
-
 SpellTargetSelector::SpellTargetSelector(Unit* caster, uint32 spellId) :
     _caster(caster), _spellInfo(sSpellMgr->GetSpellForDifficultyFromSpell(sSpellMgr->GetSpellInfo(spellId), caster))
 {
@@ -310,5 +316,148 @@ bool NonTankTargetSelector::operator()(Unit const* target) const
     if (_playerOnly && target->GetTypeId() != TYPEID_PLAYER)
         return false;
 
-    return target != _source->getVictim();
+    return target != _source->GetVictim();
+}
+
+
+// Range Group (meele in range group shouldn`ve execute)
+bool CasterSpecTargetSelector::operator()(WorldObject* target) const
+{
+    if (!target)
+        return false;
+
+    if (!target->ToPlayer())
+        return false;
+
+    // Prevent GM selection
+    if (target->ToPlayer()->IsGameMaster())
+        return false;
+
+    switch (target->ToPlayer()->getClass())
+    {
+        case CLASS_MAGE:
+        case CLASS_PRIEST:
+        case CLASS_WARLOCK:
+        case CLASS_HUNTER:
+            return _spellId ? !target->ToPlayer()->HasAura(_spellId) : true;
+        case CLASS_MONK:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() == SPEC_MONK_MISTWEAVER && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_MONK_MISTWEAVER;
+        case CLASS_DRUID:
+            return _spellId ? (target->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_BALANCE || target->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_RESTORATION) && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_BALANCE || target->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_RESTORATION;
+        case CLASS_SHAMAN:
+            return _spellId ? (target->ToPlayer()->GetTalentSpecialization() == SPEC_SHAMAN_ELEMENTAL || target->ToPlayer()->GetTalentSpecialization() == SPEC_SHAMAN_RESTORATION) && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_SHAMAN_ELEMENTAL || target->ToPlayer()->GetTalentSpecialization() == SPEC_SHAMAN_RESTORATION;
+        case CLASS_PALADIN:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() == SPEC_PALADIN_HOLY && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_PALADIN_HOLY;
+    }
+
+    return false;
+}
+
+// Meele Group (caster in meele group shouldn`ve execute)
+bool MeeleSpecTargetSelector::operator()(WorldObject* target) const
+{
+    if (!target)
+        return false;
+
+    if (!target->ToPlayer())
+        return false;
+
+    // Prevent GM selection
+    if (target->ToPlayer()->IsGameMaster())
+        return false;
+
+    switch (target->ToPlayer()->getClass())
+    {
+        case CLASS_ROGUE:
+            return _spellId ? !target->ToPlayer()->HasAura(_spellId) : true;
+        case CLASS_WARRIOR:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() != SPEC_WARRIOR_PROTECTION && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() != SPEC_WARRIOR_PROTECTION;
+        case CLASS_PALADIN:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() == SPEC_PALADIN_RETRIBUTION && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_PALADIN_RETRIBUTION;
+            break;
+        case CLASS_MONK:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() == SPEC_MONK_WINDWALKER && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_MONK_WINDWALKER;
+        case CLASS_DRUID:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_FERAL && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_FERAL;
+        case CLASS_SHAMAN:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() == SPEC_SHAMAN_ENHANCEMENT && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() == SPEC_SHAMAN_ENHANCEMENT;
+        case CLASS_DEATH_KNIGHT:
+            return _spellId ? target->ToPlayer()->GetTalentSpecialization() != SPEC_DEATH_KNIGHT_BLOOD && !target->ToPlayer()->HasAura(_spellId)
+                : target->ToPlayer()->GetTalentSpecialization() != SPEC_DEATH_KNIGHT_BLOOD;
+    }
+
+    return false;
+}
+
+bool DpsSpecTargetSelector::operator()(WorldObject* target) const
+{
+    if (!target)
+        return false;
+
+    if (!target->ToPlayer())
+        return false;
+
+    // Prevent GM selection
+    if (target->ToPlayer()->IsGameMaster())
+        return false;
+
+    return _spellId ? target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) == ROLES_DPS && !target->ToPlayer()->HasAura(_spellId)
+        : target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) == ROLES_DPS;
+}
+
+bool TankSpecTargetSelector::operator()(WorldObject* target) const
+{
+    if (!target)
+        return false;
+
+    if (!target->ToPlayer())
+        return false;
+
+    // Prevent GM selection
+    if (target->ToPlayer()->IsGameMaster())
+        return false;
+
+    return _spellId ? target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) == ROLES_TANK && !target->ToPlayer()->HasAura(_spellId)
+        : target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) == ROLES_TANK;
+}
+
+bool HealerSpecTargetSelector::operator()(WorldObject* target) const
+{
+    if (!target)
+        return false;
+
+    if (!target->ToPlayer())
+        return false;
+
+    // Prevent GM selection
+    if (target->ToPlayer()->IsGameMaster())
+        return false;
+
+    return _spellId ? target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) == ROLES_HEALER && !target->ToPlayer()->HasAura(_spellId)
+        : target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) == ROLES_HEALER;
+}
+
+bool NonTankSpecTargetSelector::operator()(WorldObject* target) const
+{
+    if (!target)
+        return false;
+
+    if (!target->ToPlayer())
+        return false;
+
+    // Prevent GM selection
+    if (target->ToPlayer()->IsGameMaster())
+        return false;
+
+    return _spellId ? target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) != ROLES_TANK && !target->ToPlayer()->HasAura(_spellId)
+        : target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()) != ROLES_TANK;
 }

@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -18,295 +21,301 @@
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "gundrak.h"
+#include "../AI/SmartScripts/SmartAI.h"
 
-//Spells
 enum Spells
 {
     SPELL_ENRAGE                                  = 55285,
-    H_SPELL_ENRAGE                                = 59828,
     SPELL_IMPALING_CHARGE                         = 54956,
-    H_SPELL_IMPALING_CHARGE                       = 59827,
     SPELL_STOMP                                   = 55292,
-    H_SPELL_STOMP                                 = 59829,
     SPELL_PUNCTURE                                = 55276,
-    H_SPELL_PUNCTURE                              = 59826,
+    SPELL_PUNCTURE_H                              = 59826,
     SPELL_STAMPEDE                                = 55218,
     SPELL_WHIRLING_SLASH                          = 55250,
-    H_SPELL_WHIRLING_SLASH                        = 59824,
+    SPELL_IMPALING_CHARGE_VEHICLE                 = 54958,
+    SPELL_TRANSFORM                               = 55297,
+    SPELL_TRANSFORM_CLEAR                         = 55299,
+    SPELL_HEART_BEAM_VISUAL                       = 54988,
+    SPELL_CLEAR_PUNCTURE                          = 60022,
+    // rhino spirit spells
+    SPELL_STAMPEDE_DMG                            = 55220,
+    SPELL_STAMPEDE_DMG_H                          = 59823
 };
 
-//Yells
 enum Yells
 {
-    SAY_AGGRO                                     = -1604000,
-    SAY_SLAY_1                                    = -1604001,
-    SAY_SLAY_2                                    = -1604002,
-    SAY_SLAY_3                                    = -1604003,
-    SAY_DEATH                                     = -1604004,
-    SAY_SUMMON_RHINO_1                            = -1604005,
-    SAY_SUMMON_RHINO_2                            = -1604006,
-    SAY_SUMMON_RHINO_3                            = -1604007,
-    SAY_TRANSFORM_1                               = -1604008,  //Phase change
-    SAY_TRANSFORM_2                               = -1604009
+    SAY_AGGRO                                     = 0,
+    SAY_TRANSFORM                                 = 1,
+    SAY_SUMMON_RHINO                              = 2,
+    SAY_SLAY                                      = 3,
+    SAY_DEATH                                     = 4,
+    EMOTE_IMPALE                                  = 5,
 };
 
-enum Displays
+enum Events
 {
-    DISPLAY_RHINO                                 = 26265,
-    DISPLAY_TROLL                                 = 27061
+    EVENT_STAMPEDE = 1,
+    EVENT_PUNCTURE,
+    EVENT_WHIRLING_SLASH,
+    EVENT_ENRAGE,
+    EVENT_STOMP,
+    EVENT_IMPALING_CHARGE,
+    EVENT_TRANSFORM,
 };
 
-enum CombatPhase
+enum Phases
 {
-    TROLL,
-    RHINO
+    PHASE_TROLL = 1,
+    PHASE_RHINO,
 };
-
-#define DATA_SHARE_THE_LOVE                       1
 
 class boss_gal_darah : public CreatureScript
 {
-public:
-    boss_gal_darah() : CreatureScript("boss_gal_darah") { }
+    public:
+        boss_gal_darah() : CreatureScript("boss_gal_darah") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_gal_darahAI (creature);
-    }
-
-    struct boss_gal_darahAI : public ScriptedAI
-    {
-        boss_gal_darahAI(Creature* creature) : ScriptedAI(creature)
+        struct boss_gal_darahAI : public ScriptedAI
         {
-            instance = creature->GetInstanceScript();
-        }
-
-        uint32 uiStampedeTimer;
-        uint32 uiWhirlingSlashTimer;
-        uint32 uiPunctureTimer;
-        uint32 uiEnrageTimer;
-        uint32 uiImpalingChargeTimer;
-        uint32 uiStompTimer;
-        uint32 uiTransformationTimer;
-        std::list<uint64> impaledList;
-        uint8 shareTheLove;
-
-        CombatPhase Phase;
-
-        uint8 uiPhaseCounter;
-
-        bool bStartOfTransformation;
-
-        InstanceScript* instance;
-
-        void Reset()
-        {
-            uiStampedeTimer = 10*IN_MILLISECONDS;
-            uiWhirlingSlashTimer = 21*IN_MILLISECONDS;
-            uiPunctureTimer = 10*IN_MILLISECONDS;
-            uiEnrageTimer = 15*IN_MILLISECONDS;
-            uiImpalingChargeTimer = 21*IN_MILLISECONDS;
-            uiStompTimer = 25*IN_MILLISECONDS;
-            uiTransformationTimer = 9*IN_MILLISECONDS;
-            uiPhaseCounter = 0;
-
-            impaledList.clear();
-            shareTheLove = 0;
-
-            bStartOfTransformation = true;
-
-            Phase = TROLL;
-
-            me->SetDisplayId(DISPLAY_TROLL);
-
-            if (instance)
-                instance->SetData(DATA_GAL_DARAH_EVENT, NOT_STARTED);
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            DoScriptText(SAY_AGGRO, me);
-
-            if (instance)
-                instance->SetData(DATA_GAL_DARAH_EVENT, IN_PROGRESS);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            switch (Phase)
+            boss_gal_darahAI(Creature* creature) : ScriptedAI(creature)
             {
-                case TROLL:
-                    if (uiPhaseCounter == 2)
-                    {
-                        if (uiTransformationTimer <= diff)
-                        {
-                            me->SetDisplayId(DISPLAY_RHINO);
-                            Phase = RHINO;
-                            uiPhaseCounter = 0;
-                            DoScriptText(SAY_TRANSFORM_1, me);
-                            uiTransformationTimer = 5*IN_MILLISECONDS;
-                            bStartOfTransformation = true;
-                            me->ClearUnitState(UNIT_STATE_STUNNED|UNIT_STATE_ROOT);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                        }
-                        else
-                        {
-                            uiTransformationTimer -= diff;
-
-                            if (bStartOfTransformation)
-                            {
-                                bStartOfTransformation = false;
-                                me->AddUnitState(UNIT_STATE_STUNNED|UNIT_STATE_ROOT);
-                                me->SetReactState(REACT_PASSIVE);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (uiStampedeTimer <= diff)
-                        {
-                            DoCast(me, SPELL_STAMPEDE);
-                            DoScriptText(RAND(SAY_SUMMON_RHINO_1, SAY_SUMMON_RHINO_2, SAY_SUMMON_RHINO_3), me);
-                            uiStampedeTimer = 15*IN_MILLISECONDS;
-                        } else uiStampedeTimer -= diff;
-
-                        if (uiWhirlingSlashTimer <= diff)
-                        {
-                            DoCast(me->getVictim(), SPELL_WHIRLING_SLASH);
-                            uiWhirlingSlashTimer = 21*IN_MILLISECONDS;
-                            ++uiPhaseCounter;
-                        } else uiWhirlingSlashTimer -= diff;
-                    }
-                break;
-                case RHINO:
-                    if (uiPhaseCounter == 2)
-                    {
-                        if (uiTransformationTimer <= diff)
-                        {
-                            me->SetDisplayId(DISPLAY_TROLL);
-                            Phase = TROLL;
-                            uiPhaseCounter = 0;
-                            DoScriptText(SAY_TRANSFORM_2, me);
-                            uiTransformationTimer = 9*IN_MILLISECONDS;
-                            bStartOfTransformation = true;
-                            me->ClearUnitState(UNIT_STATE_STUNNED|UNIT_STATE_ROOT);
-                            me->SetReactState(REACT_AGGRESSIVE);
-                        }
-                        else
-                        {
-                            uiTransformationTimer -= diff;
-
-                            if (bStartOfTransformation)
-                            {
-                                bStartOfTransformation = false;
-                                me->AddUnitState(UNIT_STATE_STUNNED|UNIT_STATE_ROOT);
-                                me->SetReactState(REACT_PASSIVE);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (uiPunctureTimer <= diff)
-                        {
-                            DoCast(me->getVictim(), SPELL_PUNCTURE);
-                            uiPunctureTimer = 8*IN_MILLISECONDS;
-                        } else uiPunctureTimer -= diff;
-
-                        if (uiEnrageTimer <= diff)
-                        {
-                            DoCast(me->getVictim(), SPELL_ENRAGE);
-                            uiEnrageTimer = 20*IN_MILLISECONDS;
-                        } else uiEnrageTimer -= diff;
-
-                        if (uiStompTimer <= diff)
-                        {
-                            DoCast(me->getVictim(), SPELL_STOMP);
-                            uiStompTimer = 20*IN_MILLISECONDS;
-                        } else uiStompTimer -= diff;
-
-                        if (uiImpalingChargeTimer <= diff)
-                        {
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
-                            {
-                                DoCast(target, SPELL_IMPALING_CHARGE);
-                                CheckAchievement(target->GetGUID());
-                            }
-                            uiImpalingChargeTimer = 31*IN_MILLISECONDS;
-                            ++uiPhaseCounter;
-                        } else uiImpalingChargeTimer -= diff;
-                    }
-                break;
+                instance = creature->GetInstanceScript();
             }
 
-            DoMeleeAttackIfReady();
-        }
+            void Reset() override
+            {
+                events.Reset();
+                events.SetPhase(PHASE_TROLL);
+                events.ScheduleEvent(EVENT_STAMPEDE,         5 * IN_MILLISECONDS, 0, PHASE_TROLL);
+                events.ScheduleEvent(EVENT_PUNCTURE,        10 * IN_MILLISECONDS, 0, PHASE_TROLL);
+                events.ScheduleEvent(EVENT_WHIRLING_SLASH,  15 * IN_MILLISECONDS, 0, PHASE_TROLL);
+                events.ScheduleEvent(EVENT_TRANSFORM,       31 * IN_MILLISECONDS, 0, PHASE_TROLL);
 
-        // 5 UNIQUE party members
-        void CheckAchievement(uint64 guid)
+                impaled.clear();
+                oocTimer = 1;
+
+                if (instance)
+                    instance->SetData(DATA_GAL_DARAH_EVENT, NOT_STARTED);
+
+                me->GetMap()->SetWorldState(WORLDSTATE_SHARE_THE_LOVE, 0);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                Talk(SAY_AGGRO);
+
+                me->InterruptNonMeleeSpells(false);
+
+                if (instance)
+                    instance->SetData(DATA_GAL_DARAH_EVENT, IN_PROGRESS);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summon->AddThreat(me, 1.0f); // To prevent them from entering evade mode via UpdateVictim()
+                summon->SetReactState(REACT_PASSIVE);
+                summon->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                summon->DespawnOrUnsummon(1500);
+
+                if (Unit* target = ObjectAccessor::GetUnit(*me, stampedeTarget))
+                    summon->CastSpell(target, DUNGEON_MODE(SPELL_STAMPEDE_DMG, SPELL_STAMPEDE_DMG_H), true);
+            }
+
+            void JustReachedHome() override
+            {
+                ScriptedAI::JustReachedHome();
+                oocTimer = 1;
+            }
+
+            void SpellHit(Unit* /*caster*/, SpellInfo const* spell) override
+            {
+                if (spell->Id == SPELL_TRANSFORM_CLEAR)
+                    me->RemoveAurasDueToSpell(SPELL_TRANSFORM);
+            }
+
+            void SpellHitTarget(Unit* target, SpellInfo const* spell) override
+            {
+                if (spell->Id == SPELL_CLEAR_PUNCTURE)
+                    target->RemoveAurasDueToSpell(DUNGEON_MODE(SPELL_PUNCTURE, SPELL_PUNCTURE_H));
+                else if (spell->Id == SPELL_IMPALING_CHARGE)
+                {
+                    Talk(EMOTE_IMPALE, target);
+                    target->CastSpell(me, SPELL_IMPALING_CHARGE_VEHICLE, true);
+                    impaled.insert(target->GetGUID());
+
+                    if (impaled.size() >= 5)
+                        me->GetMap()->SetWorldState(WORLDSTATE_SHARE_THE_LOVE, 1);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                {
+                    if (!me->IsInCombat())
+                    {
+                        if (oocTimer <= diff)
+                        {
+                            DoCast(me, SPELL_HEART_BEAM_VISUAL);
+                            oocTimer = 11000;
+                        }
+                        else
+                            oocTimer -= diff;
+                    }
+                    return;
+                }
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_STAMPEDE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
+                            {
+                                stampedeTarget = target->GetGUID();
+                                DoCast(target, SPELL_STAMPEDE);
+                            }
+                            Talk(SAY_SUMMON_RHINO);
+                            events.ScheduleEvent(EVENT_STAMPEDE, urand(16 * IN_MILLISECONDS, 17 * IN_MILLISECONDS), 0, PHASE_TROLL);
+                            break;
+                        case EVENT_PUNCTURE:
+                            DoCastVictim(DUNGEON_MODE(SPELL_PUNCTURE, SPELL_PUNCTURE_H));
+                            events.ScheduleEvent(EVENT_PUNCTURE, urand(13 * IN_MILLISECONDS, 16 * IN_MILLISECONDS), 0, PHASE_TROLL);
+                            break;
+                        case EVENT_WHIRLING_SLASH:
+                            DoCast(me, SPELL_WHIRLING_SLASH);
+                            break;
+                        case EVENT_ENRAGE:
+                            DoCast(me, SPELL_ENRAGE);
+                            events.ScheduleEvent(EVENT_ENRAGE, 15 * IN_MILLISECONDS, 0, PHASE_RHINO);
+                            break;
+                        case EVENT_STOMP:
+                            DoCast(me, SPELL_STOMP);
+                            events.ScheduleEvent(EVENT_STOMP, 11 * IN_MILLISECONDS, 0, PHASE_RHINO);
+                            break;
+                        case EVENT_IMPALING_CHARGE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 60, true))
+                                DoCast(target, SPELL_IMPALING_CHARGE);
+                            break;
+                        case EVENT_TRANSFORM:
+                            if (events.IsInPhase(PHASE_TROLL))
+                            {
+                                events.Reset();
+                                events.SetPhase(PHASE_RHINO);
+                                events.ScheduleEvent(EVENT_ENRAGE,           4 * IN_MILLISECONDS, 0, PHASE_RHINO);
+                                events.ScheduleEvent(EVENT_STOMP,            5 * IN_MILLISECONDS, 0, PHASE_RHINO);
+                                events.ScheduleEvent(EVENT_IMPALING_CHARGE, 14 * IN_MILLISECONDS, 0, PHASE_RHINO);
+                                events.ScheduleEvent(EVENT_TRANSFORM,       32 * IN_MILLISECONDS, 0, PHASE_RHINO);
+                                DoCast(SPELL_TRANSFORM);
+                                Talk(SAY_TRANSFORM);
+                            }
+                            else
+                            {
+                                events.Reset();
+                                events.SetPhase(PHASE_TROLL);
+                                events.ScheduleEvent(EVENT_STAMPEDE,               7 * IN_MILLISECONDS,                        0, PHASE_TROLL);
+                                events.ScheduleEvent(EVENT_PUNCTURE,        urand(12 * IN_MILLISECONDS, 15 * IN_MILLISECONDS), 0, PHASE_TROLL);
+                                events.ScheduleEvent(EVENT_WHIRLING_SLASH,  urand(13 * IN_MILLISECONDS, 16 * IN_MILLISECONDS), 0, PHASE_TROLL);
+                                events.ScheduleEvent(EVENT_TRANSFORM,             32 * IN_MILLISECONDS,                        0, PHASE_TROLL);
+                                DoCast(SPELL_TRANSFORM_CLEAR);
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+
+                    if (me->HasUnitState(UNIT_STATE_CASTING))
+                        break;
+                }
+
+                DoMeleeAttackIfReady();
+
+                if (me->GetDistance(me->GetHomePosition()) > 80.0f)
+                {
+                    me->SetHealth(uint32(me->GetMaxHealth()));
+                    EnterEvadeMode();
+                    return;
+                }
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                Talk(SAY_DEATH);
+
+                DoCastAOE(SPELL_CLEAR_PUNCTURE, true);
+
+                if (instance)
+                    instance->SetData(DATA_GAL_DARAH_EVENT, DONE);
+            }
+
+            void KilledUnit(Unit* victim) override
+            {
+                if (victim->GetTypeId() != TYPEID_PLAYER)
+                    return;
+
+                Talk(SAY_SLAY);
+            }
+
+        private:
+            InstanceScript* instance;
+            EventMap events;
+            std::set<uint64> impaled;
+            uint64 stampedeTarget;
+            uint32 oocTimer;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            bool playerExists = false;
-            for (std::list<uint64>::iterator itr = impaledList.begin(); itr != impaledList.end(); ++itr)
-                if (guid != *itr)
-                    playerExists = true;
-
-            if (playerExists)
-                ++shareTheLove;
-
-            impaledList.push_back(guid);
+            return new boss_gal_darahAI(creature);
         }
-
-        uint32 GetData(uint32 type)
-        {
-            if (type == DATA_SHARE_THE_LOVE)
-                return shareTheLove;
-
-            return 0;
-        }
-
-        void JustDied(Unit* /*killer*/)
-        {
-            DoScriptText(SAY_DEATH, me);
-
-            if (instance)
-                instance->SetData(DATA_GAL_DARAH_EVENT, DONE);
-        }
-
-        void KilledUnit(Unit* victim)
-        {
-            if (victim == me)
-                return;
-
-            DoScriptText(RAND(SAY_SLAY_1, SAY_SLAY_2, SAY_SLAY_3), me);
-        }
-    };
-
 };
 
-class achievement_share_the_love : public AchievementCriteriaScript
+class npc_drakkari_rhino : public CreatureScript
 {
     public:
-        achievement_share_the_love() : AchievementCriteriaScript("achievement_share_the_love")
+        npc_drakkari_rhino() : CreatureScript("npc_drakkari_rhino") { }
+
+        struct npc_drakkari_rhinoAI : public SmartAI
         {
-        }
+            npc_drakkari_rhinoAI(Creature* creature) : SmartAI(creature) { }
 
-        bool OnCheck(Player* /*player*/, Unit* target)
+            void EnterCombat(Unit* who) override
+            {
+                me->RemoveAurasDueToSpell(VEHICLE_SPELL_RIDE_HARDCODED);
+
+                SmartAI::EnterCombat(who);
+            }
+
+            void GetPassengerExitPosition(Unit* passenger, int8 seatId, Position& pos) override
+            {
+                if (me->GetPositionX() < 1788.0f)
+                {
+                    switch (seatId)
+                    {
+                        case 0: pos.Relocate(1773.924f, 748.7017f, 119.3996f, 3.132604f); break;
+                        case 1: pos.Relocate(1771.291f, 738.6677f, 119.3996f, 3.132604f); break;
+                        case 2: pos.Relocate(1769.334f, 743.6854f, 119.3996f, 3.132604f); break;
+                        default: return;
+                    }
+                }
+
+                if (Creature* creature = passenger->ToCreature())
+                    creature->SetHomePosition(pos);
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (!target)
-                return false;
-
-            if (Creature* GalDarah = target->ToCreature())
-                if (GalDarah->AI()->GetData(DATA_SHARE_THE_LOVE) >= 5)
-                    return true;
-
-            return false;
+            return new npc_drakkari_rhinoAI(creature);
         }
 };
 
 void AddSC_boss_gal_darah()
 {
     new boss_gal_darah();
-    new achievement_share_the_love();
+    new npc_drakkari_rhino();
 }

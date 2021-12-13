@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -23,14 +25,15 @@
 class AppenderDB: public Appender
 {
     public:
-        AppenderDB(uint8 _id, std::string const& _name, LogLevel level, uint8 realmId);
+        AppenderDB(uint8 _id, std::string const& _name, LogLevel level);
         ~AppenderDB();
-        void setEnable(bool enable);
+
+        void setRealmId(uint32 realmId);
 
     private:
-        uint8 realm;
-        bool enable;
-        void _write(LogMessage& message);
+        uint32 realmId;
+        bool enabled;
+        void _write(LogMessage const& message);
 };
 
 #endif

@@ -1,16 +1,14 @@
 #ifndef DEF_ENDTIME_H
 #define DEF_ENDTIME_H
 
-#define ETScriptName "instance_end_time"
-
-#define MAX_FRAGMENTS_COUNT 12
+#define MAX_FRAGMENTS_COUNT 16
 
 enum Data
 {
     DATA_ECHO_OF_SYLVANAS   = 0,
-	DATA_ECHO_OF_BAINE      = 1,
-	DATA_ECHO_OF_TYRANDE    = 2,
-	DATA_ECHO_OF_JAINA      = 3,
+    DATA_ECHO_OF_BAINE      = 1,
+    DATA_ECHO_OF_TYRANDE    = 2,
+    DATA_ECHO_OF_JAINA      = 3,
     DATA_MUROZOND           = 4,
     DATA_JAINA_EVENT        = 5,
     DATA_ECHO_1             = 6,
@@ -39,6 +37,7 @@ enum GameObjectIds
     GO_PLATFORM_2       = 209693,
     GO_PLATFORM_3       = 209694,
     GO_PLATFORM_4       = 209695,
+    GO_FIRE_WALL        = 209990
 };
 
 enum CreatureIds
@@ -50,6 +49,7 @@ enum CreatureIds
     NPC_MUROZOND            = 54432,
     NPC_NOZDORMU            = 54751,
     NPC_IMAGE_OF_NOZDORMU   = 54867,
+    NPC_BLINK_TARGET        = 54542,
 };
 
 enum WorldStatesET
@@ -86,5 +86,20 @@ enum CustomActions
     ACTION_TALK_SYLVANAS    = 3,
     ACTION_TALK_TYRANDE     = 4,
 };
+
+enum Worldstates
+{
+    WORLDSTATE_SEVERED_TIES = 9888,
+};
+
+template<class AI>
+CreatureAI* GetInstanceAI(Creature* creature)
+{
+    if (InstanceMap* instance = creature->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptId("instance_end_time"))
+                return new AI(creature);
+    return NULL;
+}
 
 #endif

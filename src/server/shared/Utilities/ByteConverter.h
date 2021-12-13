@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -35,8 +36,8 @@ namespace ByteConverter
         convert<T - 2>(val + 1);
     }
 
-    template<> inline void convert<0>(char *) {}
-    template<> inline void convert<1>(char *) {}            // ignore central byte
+    template<> inline void convert<0>(char *) { }
+    template<> inline void convert<1>(char *) { }           // ignore central byte
 
     template<typename T> inline void apply(T *val)
     {
@@ -47,9 +48,13 @@ namespace ByteConverter
 #if TRINITY_ENDIAN == TRINITY_BIGENDIAN
 template<typename T> inline void EndianConvert(T& val) { ByteConverter::apply<T>(&val); }
 template<typename T> inline void EndianConvertReverse(T&) { }
+template<typename T> inline void EndianConvertPtr(void* val) { ByteConverter::apply<T>(val); }
+template<typename T> inline void EndianConvertPtrReverse(void*) { }
 #else
 template<typename T> inline void EndianConvert(T&) { }
 template<typename T> inline void EndianConvertReverse(T& val) { ByteConverter::apply<T>(&val); }
+template<typename T> inline void EndianConvertPtr(void*) { }
+template<typename T> inline void EndianConvertPtrReverse(void* val) { ByteConverter::apply<T>(val); }
 #endif
 
 template<typename T> void EndianConvert(T*);         // will generate link error

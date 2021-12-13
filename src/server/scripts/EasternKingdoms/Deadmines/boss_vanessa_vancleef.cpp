@@ -1,5 +1,7 @@
 #include "ScriptPCH.h"
 #include "deadmines.h"
+#include "LFGMgr.h"
+#include "Group.h"
 
 enum ScriptedTexts
 {
@@ -40,7 +42,6 @@ enum Spells
     SPELL_BLOODWASH             = 90946,
     SPELL_BLOODBOLT             = 90938,
     SPELL_RAGEZONE              = 90932,
-
 };
 
 enum Adds
@@ -106,14 +107,9 @@ class boss_vanessa_vancleef : public CreatureScript
     public:
         boss_vanessa_vancleef() : CreatureScript("boss_vanessa_vancleef") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_vanessa_vancleefAI (pCreature);
-        }
-
         struct boss_vanessa_vancleefAI : public BossAI
         {
-            boss_vanessa_vancleefAI(Creature* pCreature) : BossAI(pCreature, DATA_VANESSA)
+            boss_vanessa_vancleefAI(Creature* creature) : BossAI(creature, DATA_VANESSA)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -131,53 +127,65 @@ class boss_vanessa_vancleef : public CreatureScript
                 me->SetReactState(REACT_DEFENSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->SetReactState(REACT_DEFENSIVE);
                 _Reset();
 
-                if (instance->GetData(DATA_VANESSA_EVENT) == DONE)
-                    me->SetVisible(true);
-                else
-                    me->SetVisible(false);
+                // by default right now cuz poison phase doesn`t work...
+                me->GetMap()->SetWorldState(WORLDSTATE_VANCLEEF_VINDICATION, 1);
 
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                    if (instance->GetData(DATA_VANESSA_EVENT) == DONE)
+                        me->SetVisible(true);
+                    else
+                        me->SetVisible(false);
+                }
                 phase = 0;
             }
 
-            void InitializeAI()
+            void EnterCombat(Unit* /*who*/) override 
             {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(DMScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
+                // by default right now cuz poison phase doesn`t work...
+                me->GetMap()->SetWorldState(WORLDSTATE_VANCLEEF_VINDICATION, 1);
 
-            void EnterCombat(Unit* /*who*/) 
-            {
+                _EnterCombat();
+
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+                    instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_VANESSA_ACHIEVEMENT);
+                }
+
                 Talk(SAY_AGGRO);
-
-                DoCastAOE(SPELL_VANESSA_ACHIEVEMENT);
 
                 events.ScheduleEvent(EVENT_BACKSLASH, urand(10000, 15000));
 
                 DoZoneInCombat();
-                instance->SetBossState(DATA_VANESSA, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit * victim)
+            void KilledUnit(Unit* victim) override
             {
                 if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 Talk(SAY_DEATH);
 
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                instance->DoFinishLFGDungeon(326);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -204,7 +212,7 @@ class boss_vanessa_vancleef : public CreatureScript
                             events.ScheduleEvent(EVENT_CONTINUE, 6000);
                             break;
                         case EVENT_CONTINUE:
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             break;
                         case EVENT_ADDS_1:
                             me->SummonCreature(NPC_DEFIAS_ENFORCER, addsPos[0]);
@@ -225,9 +233,15 @@ class boss_vanessa_vancleef : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
             uint8 phase;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_vanessa_vancleefAI>(creature);
+        }
 };
 
 class npc_vanessa_vancleef_a_note_from_vanessa : public CreatureScript
@@ -235,21 +249,23 @@ class npc_vanessa_vancleef_a_note_from_vanessa : public CreatureScript
     public:
         npc_vanessa_vancleef_a_note_from_vanessa() : CreatureScript("npc_vanessa_vancleef_a_note_from_vanessa") { }
      
-        bool OnGossipHello(Player* pPlayer, Creature* pCreature)
+        bool OnGossipHello(Player* /*player*/, Creature* creature) override
         {
-            InstanceScript* pInstance = pCreature->GetInstanceScript();
-            if (!pInstance)
-                return true;
-            if (pInstance->GetBossState(DATA_CAPTAIN) != DONE)
-                return true;
-            if (pInstance->GetData(DATA_VANESSA_EVENT) != NOT_STARTED)
+            InstanceScript* instance = creature->GetInstanceScript();
+            if (!instance)
                 return true;
 
-            pCreature->SummonCreature(NPC_VANESSA_SITTING, vanessaPos);
-            pInstance->SetData(DATA_VANESSA_EVENT, IN_PROGRESS);
+            if (instance->GetBossState(DATA_CAPTAIN) != DONE)
+                return true;
 
-            pCreature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-            pCreature->DespawnOrUnsummon(1000);
+            if (instance->GetData(DATA_VANESSA_EVENT) != NOT_STARTED)
+                return true;
+
+            creature->SummonCreature(NPC_VANESSA_SITTING, vanessaPos);
+            instance->SetData(DATA_VANESSA_EVENT, IN_PROGRESS);
+
+            creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+            creature->DespawnOrUnsummon(1000);
             return true;
         }
 };
@@ -259,39 +275,26 @@ class npc_vanessa_vancleef_vanessa_sitting : public CreatureScript
     public:
         npc_vanessa_vancleef_vanessa_sitting() : CreatureScript("npc_vanessa_vancleef_vanessa_sitting") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_vanessa_vancleef_vanessa_sittingAI : public CreatureAI
         {
-            return new npc_vanessa_vancleef_vanessa_sittingAI (pCreature);
-        }
-
-        struct npc_vanessa_vancleef_vanessa_sittingAI : public BossAI
-        {
-            npc_vanessa_vancleef_vanessa_sittingAI(Creature* pCreature) : BossAI(pCreature, DATA_VANESSA)
+            npc_vanessa_vancleef_vanessa_sittingAI(Creature* creature) : CreatureAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
                 me->setActive(true);
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
             }
 
-            void InitializeAI()
-            {
-                if (!pInstance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(DMScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 events.ScheduleEvent(EVENT_INTRO_1, 1000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
                 
@@ -326,13 +329,10 @@ class npc_vanessa_vancleef_vanessa_sitting : public CreatureScript
                             events.ScheduleEvent(EVENT_INTRO_7, 5000);
                             break;
                         case EVENT_INTRO_7:
-                            if (pInstance)
-                                pInstance->SetData(DATA_VANESSA_EVENT, DONE);
-                            if (Creature* pVanessa = me->FindNearestCreature(NPC_VANESSA, 40.0f))
+                            instance->SetData(DATA_VANESSA_EVENT, DONE);
+                            if (Creature* pVanessa = me->FindNearestCreature(NPC_VANESSA_VANCLEEF, 40.0f))
                                 pVanessa->SetVisible(true);
-                            
-                            pInstance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEVEMENT_EVENT);
-
+                            instance->DoStartCriteria(CRITERIA_START_TYPE_EVENT, ACHIEVEMENT_EVENT);
                             me->DespawnOrUnsummon(1000);
                             break;
                     }
@@ -342,60 +342,46 @@ class npc_vanessa_vancleef_vanessa_sitting : public CreatureScript
             }
 
         private:
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_vanessa_vancleef_vanessa_sittingAI>(creature);
+        }
 };
 
 class npc_vanessa_vancleef_defias_enforcer : public CreatureScript
 {
-    public:
-        npc_vanessa_vancleef_defias_enforcer() : CreatureScript("npc_vanessa_vancleef_defias_enforcer") { }
+        public:
+            npc_vanessa_vancleef_defias_enforcer() : CreatureScript("npc_vanessa_vancleef_defias_enforcer") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_vanessa_vancleef_defias_enforcerAI (pCreature);
-        }
-
-        struct npc_vanessa_vancleef_defias_enforcerAI : public BossAI
-        {
-            npc_vanessa_vancleef_defias_enforcerAI(Creature* pCreature) : BossAI(pCreature, DATA_VANESSA)
+            struct npc_vanessa_vancleef_defias_enforcerAI : public CreatureAI
             {
-                me->setActive(true);
-                pInstance = me->GetInstanceScript();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                /*events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-                
-                if (uint32 eventId = events.ExecuteEvent())
+                npc_vanessa_vancleef_defias_enforcerAI(Creature* creature) : CreatureAI(creature)
                 {
-                    switch (eventId)
-                    {
-                        default:
-                            break;
-                    }
-                }*/
+                    me->setActive(true);
+                }
 
-                DoMeleeAttackIfReady();
+                void Reset() override { }
+
+                void UpdateAI(uint32 diff) override
+                {
+                    if (!UpdateVictim())
+                        return;
+
+                    if (me->HasUnitState(UNIT_STATE_CASTING))
+                        return;
+
+                    DoMeleeAttackIfReady();
+                }
+            };
+
+            CreatureAI* GetAI(Creature* creature) const override
+            {
+                return GetInstanceAI<npc_vanessa_vancleef_defias_enforcerAI>(creature);
             }
-
-        private:
-            InstanceScript* pInstance;
-            EventMap events;
-        };
 };
 
 class spell_vanessa_vancleef_backslash_targeting : public SpellScriptLoader
@@ -407,8 +393,7 @@ class spell_vanessa_vancleef_backslash_targeting : public SpellScriptLoader
         {
             PrepareSpellScript(spell_vanessa_vancleef_backslash_targeting_SpellScript);
 
-
-            void HandleScript(SpellEffIndex effIndex)
+            void HandleScript(SpellEffIndex /*effIndex*/)
             {
                 if (!GetCaster() || !GetHitUnit())
                     return;
@@ -416,13 +401,13 @@ class spell_vanessa_vancleef_backslash_targeting : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_BACKSLASH, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_vanessa_vancleef_backslash_targeting_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_vanessa_vancleef_backslash_targeting_SpellScript();
         }

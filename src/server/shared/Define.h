@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -21,9 +22,8 @@
 
 #include "CompilerDefs.h"
 
-#include <ace/Basic_Types.h>
 #include <ace/ACE_export.h>
-
+#include <cinttypes>
 #include <cstddef>
 
 #define TRINITY_LITTLEENDIAN 0
@@ -78,14 +78,17 @@
 
 #define SIZEFMTD ACE_SIZE_T_FORMAT_SPECIFIER
 
-typedef ACE_INT64 int64;
-typedef ACE_INT32 int32;
-typedef ACE_INT16 int16;
-typedef ACE_INT8 int8;
-typedef ACE_UINT64 uint64;
-typedef ACE_UINT32 uint32;
-typedef ACE_UINT16 uint16;
-typedef ACE_UINT8 uint8;
+
+
+
+typedef std::int64_t  int64;
+typedef std::int32_t  int32;
+typedef std::int16_t  int16;
+typedef std::int8_t   int8;
+typedef std::uint64_t uint64;
+typedef std::uint32_t uint32;
+typedef std::uint16_t uint16;
+typedef std::uint8_t  uint8;
 
 enum DBCFormer
 {
@@ -97,8 +100,8 @@ enum DBCFormer
     FT_BYTE='b',                                            //uint8
     FT_SORT='d',                                            //sorted by this field, field is not included
     FT_IND='n',                                             //the same, but parsed to data
-    FT_LOGIC='l',                                           //Logical (boolean)
     FT_SQL_PRESENT='p',                                     //Used in sql format to mark column present in sql dbc
     FT_SQL_ABSENT='a'                                       //Used in sql format to mark column absent in sql dbc
 };
+
 #endif //TRINITY_DEFINE_H

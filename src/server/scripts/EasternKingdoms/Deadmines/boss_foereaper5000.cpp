@@ -1,13 +1,13 @@
 #include "ScriptPCH.h"
 #include "deadmines.h"
 
+// todo: реализовать робота и аддов на героике, включение робота после убийства пары мобов
 
-//todo: реализовать робота и аддов на героике, включение робота после убийства пары мобов
 enum ScriptTexts
 {
-    SAY_AGGRO    = 0,
-    SAY_DEATH    = 1,
-    SAY_KILL    = 2,
+    SAY_AGGRO     = 0,
+    SAY_DEATH     = 1,
+    SAY_KILL      = 2,
     SAY_SPELL1    = 3,
     SAY_SPELL2    = 4,
     SAY_SPELL3    = 5,
@@ -16,40 +16,31 @@ enum ScriptTexts
 
 enum Spells
 {
-    SPELL_OFF_LINE          = 88348,
-    SPELL_ZERO_POWER        = 87239,
-    SPELL_RED_EYES          = 24263,
-    SPELL_REAPER_STRIKE     = 88490,
-    SPELL_REAPER_STRIKE_H   = 91717,
-    SPELL_SAFETY            = 88522,
-    SPELL_SAFETY_H          = 91720,
-    SPELL_HARVEST           = 88495,
-    SPELL_HARVEST_AURA      = 88497,
-    SPELL_HARVEST_DMG       = 88501,
-    SPELL_HARVEST_DMG_H     = 91719,
-    SPELL_HARVEST_SWEEP     = 88521,
-    SPELL_HARVEST_SWEEP_H   = 91718,
-    SPELL_OVERDRIVE         = 88481,
-    SPELL_OVERDRIVE_DMG     = 88484,
-    SPELL_OVERDRIVE_DMG_H   = 91716,
-    SPELL_TARGET_BUNNY      = 71371, //rocket artillery
+    SPELL_REAPER_STRIKE        = 88490,
+    SPELL_SAFETY               = 88522,
+    SPELL_HARVEST              = 88495,
+    SPELL_HARVEST_AURA         = 88497,
+    SPELL_HARVEST_DMG          = 88501,
+    SPELL_HARVEST_SWEEP        = 88521,
+    SPELL_OVERDRIVE            = 88481,
+    SPELL_OVERDRIVE_DMG        = 88484,
+    SPELL_TARGET_BUNNY         = 71371, // rocket artillery
 };
 
 enum Adds
 {
     NPC_TARGETING_BUNNY     = 47468,
-    NPC_DEFIAS_REAPER       = 47403,
     NPC_MOLTEN_SLAG         = 49229,
     NPC_PROTOTYPE_REAPER    = 49208, // 87239 91731
 };
 
 enum Events
 {
-    EVENT_OVERDRIVE    = 1,
-    EVENT_OVERDRIVE1    = 2,
-    EVENT_REAPER_STRIKE    = 3,
-    EVENT_HARVEST        = 4,
-    EVENT_HARVEST1        = 5,
+    EVENT_OVERDRIVE         = 1,
+    EVENT_OVERDRIVE1        = 2,
+    EVENT_REAPER_STRIKE     = 3,
+    EVENT_HARVEST           = 4,
+    EVENT_HARVEST1          = 5,
 
 };
 
@@ -73,14 +64,14 @@ class boss_foereaper5000 : public CreatureScript
     public:
         boss_foereaper5000() : CreatureScript("boss_foereaper5000") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_foereaper5000AI (pCreature);
-        }
-
         struct boss_foereaper5000AI : public BossAI
         {
-            boss_foereaper5000AI(Creature* pCreature) : BossAI(pCreature, DATA_FOEREAPER)
+            boss_foereaper5000AI(Creature* creature) : BossAI(creature, DATA_FOEREAPER) { }
+
+            uint64 harvestTargetGuid = 0;
+            bool bEnrage;
+
+            void InitializeAI() override
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -94,20 +85,24 @@ class boss_foereaper5000 : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+
                 me->setActive(true);
+                me->CastSpell(me, SPELL_OFF_LINE, true);
+                Reset();
             }
 
-            Creature* harvestTarget;
-            bool bEnrage;
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 bEnrage = false;
+                harvestTargetGuid = 0;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -135,7 +130,7 @@ class boss_foereaper5000 : public CreatureScript
                             events.ScheduleEvent(EVENT_OVERDRIVE, urand(25000, 30000));
                             break;
                         case EVENT_REAPER_STRIKE:
-                            DoCast(me->getVictim(), SPELL_REAPER_STRIKE);
+                            DoCast(me->GetVictim(), SPELL_REAPER_STRIKE);
                             events.ScheduleEvent(EVENT_REAPER_STRIKE, urand(7000, 10000));
                             break;
                         case EVENT_HARVEST:
@@ -152,53 +147,73 @@ class boss_foereaper5000 : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
                 {
-                    switch (id)
+                    switch (pointId)
                     {
                         case 1001:
-                            DoCast(me, DUNGEON_MODE(SPELL_HARVEST_SWEEP, SPELL_HARVEST_SWEEP), true);
+                            DoCast(me, SPELL_HARVEST_SWEEP, true);
                             me->RemoveAurasDueToSpell(SPELL_HARVEST_AURA);
+
+                            if (harvestTargetGuid)
+                                if (Creature* harvestTarget = ObjectAccessor::GetCreature(*me, harvestTargetGuid))
+                                    harvestTarget->DespawnOrUnsummon();
+
+                            if (Unit* vict = me->GetVictim())
+                                me->GetMotionMaster()->MoveChase(vict);
                             break;
                     }
                 }
             }
 
-            void EnterCombat(Unit* /*who*/) 
+            void EnterCombat(Unit* /*who*/) override 
             {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 Talk(SAY_AGGRO);
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_STUNNED);
                 events.ScheduleEvent(EVENT_REAPER_STRIKE, urand(5000, 8000));
                 events.ScheduleEvent(EVENT_OVERDRIVE, urand(10000, 15000));
                 events.ScheduleEvent(EVENT_HARVEST, urand(25000, 30000));
                 DoZoneInCombat();
-                instance->SetBossState(DATA_FOEREAPER, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit * victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 BossAI::JustSummoned(summon);
                 if (summon->GetEntry()== NPC_TARGETING_BUNNY)
                 {
-                    harvestTarget = summon;
+                    harvestTargetGuid = summon->GetGUID();
                     Talk(SAY_SPELL2);
-                    me->GetMotionMaster()->MovePoint(1001, harvestTarget->GetPositionX(), harvestTarget->GetPositionY(), harvestTarget->GetPositionZ());
+                    me->GetMotionMaster()->MovePoint(1001, summon->GetPositionX(), summon->GetPositionY(), summon->GetPositionZ());
                 }
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 Talk(SAY_DEATH); 
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_foereaper5000AI>(creature);
+        }
 };
 
 class npc_foereaper_targeting_bunny: public CreatureScript
@@ -206,28 +221,23 @@ class npc_foereaper_targeting_bunny: public CreatureScript
     public:
         npc_foereaper_targeting_bunny() : CreatureScript("npc_foereaper_targeting_bunny") { }
      
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_foereaper_targeting_bunnyAI : public ScriptedAI
         {
-            return new npc_foereaper_targeting_bunnyAI (pCreature);
-        }
-     
-        struct npc_foereaper_targeting_bunnyAI : public Scripted_NoMovementAI
-        {
-            npc_foereaper_targeting_bunnyAI(Creature *c) : Scripted_NoMovementAI(c)
+            npc_foereaper_targeting_bunnyAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = c->GetInstanceScript();
+                SetCombatMovement(false);
             }
            
-            InstanceScript* pInstance;
-
-            void Reset()
+            void Reset() override
             {
-                if (!pInstance)
-                    return;
-
                 DoCast(SPELL_TARGET_BUNNY);
             }
         };
+     
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_foereaper_targeting_bunnyAI>(creature);
+        }
 };
 
 void AddSC_boss_foereaper5000()

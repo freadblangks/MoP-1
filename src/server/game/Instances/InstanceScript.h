@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,14 +23,13 @@
 #include "ZoneScript.h"
 #include "World.h"
 #include "ObjectMgr.h"
-//#include "GameObject.h"
-//#include "Map.h"
+#include "WorldStateBuilder.h"
 
-#define OUT_SAVE_INST_DATA             sLog->outDebug(LOG_FILTER_TSCR, "Saving Instance Data for Instance %s (Map %d, Instance Id %d)", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
-#define OUT_SAVE_INST_DATA_COMPLETE    sLog->outDebug(LOG_FILTER_TSCR, "Saving Instance Data for Instance %s (Map %d, Instance Id %d) completed.", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
-#define OUT_LOAD_INST_DATA(a)          sLog->outDebug(LOG_FILTER_TSCR, "Loading Instance Data for Instance %s (Map %d, Instance Id %d). Input is '%s'", instance->GetMapName(), instance->GetId(), instance->GetInstanceId(), a)
-#define OUT_LOAD_INST_DATA_COMPLETE    sLog->outDebug(LOG_FILTER_TSCR, "Instance Data Load for Instance %s (Map %d, Instance Id: %d) is complete.", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
-#define OUT_LOAD_INST_DATA_FAIL        sLog->outError(LOG_FILTER_TSCR, "Unable to load Instance Data for Instance %s (Map %d, Instance Id: %d).", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
+#define OUT_SAVE_INST_DATA             TC_LOG_DEBUG("scripts", "Saving Instance Data for Instance %s (Map %d, Instance Id %d)", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
+#define OUT_SAVE_INST_DATA_COMPLETE    TC_LOG_DEBUG("scripts", "Saving Instance Data for Instance %s (Map %d, Instance Id %d) completed.", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
+#define OUT_LOAD_INST_DATA(a)          TC_LOG_DEBUG("scripts", "Loading Instance Data for Instance %s (Map %d, Instance Id %d). Input is '%s'", instance->GetMapName(), instance->GetId(), instance->GetInstanceId(), a)
+#define OUT_LOAD_INST_DATA_COMPLETE    TC_LOG_DEBUG("scripts", "Instance Data Load for Instance %s (Map %d, Instance Id: %d) is complete.", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
+#define OUT_LOAD_INST_DATA_FAIL        TC_LOG_ERROR("scripts", "Unable to load Instance Data for Instance %s (Map %d, Instance Id: %d).", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
 
 class Map;
 class Unit;
@@ -52,7 +52,7 @@ enum EncounterFrameType
     ENCOUNTER_FRAME_UPDATE_OBJECTIVE        = 7,
     ENCOUNTER_FRAME_DISABLE_OBJECTIVE       = 8,
     ENCOUNTER_FRAME_UNK7                    = 9,    // Seems to have something to do with sorting the encounter units
-    ENCOUNTER_FRAME_ADD_COMBAT_RES_LIMIT    = 10,
+    ENCOUNTER_FRAME_ADD_COMBAT_RES_LIMIT    = 10
 };
 
 enum EncounterState
@@ -62,7 +62,7 @@ enum EncounterState
     FAIL          = 2,
     DONE          = 3,
     SPECIAL       = 4,
-    TO_BE_DECIDED = 5,
+    TO_BE_DECIDED = 5
 };
 
 enum DoorType
@@ -70,7 +70,7 @@ enum DoorType
     DOOR_TYPE_ROOM          = 0,    // Door can open if encounter is not in progress
     DOOR_TYPE_PASSAGE       = 1,    // Door can open if encounter is done
     DOOR_TYPE_SPAWN_HOLE    = 2,    // Door can open if encounter is in progress, typically used for spawning places
-    MAX_DOOR_TYPES,
+    MAX_DOOR_TYPES
 };
 
 enum BoundaryType
@@ -87,7 +87,34 @@ enum BoundaryType
     BOUNDARY_MAX_X = BOUNDARY_N,
     BOUNDARY_MIN_X = BOUNDARY_S,
     BOUNDARY_MAX_Y = BOUNDARY_W,
-    BOUNDARY_MIN_Y = BOUNDARY_E,
+    BOUNDARY_MIN_Y = BOUNDARY_E
+};
+
+enum HighRecoveryTypeSpells
+{
+    SPELL_INSANITY_R              = 95809,
+    SPELL_TEMPORAL_DISPLACEMENT_R = 80354,
+    SPELL_EXHAUSTION_R            = 57723, // from heroism
+    SPELL_SATED_R                 = 57724, // From Bloodlust
+
+    // Determination Spells
+    SPELL_DETERMINATION_LFR       = 139068,
+};
+
+enum DampeningSpells
+{
+    SPELL_DAMPENING_FIELD_R        = 126816, // Mogushan Vaults
+    SPELL_KLAXXI_RESONANCE_R       = 126841, // Heart of Fear
+    SPELL_RITUAL_OF_PURIFICATION_R = 126848, // Terrace of the Endless Spring
+    SPELL_SHADO_PAN_ONSLAUGHT_R    = 149070, // Throne of Thunder
+};
+
+const std::vector<uint32> BloodLustType =
+{
+    SPELL_INSANITY_R,
+    SPELL_TEMPORAL_DISPLACEMENT_R,
+    SPELL_EXHAUSTION_R,
+    SPELL_SATED_R,
 };
 
 typedef std::map<BoundaryType, float> BossBoundaryMap;
@@ -106,7 +133,7 @@ struct MinionData
 
 struct BossInfo
 {
-    BossInfo() : state(TO_BE_DECIDED) {}
+    BossInfo() : state(TO_BE_DECIDED) { }
     EncounterState state;
     DoorSet door[MAX_DOOR_TYPES];
     MinionSet minion;
@@ -116,7 +143,7 @@ struct BossInfo
 struct DoorInfo
 {
     explicit DoorInfo(BossInfo* _bossInfo, DoorType _type, BoundaryType _boundary)
-        : bossInfo(_bossInfo), type(_type), boundary(_boundary) {}
+        : bossInfo(_bossInfo), type(_type), boundary(_boundary) { }
     BossInfo* bossInfo;
     DoorType type;
     BoundaryType boundary;
@@ -124,24 +151,147 @@ struct DoorInfo
 
 struct MinionInfo
 {
-    explicit MinionInfo(BossInfo* _bossInfo) : bossInfo(_bossInfo) {}
+    explicit MinionInfo(BossInfo* _bossInfo) : bossInfo(_bossInfo) { }
     BossInfo* bossInfo;
 };
 
 typedef std::multimap<uint32 /*entry*/, DoorInfo> DoorInfoMap;
+typedef std::pair<DoorInfoMap::const_iterator, DoorInfoMap::const_iterator> DoorInfoMapBounds;
+
 typedef std::map<uint32 /*entry*/, MinionInfo> MinionInfoMap;
+
+enum ChallengeMedals
+{
+    MedalTypeNone,
+    MedalTypeBronze,
+    MedalTypeSilver,
+    MedalTypeGold,
+    MaxMedalType,
+};
+
+struct ScenarioBosses
+{
+    ScenarioBosses()
+    {
+        bossId = 0;
+        scenarioId = 0;
+    }
+
+    ScenarioBosses(uint32 id, uint32 scenario)
+    {
+        bossId = id;
+        scenarioId = scenario;
+    }
+
+    uint32 bossId;
+    uint32 scenarioId;
+};
+
+struct CriteriaProgressData
+{
+    CriteriaProgressData(uint32 id, uint64 quantity, ObjectGuid instanceGuid, uint32 date, uint32 startTime, uint8 flags)
+    {
+        Id                = id;
+        Quantity          = quantity;
+        InstanceGuid      = instanceGuid;
+        Date              = date;
+        TimeFromStart     = startTime;
+        TimeFromCreate    = startTime;
+        Flags             = flags;
+    }
+
+    CriteriaProgressData()
+    {
+        Id                = 0;
+        Quantity          = 0;
+        InstanceGuid      = 0;
+        Date              = 0;
+        TimeFromStart     = 0;
+        TimeFromCreate    = 0;
+        Flags             = 0;
+    }
+
+    ObjectGuid InstanceGuid;
+    uint64 Quantity;
+    uint32 Id;
+    uint32 Date;
+    uint32 TimeFromStart;
+    uint32 TimeFromCreate;
+    uint8  Flags;
+};
+
+struct ScenarioData
+{
+    ScenarioData(uint32 scenarioId, uint32 stepId, uint32 currWave, uint32 maxWave, uint32 timer, uint32 criteriaCount, uint32 bonusAvailable, bool complete)
+    {
+        ScenarioId              = scenarioId;
+        StepId                  = stepId;
+        WaveCurrent             = currWave;
+        WaveMax                 = maxWave;
+        TimerDuration           = timer;
+        CriteriaCount           = criteriaCount;
+        BonusObjectiveDataCount = bonusAvailable;
+        ScenarioComplete        = complete;
+
+        criteriaProgress.resize(criteriaCount);
+    }
+
+    ScenarioData(uint32 scenarioId, uint32 stepId)
+    {
+        ScenarioId              = scenarioId;
+        StepId                  = stepId;
+        WaveCurrent             = 0;
+        WaveMax                 = 0;
+        TimerDuration           = 0;
+        CriteriaCount           = 0;
+        BonusObjectiveDataCount = 0;
+        ScenarioComplete        = false;
+
+        criteriaProgress.clear();
+    }
+
+    ScenarioData()
+    {
+        ScenarioId              = 0;
+        StepId                  = 0;
+        WaveCurrent             = 0;
+        WaveMax                 = 0;
+        TimerDuration           = 0;
+        CriteriaCount           = 0;
+        BonusObjectiveDataCount = 0;
+        ScenarioComplete        = false;
+
+        criteriaProgress.clear();
+    }
+
+    void AddCriteriaProgress(CriteriaProgressData data)
+    {
+        criteriaProgress.push_back(data);
+    }
+
+    uint32 ScenarioId;
+    uint32 StepId;
+    uint32 WaveCurrent;
+    uint32 WaveMax;
+    uint32 TimerDuration;
+    uint32 CriteriaCount;
+    uint32 BonusObjectiveDataCount;
+    bool  ScenarioComplete;
+
+    std::vector<CriteriaProgressData> criteriaProgress;
+};
 
 class InstanceScript : public ZoneScript
 {
     public:
-        explicit InstanceScript(Map* map) : instance(map), completedEncounters(0) {}
+        explicit InstanceScript(Map* map);
 
-        virtual ~InstanceScript() {}
+        virtual ~InstanceScript() { }
 
         Map* instance;
 
         //On creation, NOT load.
-        virtual void Initialize() {}
+        virtual void Initialize() { }
 
         //On load
         virtual void Load(char const* data) { LoadBossState(data); }
@@ -151,17 +301,20 @@ class InstanceScript : public ZoneScript
 
         void SaveToDB();
 
-        virtual void Update(uint32 /*diff*/) {}
+        virtual void Update(uint32 /*diff*/) { }
 
         //Used by the map's CanEnter function.
         //This is to prevent players from entering during boss encounters.
         virtual bool IsEncounterInProgress() const;
 
-        //Called when a player begins to enter the instance.
-        virtual void BeforePlayerEnter(Player* /*player*/) {}
-
         //Called when a player successfully enters the instance.
-        virtual void OnPlayerEnter(Player* /*player*/) {}
+        virtual void OnPlayerEnter(Player* /*player*/) { }
+
+        //Called when a player leaves the instance.
+        virtual void OnPlayerLeave(Player* /*player*/) { }
+
+        //Called when a player stops watching a movie
+        virtual void OnMovieEnded(Player* /*player*/) { }
 
         //Handle open / close objects
         //use HandleGameObject(0, boolen, GO); in OnObjectCreate in instance scripts
@@ -184,26 +337,30 @@ class InstanceScript : public ZoneScript
         void DoResetAchievementCriteria(AchievementCriteriaTypes type, uint64 miscValue1 = 0, uint64 miscValue2 = 0, bool evenIfCriteriaComplete = false);
 
         // Complete Achievement for all players in instance
-	 void DoCompleteAchievement(uint32 achievement);
+        DECLSPEC_DEPRECATED void DoCompleteAchievement(uint32 achievement) ATTR_DEPRECATED;
 
         // Update Achievement Criteria for all players in instance
-        void DoUpdateAchievementCriteria(AchievementCriteriaTypes type, uint32 miscValue1 = 0, uint32 miscValue2 = 0, uint32 miscValue3 = 0, Unit* unit = NULL);
+        void DoUpdateAchievementCriteria(AchievementCriteriaTypes type, uint32 miscValue1 = 0, uint32 miscValue2 = 0, Unit* unit = NULL);
 
-        // Start/Stop Timed Achievement Criteria for all players in instance
-        void DoStartTimedAchievement(AchievementCriteriaTimedTypes type, uint32 entry);
-        void DoStopTimedAchievement(AchievementCriteriaTimedTypes type, uint32 entry);
+        void DoStartCriteria(CriteriaStartTypes type, uint32 entry);
+        void DoStopTimedAchievement(CriteriaStartTypes type, uint32 entry);
 
         // Remove Auras due to Spell on all players in instance
         void DoRemoveAurasDueToSpellOnPlayers(uint32 spell);
+        void DoRemoveBloodLustDebuffSpellOnPlayers();
+
+        // Add aura on all players in instance
+        void DoAddAuraOnPlayers(uint32 spell);
+
+        // Dampening creatures with specific aura
+        void DoDampeningForCreatures(Creature* creature);
+        void DoRemoveDampeningFromCreatures();
 
         // Remove aura from stack on all players in instance
         void DoRemoveAuraFromStackOnPlayers(uint32 spell, uint64 casterGUID = 0, AuraRemoveMode mode = AURA_REMOVE_BY_DEFAULT, uint32 num = 1);
 
         // Cast spell on all players in instance
-        void DoCastSpellOnPlayers(uint32 spell);
-
-        // Add aura on all players in instance
-        void DoAddAuraOnPlayers(uint32 spell);
+        void DoCastSpellOnPlayers(uint32 spell, bool aliveOnly = false);
 
         void DoSetAlternatePowerOnPlayers(int32 value);
 
@@ -214,6 +371,8 @@ class InstanceScript : public ZoneScript
         void DoStartMovie(uint32 movieId);
 
         void DoKilledMonsterKredit(uint32 questId, uint32 entry, uint64 guid = 0);
+
+        void DoFinishLFGDungeon(uint32 dungeonId);
 
         // Return wether server allow two side groups or not
         bool ServerAllowsTwoSideGroups() { return sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GROUP); }
@@ -227,7 +386,7 @@ class InstanceScript : public ZoneScript
         virtual bool CheckAchievementCriteriaMeet(uint32 /*criteria_id*/, Player const* /*source*/, Unit const* /*target*/ = NULL, uint32 /*miscvalue1*/ = 0);
 
         // Checks boss requirements (one boss required to kill other)
-        virtual bool CheckRequiredBosses(uint32 /*bossId*/, Player const* /*player*/ = NULL) const;
+        virtual bool CheckRequiredBosses(uint32 /*bossId*/, Player const* /*player*/ = NULL) const { return true; }
 
         // Checks encounter state at kill/spellcast
         void UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Unit* source);
@@ -241,16 +400,75 @@ class InstanceScript : public ZoneScript
         void SendEncounterUnit(uint32 type, Unit* unit = NULL, uint8 param1 = 0, uint8 param2 = 0);
 
         // Check if all players are dead (except gamemasters)
-        virtual bool IsWipe();
+        // If set value then chech not whole instance
+        virtual bool IsWipe(float range = 0.0f, Unit* source = NULL);
 
-        virtual void FillInitialWorldStates(WorldPacket& /*data*/) {}
+        virtual void FillInitialWorldStates(WorldStateBuilder& /*builder*/) { }
 
+        // For Raids where entrance is dynamic
+        virtual Position GetCurrentEntrancePosition() { return {0.0f, 0.0f, 0.0f, 0.0f };}
+
+        // ReCheck PhaseTemplate related conditions
         void UpdatePhasing();
 
+        // Promotion players by buff if wipe. Clear it if encounter was killed.
+        void PromotionIfLFR(uint32 data);
+        uint8 GetDeterminationValue() { return determinationCount; }
+
+        // Dampening condition
+        void SetDampening(bool force = true) { hasDampening = force; }
+        bool GetDampening() { return hasDampening; }
+        void SetDampeningSpell(uint32 spellId) { dampeningSpellId = spellId; }
+        uint32 GetDampeningSpell() { return dampeningSpellId; }
+
+        void UpdateResurrectionsCount() { resurrections++; }
+        bool CanUseResurrection();
+        void ResetResurrectionsCount() { resurrections = 0; }
+
+        ObjectGuid GetGUID() const { return instanceGuid; }
+
+        // Scenarios
+        void SendScenarioState(ScenarioData data, Player* player = nullptr);
+        void SendScenarioProgressUpdate(CriteriaProgressData data, Player* player = nullptr);
+        void SetScenarioId(uint32 newScenarioId) { scenarioId = newScenarioId; scenarioGuid = MAKE_NEW_GUID(scenarioId, instance->GetInstanceId(), HIGHGUID_SCENARIO); } // used only for 5ppl dungeons
+        uint32 GetScenarioId() const { return scenarioId; }
+        uint8 GetcurrentScenarioStep() const { return scenarioStep; }
+        ObjectGuid GetScenarioGUID() const { return scenarioGuid; }
+
+        // Challenges
+        void SendChallengeStartTimer(uint32 time);
+        void SendChallengeStartElapsedTimer(uint32 timerId, uint32 time);
+        void SendChallengeStopElapsedTimer(uint32 timerId, bool keepTimer = false);
+        void SetChallengeModeStarted();
+        void ScheduleChallengeStartup(uint32 diff);
+        void ScheduleChallengeTimeUpdate(uint32 diff);
+        void ScheduleBeginningTimeUpdate(uint32 diff);
+        void SendChallengeNewPlayerRecord();
+        void SendChallengeModeComplete(uint32 money, uint32 valor);
+        void SaveChallengeDatasIfNeeded();
+        void SaveNewGroupChallenge(uint32 guildId = 0);
+        void RewardChallengers(uint32& money, uint32& valor);
+        void RewardNewRealmRecord(RealmCompletedChallenge* oldChallenge = nullptr);
+        void SetChallengeDoorGuid(ObjectGuid guid) { challengeDoorGuids.push_back(guid); }
+        void SetConditionCompleted(bool completed) { conditionCompleted = completed; }
+        void SendChallengeInfo(Player* player, uint32 scenarioId);
+        void UpdateConditionInfo(Creature* creature, uint32 counter);
+        bool IsChallengeModeStarted() const { return challengeStarted; }
+        bool IsChallengeModeCompleted() const { return challengeCompleted; }
+        bool IsConditionCompleted() const { return conditionCompleted; }
+        uint32 GetBeginingTime() const { return beginningTime; }
+        uint32 GetChallengeTime() const { return challengeTime; }
+
+        void GameObjectRemoved(GameObject* go);
+
+        void UpdateDynamicHealth(uint64 single = 0);
+        void AddFlexCreature(uint64 guid) { flexCreatures.push_back(guid); }
+
     protected:
-        void SetBossNumber(uint32 number) { bosses.resize(number); }
-        void LoadDoorData(DoorData const* data);
-        void LoadMinionData(MinionData const* data);
+        void SetBossNumber(uint32 number);
+        void LoadDoorData(std::vector<DoorData> const& data);
+        void LoadMinionData(std::vector<MinionData> const& data);
+        void LoadScenarioInfo(std::vector<ScenarioBosses> const& scenarios, uint32 condition);
 
         void AddDoor(GameObject* door, bool add);
         void AddMinion(Creature* minion, bool add);
@@ -260,10 +478,47 @@ class InstanceScript : public ZoneScript
 
         std::string LoadBossState(char const* data);
         std::string GetBossSaveData();
+        uint32 GetEncountersDoneCount(uint32 encounters);
     private:
         std::vector<BossInfo> bosses;
+        std::vector<ScenarioBosses> bossesScenarios;
+        std::vector<uint64> dampenedGUIDs;
+        std::vector<uint64> flexCreatures;
         DoorInfoMap doors;
         MinionInfoMap minions;
         uint32 completedEncounters; // completed encounter mask, bit indexes are DungeonEncounter.dbc boss numbers, used for packets
+        uint8 resurrections;
+        uint8 determinationCount;
+
+        ObjectGuid scenarioGuid;
+        uint32 scenarioId;
+
+        ObjectGuid instanceGuid;
+        std::vector<ObjectGuid> challengeDoorGuids;
+        uint32 startChallengeTime;
+        uint32 challengeTime;
+        uint32 beginningTime;
+        uint32 conditionId;
+        uint32 dampeningSpellId;
+        uint8 medalType;
+        uint8 scenarioStep;
+        uint8 conditionCounter;
+        bool challengeStarted;
+        bool challengeCompleted;
+        bool conditionCompleted;
+        bool hasDampening;
+        time_t startFightTime;
 };
-#endif
+
+template<class AI, class T>
+AI* GetInstanceAI(T* obj, char const* scriptName)
+{
+    if (InstanceMap* instance = obj->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptId(scriptName))
+                return new AI(obj);
+
+    return NULL;
+}
+
+#endif // TRINITY_INSTANCE_DATA_H

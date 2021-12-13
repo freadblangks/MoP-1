@@ -1,34 +1,20 @@
-/*
- * Copyright (C) 2012-2013 JadeCore <http://www.pandashan.com/>
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
-
-#include "GameObjectAI.h"
+#include "mogu_shan_vault.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
-#include "mogu_shan_vault.h"
+#include "SpellScript.h"
+#include "Vehicle.h"
 
 enum eSpells
 {
     // Jan Xi & Qin Xi
     SPELL_STOMP                 = 116969,
     SPELL_DEVAST_ARC            = 117006,
+    SPELL_DEVAST_ARC_RIGHT      = 117005,
+    SPELL_DEVAST_ARC_LEFT       = 117003,
     SPELL_DEVAST_ARC_2          = 116835,
-    SPELL_ARC_VISUAL            = 116968,
+    SPELL_ARC_VISUAL_LEFT       = 116968, // anim prepare left arc
+    SPELL_ARC_VISUAL_RIGHT      = 116971, // anim prepare right arc
+    SPELL_ARC_VISUAL_CENTER     = 116972, // anim prepare center arc
     SPELL_MAGNETIC_ARMOR_QIN    = 116815,
     SPELL_MAGNETIZED_QIN        = 116818,
     SPELL_MAGNETIC_PULL_QIN     = 116919,
@@ -43,6 +29,7 @@ enum eSpells
     SPELL_TITAN_GAS             = 116779,
     SPELL_TITAN_GAS_AURA        = 116803,
     SPELL_TITAN_GAS_AURA2       = 118327,
+    SPELL_TITAN_GAS_HEROIC      = 118320,
 
     // Rage
     SPELL_FOCALISED_ASSAULT     = 116525,
@@ -64,11 +51,13 @@ enum eSpells
     SPELL_SUMMON_TITAN_SPARK    = 117746,
     SPELL_FOCALISED_ENERGY      = 116829,
     SPELL_ENERGY_OF_CREATION    = 116805,
+    SPELL_ENERGY_OF_CREATION_A  = 116673, // spark aura
 
     // Shared
     SPELL_TERRACOTTA_SKYBEAM_S  = 118063,
     SPELL_TERRACOTTA_SKYBEAM_M  = 118060,
     SPELL_TERRACOTTA_SPAWN      = 118165,
+    SPELL_TERRACOTTA_JUMP       = 127708,
 
     // Visual
     SPELL_COSMETIC_LIGHTNING    = 127732
@@ -82,6 +71,9 @@ enum eEvents
     EVENT_SUMMON_RAGE           = 4,
     EVENT_SUMMON_STRENGTH       = 5,
     EVENT_SUMMON_COURAGE        = 6,
+    EVENT_ARC_READY             = 7,
+    EVENT_DEVASTATING_CANCEL    = 8,
+    EVENT_RESTORE_MANA          = 9,
     EVENT_BOSS_CAST_SKYBEAM     = 100,
     EVENT_BOSS_CAST_SPAWNIN     = 101,
     EVENT_BOSS_WAIT             = 102,
@@ -105,23 +97,35 @@ enum eEvents
 
     // Strenght
     EVENT_ENERGIZING_SMASH      = 30,
-    EVENT_SELECT_TARGET         = 31,
+    EVENT_ENERGIZING_REMOVE     = 31,
+    EVENT_SELECT_TARGET         = 32,
     EVENT_ENERGIZING_VISUAL     = 33,
 
     // Rage
-    EVENT_RAGE_FIRST_ATTACK     = 32
+    EVENT_RAGE_FIRST_ATTACK     = 34,
+    EVENT_CHECK_WIPE            = 35,
+    EVENT_LIGHTNING_COSMETIC    = 36,
+
+    // Misc
+    EVENT_PREPARE               = 37,
 };
 
 enum eAddActions
 {
     // Bosses action
     ACTION_ACTIVATE             = 0,
-    ACTION_REACHHOME            = 1,
+    ACTION_WIPE                 = 1,
 
     // Adds actions
     ACTION_LAND                 = 2,
     ACTION_COSMECTIC            = 3,
     ACTION_MOGU_ACTIVATE        = 4,
+    ACTION_DEV_ARC              = 5,
+    ACTION_TITAN_GAS            = 6,
+    ACTION_TITAN_GAS_END        = 7,
+
+    TYPE_DEVASTATION_ARC        = 8,
+    ACTION_CONSOLE_WIPE         = 9,
 };
 
 enum eDisplayID
@@ -150,7 +154,12 @@ enum eTalk
     TALK_COURAGE                = 3,
     TALK_TITAN_GAS_START        = 4,
     TALK_TITAN_GAS_END          = 5,
-    TALK_DEFEATED               = 6
+    TALK_DEFEATED               = 6,
+    TALK_CONSTRUCTS_APPEAR      = 7,
+    TALK_EMPEROR_STRENGTH_ANN   = 8,
+    TALK_EMPEROR_COURAGE_ANN    = 9,
+    TALK_TITAN_GAS_ANN          = 10,
+    TALK_TO_LOWER_LEVEL         = 11,
 };
 
 #define CENTER_X 3869.67f
@@ -161,104 +170,108 @@ enum eTalk
 #define ACHIEVE 6455
 
 // Starting positions for adds
-float tabAlcoves[46][4] =
+const Position EmperorRage[6]
 {
-    3810.64f, 1550.48f, 428.737f, 6.27265f,
-    3810.7f,  1550.43f, 459.262f, 6.27481f,
-    3811.0f,  1550.39f, 367.725f, 6.2521f,
-    3811.32f, 1536.29f, 519.944f, 0.197641f,
-    3811.62f, 1536.66f, 398.334f, 0.749377f,
-    3811.73f, 1536.68f, 489.336f, 0.178363f,
-    3811.95f, 1536.81f, 428.738f, 0.172334f,
-    3811.99f, 1536.68f, 367.726f, 0.22558f,
-    3812.12f, 1550.07f, 398.25f,  0.00872824f,
-    3812.12f, 1564.02f, 428.738f, 5.77924f,
-    3812.33f, 1564.24f, 367.726f, 6.03922f,
-    3812.41f, 1563.64f, 489.336f, 5.78941f,
-    3812.53f, 1563.66f, 519.944f, 5.78551f,
-    3812.83f, 1563.62f, 367.643f, 5.77969f,
-    3813.13f, 1563.47f, 398.252f, 5.77872f,
-    3813.35f, 1537.36f, 367.643f, 0.150286f,
-    3816.55f, 1583.32f, 489.92f,  5.64359f,
-    3816.64f, 1516.6f,  489.92f,  0.509466f,
-    3816.74f, 1516.6f,  459.844f, 0.512551f,
-    3816.99f, 1583.02f, 520.525f, 5.64269f,
-    3817.89f, 1517.4f,  520.525f, 0.503707f,
-    3831.79f, 1602.73f, 398.912f, 5.41683f,
-    3832.32f, 1498.53f, 368.308f, 0.842962f,
-    3850.7f,  1613.53f, 368.308f, 5.07364f,
-    3851.34f, 1486.52f, 368.308f, 1.23063f,
-    3873.66f, 1616.41f, 520.521f, 4.70287f,
-    3873.6f,  1616.08f, 459.841f, 4.70587f,
-    3873.93f, 1615.6f,  429.237f, 4.68575f,
-    3874.22f, 1484.84f, 429.236f, 1.57923f,
-    3874.31f, 1483.42f, 368.308f, 1.55837f,
-    3874.32f, 1618.01f, 368.308f, 4.71767f,
-    3874.39f, 1484.9f,  520.521f, 1.58646f,
-    3874.55f, 1483.5f,  398.912f, 1.59109f,
-    3874.61f, 1617.9f,  398.912f, 4.75497f,
-    3874.7f,  1485.1f,  489.917f, 1.59977f,
-    3874.86f, 1484.86f, 459.841f, 1.60658f,
-    3894.75f, 1485.93f, 368.308f, 1.48814f,
-    3894.93f, 1615.93f, 459.841f, 4.62488f,
-    3895.03f, 1483.62f, 398.912f, 1.48814f,
-    3895.04f, 1616.19f, 520.521f, 4.61926f,
-    3895.24f, 1484.05f, 520.522f, 1.58261f,
-    3895.25f, 1485.82f, 368.226f, 1.56936f,
-    3895.26f, 1485.07f, 489.917f, 1.58457f,
-    3895.27f, 1484.05f, 459.841f, 1.58405f,
-    3895.53f, 1617.47f, 398.912f, 4.8269f,
-    3895.62f, 1485.9f,  398.829f, 1.56936f
+    { 3814.52f, 1537.23f, 398.33f, 0.19f },
+    { 3813.38f, 1550.42f, 398.33f, 6.27f },
+    { 3814.84f, 1563.42f, 398.33f, 6.08f },
+    { 3814.64f, 1537.17f, 367.72f, 0.19f },
+    { 3813.38f, 1550.36f, 367.72f, 6.27f },
+    { 3814.87f, 1563.53f, 367.72f, 6.07f }
 };
 
-#define NB_ALCOVES 46
+const Position EmperrorStrength[8]
+{
+    { 3835.68f, 1598.06f, 398.91f, 5.45f },
+    { 3853.23f, 1608.38f, 398.91f, 5.13f },
+    { 3835.51f, 1598.20f, 368.30f, 5.45f },
+    { 3853.45f, 1607.81f, 368.30f, 5.13f },
+    { 3835.31f, 1502.10f, 398.91f, 0.82f },
+    { 3853.10f, 1491.93f, 398.91f, 1.14f },
+    { 3835.22f, 1501.85f, 368.30f, 0.82f },
+    { 3853.05f, 1492.02f, 368.30f, 1.14f }
+};
+
+const Position EmperrorCourage[8]
+{
+    { 3874.45f, 1612.35f, 398.91f, 4.79f },
+    { 3895.20f, 1612.17f, 398.91f, 4.46f },
+    { 3874.43f, 1611.79f, 368.30f, 4.79f },
+    { 3895.31f, 1612.18f, 368.30f, 4.46f },
+    { 3874.40f, 1488.01f, 398.91f, 1.48f },
+    { 3895.32f, 1487.56f, 398.91f, 1.81f },
+    { 3874.36f, 1487.67f, 368.30f, 1.48f },
+    { 3895.39f, 1487.81f, 368.30f, 1.81f }
+};
+
+class CourageTargetSelector
+{
+    public:
+        CourageTargetSelector() {}
+
+        bool operator() (WorldObject* const& object)
+        {
+            return object && object->ToPlayer() && object->ToPlayer()->GetRoleForGroup(object->ToPlayer()->GetTalentSpecialization()) != ROLES_TANK;
+        }
+};
+
+class RageTargetSelector
+{
+    public:
+        RageTargetSelector() {}
+
+        bool operator() (WorldObject* const& object)
+        {
+            return object && (object->ToPlayer() && object->ToPlayer()->HasAura(SPELL_FOCALISED_ASSAULT) || object->ToPlayer()->IsGameMaster());
+        }
+};
+
+#define NB_ALCOVES_RAGE 6
+#define NB_ALCOVES_STR_COUR 8
 
 // Qin-Xi - 60399
 // Jan-Xi - 60400
 class boss_jin_qin_xi : public CreatureScript
 {
     public:
-        boss_jin_qin_xi() : CreatureScript("boss_jin_qin_xi") {}
+        boss_jin_qin_xi() : CreatureScript("boss_jin_qin_xi") { }
 
         struct boss_jin_qin_xiAI : public BossAI
         {
-            boss_jin_qin_xiAI(Creature* creature) : BossAI(creature, DATA_WILL_OF_EMPEROR), summons(creature)
+            boss_jin_qin_xiAI(Creature* creature) : BossAI(creature, DATA_WILL_OF_EMPEROR) { }
+
+            int sumCourage, comboArc;
+            uint8 maxCombo, janHitCount, qinHitCount, devastatingComboPhase;
+            uint64 victimWithMagneticArmor, ArcDevastVictimGUID, TerracotaBossGUID;
+            float moveTurn, moveWalk, moveRun, spellOri;
+            bool isActive, achievement, nonArc;
+            std::list<uint64> playerList;
+            Position homePos;
+            std::map<uint32, float> ArcComboAnim;
+            uint32 prevSpellId, spellAnim;
+
+            void InitializeAI() override
             {
-                pInstance = creature->GetInstanceScript();
-                isActive = false;
-                me->SetDisplayId(DISPLAY_BOSS_INVISIBLE);
-                me->setFaction(35);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
-                sumCourage = 0;
+                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, 10.0f);
+                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, 10.0f);
+                Reset();
             }
 
-            InstanceScript* pInstance;
-            EventMap events;
-            SummonList summons;
-            int sumCourage;
-            uint8 maxCombo;
-            int comboArc;
-            uint8 janHitCount;
-            uint8 qinHitCount;
-            bool achievement;
-            Position homePos;
-
-            uint8 devastatingComboPhase;
-            uint64 victimWithMagneticArmor;
-
-            float moveTurn;
-            float moveWalk;
-            float moveRun;
-
-            bool isActive;
-
-            std::list<uint64> playerList;
-
-            void Reset()
+            void Reset() override
             {
-                if (!me->isAlive())
+                if (!me->IsAlive())
                     return;
 
+                _Reset();
+
+                me->setFaction(35);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+                me->SetDisplayId(DISPLAY_BOSS_INVISIBLE);
+                me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 0);
+                me->SetReactState(REACT_AGGRESSIVE);
+
+                isActive = false;
+                nonArc = true;
                 me->ResetLootMode();
                 events.Reset();
                 summons.DespawnAll();
@@ -267,13 +280,14 @@ class boss_jin_qin_xi : public CreatureScript
                 moveWalk = me->GetSpeed(MOVE_WALK);
                 moveRun  = me->GetSpeed(MOVE_RUN);
                 homePos  = me->GetHomePosition();
-                
+
                 victimWithMagneticArmor = 0;
 
-                if (pInstance)
+                if (instance)
                 {
-                    pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-                    pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_QIN);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_QIN);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
                 }
 
                 playerList.clear();
@@ -281,26 +295,26 @@ class boss_jin_qin_xi : public CreatureScript
                 achievement = false;
                 janHitCount = 0;
                 qinHitCount = 0;
+                sumCourage = 0;
+                prevSpellId = 0;
+
+                me->SetPowerType(POWER_MANA);
+                me->SetMaxPower(POWER_MANA, IsHeroic() ? 40 : 20);
+                me->SetPower(POWER_MANA, 0);
+                me->setRegeneratingMana(false);
+
+                ArcComboAnim.clear();
 
             }
 
-            void JustReachedHome()
+            uint32 GetData(uint32 type) const override
             {
-                _JustReachedHome();
-
-                me->SetDisplayId(DISPLAY_BOSS_INVISIBLE);
-                me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, 0);
-                events.Reset();
-                summons.DespawnAll();
-
-                if (Creature* otherBoss = getOtherBoss())
-                    otherBoss->AI()->DoAction(ACTION_REACHHOME);
-
-                if (pInstance)
-                    pInstance->SetBossState(DATA_WILL_OF_EMPEROR, FAIL);
+                if (type == TYPE_DEVASTATION_ARC)
+                    return prevSpellId;
+                return 0;
             }
 
-            void SpellHit(Unit* /*caster*/, SpellInfo const* spell)
+            void SpellHit(Unit* /*caster*/, SpellInfo const* spell) override
             {
                 // Applies only if hit by opportunistic strike
                 if (spell->Id != SPELL_OPPORTUNISTIC_STRIKE)
@@ -321,69 +335,105 @@ class boss_jin_qin_xi : public CreatureScript
                         me->GetInstanceScript()->SetData(ACHIEVE, 1);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 DoZoneInCombat();
 
-                if (pInstance)
-                    pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
             }
 
-            void MovementInform(uint32 uiType, uint32 id)
+            void EnterEvadeMode() override
             {
-                if (uiType != POINT_MOTION_TYPE && uiType != EFFECT_MOTION_TYPE)
+                summons.DespawnAll();
+
+                _DespawnAtEvade();
+                me->GetMotionMaster()->MoveTargetedHome();
+
+                if (instance)
+                {
+                    instance->SetBossState(DATA_WILL_OF_EMPEROR, FAIL);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                }
+
+                instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_STOMP);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEVAST_ARC);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEVAST_ARC_2);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TITAN_GAS);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL_CENTER);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL_RIGHT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL_LEFT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_JAN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_QIN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_JAN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_QIN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ENERGY_OF_CREATION);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_JAN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FOCALISED_ASSAULT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FOCALISED_ENERGY);
+
+                if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
+                    anc_mogu_machine->AI()->Reset();
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE && type != EFFECT_MOTION_TYPE)
                     return;
 
-                if (id == 2)
+                if (pointId == 2)
                 {
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC);
                     me->HandleEmoteCommand(EMOTE_ONESHOT_BOW);
                     events.ScheduleEvent(EVENT_BOSS_EMOTE, 2000);
                 }
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 events.Reset();
                 summons.DespawnAll();
 
-                if (Creature* cho = GetClosestCreatureWithEntry(me, NPC_LOREWALKER_CHO, 60.0f, true))
-                        cho->AI()->DoAction(ACTION_EMPERORS_DEATH);
-
-                if (pInstance)
-                    pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
                 if (me->GetEntry() == NPC_QIN_XI)
                 {
                     if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
                     {
-                        anc_mogu_machine->AI()->DoAction(TALK_DEFEATED);
+                        anc_mogu_machine->AI()->Talk(TALK_DEFEATED);
                         me->Kill(anc_mogu_machine->ToUnit());
                     }
                 }
 
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_STOMP);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEVAST_ARC);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEVAST_ARC_2);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TITAN_GAS);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_JAN);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_QIN);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ENERGY_OF_CREATION);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_JAN);
-                pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_QIN);
+                instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_STOMP);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEVAST_ARC);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DEVAST_ARC_2);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TITAN_GAS);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL_CENTER);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL_RIGHT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ARC_VISUAL_LEFT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_JAN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIC_ARMOR_QIN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_JAN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_QIN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ENERGY_OF_CREATION);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MAGNETIZED_JAN);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FOCALISED_ASSAULT);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FOCALISED_ENERGY);
 
-                pInstance->SetBossState(DATA_WILL_OF_EMPEROR, DONE);
+                instance->SetBossState(DATA_WILL_OF_EMPEROR, DONE);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 actionId) override
             {
-                switch (action)
+                switch (actionId)
                 {
                     case ACTION_ACTIVATE:
                         if (isActive)
@@ -396,22 +446,41 @@ class boss_jin_qin_xi : public CreatureScript
                         // 5 or 10 attacks, each combo is made of 2 phases - Using 10 by default
                         maxCombo = IsHeroic() ? 20 : 10;
                         devastatingComboPhase = 0;
-                        
+
                         // --- Summoning adds ---
                         events.ScheduleEvent(EVENT_SUMMON_RAGE, 11000);
-
-                        // --- Attacks ---
-                        events.ScheduleEvent(EVENT_DEVASTATING_COMBO, 115000);
-                        events.ScheduleEvent(EVENT_CHECK_MAGNETIC_ARMOR, 112000);
                         break;
-                    case ACTION_REACHHOME:
-                        me->GetMotionMaster()->MovePoint(9, homePos);
-                        me->SetReactState(REACT_PASSIVE);
+                    case ACTION_WIPE:
+                        EnterEvadeMode();
+                        break;
+                    case ACTION_DEV_ARC:
+                    {
+                        uint8 ComboCount = IsHeroic() ? 10 : 5;
+                        devastatingComboPhase >= ComboCount ? events.ScheduleEvent(EVENT_DEVASTATING_CANCEL, 100) : events.ScheduleEvent(EVENT_ARC_READY, 200);
+                        break;
+                    }
+                    case ACTION_TITAN_GAS:
+                        events.CancelEvent(EVENT_SUMMON_RAGE);
+                        events.CancelEvent(EVENT_SUMMON_STRENGTH);
+                        events.CancelEvent(EVENT_SUMMON_COURAGE);
+                        break;
+                    case ACTION_TITAN_GAS_END:
+                        // --- Summoning adds ---
+                        events.ScheduleEvent(EVENT_SUMMON_RAGE, 11000);
                         break;
                 }
             }
 
-            void SpellHitTarget(Unit* target, SpellInfo const* spell)
+            // Calculate Ori
+            float GetOriForCurrentArcType(float ori, float mod)
+            {
+                float orientation = ori + mod;
+                orientation = (orientation > (M_PI * 2)) ? (orientation - (M_PI * 2)) : (orientation < 0.0f ? (orientation + (M_PI * 2)) : orientation);
+
+                return orientation;
+            }
+
+            void SpellHitTarget(Unit* target, SpellInfo const* spell) override
             {
                 if (spell->Id != SPELL_DEVAST_ARC && spell->Id != SPELL_STOMP)
                     return;
@@ -429,13 +498,13 @@ class boss_jin_qin_xi : public CreatureScript
 
             Creature* getOtherBoss()
             {
-                if (pInstance)
-                    return pInstance->instance->GetCreature(pInstance->GetData64(me->GetEntry() == NPC_QIN_XI ? NPC_JAN_XI: NPC_QIN_XI));
+                if (instance)
+                    return instance->instance->GetCreature(instance->GetData64(me->GetEntry() == NPC_QIN_XI ? NPC_JAN_XI: NPC_QIN_XI));
                 else
                     return NULL;
             }
 
-            void DamageTaken(Unit* attacker, uint32& damage)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
                 Creature* otherBoss = getOtherBoss();
 
@@ -448,295 +517,313 @@ class boss_jin_qin_xi : public CreatureScript
                     me->LowerPlayerDamageReq(damage);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 UpdateVictim();
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
 
+                // Anti bug safe check --> kill them all
+                if (me->GetPositionX() > 3915.f)
+                {
+                    if (Creature* jan_xi = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_JAN_XI) : 0))
+                        jan_xi->AI()->DoAction(ACTION_WIPE);
+
+                    if (Creature* qin_xi = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QIN_XI) : 0))
+                        qin_xi->AI()->DoAction(ACTION_WIPE);
+
+                    if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
+                        anc_mogu_machine->AI()->DoAction(ACTION_CONSOLE_WIPE);
+                }
+
                 events.Update(diff);
 
-                switch(events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    case EVENT_BOSS_CAST_SKYBEAM:
+                    switch (eventId)
                     {
-                        // 1st halo, still invisible
-                        me->CastSpell(me, SPELL_TERRACOTTA_SKYBEAM_S, false);
-                        events.ScheduleEvent(EVENT_BOSS_CAST_SPAWNIN, 6000);
-                        break;
-                    }
-                    case EVENT_BOSS_CAST_SPAWNIN:
-                    {
-                        // 2nd halo, still invisible
-                        me->CastSpell(me, SPELL_TERRACOTTA_SPAWN, false);
-                        if (me->GetEntry() == NPC_JAN_XI)
+                        case EVENT_BOSS_CAST_SKYBEAM:
                         {
-                            std::list<Player*> playerList;
-                            GetPlayerListInGrid(playerList, me, 300.0f);
-                            for (auto ply : playerList)
+                            // 1st halo, still invisible
+                            me->CastSpell(me, SPELL_TERRACOTTA_SKYBEAM_S, false);
+                            events.ScheduleEvent(EVENT_BOSS_CAST_SPAWNIN, 6000);
+                            break;
+                        }
+                        case EVENT_BOSS_CAST_SPAWNIN:
+                        {
+                            // 2nd halo, still invisible
+                            me->CastSpell(me, SPELL_TERRACOTTA_SPAWN, false);
+                            if (me->GetEntry() == NPC_JAN_XI)
+                                if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
+                                    anc_mogu_machine->AI()->Talk(TALK_CONSTRUCTS_APPEAR);
+                            events.ScheduleEvent(EVENT_BOSS_WAIT, 500);
+                            break;
+                        }
+                        case EVENT_BOSS_WAIT:
+                        {
+                            // Add weapon
+                            me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID + 0, (me->GetEntry() == NPC_JAN_XI ? WEAPON_JAN_XI : WEAPON_QIN_XI));
+                            // Become visible, but wait till the end of halos
+                            me->SetDisplayId(me->GetEntry() - DISPLAY_VISIBLE);
+                            // Only Qin-Xi makes the machine talk, to avoid "double voices"
+                            if (me->GetEntry() == NPC_QIN_XI)
+                                if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
+                                    anc_mogu_machine->AI()->Talk(TALK_JAN_QIN_XI);
+                            events.ScheduleEvent(EVENT_BOSS_WAIT_VISIBLE, 2000);
+                            break;
+                        }
+                        case EVENT_BOSS_WAIT_VISIBLE:
+                        {
+                            // Landing coords 1st boss
+                            if (Creature* console = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
                             {
-                                ply->MonsterTextEmote("Two titanic constructs appear in the large alcoves!", 0, true);
+                                float x, y;
+                                GetPositionWithDistInOrientation(me, 15.0f, me->GetAngle(console->GetPositionX(), console->GetPositionY()), x, y);
+                                me->GetMotionMaster()->MoveJump(x, y, 362.19f, 20.0f, 20.0f, 2);
                                 break;
                             }
                         }
-                        events.ScheduleEvent(EVENT_BOSS_WAIT, 500);
-                        break;
-                    }
-                    case EVENT_BOSS_WAIT:
-                    {
-                        // Add weapon
-                        me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, (me->GetEntry() == NPC_JAN_XI ? WEAPON_JAN_XI : WEAPON_QIN_XI));
-                        // Become visible, but wait till the end of halos
-                        me->SetDisplayId(me->GetEntry() - DISPLAY_VISIBLE);
-                        // Only Qin-Xi makes the machine talk, to avoid "double voices"
-                        if (me->GetEntry() == NPC_QIN_XI)
+                        case EVENT_BOSS_EMOTE:
                         {
-                            if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
-                                anc_mogu_machine->AI()->DoAction(TALK_JAN_QIN_XI);
+                            // Turn into enemy and jump in the room
+                            me->setFaction(14);
+                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC);
+
+                            if (Player* itr = me->FindNearestPlayer(VISIBLE_RANGE))
+                                me->AI()->AttackStart(itr);
+
+                            // --- Attacks ---
+                            events.ScheduleEvent(EVENT_CHECK_MAGNETIC_ARMOR, 12 * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_RESTORE_MANA, 0.5 * IN_MILLISECONDS);
+                            break;
                         }
-                        events.ScheduleEvent(EVENT_BOSS_WAIT_VISIBLE, 2000);
-                        break;
-                    }
-                    case EVENT_BOSS_WAIT_VISIBLE:
-                    {
-                        // Turn into ennemy and jump in the room
-                        me->setFaction(14);
-                        // Landing coords 1st boss
-                        float x = me->GetPositionX() + (15 * cos(me->GetOrientation()));
-                        float y = me->GetPositionY() + (15 * sin(me->GetOrientation()));
-                        // Jump
-                        me->GetMotionMaster()->MoveJump(x, y, 362.19f, 20.0f, 20.0f, 2);
-                        break;
-                    }
-                    case EVENT_BOSS_EMOTE:
-                    {
-                        Map::PlayerList const& players = me->GetMap()->GetPlayers();
-                        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                        case EVENT_SUMMON_RAGE:
                         {
-                            if (Player* plr = itr->getSource())
+                            // Jan-Xi is the only one who summons, to avoid double summon
+                            if (me->GetEntry() == NPC_JAN_XI)
                             {
-                                if (plr->GetDistance(me) > 50.0f)
-                                    continue;
-                                me->SetInCombatWith(plr);
-                                me->Attack(plr, true);
-                                break;
+                                // Two Emperor's rage at each summon in 10, 4 in 25
+                                std::list<uint32> alcovesPos = { 0, 1, 2, 3, 4, 5 };
+                                Trinity::Containers::RandomResizeList(alcovesPos, Is25ManRaid() ? 4 : 2);
+
+                                for (auto&& itr:alcovesPos)
+                                    me->SummonCreature(NPC_EMPEROR_RAGE, EmperorRage[itr]);
+
+                                // Summoning other add : Emperor's Strength (if sumCourage == 0) or Empreror's Courage (if sumCourage == 1)
+                                uint32 delaySummon = 1000 * urand(5, 10);
+                                events.ScheduleEvent(EVENT_SUMMON_STRENGTH + sumCourage, delaySummon);
+                                // Changing sumCourage from 0 to 1 or from 1 to 0
+                                sumCourage = 1 - (sumCourage % 2);
+
+                                // Scheduling next summon phase
+                                uint32 delay = 1000 * urand(32, 40);
+                                events.ScheduleEvent(EVENT_SUMMON_RAGE, delay);
                             }
+                            break;
                         }
-                        break;
-                    }
-                    case EVENT_SUMMON_RAGE:
-                    {
-                        // Jan-Xi is the only one who summons, to avoid double summon
-                        if (me->GetEntry() == NPC_JAN_XI)
+                        case EVENT_SUMMON_STRENGTH:
                         {
-                            // Two Emperor's rage at each summon
-                            int alcove1 = urand(0, NB_ALCOVES - 1);
-                            int alcove2 = urand(0, NB_ALCOVES - 1);
-                            while (alcove1 == alcove2)
-                                alcove2 = urand(0, NB_ALCOVES - 1);
-                            me->SummonCreature(NPC_EMPEROR_RAGE, tabAlcoves[alcove1][0], tabAlcoves[alcove1][1], tabAlcoves[alcove1][2], tabAlcoves[alcove1][3]);
-                            me->SummonCreature(NPC_EMPEROR_RAGE, tabAlcoves[alcove2][0], tabAlcoves[alcove2][1], tabAlcoves[alcove2][2], tabAlcoves[alcove2][3]);
-                            
-                            // Summoning other add : Emperor's Strength (if sumCourage == 0) or Empreror's Courage (if sumCourage == 1)
-                            uint32 delaySummon = 1000 * urand(5, 10);
-                            events.ScheduleEvent(EVENT_SUMMON_STRENGTH + sumCourage, delaySummon);
-                            // Changing sumCourage from 0 to 1 or from 1 to 0
-                            sumCourage = 1 - (sumCourage % 2);
+                            // Choose an alcove
+                            std::list<uint32> alcovesPos = { 0, 1, 2, 3, 4, 5, 6, 7 };
+                            Trinity::Containers::RandomResizeList(alcovesPos, Is25ManRaid() ? 2 : 1);
 
-                            // Scheduling next summon phase
-                            uint32 delay = 1000 * urand(32, 40);
-                            events.ScheduleEvent(EVENT_SUMMON_RAGE, delay);
+                            for (auto&& itr : alcovesPos)
+                                me->SummonCreature(NPC_EMPEROR_STRENGHT, EmperrorStrength[itr]);
+                            break;
                         }
-                        break;
-                    }
-                    case EVENT_SUMMON_STRENGTH:
-                    {
-                        // Choose an alcove
-                        int alcove = urand(0, NB_ALCOVES - 1);
-                        me->SummonCreature(NPC_EMPEROR_STRENGHT, tabAlcoves[alcove][0], tabAlcoves[alcove][1], tabAlcoves[alcove][2], tabAlcoves[alcove][3]);
-                        break;
-                    }
-                    case EVENT_SUMMON_COURAGE:
-                    {
-                        // Choose an alcove
-                        int alcove = urand(0, NB_ALCOVES - 1);
-                        me->SummonCreature(NPC_EMPEROR_COURAGE, tabAlcoves[alcove][0], tabAlcoves[alcove][1], tabAlcoves[alcove][2], tabAlcoves[alcove][3]);
-                        break;
-                    }
-                    /* DEVASTATING COMBO */
-                    case EVENT_DEVASTATING_COMBO:
-                    {
-                        // Initializing Combo
-                        if (!devastatingComboPhase)
+                        case EVENT_SUMMON_COURAGE:
                         {
-                            // reset oppotunistic strikes counters
-                            janHitCount = 0;
-                            qinHitCount = 0;
+                            // Choose an alcove
+                            std::list<uint32> alcovesPos = { 0, 1, 2, 3, 4, 5, 6, 7 };
+                            Trinity::Containers::RandomResizeList(alcovesPos, Is25ManRaid() ? 2 : 1);
 
-                            // Stop looking after victim
-                            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED|UNIT_FLAG_DISABLE_MOVE|UNIT_FLAG_IMMUNE_TO_PC|UNIT_FLAG_STUNNED);
-                            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                            me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_ALLOW_ENEMY_INTERACT);
+                            for (auto&& itr : alcovesPos)
+                                me->SummonCreature(NPC_EMPEROR_COURAGE, EmperrorStrength[itr]);
+                            break;
+                        }
+                        /* DEVASTATING COMBO */
+                        case EVENT_DEVASTATING_COMBO:
+                        {
+                            // Initializing Combo
+                            devastatingComboPhase = 0;
+                            nonArc = false;
+                            // This npc`ll make our devast combo, we`ll make a visual effects
+                            if (TempSummon* terracota = me->SummonCreature(NPC_TERRACOTA_BOSS, *me, TEMPSUMMON_MANUAL_DESPAWN))
+                            {
+                                TerracotaBossGUID = terracota->GetGUID();
+                                terracota->CastSpell(me, VEHICLE_SPELL_RIDE_HARDCODED, true);
+                                DoZoneInCombat(terracota, 200.0f);
+                            }
+
+                            if (Unit* vict = me->GetVictim())
+                                ArcDevastVictimGUID = vict->GetGUID();
+
                             me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
                             me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
-                            
-                            // Emptying player list from previous combo
-                            playerList.clear();
-
-                            std::list<Player*> tmpPlayerList;
-                            // We check which players are in zone on combo beginning
-                            GetPlayerListInGrid(tmpPlayerList, me, 12.0f);
-
-                            for (auto itr : tmpPlayerList)
-                                playerList.push_back(itr->GetGUID());
+                            me->PrepareChanneledCast(me->GetOrientation());
 
                             // Set Turning Speed
                             me->SetSpeed(MOVE_TURN_RATE, 10.0f, true);
-                            me->SetSpeed(MOVE_WALK, 0.0f, true);
-                            me->SetSpeed(MOVE_RUN, 0.0f, true);
-                        }
 
-                        // Either devastatingComboPhase = 0 (not started) or is pair (attack ended) : starting attack + freeze for 2.5 secs
-                        if (!(devastatingComboPhase % 2))
-                        {
-                            // Cancel previous emote in order to properly play a new one
-                            me->HandleEmoteCommand(EMOTE_ONESHOT_NONE);
-                            // Pick a random new orientation
-                            float angle = me->GetOrientation() + frand(-0.75f, 0.75f);
-                            // angle corrections
-                            angle = angle < 0.0f ? 0.0f : (angle > 6.28f ? 6.28f : angle);
-                            // Stomp or arc
-                            if (comboArc = urand(0, 1))
-                            {
-                                // Emote for arc attack
-                                me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK2HLOOSE);
-                                // Set new orientation (after emote)
-                                me->SetFacingTo(angle);
-                                // Wait a bit the anim starts to play before freezing it
-                                events.ScheduleEvent(EVENT_BOSS_FREEZE, 300);
-                            }
-                            else
-                            {
-                                // Emote for stomp
-                                me->HandleEmoteCommand(EMOTE_ONESHOT_STOMP);
-                                // Set orientation (after emote)
-                                me->SetFacingTo(angle);
-                                // Freezing right now
-                                me->AddAura(SPELL_FREEZE_ANIM, me);
-                                // Reaching a not pair number to release the attack
-                                ++devastatingComboPhase;
-                                // Waiting for releasing attack
-                                events.ScheduleEvent(EVENT_DEVASTATING_COMBO, 2600);
-                            }
+                            float m_ori = me->GetOrientation();
+
+                            // initialize container that store spell of each anim type
+                            ArcComboAnim.insert(std::pair<uint32, float>(SPELL_ARC_VISUAL_RIGHT,  GetOriForCurrentArcType(m_ori, -M_PI / 2)));
+                            ArcComboAnim.insert(std::pair<uint32, float>(SPELL_ARC_VISUAL_LEFT,   GetOriForCurrentArcType(m_ori, M_PI / 2)));
+                            ArcComboAnim.insert(std::pair<uint32, float>(SPELL_ARC_VISUAL_CENTER, GetOriForCurrentArcType(m_ori, 2 * M_PI)));
+                            ArcComboAnim.insert(std::pair<uint32, float>(SPELL_STOMP,             GetOriForCurrentArcType(m_ori, 2 * M_PI)));
+
+                            events.ScheduleEvent(EVENT_ARC_READY, 300);
+                            break;
                         }
-                        // devastatingComboPhase not pair : releasing attack
-                        else
+                        case EVENT_ARC_READY:
                         {
-                            // Releasing attack
-                            if (comboArc)
-                                me->CastSpell(me, SPELL_DEVAST_ARC, true);
-                            else
-                                me->CastSpell(me, SPELL_STOMP, true);
-                            // Can move anew
-                            me->RemoveAura(SPELL_FREEZE_ANIM);
-                            // Resetting weapons (removed by emote)
-                            me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, (me->GetEntry() == NPC_JAN_XI ? WEAPON_JAN_XI : WEAPON_QIN_XI));
-                            me->CastSpell(me, SPELL_DEVAST_ARC_2, true);
-                            // Ending the attack by reaching a pair number
+                            std::vector<uint32> ArcComboSpellStorage = { SPELL_ARC_VISUAL_LEFT, SPELL_ARC_VISUAL_RIGHT, SPELL_ARC_VISUAL_CENTER, SPELL_STOMP };
+
+                            // Remove From Temp container value, that was used before (real random)
+                            if (prevSpellId)
+                                ArcComboSpellStorage.erase(std::find(ArcComboSpellStorage.begin(), ArcComboSpellStorage.end(), prevSpellId));
+
+                            // Select new spell from updated container
+                            prevSpellId = Trinity::Containers::SelectRandomContainerElement(ArcComboSpellStorage);
+
+                            // Get Anim for selected spell and ori to cast
+                            spellOri = ArcComboAnim.find(prevSpellId)->second;
+
                             ++devastatingComboPhase;
 
-                            std::list<Player*> aliveList;
-                            std::list<Player*> plyrList;
-                            aliveList.clear();
-                            GetPlayerListInGrid(plyrList, me, 500.0f);
-                            for (auto plyr : plyrList)
-                                if (plyr->isAlive())
-                                    aliveList.push_back(plyr);
 
-                            // Scheduling
-                            if (devastatingComboPhase < maxCombo && !aliveList.empty())
-                            {
-                                // Adding Growing Opportunity for remaining players
-                                for (auto playerGuid : playerList)
-                                {
-                                    if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
-                                        me->AddAura(SPELL_GROWING_OPPORTUNITY, player);
-                                }
-                                // Combos still remain to perform - wait a bit (emote must end) before a new move
-                                events.ScheduleEvent(EVENT_DEVASTATING_COMBO, 700);
-                            }
-                            else
-                            {
-                                if (aliveList.empty())
-                                {
-                                    devastatingComboPhase = 0;
-                                    pInstance->SetBossState(DATA_WILL_OF_EMPEROR, FAIL);
-                                    DoAction(ACTION_REACHHOME);
-                                    if (Creature* otherBoss = getOtherBoss())
-                                        otherBoss->AI()->DoAction(ACTION_REACHHOME);
-                                }
-                                // All combo have been done, and each player who has been hit is away from playerList
-                                // If players remains in playerList, they gain Opportunistic Strike
-                                for (auto guid: playerList)
-                                    if (Player* player = ObjectAccessor::FindPlayer(guid))
-                                        player->AddAura(SPELL_OPPORTUNISTIC_STRIKE, player);
-                                // Reset next combo
-                                devastatingComboPhase = 0;
-                                me->SetSpeed(MOVE_TURN_RATE, moveTurn, false);
-                                me->SetSpeed(MOVE_WALK, moveWalk, false);
-                                me->SetSpeed(MOVE_RUN, moveRun, false);
-                                // Reset attacking to normal
-                                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED|UNIT_FLAG_DISABLE_MOVE|UNIT_FLAG_IMMUNE_TO_PC|UNIT_FLAG_STUNNED);
-                                me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                                me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_ALLOW_ENEMY_INTERACT);
-                                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, false);
-                                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, false);
-                                
+                            me->SetOrientation(spellOri);
+                            me->UpdateOrientation(spellOri);
+                            me->SetFacingTo(spellOri);
+                            me->UpdatePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), spellOri);
 
-                                events.ScheduleEvent(EVENT_DEVASTATING_COMBO, urand(20000, 30000));
+                            if (Unit* target = ObjectAccessor::GetUnit(*me, ArcDevastVictimGUID))
+                            {
+                                if (target->IsAlive())
+                                    me->CastSpell(target, prevSpellId, false);
+                                else if (Unit* itr = ObjectAccessor::GetUnit(*me, GetAnyAlivePlayerInRange())) // without these it cause bug
+                                {
+                                    ArcDevastVictimGUID = itr->GetGUID();
+                                    me->CastSpell(itr, prevSpellId, false);
+                                }
+                                else // it cause evade them if any can`t cast Devastation Arc
+                                {
+                                    if (Creature* jan_xi = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_JAN_XI) : 0))
+                                        jan_xi->AI()->DoAction(ACTION_WIPE);
+
+                                    if (Creature* qin_xi = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QIN_XI) : 0))
+                                        qin_xi->AI()->DoAction(ACTION_WIPE);
+                                }
                             }
+                            else if (Unit* itr = ObjectAccessor::GetUnit(*me, GetAnyAlivePlayerInRange())) // without these it cause bug
+                            {
+                                ArcDevastVictimGUID = itr->GetGUID();
+                                me->CastSpell(itr, prevSpellId, false);
+                            }
+                            else // it cause evade them if any can`t cast Devastation Arc
+                            {
+                                if (Creature* jan_xi = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_JAN_XI) : 0))
+                                    jan_xi->AI()->DoAction(ACTION_WIPE);
+
+                                if (Creature* qin_xi = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QIN_XI) : 0))
+                                    qin_xi->AI()->DoAction(ACTION_WIPE);
+                            }
+
+                            // Send casting for us vehicle
+                            if (Creature* Terracota = ObjectAccessor::GetCreature(*me, TerracotaBossGUID))
+                                Terracota->AI()->DoAction(prevSpellId);
+                            // Run!
+                            break;
                         }
-                        break;
-                    }
-                    case EVENT_BOSS_FREEZE:
-                    {
-                        // Stop moving
-                        me->AddAura(SPELL_FREEZE_ANIM, me);
-                        // Reaching a not pair number to release the attack
-                        ++devastatingComboPhase;
-                        // Wait for releasing attack
-                        events.ScheduleEvent(EVENT_DEVASTATING_COMBO, 2300);
-                        break;
-                    }
-                    /* END OF DEVASTATING COMBO */
-                    case EVENT_CHECK_MAGNETIC_ARMOR:
-                    {
-                        if (Unit* victim = me->getVictim())
+                        case EVENT_DEVASTATING_CANCEL:
                         {
-                            bool isJan = me->GetEntry() == NPC_JAN_XI;
-                            if (!victim->HasAura((isJan ? SPELL_MAGNETIC_ARMOR_JAN : SPELL_MAGNETIC_ARMOR_QIN)))
-                            {
-                                if (Player* player = ObjectAccessor::FindPlayer(victimWithMagneticArmor))
-                                    player->RemoveAurasDueToSpell(isJan ? SPELL_MAGNETIC_ARMOR_JAN : SPELL_MAGNETIC_ARMOR_QIN);
+                            me->RemoveChanneledCast(ArcDevastVictimGUID);
+                            nonArc = true;
+                            me->SetSpeed(MOVE_TURN_RATE, moveTurn, false);
+                            // Reset attacking to normal
+                            me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, false);
+                            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, false);
+                            events.ScheduleEvent(EVENT_RESTORE_MANA, urand(2, 4)*IN_MILLISECONDS);
 
-                                me->AddAura(isJan ? SPELL_MAGNETIC_ARMOR_JAN : SPELL_MAGNETIC_ARMOR_QIN, victim);
-                                victimWithMagneticArmor = victim->GetGUID();
-                            }
+                            // Remove our terracota trigger
+                            if (Vehicle* Passengers = me->GetVehicleKit())
+                                Passengers->RemoveAllPassengers(/*true*/);
+
+                            if (Creature* Terracota = ObjectAccessor::GetCreature(*me, TerracotaBossGUID))
+                                Terracota->DespawnOrUnsummon();
+
+                            break;
                         }
-                        events.ScheduleEvent(EVENT_CHECK_MAGNETIC_ARMOR, 1000);
-                        break;
+                        case EVENT_RESTORE_MANA:
+                        {
+                            if (nonArc)
+                                me->ModifyPower(POWER_MANA, 2);
+
+                            uint8 manaType = IsHeroic() ? 40 : 20;
+                            me->GetPower(POWER_MANA) >= manaType ? events.ScheduleEvent(EVENT_DEVASTATING_COMBO, 100) : events.ScheduleEvent(EVENT_RESTORE_MANA, IsHeroic() ? urand(1, 2) * IN_MILLISECONDS : urand(2, 4) * IN_MILLISECONDS);
+                            break;
+                        }
+                        /* END OF DEVASTATING COMBO */
+                        case EVENT_CHECK_MAGNETIC_ARMOR:
+                        {
+                            bool isQin = me->GetEntry() == NPC_QIN_XI;
+
+                            if (!me->HasAura(isQin ? SPELL_MAGNETIC_ARMOR_QIN : SPELL_MAGNETIC_ARMOR_JAN))
+                                DoCast(me, isQin ? SPELL_MAGNETIC_ARMOR_QIN : SPELL_MAGNETIC_ARMOR_JAN);
+
+                            if (Unit* vict = me->GetVictim())
+                            {
+                                if (!vict->HasAura((isQin ? SPELL_MAGNETIZED_QIN : SPELL_MAGNETIZED_JAN)))
+                                {
+                                    if (Player* player = ObjectAccessor::FindPlayer(victimWithMagneticArmor))
+                                        player->RemoveAurasDueToSpell(isQin ? SPELL_MAGNETIZED_QIN : SPELL_MAGNETIZED_JAN);
+
+                                    me->AddAura(isQin ? SPELL_MAGNETIZED_QIN : SPELL_MAGNETIZED_JAN, vict);
+                                    victimWithMagneticArmor = vict->GetGUID();
+                                }
+                            }
+
+                            if (Player* itr = ObjectAccessor::GetPlayer(*me, victimWithMagneticArmor))
+                            {
+                                if (me->GetDistance2d(itr) > 16.0f)
+                                {
+                                    me->CastSpell(itr, isQin ? SPELL_MAGNETIC_PULL_QIN : SPELL_MAGNETIC_PULL_JAN, false);
+                                    itr->GetMotionMaster()->MoveJump(me->GetPositionX() + frand(-2.5f, 2.5f), me->GetPositionY() + (-3.5f, 3.5f), me->GetPositionZ(), 35.0f, 15.0f);
+                                }
+                            }
+
+                            events.ScheduleEvent(EVENT_CHECK_MAGNETIC_ARMOR, 1000);
+
+                            break;
+                        }
+                        default:
+                            break;
                     }
-                    default:
-                        break;
                 }
+
                 // Not in combo : attack players
-                if (!devastatingComboPhase)
                     DoMeleeAttackIfReady();
             }
+
+            private:
+                uint64 GetAnyAlivePlayerInRange()
+                {
+                    std::list<Player*> pList;
+                    GetPlayerListInGrid(pList, me, 99.0f);
+
+                    pList.remove_if([=](Player* target) { return (target && !target->IsAlive()) || (target && target->IsGameMaster()); });
+
+                    if (pList.empty())
+                        return 0;
+
+                    return Trinity::Containers::SelectRandomContainerElement(pList)->GetGUID();
+
+                }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new boss_jin_qin_xiAI(creature);
         }
@@ -745,53 +832,76 @@ class boss_jin_qin_xi : public CreatureScript
 // Emperor's Rage - 60396
 // Emperor's Strength - 60397
 // Emperor's Courage - 60398
-class mob_woe_add_generic : public CreatureScript
+class npc_woe_add_generic : public CreatureScript
 {
     public:
-        mob_woe_add_generic() : CreatureScript("mob_woe_add_generic") {}
+        npc_woe_add_generic() : CreatureScript("npc_woe_add_generic") { }
 
-        struct mob_woe_add_genericAI : public ScriptedAI
+        struct npc_woe_add_genericAI : public ScriptedAI
         {
-            mob_woe_add_genericAI(Creature* creature) : ScriptedAI(creature)
-            {
-                pInstance = creature->GetInstanceScript();
-            }
+            npc_woe_add_genericAI(Creature* creature) : ScriptedAI(creature) { }
 
             uint64 targetGuid;
-            EventMap events;
-            InstanceScript* pInstance;
+            EventMap events, nonCombatEvents;
+            InstanceScript* instance;
+            uint64 targetGUID, smashTriggerGUID;
 
-            void Reset()
+            void InitializeAI() override
+            {
+                instance = me->GetInstanceScript();
+                me->setActive(true);
+                Reset();
+            }
+
+            void Reset() override
             {
                 events.Reset();
 
-                if (!pInstance)
-                    return;
                 // Won't attack
                 me->setFaction(35);
                 // Invisible
                 me->SetDisplayId(DISPLAY_ADD_INVISIBLE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                
-                // Wait before casting
-                events.ScheduleEvent(EVENT_CAST_SKYBEAM, 1000);
 
-                if (me->GetEntry() == NPC_EMPEROR_COURAGE || me->GetEntry() == NPC_EMPEROR_RAGE)
+                if (me->GetEntry() != NPC_EMPEROR_STRENGHT)
                 {
                     me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
                     me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_THREAT, true);
                     me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_PULL, true);
                 }
+
+                // Wait before casting
+                nonCombatEvents.ScheduleEvent(EVENT_CAST_SKYBEAM, 1000);
+
+                targetGuid = 0;
+                smashTriggerGUID = 0;
             }
 
-            void MovementInform(uint32 uiType, uint32 id)
+            void JustDied(Unit* /*killer*/) override
             {
-                if (uiType != POINT_MOTION_TYPE && uiType != EFFECT_MOTION_TYPE)
-                    return;
+                if (IsHeroic())
+                    me->CastSpell(me, SPELL_SUMMON_TITAN_SPARK, true);
 
-                if (id == 1)
+                // Cancel aura for add which are spawning in when bosses die
+                me->RemoveAllAuras();
+                me->DespawnOrUnsummon(10 * IN_MILLISECONDS);
+
+                // Interrupt our vehicle passenger if die
+                if (Creature* smashTrigger = ObjectAccessor::GetCreature(*me, smashTriggerGUID))
                 {
-                    targetGuid = 0;
+                    smashTrigger->InterruptNonMeleeSpells(true, SPELL_ENERGIZING_SMASH);
+                    smashTrigger->DespawnOrUnsummon(1 * IN_MILLISECONDS);
+                }
+
+                if (me->GetEntry() == NPC_EMPEROR_RAGE)
+                    if (Player* itr = ObjectAccessor::GetPlayer(*me, targetGUID))
+                        itr->RemoveAurasDueToSpell(SPELL_FOCALISED_ASSAULT);
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (pointId == EVENT_JUMP)
+                {
                     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                     // Don't remove Immune to PC/NPC for Rage & Stength
                     if (me->GetEntry() == NPC_EMPEROR_COURAGE)
@@ -803,74 +913,145 @@ class mob_woe_add_generic : public CreatureScript
                         {
                             me->AddAura(SPELL_WITHOUT_ARMOR, me);
                             me->HandleEmoteCommand(EMOTE_ONESHOT_POINT);
-                            events.ScheduleEvent(EVENT_RAGE_FIRST_ATTACK, 2000);
                             break;
                         }
                         case NPC_EMPEROR_COURAGE:
                         {
                             me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
                             me->AddAura(SPELL_HALF_PLATE, me);
-
-                            events.ScheduleEvent(EVENT_IMPEDING_THRUST, 5000);
-                            events.ScheduleEvent(EVENT_PHALANX_WALL, 3000);
-                            events.ScheduleEvent(EVENT_CHECK_FOCDEF, 3500);
                             break;
                         }
                         case NPC_EMPEROR_STRENGHT:
                         {
-                            DoAction(ACTION_LAND);
-                            events.ScheduleEvent(EVENT_ENERGIZING_SMASH, urand(5000, 10000));
                             me->AddAura(SPELL_FULL_PLATE, me);
                             break;
                         }
                     }
+
+                    nonCombatEvents.ScheduleEvent(EVENT_PREPARE, 2 * IN_MILLISECONDS);
                 }
             }
 
-            void JustDied(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
-                if (IsHeroic())
-                    me->CastSpell(me, SPELL_SUMMON_TITAN_SPARK, true);
-                // Cancel aura for add which are spawning in when bosses die
-                me->RemoveAllAuras();
-            }
-
-            void DoAction(const int32 action)
-            {
-                switch (action)
+                switch (me->GetEntry())
                 {
-                    case ACTION_LAND:
-                    {
-                        // Retreiving players around
-                        std::list<Player*> playerList;
-                        GetPlayerListInGrid(playerList, me, 200.0f);
+                    case NPC_EMPEROR_STRENGHT:
+                        events.ScheduleEvent(EVENT_ENERGIZING_SMASH, urand(5000, 10000));
 
-                        // Add players in the list
-                        for (auto player: playerList)
-                            me->getThreatManager().addThreat(player, 300.0f);
-
-                        // Pick a player to attack
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                        if (TempSummon* eSmash = me->SummonCreature(NPC_EMPEROR_STRENGTH_TRIGGER, *me, TEMPSUMMON_MANUAL_DESPAWN))
                         {
-                            me->getThreatManager().resetAllAggro();
-                            targetGuid = target->GetGUID();
-                            me->getThreatManager().addThreat(target, 300.0f);
-                            AttackStart(target);
-                            me->SetInCombatWith(target);
-                            if (me->GetEntry() == NPC_EMPEROR_RAGE)
-                                me->CastSpell(target, SPELL_FOCALISED_ASSAULT, true);
+                            smashTriggerGUID = eSmash->GetGUID();
+                            eSmash->CastSpell(me, VEHICLE_SPELL_RIDE_HARDCODED, true);
                         }
                         break;
-                    }
+                    case NPC_EMPEROR_COURAGE:
+                        events.ScheduleEvent(EVENT_IMPEDING_THRUST, 3000);
+                        events.ScheduleEvent(EVENT_PHALANX_WALL, 1000);
+                        break;
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void DoAction(int32 actionId) override
             {
-                UpdateVictim();
-                events.Update(diff);
+                if (actionId == ACTION_LAND)
+                {
+                    std::list<Player*> PlayerOnTerracota;
+                    GetPlayerListInGrid(PlayerOnTerracota, me, 200.0f);
 
-                while (uint32 eventId = events.ExecuteEvent())
+                    if (PlayerOnTerracota.empty())
+                        return;
+
+                    switch (me->GetEntry())
+                    {
+                        case NPC_EMPEROR_RAGE:
+                            me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+
+                            PlayerOnTerracota.remove_if(RageTargetSelector());
+                            PlayerOnTerracota.remove_if(TankSpecTargetSelector());
+                           
+                            if (!PlayerOnTerracota.empty())
+                            {
+                                if (Player* itr = Trinity::Containers::SelectRandomContainerElement(PlayerOnTerracota))
+                                {
+                                    me->AI()->AttackStart(itr);
+                                    me->getThreatManager().addThreat(itr, 10000.0f);
+
+                                    me->CastSpell(itr, SPELL_FOCALISED_ASSAULT, true);
+                                    me->GetMotionMaster()->MoveChase(itr);
+                                    targetGUID = itr->GetGUID();
+                                }
+                            }
+                            else
+                            {
+                                if (Player* itr = me->FindNearestPlayer(VISIBLE_RANGE))
+                                {
+                                    me->AI()->AttackStart(itr);
+                                    me->getThreatManager().addThreat(itr, 10000.0f);
+
+                                    me->CastSpell(itr, SPELL_FOCALISED_ASSAULT, true);
+                                    me->GetMotionMaster()->MoveChase(itr);
+                                    targetGUID = itr->GetGUID();
+                                }
+                            }
+                            break;
+                        case NPC_EMPEROR_STRENGHT:
+                        {
+                            PlayerOnTerracota.remove_if(TankSpecTargetSelector());
+
+                            if (!PlayerOnTerracota.empty())
+                            {
+                                if (Player* itr = Trinity::Containers::SelectRandomContainerElement(PlayerOnTerracota))
+                                {
+                                    me->AI()->AttackStart(itr);
+                                    me->getThreatManager().addThreat(itr, 300.0f);
+                                }
+                            }
+                            else 
+                                if (Player* itr = me->FindNearestPlayer(VISIBLE_RANGE))
+                                {
+                                    me->AI()->AttackStart(itr);
+                                    me->getThreatManager().addThreat(itr, 300.0f);
+                                }
+
+                            break;
+                        }
+                        case NPC_EMPEROR_COURAGE:
+                        {
+                            me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
+
+                            // Should take farthest tank
+                            PlayerOnTerracota.remove_if(CourageTargetSelector());
+                            PlayerOnTerracota.sort(Trinity::ObjectDistanceOrderPred(me));
+
+                            if (!PlayerOnTerracota.empty())
+                            {
+                                if (Player* itr = PlayerOnTerracota.back())
+                                {
+                                    me->AI()->AttackStart(itr);
+                                    me->getThreatManager().addThreat(itr, 10000.0f);
+                                }
+                            }
+                            else if (Player* itr = me->FindNearestPlayer(VISIBLE_RANGE))
+                            {
+                                me->AI()->AttackStart(itr);
+                                me->getThreatManager().addThreat(itr, 10000.0f);
+                            }
+                            break;
+                        }
+                    }
+
+                    DoZoneInCombat();
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                nonCombatEvents.Update(diff);
+
+                while (uint32 eventId = nonCombatEvents.ExecuteEvent())
                 {
                     switch (eventId)
                     {
@@ -882,7 +1063,7 @@ class mob_woe_add_generic : public CreatureScript
                             else
                                 me->CastSpell(me, SPELL_TERRACOTTA_SKYBEAM_M, false);
                             // Wait invisible
-                            events.ScheduleEvent(EVENT_CAST_SPAWNIN, 7000);
+                            nonCombatEvents.ScheduleEvent(EVENT_CAST_SPAWNIN, 7000);
                             break;
                         }
                         case EVENT_CAST_SPAWNIN:
@@ -892,44 +1073,32 @@ class mob_woe_add_generic : public CreatureScript
 
                             // Boss Emote - Not displayed if done by mob as he's invisible, so done by a random player
                             if (me->GetEntry() != NPC_EMPEROR_RAGE)
-                            {
-                                std::ostringstream text;
-                                text << "The " << (me->GetEntry() == NPC_EMPEROR_STRENGHT ? "Emperor's Strength" : "Emperor's Courage") << " appears in the alcoves!";
-                                std::list<Player*> playerList;
-                                GetPlayerListInGrid(playerList, me, 300.0f);
-                                if (!playerList.empty())
-                                {
-                                    for (auto plr : playerList)
-                                    {
-                                        plr->MonsterTextEmote(text.str().c_str(), 0, true);
-                                        break;
-                                    }
-                                }
-                            }
+                                if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
+                                    anc_mogu_machine->AI()->Talk(me->GetEntry() == NPC_EMPEROR_STRENGHT ? TALK_EMPEROR_STRENGTH_ANN : TALK_EMPEROR_COURAGE_ANN);
                             // Wait invisible
-                            events.ScheduleEvent(EVENT_WAIT, 5000);
+                            nonCombatEvents.ScheduleEvent(EVENT_WAIT, 5000);
                             break;
                         }
                         case EVENT_WAIT:
                         {
                             // Add weapons
-                            switch(me->GetEntry())
+                            switch (me->GetEntry())
                             {
                                 case NPC_EMPEROR_RAGE:
                                 {
-                                    me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, WEAPON_RAGE);
-                                    me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, WEAPON_RAGE);
+                                    me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID + 0, WEAPON_RAGE);
+                                    me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID + 1, WEAPON_RAGE);
                                     break;
                                 }
                                 case NPC_EMPEROR_STRENGHT:
                                 {
-                                    me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, WEAPON_STRENGTH);
+                                    me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID + 0, WEAPON_STRENGTH);
                                     break;
                                 }
                                 case NPC_EMPEROR_COURAGE:
                                 {
-                                    me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, WEAPON_COURAGE_LEFT);
-                                    me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, WEAPON_COURAGE_RIGHT);
+                                    me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID + 0, WEAPON_COURAGE_LEFT);
+                                    me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID + 1, WEAPON_COURAGE_RIGHT);
                                 }
                             }
                             // Set visible
@@ -937,9 +1106,9 @@ class mob_woe_add_generic : public CreatureScript
                             // Talk - Choose the right sentence according to the mob
                             int32 words = me->GetEntry() == NPC_EMPEROR_RAGE ? TALK_RAGE : (me->GetEntry() == NPC_EMPEROR_STRENGHT ? TALK_STRENGTH : TALK_COURAGE);
                             if (Creature* anc_mogu_machine = GetClosestCreatureWithEntry(me, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
-                                anc_mogu_machine->AI()->DoAction(words);
+                                anc_mogu_machine->AI()->Talk(words);
                             // Wait til spell ends, before jumping
-                            events.ScheduleEvent(EVENT_WAIT_VISIBLE, 2000);
+                            nonCombatEvents.ScheduleEvent(EVENT_WAIT_VISIBLE, 2000);
                             break;
                         }
                         case EVENT_WAIT_VISIBLE:
@@ -949,348 +1118,422 @@ class mob_woe_add_generic : public CreatureScript
                             float x = me->GetPositionX() + (15 * cos(me->GetOrientation()));
                             float y = me->GetPositionY() + (15 * sin(me->GetOrientation()));
                             // Jump
-                            me->GetMotionMaster()->MoveJump(x, y, 362.19f, 20.0f, 20.0f, 1);
+                            me->GetMotionMaster()->MoveJump(x, y, 362.19f, 20.0f, 20.0f, EVENT_JUMP);
                             break;
                         }
-                        // Rage
-                        case EVENT_RAGE_FIRST_ATTACK:
+                        case EVENT_PREPARE:
                         {
-                            DoAction(ACTION_LAND);
-                            events.ScheduleEvent(EVENT_CHECK_TARGET, 2000);
-                            break;
-                        }
-                        case EVENT_CHECK_TARGET:
-                        {
-                            bool shouldSwitchVictim = false;
-
-                            if (me->getVictim())
-                            {
-                                if (me->getVictim()->GetGUID() != targetGuid)
-                                {
-                                    if (Unit* target = ObjectAccessor::FindUnit(targetGuid))
-                                    {
-                                        if (!target->isAlive())
-                                            shouldSwitchVictim = true;
-                                    }
-                                    else
-                                        shouldSwitchVictim = true;
-                                }
-                                else
-                                {
-                                    if (Unit* target = ObjectAccessor::FindUnit(targetGuid))
-                                    {
-                                        if (target->isAlive())
-                                        {
-                                            targetGuid = target->GetGUID();
-                                            AttackStart(target);
-                                            me->SetInCombatWith(target);
-                                            me->CastSpell(target, SPELL_FOCALISED_ASSAULT, true);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (shouldSwitchVictim)
-                                DoAction(ACTION_LAND);
-
-                            events.ScheduleEvent(EVENT_CHECK_TARGET, 2000);
-                            break;
-                        }
-                        // Courage
-                        case EVENT_PHALANX_WALL:
-                        {
-                            me->CastSpell(me, SPELL_PHALANX_WALL, false);
-                            break;
-                        }
-                        case EVENT_IMPEDING_THRUST:
-                        {
-                            if (Unit* victim = me->getVictim())
-                            {
-                                if (me->IsWithinMeleeRange(victim))
-                                {
-                                    me->CastSpell(victim, SPELL_IMPEDING_THRUST, false);
-                                    events.ScheduleEvent(EVENT_IMPEDING_THRUST, 10000);
-                                }
-                                else
-                                    events.ScheduleEvent(EVENT_IMPEDING_THRUST, 2000);
-                            }
-                            else
-                                events.ScheduleEvent(EVENT_IMPEDING_THRUST, 2000);
-                            break;
-                        }
-                        case EVENT_CHECK_FOCDEF:
-                        {
-                            Unit* target;
-                            if (!me->getVictim())
-                            {
-                                // Check bosses
-                                if (Creature* janxi = pInstance->instance->GetCreature(pInstance->GetData64(NPC_JAN_XI)))
-                                    if (Creature* qinxi = pInstance->instance->GetCreature(pInstance->GetData64(NPC_QIN_XI)))
-                                {
-                                    // Retrieving tanks on bosses
-                                    Unit* tankj = janxi->getVictim();
-                                    Unit* tankq = qinxi->getVictim();
-
-                                    // Checking distance : Courage will go on the further tank
-                                    if (tankj && tankq)
-                                        if (me->GetDistance(tankj) > me->GetDistance(tankq))
-                                            target = tankj;
-                                        else
-                                            target = tankq;
-                                    // Not 2 tanks : check if there's 1 at least and go on him
-                                    else if (tankj)
-                                        target = tankj;
-                                    else if (tankq)
-                                        target = tankq;
-                                    // No tank : pick a random player
-                                    else
-                                    {
-                                        std::list<Player*> playerList;
-                                        GetPlayerListInGrid(playerList, me, 150.0f);
-
-                                        for (auto ply : playerList)
-                                            me->getThreatManager().addThreat(ply, 150.0f);
-                                    
-                                        if (target = SelectTarget(SELECT_TARGET_TOPAGGRO))
-                                        {
-                                            targetGuid = target->GetGUID();
-                                            AttackStart(target);
-                                            me->Attack(target, true);
-                                            me->SetInCombatWith(target);
-
-                                            me->CastSpell(target, SPELL_FOCALISED_DEFENSE, false);
-                                            me->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_FOCALISED_DEFENSE);
-                                        }
-                                    }
-                                }
-                            }
-                            events.ScheduleEvent(EVENT_CHECK_FOCDEF, 2000);
-                            break;
-                        }
-                        // Strenght
-                        case EVENT_ENERGIZING_SMASH:
-                        {
-                            me->CastSpell(me, SPELL_ENERGIZING_SMASH, false);
-
-                            AuraPtr energized = me->GetAura(SPELL_ENERGIZED);
-                            float dist = 10.0f + (energized ? energized->GetStackAmount() : 0.0f);
-
-                            std::list<Player*> tarList;
-                            GetPlayerListInGrid(tarList, me, dist);
-                            
-                            for (auto target : tarList)
-                                me->AddAura(SPELL_ENERGIZING_VISUAL, target);
-
-                            if (Unit* victim = me->getVictim())
-                                me->CastSpell(victim, SPELL_ENERGIZING_VISUAL, true);
-
-                            events.ScheduleEvent(EVENT_ENERGIZING_SMASH, urand(15000, 20000));
-
-                            break;
-                        }
-                        case EVENT_SELECT_TARGET:
-                        {
-                            if (!me->getVictim())
-                                DoAction(ACTION_LAND);
-                            events.ScheduleEvent(EVENT_SELECT_TARGET, 2000);
+                            me->AI()->DoAction(ACTION_LAND);
                             break;
                         }
                     }
-                    if (!me->HasUnitState(UNIT_STATE_CASTING))
-                        DoMeleeAttackIfReady();
+                }
+
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId=events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_PHALANX_WALL:
+                            me->CastSpell(me, SPELL_PHALANX_WALL, false);
+                            break;
+                        case EVENT_IMPEDING_THRUST:
+                            if (Unit* victim = me->GetVictim())
+                                if (me->IsWithinMeleeRange(victim))
+                                    me->CastSpell(victim, SPELL_IMPEDING_THRUST, false);
+
+                            events.ScheduleEvent(EVENT_IMPEDING_THRUST, 2000);
+                            break;
+                        case EVENT_ENERGIZING_SMASH:
+                            if (Vehicle* veh = me->GetVehicleKit())
+                            {
+                                if (Unit* eSmash = veh->GetPassenger(0))
+                                {
+                                    eSmash->CastSpell(eSmash, SPELL_ENERGIZING_SMASH, false);
+
+                                    if (Unit* vict = me->GetVictim())
+                                    {
+                                        targetGUID = vict->GetGUID();
+                                        me->PrepareChanneledCast(me->GetAngle(vict));
+                                        DoCast(vict, SPELL_ENERGIZING_VISUAL, true);
+                                    }
+                                }
+                            }
+
+                            events.ScheduleEvent(EVENT_ENERGIZING_REMOVE, 2 * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_ENERGIZING_SMASH, 8 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_ENERGIZING_REMOVE:
+                            me->RemoveChanneledCast(targetGUID);
+                            break;
+                    }
+                }
+
+                if (me->GetEntry() == NPC_EMPEROR_RAGE)
+                {
+                    if (Unit* RageTarget = ObjectAccessor::GetUnit(*me, targetGUID))
+                    {
+                        if (RageTarget->IsAlive())
+                            me->GetMotionMaster()->MoveChase(RageTarget);
+                        else if (Player* itr = me->FindNearestPlayer(VISIBLE_RANGE))
+                            targetGUID = itr->GetGUID();
+                    }
+                    else if (targetGUID)
+                        targetGUID = 0;
+
+                    DoMeleeAttackIfReady();
                 }
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new mob_woe_add_genericAI(creature);
+            return new npc_woe_add_genericAI(creature);
         }
 };
 
 // Titan Spark - 60480
-class mob_woe_titan_spark : public CreatureScript
+class npc_woe_titan_spark : public CreatureScript
 {
     public:
-        mob_woe_titan_spark() : CreatureScript("mob_woe_titan_spark") {}
+        npc_woe_titan_spark() : CreatureScript("npc_woe_titan_spark") { }
 
-        struct mob_woe_titan_sparkAI : public ScriptedAI
+        struct npc_woe_titan_sparkAI : public ScriptedAI
         {
-            mob_woe_titan_sparkAI(Creature* creature) : ScriptedAI(creature)
-            {
-                pInstance = creature->GetInstanceScript();
-            }
+            npc_woe_titan_sparkAI(Creature* creature) : ScriptedAI(creature) { }
 
-            InstanceScript* pInstance;
-            uint32 distanceCheckTimer;
+            TaskScheduler scheduler;
+            uint32 delay;
             uint64 targetGuid;
+            bool canExplode;
 
-            void Reset()
+            void Reset() override
             {
                 targetGuid = 0;
-                distanceCheckTimer = 500;
+                delay      = 0;
+                canExplode = false;
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->PrepareChanneledCast(me->GetOrientation());
+                me->OverrideInhabitType(INHABIT_AIR);
+                me->UpdateMovementFlags();
 
-                DoZoneInCombat();
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_THREAT, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_PULL, true);
+
+                me->CastSpell(me, SPELL_ENERGY_OF_CREATION_A, false);
+
+                if (Unit* target = ObjectAccessor::GetUnit(*me, GetTargetGUID()))
                 {
                     targetGuid = target->GetGUID();
-                    AttackStart(target);
-                    me->SetInCombatWith(target);
-                    me->getThreatManager().addThreat(target, 300.0f);
-                    me->CastSpell(target, SPELL_FOCALISED_ENERGY, false);
+                    DoCast(target, SPELL_FOCALISED_ENERGY, true);
                 }
+
+                me->SetSpeed(MOVE_RUN, 0.47f);
+
+                Movement::MoveSplineInit init(me);
+                init.MoveTo(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 7.8f);
+
+                init.SetFly();
+                init.SetSmooth();
+                init.SetUncompressed();
+                init.Launch();
+
+                me->m_Events.Schedule(delay += me->GetSplineDuration(), 1, [this]()
+                {
+                    DoZoneInCombat(me, 300.0f);
+
+                    // check our main target
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, targetGuid))
+                    {
+                        if (target->IsAlive())
+                        {
+                            me->RemoveChanneledCast(targetGuid);
+                            me->getThreatManager().addThreat(target, 3000.0f);
+                        }
+                        // If our main target not alive - too select new.
+                        else if (Unit* newTarget = ObjectAccessor::GetUnit(*me, GetTargetGUID()))
+                        {
+                            targetGuid = newTarget->GetGUID();
+                            me->RemoveChanneledCast(targetGuid);
+                            me->getThreatManager().addThreat(target, 3000.0f);
+                        }
+                    }
+                    // If not found - select new
+                    else if (Unit* target = ObjectAccessor::GetUnit(*me, GetTargetGUID()))
+                    {
+                        targetGuid = target->GetGUID();
+                        me->RemoveChanneledCast(targetGuid);
+                        me->getThreatManager().addThreat(target, 3000.0f);
+                    }
+
+                    canExplode = true;
+                });
+
+                scheduler.Schedule(Milliseconds(500), [this](TaskContext context)
+                {
+                    // No any way - this should work like movement areaTrigger
+                    if (canExplode)
+                        if (Player* itr = me->FindNearestPlayer(7.15f))
+                            me->Kill(me);
+
+                    context.Repeat(Milliseconds(500));
+                });
             }
 
-            void JustDied(Unit* attacker)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->CastSpell(me, SPELL_ENERGY_OF_CREATION, false);
+                me->SetCorpseDelay(3); // set delay
+
+                // Remove aura from player
+                if (Player* itr = ObjectAccessor::GetPlayer(*me, targetGuid))
+                    itr->RemoveAurasDueToSpell(SPELL_FOCALISED_ENERGY);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (distanceCheckTimer <= diff)
+                scheduler.Update(diff);
+            }
+
+            private:
+                uint64 GetTargetGUID()
                 {
-                    if (me->SelectNearestPlayerNotGM())
-                        me->Kill(me);
-                    distanceCheckTimer = 500;
+                    std::list<Player*> pList;
+                    GetPlayerListInGrid(pList, me, 300.0f);
+                    pList.remove_if(TankSpecTargetSelector());
+
+                    // If not selected then return random player if it possible
+                    if (pList.empty())
+                    {
+                        if (Player* itr = me->FindNearestPlayer(300.0f))
+                            return itr->GetGUID();
+
+                        return 0;
+                    }
+
+                    return Trinity::Containers::SelectRandomContainerElement(pList)->GetGUID();
                 }
-                else
-                    distanceCheckTimer -= diff;
+
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_woe_titan_sparkAI(creature);
+        }
+};
+
+// Terracota Boss - 60575
+class npc_woe_terracota_boss : public CreatureScript
+{
+    public:
+        npc_woe_terracota_boss() : CreatureScript("npc_woe_terracota_boss") { }
+
+        struct npc_woe_terracota_bossAI : public ScriptedAI
+        {
+            npc_woe_terracota_bossAI(Creature* creature) : ScriptedAI(creature) { }
+
+            InstanceScript* instance;
+            uint32 m_AnimType;
+
+            void DoAction(int32 actionId) override
+            {
+                switch (actionId)
+                {
+                    case SPELL_ARC_VISUAL_LEFT:
+                        m_AnimType = SPELL_DEVAST_ARC_LEFT;
+                        break;
+                    case SPELL_ARC_VISUAL_RIGHT:
+                        m_AnimType = SPELL_DEVAST_ARC_RIGHT;
+                        break;
+                    case SPELL_ARC_VISUAL_CENTER:
+                        m_AnimType = SPELL_DEVAST_ARC;
+                        break;
+                    default:
+                        m_AnimType = 0;
+                        break;
+                }
+
+                // Skip Stomp cuz he`s self-triggered animation
+                if (m_AnimType)
+                    me->CastSpell(me, m_AnimType, false);
+            }
+
+            void DamageTaken(Unit* attacker, uint32& damage) override
+            {
+                damage = 0;
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new mob_woe_titan_sparkAI(creature);
+            return new npc_woe_terracota_bossAI(creature);
         }
 };
 
 // Ancient Mogu Machine - 60648
-class mob_ancient_mogu_machine : public CreatureScript
+class npc_ancient_mogu_machine : public CreatureScript
 {
     public:
-        mob_ancient_mogu_machine() : CreatureScript("mob_ancient_mogu_machine") { }
-    
-        struct mob_ancient_mogu_machineAI : public ScriptedAI
+        npc_ancient_mogu_machine() : CreatureScript("npc_ancient_mogu_machine") { }
+
+        struct npc_ancient_mogu_machineAI : public ScriptedAI
         {
+            npc_ancient_mogu_machineAI(Creature* creature) : ScriptedAI(creature) { }
 
-            mob_ancient_mogu_machineAI(Creature* creature) : ScriptedAI(creature)
+            EventMap events;
+            InstanceScript* instance;
+            bool activated;
+
+            void InitializeAI() override
             {
+                instance = me->GetInstanceScript();
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC);
+
+                Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
+                me->RemoveAurasDueToSpell(SPELL_TITAN_GAS_HEROIC);
                 events.Reset();
+                me->CombatStop(true);
+                activated = false;
             }
-
 
             // Talk
-            void DoAction(const int32 action)
+            void DoAction(int32 actionId) override
             {
-                if (action == ACTION_MOGU_ACTIVATE)
-                    events.ScheduleEvent(EVENT_TITAN_GAS, 225000);
+                if (actionId == ACTION_MOGU_ACTIVATE && !activated)
+                {
+                    activated = true;
+                    events.ScheduleEvent(EVENT_TITAN_GAS, IsHeroic() ? 12000 : 225000);
+                    events.ScheduleEvent(EVENT_CHECK_WIPE, 1 * IN_MILLISECONDS);
+
+                    events.ScheduleEvent(EVENT_LIGHTNING_COSMETIC, 6 * IN_MILLISECONDS);
+                }
+                else if (actionId == ACTION_CONSOLE_WIPE)
+                    Reset();
                 else
-                    Talk(action);
+                    Talk(actionId);
             }
 
-            void UpdateAI(const uint32 diff)
+            void AttackStart(Unit* target) override
+            {
+                if (target->GetTypeId() == TYPEID_PLAYER)
+                    CreatureAI::AttackStart(target);
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
-                switch (events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    // Boss emote for the end of Titan Gas. Done by a player as Mogu Machine is invisible.
-                    case EVENT_TITAN_GAS:
+                    switch (eventId)
                     {
-                        if (!me->GetMap()->GetPlayers().isEmpty())
+                            // Boss emote for the end of Titan Gas. Done by a player as Mogu Machine is invisible.
+                        case EVENT_TITAN_GAS:
                         {
-                            if (Player* plr = me->GetMap()->GetPlayers().begin()->getSource())
+                            // Talk
+                            Talk(TALK_TITAN_GAS_START);
+                            Talk(TALK_TITAN_GAS_ANN);
+                            me->CastSpell(CENTER_X, CENTER_Y, CENTER_Z, IsHeroic() ? SPELL_TITAN_GAS_HEROIC : SPELL_TITAN_GAS, false);
+                        
+                            // In Heroic Gas available all time
+                            if (!IsHeroic())
                             {
-                                //|cffffd000|Hspell:spell_id|h[name]|h|r
-                                plr->MonsterTextEmote("The Ancient Mogu Machine breaks down! |cffBA0022|Hspell:116779|h[Titan Gas]|h|r floods the room!", 0, true);
+                                // Reset spawning terracota while titan gas in use
+                                if (Unit* QinXi = ObjectAccessor::GetUnit(*me, instance->GetData64(NPC_QIN_XI)))
+                                    QinXi->ToCreature()->AI()->DoAction(ACTION_TITAN_GAS);
+                        
+                                if (Unit* JanXi = ObjectAccessor::GetUnit(*me, instance->GetData64(NPC_JAN_XI)))
+                                    JanXi->ToCreature()->AI()->DoAction(ACTION_TITAN_GAS);
+                        
+                                events.ScheduleEvent(EVENT_END_TITAN_GAS, 30000);
+                                events.ScheduleEvent(EVENT_TITAN_GAS, 210000);
                             }
+                            break;
                         }
-                        me->CastSpell(CENTER_X, CENTER_Y, CENTER_Z, SPELL_TITAN_GAS, false);
-                        // Talk
-                        DoAction(TALK_TITAN_GAS_START);
-                        events.ScheduleEvent(EVENT_END_TITAN_GAS, 30000);
-                        events.ScheduleEvent(EVENT_TITAN_GAS, 210000);
-                        break;
+                        case EVENT_END_TITAN_GAS:
+                        {
+                            // Talk for Titan Gas ending
+                            Talk(TALK_TITAN_GAS_END);
+                        
+                            // Set spawn terracota again
+                            if (Unit* QinXi = ObjectAccessor::GetUnit(*me, instance->GetData64(NPC_QIN_XI)))
+                                QinXi->ToCreature()->AI()->DoAction(ACTION_TITAN_GAS_END);
+                        
+                            if (Unit* JanXi = ObjectAccessor::GetUnit(*me, instance->GetData64(NPC_JAN_XI)))
+                                JanXi->ToCreature()->AI()->DoAction(ACTION_TITAN_GAS_END);
+                            break;
+                        }
+                        case EVENT_CHECK_WIPE:
+                            if (instance && instance->IsWipe(81.5f, me))
+                            {
+                                Reset();
+                        
+                                if (Creature* jan_xi = instance->instance->GetCreature(me->GetInstanceScript()->GetData64(NPC_JAN_XI)))
+                                    jan_xi->AI()->DoAction(ACTION_WIPE);
+                        
+                                if (Creature* qin_xi = instance->instance->GetCreature(me->GetInstanceScript()->GetData64(NPC_QIN_XI)))
+                                    qin_xi->AI()->DoAction(ACTION_WIPE);
+                        
+                                break;
+                            }
+                            events.ScheduleEvent(EVENT_CHECK_WIPE, 1 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_LIGHTNING_COSMETIC:
+                            DoZoneInCombat();
+                            me->CastSpell(me, SPELL_COSMETIC_LIGHTNING, false);
+                        
+                            for (auto&& pItr : instance->instance->GetPlayers())
+                                if (Player* player = pItr.GetSource())
+                                    if (player->IsAlive() && !player->IsGameMaster() && player->GetPositionZ() > 363.39f)
+                                        player->CastSpell(player, SPELL_TERRACOTTA_JUMP, false);
+                            break;
                     }
-                    case EVENT_END_TITAN_GAS:
-                    {
-                        // Talk for Titan Gas ending
-                        DoAction(TALK_TITAN_GAS_END);
-                        break;
-                    }
-                    default:
-                        break;
                 }
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new mob_ancient_mogu_machineAI(creature);
+            return new npc_ancient_mogu_machineAI(creature);
         }
-
 };
 
 // General Purpose Bunny JMF - 55091
-class mob_general_purpose_bunnyJMF : public CreatureScript
+class npc_general_purpose_bunnyJMF : public CreatureScript
 {
     public:
-        mob_general_purpose_bunnyJMF() : CreatureScript("mob_general_purpose_bunnyJMF") { }
-    
-        struct mob_general_purpose_bunnyJMFAI : public ScriptedAI
+        npc_general_purpose_bunnyJMF() : CreatureScript("npc_general_purpose_bunnyJMF") { }
+
+        struct npc_general_purpose_bunnyJMFAI : public ScriptedAI
         {
             bool hasCast;
-            bool isCentralMob;
 
-            mob_general_purpose_bunnyJMFAI(Creature* creature) : ScriptedAI(creature)
+            npc_general_purpose_bunnyJMFAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC);
-                hasCast = false;
-                isCentralMob = false;
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->RemoveAllAuras();
-                // Retreiving central mob
-                if ((me->GetPositionX() >= (CENTER_X - 2.0f)) && (me->GetPositionX() <= (CENTER_X + 2.0f)) &&
-                    (me->GetPositionY() >= (CENTER_Y - 2.0f)) && (me->GetPositionY() <= (CENTER_Y + 2.0f)) &&
-                    (me->GetPositionZ() >= (CENTER_Z - 2.0f)) && (me->GetPositionZ() <= (CENTER_Z + 2.0f)))
-                    isCentralMob = true;
-
             }
-
-            void DoAction(const int32 action)
-            {
-                if (action == ACTION_COSMECTIC)
-                {
-                    if (!isCentralMob)
-                        return;
-
-                    // Central mob casts cosmetic lightning once
-                    if (!hasCast)
-                    {
-                        me->CastSpell(me, SPELL_COSMETIC_LIGHTNING, false);
-                        hasCast = true;
-                    }
-                }
-            }
-
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new mob_general_purpose_bunnyJMFAI(creature);
+            return new npc_general_purpose_bunnyJMFAI(creature);
         }
-
 };
 
 // Cosmetic Lightning Spell - 127732
@@ -1313,8 +1556,8 @@ class spell_cosmetic_lightning : public SpellScriptLoader
                     GetCreatureListWithEntryInGrid(focus, caster, NPC_GENERAL_PURPOSE_BUNNY_JMF, 500.0f);
 
                     focus.remove(caster->ToCreature());
-                
-                    for (auto cible: focus)
+
+                    for (auto&& cible: focus)
                     {
                         targets.push_back(cible);
                         caster->AddAura(SPELL_COSMETIC_LIGHTNING, cible);
@@ -1322,13 +1565,13 @@ class spell_cosmetic_lightning : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_cosmetic_lightning_SpellScript::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_cosmetic_lightning_SpellScript();
         }
@@ -1344,13 +1587,13 @@ class spell_terracota_spawn : public SpellScriptLoader
         {
             PrepareAuraScript(spell_terracota_spawn_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* caster = GetCaster())
                     caster->AddAura(SPELL_TERRACOTTA_SPAWN, GetCaster());
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_terracota_spawn_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
@@ -1372,19 +1615,26 @@ class spell_magnetized_qin : public SpellScriptLoader
         {
             PrepareAuraScript(spell_magnetized_qin_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurAff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Player* player = GetTarget()->ToPlayer())
+                {
                     player->AddAura(SPELL_MAGNETIZED_QIN, player);
+                    targetGUID = player->GetGUID();
+                }
             }
 
-            void Register()
+            private:
+                uint64 targetGUID;
+
+
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_magnetized_qin_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_magnetized_qin_AuraScript();
         }
@@ -1400,62 +1650,27 @@ class spell_magnetized_jan : public SpellScriptLoader
         {
             PrepareAuraScript(spell_magnetized_jan_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurAff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Player* player = GetTarget()->ToPlayer())
+                {
                     player->AddAura(SPELL_MAGNETIZED_JAN, player);
+                    targetGUID = player->GetGUID();
+                }
             }
 
-            void Register()
+            private:
+                uint64 targetGUID;
+
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_magnetized_jan_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_magnetized_jan_AuraScript();
-        }
-};
-
-// Arc Left - 116968
-class spell_arc_visual : public SpellScriptLoader
-{
-    public:
-        spell_arc_visual() : SpellScriptLoader("spell_arc_visual") { }
-
-        class spell_arc_visual_AuraScript : public AuraScript
-        {
-            PrepareAuraScript(spell_arc_visual_AuraScript);
-
-            void Apply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-            {
-                std::list<Player*> players;
-                GetPlayerListInGrid(players, GetCaster(), 10.0f);
-                if (Unit* caster = GetCaster())
-                    for (auto target : players)
-                        caster->AddAura(SPELL_ARC_VISUAL, target);
-            }
-
-            void Stun(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-            {
-                std::list<Player*> players;
-                GetPlayerListInGrid(players, GetCaster(), 100.0f);
-                if (Unit* caster = GetCaster())
-                    for (auto target : players)
-                        caster->AddAura(SPELL_ARC_VISUAL, target);
-            }
-
-            void Register()
-            {
-                OnEffectApply += AuraEffectApplyFn(spell_arc_visual_AuraScript::Stun,  EFFECT_0, SPELL_AURA_MOD_STUN, AURA_EFFECT_HANDLE_REAL);
-                OnEffectApply += AuraEffectApplyFn(spell_arc_visual_AuraScript::Apply, EFFECT_1, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-            }
-        };
-
-        AuraScript* GetAuraScript() const
-        {
-            return new spell_arc_visual_AuraScript();
         }
 };
 
@@ -1469,25 +1684,25 @@ class spell_devastating_arc : public SpellScriptLoader
         {
             PrepareAuraScript(spell_devastating_arc_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* caster = GetCaster())
                 {
                     std::list<Player*> playerList;
                     GetPlayerListInGrid(playerList, caster, 25.0f);
 
-                    for (auto target : playerList)
+                    for (auto&& target : playerList)
                         caster->AddAura(SPELL_DEVAST_ARC, target);
-                    }
+                }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_devastating_arc_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_devastating_arc_AuraScript();
         }
@@ -1503,53 +1718,84 @@ class spell_impeding_thrust : public SpellScriptLoader
         {
             PrepareAuraScript(spell_impeding_thrust_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Player* player = GetTarget()->ToPlayer())
                 {
-                    AuraPtr impeding = player->GetAura(SPELL_IMPEDING_THRUST);
+                    auto const impeding = player->GetAura(SPELL_IMPEDING_THRUST);
                     if (impeding->GetStackAmount() < 4)
                         impeding->SetStackAmount(impeding->GetStackAmount() + 1);
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_impeding_thrust_AuraScript::Apply, EFFECT_0, SPELL_AURA_NONE, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_impeding_thrust_AuraScript();
         }
 };
 
+struct TitanGasTargetSelector final
+{
+    bool operator ()(WorldObject const* object) const
+    {
+        if (object->GetTypeId() == TYPEID_PLAYER)
+            return false;
+
+        return true;
+    }
+};
+
 // Titan gas - 116803 - triggered by Titan Gas (116779)
-class spell_titan_gas : public SpellScriptLoader
+class spell_titan_gas final : public SpellScriptLoader
 {
     public:
         spell_titan_gas() : SpellScriptLoader("spell_titan_gas") { }
 
-        class spell_titan_gas_AuraScript : public AuraScript
+        class spell_titan_gas_AuraScript final : public AuraScript
         {
             PrepareAuraScript(spell_titan_gas_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurAff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* target = GetTarget())
                     target->AddAura(SPELL_TITAN_GAS_AURA, target);
             }
 
-            void Register()
+            void Register() override final
             {
                 OnEffectApply += AuraEffectApplyFn(spell_titan_gas_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        class spell_titan_gas_SpellScript final : public SpellScript
+        {
+            PrepareSpellScript(spell_titan_gas_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if (TitanGasTargetSelector());
+            }
+
+            void Register() override final
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_titan_gas_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override final
         {
             return new spell_titan_gas_AuraScript();
+        }
+
+        SpellScript* GetSpellScript() const override final
+        {
+            return new spell_titan_gas_SpellScript();
         }
 };
 
@@ -1563,161 +1809,389 @@ class spell_titan_gas2 : public SpellScriptLoader
         {
             PrepareAuraScript(spell_titan_gas2_AuraScript);
 
-            void Apply(constAuraEffectPtr /*aurAff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* target = GetTarget())
                     target->AddAura(SPELL_TITAN_GAS_AURA2, target);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_titan_gas2_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        class spell_titan_gas2_SpellScript final : public SpellScript
+        {
+            PrepareSpellScript(spell_titan_gas2_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*> &targets)
+            {
+                targets.remove_if (TitanGasTargetSelector());
+            }
+
+            void Register() override final
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_titan_gas2_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override final
         {
             return new spell_titan_gas2_AuraScript();
         }
+
+        SpellScript* GetSpellScript() const override final
+        {
+            return new spell_titan_gas2_SpellScript();
+        }
+};
+
+// Titan gas - 116782
+class spell_titan_gas_players final : public SpellScript
+{
+    PrepareSpellScript(spell_titan_gas_players);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return !target->ToPlayer(); });
+    }
+
+    void Register() override final
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_titan_gas_players::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+class EnergizingSmashPredicate : public std::unary_function<Unit*, bool>
+{
+    public:
+        EnergizingSmashPredicate(Unit* const m_owner) : _owner(m_owner) { }
+
+        bool operator()(WorldObject* object)
+        {
+            // Reason why we should make it: not correct really position of vehicle
+            x = _owner->GetPositionX() + (10.0f * cos(_owner->GetOrientation()));
+            y = _owner->GetPositionY() + (10.0f * sin(_owner->GetOrientation()));
+            pos = { x, y, _owner->GetPositionZ(), _owner->GetOrientation() };
+            // increased by 1 yard pet stack
+            if (Aura* energize = _owner->GetAura(SPELL_ENERGIZED))
+                return object && object->ToPlayer() && object->ToPlayer()->GetExactDist2d(&pos) > (10.0f + (float)energize->GetStackAmount());
+
+            return object && object->ToPlayer() && object->ToPlayer()->GetExactDist2d(&pos) > 10.0f;
+        }
+
+    private:
+        Unit const* _owner;
+        float x, y;
+        Position pos;
 };
 
 // Energizing smash - 116550
-class spell_energizing_smash : public SpellScriptLoader
+class spell_energizing_smash : public SpellScript
+{
+    PrepareSpellScript(spell_energizing_smash);
+
+    std::list<WorldObject*> m_targets;
+
+    void SelectTargets(std::list<WorldObject*>& targets)
+    {
+        if (GetCaster() && GetCaster()->GetVehicleBase())
+            targets.remove_if(EnergizingSmashPredicate(GetCaster()->GetVehicleBase()));
+
+        m_targets = targets;
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = m_targets;
+    }
+
+    void HandleAfterCast()
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+            caster->SetObjectScale(caster->GetObjectScale() + 0.1f);
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_energizing_smash::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_energizing_smash::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+        AfterCast += SpellCastFn(spell_energizing_smash::HandleAfterCast);
+    }
+};
+
+struct FocusedTargetSelector final
 {
     public:
-        spell_energizing_smash() : SpellScriptLoader("spell_energizing_smash") { }
-        
-        class spell_ernergizing_smash_SpellScript : public SpellScript
+        explicit FocusedTargetSelector(Unit* _caster) : caster(_caster) { }
+
+        bool operator ()(WorldObject const* unit) const
         {
-            PrepareSpellScript(spell_ernergizing_smash_SpellScript);
+            if (caster->GetVictim() && caster->GetVictim()->GetTypeId() == TYPEID_PLAYER && unit == caster->GetVictim())
+                return false;
 
-            void SelectTargets(std::list<WorldObject*>& targets)
+            return true;
+        }
+
+    private:
+        Unit* caster;
+};
+
+class spell_woe_focused final : public SpellScriptLoader
+{
+    public:
+        spell_woe_focused() : SpellScriptLoader("spell_woe_focused") { }
+
+        class spell_woe_focused_SpellScript final : public SpellScript
+        {
+            PrepareSpellScript(spell_woe_focused_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
             {
-                targets.clear();
-
-                if (Unit* caster = GetCaster())
-                {
-                    AuraPtr energized = caster->GetAura(SPELL_ENERGIZED);
-                    float dist = 10.0f + (energized ? energized->GetStackAmount() : 0.0f);
-
-                    std::list<Player*> playerList;
-                    GetPlayerListInGrid(playerList, caster, dist);
-
-                    for (auto tar : playerList)
-                        targets.push_back(tar);
-                }
+                targets.remove_if (FocusedTargetSelector(GetCaster()));
             }
 
-            void Register()
+            void Register() override final
             {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ernergizing_smash_SpellScript::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ernergizing_smash_SpellScript::SelectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_woe_focused_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript * GetSpellScript() const final
         {
-            return new spell_ernergizing_smash_SpellScript();
+            return new spell_woe_focused_SpellScript();
         }
 };
 
-// Energizing Smash - Visual - 116556
-class spell_energizing_visual : public SpellScriptLoader
+// Devastation Arc Visual 116968, 116971, 116972
+class spell_devastation_arc_visual : public SpellScriptLoader
 {
     public:
-        spell_energizing_visual() : SpellScriptLoader("spell_energizing_visual") { }
+        spell_devastation_arc_visual() : SpellScriptLoader("spell_devastation_arc_visual") { }
 
-        class spell_energizing_visual_AuraScript : public AuraScript
+        class spell_devastation_arc_visual_AuraScript : public AuraScript
         {
-            PrepareAuraScript(spell_energizing_visual_AuraScript);
+            PrepareAuraScript(spell_devastation_arc_visual_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
-                if (Unit* caster = GetCaster())
-                {
-                    std::list<Player*> playerList;
-                    GetPlayerListInGrid(playerList, caster, 10.0f);
-
-                    for (auto player : playerList)
-                        caster->AddAura(SPELL_ENERGIZING_VISUAL, player);
-                }
+                if (GetCaster() && GetCaster()->ToCreature())
+                    GetCaster()->ToCreature()->AI()->DoAction(ACTION_DEV_ARC);
             }
 
-            void Register()
+            void Register() override
             {
-                OnEffectApply += AuraEffectApplyFn(spell_energizing_visual_AuraScript::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-                OnEffectApply += AuraEffectApplyFn(spell_energizing_visual_AuraScript::OnApply, EFFECT_1, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_devastation_arc_visual_AuraScript::OnRemove, EFFECT_1, SPELL_AURA_MOD_STUN, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
-            return new spell_energizing_visual_AuraScript();
+            return new spell_devastation_arc_visual_AuraScript();
         }
 };
 
-// Energized - 116605
-class spell_energized : public SpellScriptLoader
+// Stomp 116969
+class spell_woe_stomp final : public SpellScript
 {
-    public :
-        spell_energized() : SpellScriptLoader("spell_energized") { }
+    PrepareSpellScript(spell_woe_stomp);
 
-        class spell_energized_AuraScript : public AuraScript
+    void HandleAfterCast()
+    {
+        if (GetCaster() && GetCaster()->ToCreature())
+            GetCaster()->ToCreature()->AI()->DoAction(ACTION_DEV_ARC);
+    }
+
+    void SelectTargets(std::list<WorldObject*>& targets)
+    {
+        if (Unit* caster = GetCaster())
         {
-            PrepareAuraScript(spell_energized_AuraScript);
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 16.0f);
 
-            void Apply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            for (auto&& pItrPot : pList)
+                if (!HasPlayerGotHit(pItrPot->GetGUID(), targets))
+                    pItrPot->CastSpell(pItrPot, SPELL_GROWING_OPPORTUNITY, true);
+        }
+    }
+
+    private:
+        bool HasPlayerGotHit(uint64 targetGUID, std::list<WorldObject*>& pTargets)
+        {
+            if (Unit* target = ObjectAccessor::FindUnit(targetGUID))
             {
-                if (Unit* caster = GetCaster())
-                    caster->AddAura(SPELL_ENERGIZED, caster);
+                for (auto&& pItr : pTargets)
+                    if (pItr->GetGUID() == target->GetGUID())
+                        return true;
             }
 
-            void Register()
+            return false;
+        }
+
+    void Register() override final
+    {
+        AfterCast += SpellCastFn(spell_woe_stomp::HandleAfterCast);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_woe_stomp::SelectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Energy of Creation 116805
+class spell_woe_energy_of_creation final : public SpellScriptLoader
+{
+    public:
+        spell_woe_energy_of_creation() : SpellScriptLoader("spell_woe_energy_of_creation") { }
+
+        class spell_woe_energy_of_creation_SpellScript final : public SpellScript
+        {
+            PrepareSpellScript(spell_woe_energy_of_creation_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
             {
-                OnEffectApply += AuraEffectApplyFn(spell_energized_AuraScript::Apply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                targets.remove_if([=](WorldObject* target) { return target && (target->ToPlayer() || target->ToUnit() && target->ToUnit()->IsPet()); });
+            }
+
+            void Register() override final
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_woe_energy_of_creation_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
             }
         };
+
+        SpellScript * GetSpellScript() const final
+        {
+            return new spell_woe_energy_of_creation_SpellScript();
+        }
+};
+
+// Energy of Creation Visual 127758
+class spell_woe_energy_of_creation_visual final : public SpellScriptLoader
+{
+    public:
+        spell_woe_energy_of_creation_visual() : SpellScriptLoader("spell_woe_energy_of_creation_visual") { }
+
+        class spell_woe_energy_of_creation_visual_SpellScript final : public SpellScript
+        {
+            PrepareSpellScript(spell_woe_energy_of_creation_visual_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if([=](WorldObject* target) { return target && (target->ToPlayer() || target->ToUnit() && target->ToUnit()->IsPet()); });
+            }
+
+            void Register() override final
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_woe_energy_of_creation_visual_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        SpellScript * GetSpellScript() const final
+        {
+            return new spell_woe_energy_of_creation_visual_SpellScript();
+        }
+};
+
+// Devastating Arc Effect 116835
+class spell_devastating_arc_eff : public SpellScript
+{
+    PrepareSpellScript(spell_devastating_arc_eff);
+
+    void SelectTargets(std::list<WorldObject*>& targets)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 16.0f);
+
+            for (auto&& pItrPot : pList)
+                if (!HasPlayerGotHit(pItrPot->GetGUID(), targets))
+                    pItrPot->CastSpell(pItrPot, SPELL_GROWING_OPPORTUNITY, true);
+        }
+    }
+
+    private:
+        bool HasPlayerGotHit(uint64 targetGUID, std::list<WorldObject*>& pTargets)
+        {
+            if (Unit* target = ObjectAccessor::FindUnit(targetGUID))
+            {
+                for (auto&& pItr : pTargets)
+                    if (pItr->GetGUID() == target->GetGUID())
+                        return true;
+            }
+
+            return false;
+        }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_devastating_arc_eff::SelectTargets, EFFECT_0, TARGET_UNIT_CONE_ENEMY_WITH_OFFSET);
+    }
+};
+
+// Growing Opportunity 117854
+class spell_growing_opportunity : public SpellScript
+{
+    PrepareSpellScript(spell_growing_opportunity);
+
+    void HandleEffectHit(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* target = GetHitUnit())
+        {
+            if (InstanceScript* instance = target->GetInstanceScript())
+            {
+                if (Aura* gOpp = target->GetAura(SPELL_GROWING_OPPORTUNITY))
+                {
+                    uint32 getReqStuck = instance->instance->IsHeroic() ? 9 : 4;
+
+                    if (gOpp->GetStackAmount() > getReqStuck)
+                    {
+                        target->RemoveAurasDueToSpell(SPELL_GROWING_OPPORTUNITY);
+                        target->CastSpell(target, SPELL_OPPORTUNISTIC_STRIKE, true);
+                    }
+                }
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_growing_opportunity::HandleEffectHit, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+    }
 };
 
 // Ancient Control Console - 211584
 class go_ancien_control_console : public GameObjectScript
 {
     public:
-        go_ancien_control_console() : GameObjectScript("go_ancien_control_console")
-        {
-            activated = false;
-        }
+        go_ancien_control_console() : GameObjectScript("go_ancien_control_console") { }
 
-        bool activated;
-
-        bool OnGossipHello(Player* player, GameObject* go)
+        bool OnGossipHello(Player* player, GameObject* go) override
         {
-            if (InstanceScript* pInstance = player->GetInstanceScript())
-                if (!activated && pInstance->CheckRequiredBosses(DATA_WILL_OF_EMPEROR))
+            if (InstanceScript* instance = player->GetInstanceScript())
+            {
+                if (!instance->CheckRequiredBosses(DATA_WILL_OF_EMPEROR, player))
+                    return false;
+
+                if (Creature* jan_xi = instance->instance->GetCreature(instance->GetData64(NPC_JAN_XI)))
+                    jan_xi->AI()->DoAction(ACTION_ACTIVATE);
+
+                if (Creature* qin_xi = instance->instance->GetCreature(instance->GetData64(NPC_QIN_XI)))
+                    qin_xi->AI()->DoAction(ACTION_ACTIVATE);
+
+                if (Creature* console = GetClosestCreatureWithEntry(go, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
                 {
-                    // Activate central mob
-                    std::list<Creature*> bunny;
-                    GetCreatureListWithEntryInGrid(bunny, go, NPC_GENERAL_PURPOSE_BUNNY_JMF, 100.0f);
+                    console->AI()->Talk(TALK_TO_LOWER_LEVEL);
+                    console->SetReactState(REACT_PASSIVE);
+                    console->setActive(true);
 
-                    for (auto mob : bunny)
-                        mob->AI()->DoAction(ACTION_COSMECTIC);
-
-                    if (Creature* jan_xi = pInstance->instance->GetCreature(pInstance->GetData64(NPC_JAN_XI)))
-                        jan_xi->AI()->DoAction(ACTION_ACTIVATE);
-
-                    if (Creature* qin_xi = pInstance->instance->GetCreature(pInstance->GetData64(NPC_QIN_XI)))
-                        qin_xi->AI()->DoAction(ACTION_ACTIVATE);
-
-                    if (Creature* console = GetClosestCreatureWithEntry(go, NPC_ANCIENT_MOGU_MACHINE, 200.0f))
+                    uint32 delay = 0;
+                    console->m_Events.Schedule(delay += 6000, 1, [this, instance, console]()
+                    {
                         console->AI()->DoAction(ACTION_MOGU_ACTIVATE);
-
-                    player->MonsterTextEmote("The machine hums to life! Get to the lower level!", 0, true); 
-
-                    go->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-
-                    if (Creature* cho = GetClosestCreatureWithEntry(go, NPC_LOREWALKER_CHO, 20.0f, true))
-                        cho->AI()->DoAction(ACTION_TALK_WILL_OF_EMPEROR);
+                        instance->SetBossState(DATA_WILL_OF_EMPEROR, IN_PROGRESS);
+                    });
                 }
+            }
+
             return false;
         }
 };
@@ -1728,9 +2202,9 @@ class achievement_show_me_you_moves : public AchievementCriteriaScript
     public:
         achievement_show_me_you_moves() : AchievementCriteriaScript("achievement_show_me_you_moves") { }
 
-        bool OnCheck(Player* source, Unit* /*target*/)
+        bool OnCheck(Player* player, Unit* /*target*/) override
         {
-            if (source->GetInstanceScript()->GetData(ACHIEVE))
+            if (player->GetInstanceScript()->GetData(ACHIEVE))
                 return true;
 
             return false;
@@ -1740,22 +2214,28 @@ class achievement_show_me_you_moves : public AchievementCriteriaScript
 void AddSC_boss_will_of_emperor()
 {
     new boss_jin_qin_xi();
-    new mob_woe_add_generic();
-    new mob_woe_titan_spark();
-    new mob_general_purpose_bunnyJMF();
-    new mob_ancient_mogu_machine();
+    new npc_woe_add_generic();
+    new npc_woe_titan_spark();
+    new npc_woe_terracota_boss();
+    new npc_general_purpose_bunnyJMF();
+    new npc_ancient_mogu_machine();
     new spell_cosmetic_lightning();
     new spell_terracota_spawn();
     new spell_devastating_arc();
-    new spell_arc_visual();
     new spell_impeding_thrust();
     new spell_magnetized_jan();
     new spell_magnetized_qin();
     new spell_titan_gas();
     new spell_titan_gas2();
-    new spell_energizing_smash();
-    new spell_energizing_visual();
-    new spell_energized();
+    new spell_script<spell_titan_gas_players>("spell_titan_gas_players");
+    new spell_script<spell_energizing_smash>("spell_energizing_smash");
+    new spell_woe_focused();
+    new spell_devastation_arc_visual();
+    new spell_script<spell_woe_stomp>("spell_woe_stomp");
+    new spell_woe_energy_of_creation();
+    new spell_woe_energy_of_creation_visual();
+    new spell_script<spell_devastating_arc_eff>("spell_devastating_arc_eff");
+    new spell_script<spell_growing_opportunity>("spell_growing_opportunity");
     new go_ancien_control_console();
     new achievement_show_me_you_moves();
 }

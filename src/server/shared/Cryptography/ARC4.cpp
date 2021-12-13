@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2011-2021 Project SkyFire <https://www.projectskyfire.org/>
- * Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2021 MaNGOS <https://www.getmangos.eu/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,14 +20,14 @@
 #include "ARC4.h"
 #include <openssl/sha.h>
 
-ARC4::ARC4(uint32 len) : m_ctx(EVP_CIPHER_CTX_new())
+ARC4::ARC4(uint8 len)
 {
     EVP_CIPHER_CTX_init(m_ctx);
     EVP_EncryptInit_ex(m_ctx, EVP_rc4(), NULL, NULL, NULL);
     EVP_CIPHER_CTX_set_key_length(m_ctx, len);
 }
 
-ARC4::ARC4(uint8 *seed, uint32 len) : m_ctx(EVP_CIPHER_CTX_new())
+ARC4::ARC4(uint8 const* seed, size_t len)
 {
     EVP_CIPHER_CTX_init(m_ctx);
     EVP_EncryptInit_ex(m_ctx, EVP_rc4(), NULL, NULL, NULL);
@@ -40,7 +40,7 @@ ARC4::~ARC4()
     EVP_CIPHER_CTX_cleanup(m_ctx);
 }
 
-void ARC4::Init(uint8 *seed)
+void ARC4::Init(uint8 const* seed)
 {
     EVP_EncryptInit_ex(m_ctx, NULL, NULL, seed, NULL);
 }

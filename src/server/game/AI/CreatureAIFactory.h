@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,6 +16,7 @@
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+
 #ifndef TRINITY_CREATUREAIFACTORY_H
 #define TRINITY_CREATUREAIFACTORY_H
 
@@ -25,13 +27,13 @@
 
 struct SelectableAI : public FactoryHolder<CreatureAI>, public Permissible<Creature>
 {
-    SelectableAI(const char* id) : FactoryHolder<CreatureAI>(id) {}
+    SelectableAI(const char* id) : FactoryHolder<CreatureAI>(id) { }
 };
 
 template<class REAL_AI>
 struct CreatureAIFactory : public SelectableAI
 {
-    CreatureAIFactory(const char* name) : SelectableAI(name) {}
+    CreatureAIFactory(const char* name) : SelectableAI(name) { }
 
     CreatureAI* Create(void*) const;
 
@@ -53,13 +55,13 @@ typedef FactoryHolder<CreatureAI>::FactoryHolderRepository CreatureAIRepository;
 //GO
 struct SelectableGameObjectAI : public FactoryHolder<GameObjectAI>, public Permissible<GameObject>
 {
-    SelectableGameObjectAI(const char* id) : FactoryHolder<GameObjectAI>(id) {}
+    SelectableGameObjectAI(const char* id) : FactoryHolder<GameObjectAI>(id) { }
 };
 
 template<class REAL_GO_AI>
 struct GameObjectAIFactory : public SelectableGameObjectAI
 {
-    GameObjectAIFactory(const char* name) : SelectableGameObjectAI(name) {}
+    GameObjectAIFactory(const char* name) : SelectableGameObjectAI(name) { }
 
     GameObjectAI* Create(void*) const;
 

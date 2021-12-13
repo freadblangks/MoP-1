@@ -17,7 +17,6 @@ enum Spells
     SPELL_DRAIN_POWER               = 44131,
     SPELL_SIPHON_SOUL               = 43501,
 
-    
     SPELL_FLASH_HEAL                = 43575,
     SPELL_DISPEL_MAGIC              = 43577,
 
@@ -103,11 +102,11 @@ const Position addPos[2] =
 
 enum AbilityTarget
 {
-    ABILITY_TARGET_SELF = 0,
-    ABILITY_TARGET_VICTIM = 1,
-    ABILITY_TARGET_ENEMY = 2,
-    ABILITY_TARGET_HEAL = 3,
-    ABILITY_TARGET_BUFF = 4,
+    ABILITY_TARGET_SELF    = 0,
+    ABILITY_TARGET_VICTIM  = 1,
+    ABILITY_TARGET_ENEMY   = 2,
+    ABILITY_TARGET_HEAL    = 3,
+    ABILITY_TARGET_BUFF    = 4,
     ABILITY_TARGET_SPECIAL = 5
 };
 
@@ -120,62 +119,76 @@ struct PlayerAbilityStruct
 
 static PlayerAbilityStruct PlayerAbility[][3] =
 {
-    // 1 warrior
-    {{SPELL_WR_SPELL_REFLECT, ABILITY_TARGET_SELF, 10000},
-    {SPELL_WR_WHIRLWIND, ABILITY_TARGET_SELF, 10000},
-    {SPELL_WR_MORTAL_STRIKE, ABILITY_TARGET_VICTIM, 6000}},
-    // 2 paladin
-    {{SPELL_PA_CONSECRATION, ABILITY_TARGET_SELF, 10000},
-    {SPELL_PA_HOLY_LIGHT, ABILITY_TARGET_HEAL, 10000},
-    {SPELL_PA_AVENGING_WRATH, ABILITY_TARGET_SELF, 10000}},
-    // 3 hunter
-    {{SPELL_HU_EXPLOSIVE_TRAP, ABILITY_TARGET_SELF, 10000},
-    {SPELL_HU_FREEZING_TRAP, ABILITY_TARGET_SELF, 10000},
-    {SPELL_HU_SNAKE_TRAP, ABILITY_TARGET_SELF, 10000}},
-    // 4 rogue
-    {{SPELL_RO_WOUND_POISON, ABILITY_TARGET_VICTIM, 3000},
-    {SPELL_RO_SLICE_DICE, ABILITY_TARGET_SELF, 10000},
-    {SPELL_RO_BLIND, ABILITY_TARGET_ENEMY, 10000}},
-    // 5 priest
-    {{SPELL_PR_PAIN_SUPP, ABILITY_TARGET_HEAL, 10000},
-    {SPELL_PR_HEAL, ABILITY_TARGET_HEAL, 10000},
-    {SPELL_PR_PSYCHIC_SCREAM, ABILITY_TARGET_SELF, 10000}},
-    // 5* shadow priest
-    {{SPELL_PR_MIND_CONTROL, ABILITY_TARGET_ENEMY, 15000},
-    {SPELL_PR_MIND_BLAST, ABILITY_TARGET_ENEMY, 5000},
-    {SPELL_PR_SW_DEATH, ABILITY_TARGET_ENEMY, 10000}},
-    // 7 shaman
-    {{SPELL_SH_FIRE_NOVA, ABILITY_TARGET_SELF, 10000},
-    {SPELL_SH_HEALING_WAVE, ABILITY_TARGET_HEAL, 10000},
-    {SPELL_SH_CHAIN_LIGHT, ABILITY_TARGET_ENEMY, 8000}},
-    // 8 mage
-    {{SPELL_MG_FIREBALL, ABILITY_TARGET_ENEMY, 5000},
-    {SPELL_MG_FROSTBOLT, ABILITY_TARGET_ENEMY, 5000},
-    {SPELL_MG_ICE_LANCE, ABILITY_TARGET_SPECIAL, 2000}},
-    // 9 warlock
-    {{SPELL_WL_CURSE_OF_DOOM, ABILITY_TARGET_ENEMY, 10000},
-    {SPELL_WL_RAIN_OF_FIRE, ABILITY_TARGET_ENEMY, 10000},
-    {SPELL_WL_UNSTABLE_AFFL, ABILITY_TARGET_ENEMY, 10000}},
-    // 11 druid
-    {{SPELL_DR_LIFEBLOOM, ABILITY_TARGET_HEAL, 10000},
-    {SPELL_DR_THORNS, ABILITY_TARGET_SELF, 10000},
-    {SPELL_DR_MOONFIRE, ABILITY_TARGET_ENEMY, 8000}}
+    // 1 Warrior
+    {
+        { SPELL_WR_SPELL_REFLECT,   ABILITY_TARGET_SELF,    10000 },
+        { SPELL_WR_WHIRLWIND,       ABILITY_TARGET_SELF,    10000 },
+        { SPELL_WR_MORTAL_STRIKE,   ABILITY_TARGET_VICTIM,  6000  }
+    },
+    // 2 Paladin
+    {
+        { SPELL_PA_CONSECRATION,    ABILITY_TARGET_SELF,    10000 },
+        { SPELL_PA_HOLY_LIGHT,      ABILITY_TARGET_HEAL,    10000 },
+        { SPELL_PA_AVENGING_WRATH,  ABILITY_TARGET_SELF,    10000 }
+    },
+    // 3 Hunter
+    {
+        { SPELL_HU_EXPLOSIVE_TRAP,  ABILITY_TARGET_SELF,    10000 },
+        { SPELL_HU_FREEZING_TRAP,   ABILITY_TARGET_SELF,    10000 },
+        { SPELL_HU_SNAKE_TRAP,      ABILITY_TARGET_SELF,    10000 }
+    },
+    // 4 Rogue
+    {
+        { SPELL_RO_WOUND_POISON,    ABILITY_TARGET_VICTIM,  3000  },
+        { SPELL_RO_SLICE_DICE,      ABILITY_TARGET_SELF,    10000 },
+        { SPELL_RO_BLIND,           ABILITY_TARGET_ENEMY,   10000 }
+    },
+    // 5 Priest
+    {
+        { SPELL_PR_PAIN_SUPP,       ABILITY_TARGET_HEAL,    10000 },
+        { SPELL_PR_HEAL,            ABILITY_TARGET_HEAL,    10000 },
+        { SPELL_PR_PSYCHIC_SCREAM,  ABILITY_TARGET_SELF,    10000 }
+    },
+    // 5* Shadow Priest
+    {
+        { SPELL_PR_MIND_CONTROL,    ABILITY_TARGET_ENEMY,   15000 },
+        { SPELL_PR_MIND_BLAST,      ABILITY_TARGET_ENEMY,   5000  },
+        { SPELL_PR_SW_DEATH,        ABILITY_TARGET_ENEMY,   10000 }
+    },
+    // 7 Shaman
+    {
+        { SPELL_SH_FIRE_NOVA,       ABILITY_TARGET_SELF,    10000 },
+        { SPELL_SH_HEALING_WAVE,    ABILITY_TARGET_HEAL,    10000 },
+        { SPELL_SH_CHAIN_LIGHT,     ABILITY_TARGET_ENEMY,   8000  }
+    },
+    // 8 Mage
+    {
+        { SPELL_MG_FIREBALL,        ABILITY_TARGET_ENEMY,   5000  },
+        { SPELL_MG_FROSTBOLT,       ABILITY_TARGET_ENEMY,   5000  },
+        { SPELL_MG_ICE_LANCE,       ABILITY_TARGET_SPECIAL, 2000  }
+    },
+    // 9 Warlock
+    {
+        { SPELL_WL_CURSE_OF_DOOM,   ABILITY_TARGET_ENEMY,   10000 },
+        { SPELL_WL_RAIN_OF_FIRE,    ABILITY_TARGET_ENEMY,   10000 },
+        { SPELL_WL_UNSTABLE_AFFL,   ABILITY_TARGET_ENEMY,   10000 }
+    },
+    // 11 Druid
+    {
+        { SPELL_DR_LIFEBLOOM,       ABILITY_TARGET_HEAL,    10000 },
+        { SPELL_DR_THORNS,          ABILITY_TARGET_SELF,    10000 },
+        { SPELL_DR_MOONFIRE,        ABILITY_TARGET_ENEMY,   8000  }
+    }
 };
 
 class boss_hex_lord_malacrass : public CreatureScript
 {
     public:
-
-        boss_hex_lord_malacrass() : CreatureScript("boss_hex_lord_malacrass") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_hex_lord_malacrassAI(pCreature);
-        }
+        boss_hex_lord_malacrass() : CreatureScript("boss_hex_lord_malacrass") { }
 
         struct boss_hex_lord_malacrassAI : public BossAI
         {
-            boss_hex_lord_malacrassAI(Creature* pCreature) : BossAI(pCreature, DATA_HEX_LORD_MALACRASS)
+            boss_hex_lord_malacrassAI(Creature* creature) : BossAI(creature, DATA_HEX_LORD_MALACRASS)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -193,7 +206,7 @@ class boss_hex_lord_malacrass : public CreatureScript
 
             uint32 PlayerClass;
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -225,11 +238,11 @@ class boss_hex_lord_malacrass : public CreatureScript
                         break;
                 }       
 
-                me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, 46916);
-                me->SetByteValue(UNIT_FIELD_BYTES_2, 0, SHEATH_STATE_MELEE);
+                me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 46916);
+                me->SetSheath(SHEATH_STATE_MELEE);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_SPIRIT_BOLTS, 10000);
                 events.ScheduleEvent(EVENT_DRAIN_POWER, 6000);
@@ -238,23 +251,23 @@ class boss_hex_lord_malacrass : public CreatureScript
                 instance->SetBossState(DATA_HEX_LORD_MALACRASS, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit* /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
-            
-            void SummonedCreatureDies(Creature* summon, Unit* killer)
+
+            void SummonedCreatureDies(Creature* /*summon*/, Unit* /*killer*/) override
             {
                 Talk(SAY_PET);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -279,15 +292,15 @@ class boss_hex_lord_malacrass : public CreatureScript
                             events.ScheduleEvent(EVENT_SIPHON_SOUL, 10000);
                             break;
                         case EVENT_SIPHON_SOUL:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
                             {
-                                PlayerClass = pTarget->getClass() - 1;
+                                PlayerClass = target->getClass() - 1;
                                 if (PlayerClass == CLASS_DRUID-1)
                                     PlayerClass = CLASS_DRUID;
-                                else if (PlayerClass == CLASS_PRIEST-1 && pTarget->HasSpell(15473))
+                                else if (PlayerClass == CLASS_PRIEST-1 && target->HasSpell(15473))
                                     PlayerClass = CLASS_PRIEST; // shadow priest
 
-                                DoCast(pTarget, SPELL_SIPHON_SOUL);
+                                DoCast(target, SPELL_SIPHON_SOUL);
                                 me->ClearUnitState(UNIT_STATE_CASTING);
                                 events.ScheduleEvent(EVENT_PLAYER_ABILITY, urand(5000, 8000));
                                 events.ScheduleEvent(EVENT_PLAYER_ABILITY_OFF, 30000);
@@ -316,7 +329,7 @@ class boss_hex_lord_malacrass : public CreatureScript
                         target = me;
                         break;
                     case ABILITY_TARGET_VICTIM:
-                        target = me->getVictim();
+                        target = me->GetVictim();
                         break;
                     case ABILITY_TARGET_ENEMY:
                     default:
@@ -337,35 +350,32 @@ class boss_hex_lord_malacrass : public CreatureScript
                     DoCast(target, PlayerAbility[PlayerClass][random].spell, false);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_hex_lord_malacrassAI>(creature);
+        }
 };
 
 class npc_alyson_antille : public CreatureScript
 {
     public:
-
-        npc_alyson_antille() : CreatureScript("npc_alyson_antille") {}
-         
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_alyson_antilleAI(pCreature);
-        }
+        npc_alyson_antille() : CreatureScript("npc_alyson_antille") { }
 
         struct npc_alyson_antilleAI : public ScriptedAI
         {
-            npc_alyson_antilleAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-            }
+            npc_alyson_antilleAI(Creature* creature) : ScriptedAI(creature) { }
 
             uint32 flashheal_timer;
             uint32 dispelmagic_timer;
 
-            void Reset()
+            void Reset() override
             {
                 flashheal_timer = 2500;
                 dispelmagic_timer = 10000;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -399,107 +409,103 @@ class npc_alyson_antille : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_alyson_antilleAI>(creature);
+        }
 };
+
 class npc_gazakroth : public CreatureScript
 {
     public:
-
-        npc_gazakroth() : CreatureScript("npc_gazakroth") {}
-         
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_gazakrothAI(pCreature);
-        }
+        npc_gazakroth() : CreatureScript("npc_gazakroth") { }
 
         struct npc_gazakrothAI : public ScriptedAI
         {
-            npc_gazakrothAI(Creature* pCreature) : ScriptedAI(pCreature)  {}
+            npc_gazakrothAI(Creature* creature) : ScriptedAI(creature)  { }
 
             uint32 firebolt_timer;
 
-            void Reset()
+            void Reset() override
             {
                 firebolt_timer = 2000;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 if (firebolt_timer <= diff)
                 {
-                    DoCast(me->getVictim(), SPELL_FIREBOLT, false);
+                    DoCast(me->GetVictim(), SPELL_FIREBOLT, false);
                     firebolt_timer = 700;
                 } else firebolt_timer -= diff;
 
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_gazakrothAI>(creature);
+        }
 };
 
 class npc_darkheart : public CreatureScript
 {
     public:
-
-        npc_darkheart() : CreatureScript("npc_darkheart") {}
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_darkheartAI(pCreature);
-        }
+        npc_darkheart() : CreatureScript("npc_darkheart") { }
 
         struct npc_darkheartAI : public ScriptedAI
         {
-            npc_darkheartAI(Creature* pCreature) : ScriptedAI(pCreature)  {}
+            npc_darkheartAI(Creature* creature) : ScriptedAI(creature)  { }
 
             uint32 psychicwail_timer;
 
-            void Reset()
+            void Reset() override
             {
                 psychicwail_timer = 8000;
             }
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 if (psychicwail_timer <= diff)
                 {
-                    DoCast(me->getVictim(), SPELL_PSYCHIC_WAIL, false);
+                    DoCast(me->GetVictim(), SPELL_PSYCHIC_WAIL, false);
                     psychicwail_timer = 12000;
                 } else psychicwail_timer -= diff;
 
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_darkheartAI>(creature);
+        }
 };
-
-
 
 class npc_slither : public CreatureScript
 {
     public:
-
-        npc_slither() : CreatureScript("npc_slither") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_slitherAI(pCreature);
-        }
+        npc_slither() : CreatureScript("npc_slither") { }
 
         struct npc_slitherAI : public ScriptedAI
         {
-            npc_slitherAI(Creature* pCreature) : ScriptedAI(pCreature) {}
+            npc_slitherAI(Creature* creature) : ScriptedAI(creature) { }
 
             uint32 venomspit_timer;
 
-            void Reset()
+            void Reset() override
             {
                 venomspit_timer = 5000;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -514,6 +520,11 @@ class npc_slither : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_slitherAI>(creature);
+        }
 };
 
 class spell_hexlord_unstable_affliction : public SpellScriptLoader
@@ -538,13 +549,13 @@ class spell_hexlord_unstable_affliction : public SpellScriptLoader
                     caster->CastSpell(dispelInfo->GetDispeller(), SPELL_WL_UNSTABLE_AFFL_DISPEL, true, NULL, GetEffect(EFFECT_0));
             }
 
-            void Register()
+            void Register() override
             {
                 AfterDispel += AuraDispelFn(spell_hexlord_unstable_affliction_AuraScript::HandleDispel);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_hexlord_unstable_affliction_AuraScript();
         }
@@ -559,4 +570,3 @@ void AddSC_boss_hex_lord_malacrass()
     new npc_alyson_antille();
     new spell_hexlord_unstable_affliction();
 }
-

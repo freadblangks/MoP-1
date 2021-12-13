@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -25,9 +26,7 @@
 #include "WardenCheckMgr.h"
 #include "Warden.h"
 
-WardenCheckMgr::WardenCheckMgr()
-{
-}
+WardenCheckMgr::WardenCheckMgr() { }
 
 WardenCheckMgr::~WardenCheckMgr()
 {
@@ -38,22 +37,35 @@ WardenCheckMgr::~WardenCheckMgr()
         delete itr->second;
 }
 
-void WardenCheckMgr::LoadWardenChecks()
+void WardenCheckMgr::LoadWardenChecks(bool reload)
 {
     // Check if Warden is enabled by config before loading anything
     if (!sWorld->getBoolConfig(CONFIG_WARDEN_ENABLED))
     {
-        sLog->outInfo(LOG_FILTER_WARDEN, ">> Warden disabled, loading checks skipped.");
-
+        TC_LOG_INFO("warden", ">> Warden disabled, loading checks skipped.");
         return;
+    }
+
+    if (reload)
+    {
+        for (auto&& check : CheckStore)
+            delete check;
+        for (auto&& result : CheckResultStore)
+            delete result.second;
+
+        CheckStore.clear();
+        CheckResultStore.clear();
+        for (auto&& locale : MemChecksIdPool)
+            locale.clear();
+        for (auto&& locale : OtherChecksIdPool)
+            locale.clear();
     }
 
     QueryResult result = WorldDatabase.Query("SELECT MAX(id) FROM warden_checks");
 
     if (!result)
     {
-        sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded 0 Warden checks. DB table `warden_checks` is empty!");
-
+        TC_LOG_INFO("server.loading", ">> Loaded 0 Warden checks. DB table `warden_checks` is empty!");
         return;
     }
 
@@ -63,8 +75,14 @@ void WardenCheckMgr::LoadWardenChecks()
 
     CheckStore.resize(maxCheckId + 1);
 
-    //                                    0    1     2     3        4       5      6      7
-    result = WorldDatabase.Query("SELECT id, type, data, result, address, length, str, comment FROM warden_checks ORDER BY id ASC");
+    //                                    0    1     2     3        4       5      6      7       8       9         10        11
+    result = WorldDatabase.Query("SELECT id, type, data, result, address, length, str, comment, action, `group`, locale+0, negative FROM warden_checks ORDER BY id ASC");
+
+    if (!result)
+    {
+        TC_LOG_INFO("server.loading", ">> Loaded 0 warden checks.");
+        return;
+    }
 
     uint32 count = 0;
     do
@@ -79,13 +97,27 @@ void WardenCheckMgr::LoadWardenChecks()
         uint8 length            = fields[5].GetUInt8();
         std::string str         = fields[6].GetString();
         std::string comment     = fields[7].GetString();
+        uint8 action            = fields[8].IsNull() ? sWorld->getIntConfig(CONFIG_WARDEN_CLIENT_FAIL_ACTION) : fields[8].GetUInt8();
+        std::string group       = fields[9].GetString();
+        uint32 locale           = fields[10].GetUInt32();
+        uint8 negative          = fields[11].GetUInt8();
+
+        // Check if action value is in range (0-3, see WardenActions enum)
+        if (action >= MAX_WARDEN_ACTION)
+        {
+            TC_LOG_INFO("server.loading", "Warden check action out of range (ID: %u, action: %u)", id, uint32(action));
+            continue;
+        }
 
         WardenCheck* wardenCheck = new WardenCheck();
         wardenCheck->Type = checkType;
         wardenCheck->CheckId = id;
+        wardenCheck->Group = group;
+        wardenCheck->Locale = locale ? LocaleConstant(locale - 1) : LocaleConstant(TOTAL_LOCALES);
+        wardenCheck->Negative = negative;
 
         // Initialize action with default action from config
-        wardenCheck->Action = WardenActions(sWorld->getIntConfig(CONFIG_WARDEN_CLIENT_FAIL_ACTION));
+        wardenCheck->Action = WardenActions(action);
 
         if (checkType == PAGE_CHECK_A || checkType == PAGE_CHECK_B || checkType == DRIVER_CHECK)
         {
@@ -96,16 +128,28 @@ void WardenCheckMgr::LoadWardenChecks()
             {
                 uint8 temp[24];
                 memset(temp, 0, len);
-                memcpy(temp, wardenCheck->Data.AsByteArray(), wardenCheck->Data.GetNumBytes());
+                memcpy(temp, wardenCheck->Data.AsByteArray().get(), wardenCheck->Data.GetNumBytes());
                 std::reverse(temp, temp + len);
                 wardenCheck->Data.SetBinary((uint8*)temp, len);
             }
         }
 
         if (checkType == MEM_CHECK || checkType == MODULE_CHECK)
-            MemChecksIdPool.push_back(id);
+        {
+            if (wardenCheck->Locale != TOTAL_LOCALES)
+                MemChecksIdPool[wardenCheck->Locale].push_back(id);
+            else
+                for (auto&& locale : MemChecksIdPool)
+                    locale.push_back(id);
+        }
         else
-            OtherChecksIdPool.push_back(id);
+        {
+            if (wardenCheck->Locale != TOTAL_LOCALES)
+                OtherChecksIdPool[wardenCheck->Locale].push_back(id);
+            else
+                for (auto&& locale : OtherChecksIdPool)
+                    locale.push_back(id);
+        }
 
         if (checkType == MEM_CHECK || checkType == PAGE_CHECK_A || checkType == PAGE_CHECK_B || checkType == PROC_CHECK)
         {
@@ -128,7 +172,7 @@ void WardenCheckMgr::LoadWardenChecks()
             {
                 uint8 *temp = new uint8[len];
                 memset(temp, 0, len);
-                memcpy(temp, wr->Result.AsByteArray(), wr->Result.GetNumBytes());
+                memcpy(temp, wr->Result.AsByteArray().get(), wr->Result.GetNumBytes());
                 std::reverse(temp, temp + len);
                 wr->Result.SetBinary((uint8*)temp, len);
                 delete [] temp;
@@ -145,57 +189,7 @@ void WardenCheckMgr::LoadWardenChecks()
     }
     while (result->NextRow());
 
-    sLog->outInfo(LOG_FILTER_WARDEN, ">> Loaded %u warden checks.", count);
-
-}
-
-void WardenCheckMgr::LoadWardenOverrides()
-{
-    // Check if Warden is enabled by config before loading anything
-    if (!sWorld->getBoolConfig(CONFIG_WARDEN_ENABLED))
-    {
-        sLog->outInfo(LOG_FILTER_WARDEN, ">> Warden disabled, loading check overrides skipped.");
-
-        return;
-    }
-
-    //                                                      0        1
-    QueryResult result = CharacterDatabase.Query("SELECT wardenId, action FROM warden_action");
-
-    if (!result)
-    {
-        sLog->outInfo(LOG_FILTER_SERVER_LOADING, ">> Loaded 0 Warden action overrides. DB table `warden_action` is empty!");
-
-        return;
-    }
-
-    uint32 count = 0;
-
-    ACE_WRITE_GUARD(ACE_RW_Mutex, g, _checkStoreLock);
-
-    do
-    {
-        Field* fields = result->Fetch();
-
-        uint16 checkId = fields[0].GetUInt16();
-        uint8  action  = fields[1].GetUInt8();
-
-        // Check if action value is in range (0-2, see WardenActions enum)
-        if (action > WARDEN_ACTION_BAN)
-            sLog->outError(LOG_FILTER_WARDEN, "Warden check override action out of range (ID: %u, action: %u)", checkId, action);
-        // Check if check actually exists before accessing the CheckStore vector
-        else if (checkId > CheckStore.size())
-            sLog->outError(LOG_FILTER_WARDEN, "Warden check action override for non-existing check (ID: %u, action: %u), skipped", checkId, action);
-        else
-        {
-            CheckStore[checkId]->Action = WardenActions(action);
-            ++count;
-        }
-    }
-    while (result->NextRow());
-
-    sLog->outInfo(LOG_FILTER_WARDEN, ">> Loaded %u warden action overrides.", count);
-
+    TC_LOG_INFO("server.loading", ">> Loaded %u warden checks.", count);
 }
 
 WardenCheck* WardenCheckMgr::GetWardenDataById(uint16 Id)

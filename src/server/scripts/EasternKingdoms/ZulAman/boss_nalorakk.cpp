@@ -33,16 +33,11 @@ enum Events
 class boss_nalorakk : public CreatureScript
 {
     public:
-        boss_nalorakk() : CreatureScript("boss_nalorakk") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_nalorakkAI(pCreature);
-        }
+        boss_nalorakk() : CreatureScript("boss_nalorakk") { }
 
         struct boss_nalorakkAI : public BossAI
         {
-            boss_nalorakkAI(Creature* pCreature) : BossAI(pCreature, DATA_NALORAKK)
+            boss_nalorakkAI(Creature* creature) : BossAI(creature, DATA_NALORAKK)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -58,13 +53,13 @@ class boss_nalorakk : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 events.ScheduleEvent(EVENT_BEARFORM, 30000);
@@ -73,18 +68,18 @@ class boss_nalorakk : public CreatureScript
                 instance->SetBossState(DATA_NALORAKK, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
             }
 
-            void KilledUnit(Unit* /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -100,8 +95,8 @@ class boss_nalorakk : public CreatureScript
                      {
                         case EVENT_SURGE:
                             Talk(SAY_SURGE);
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_FARTHEST, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_SURGE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 0.0f, true))
+                                DoCast(target, SPELL_SURGE);
                             break;
                         case EVENT_BRUTAL_STRIKE:
                             DoCastVictim(SPELL_BRUTAL_STRIKE);
@@ -134,10 +129,14 @@ class boss_nalorakk : public CreatureScript
                             break;
                      }
                 }
-
                 DoMeleeAttackIfReady();
             }
-        };     
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_nalorakkAI>(creature);
+        }
 };
 
 void AddSC_boss_nalorakk()

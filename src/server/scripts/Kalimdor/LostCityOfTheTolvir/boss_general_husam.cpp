@@ -54,456 +54,455 @@ enum ePhases
 
 enum Texts
 {
-    SAY_FINISH                                     = -1877000,
-    SAY_START                                      = -1877001,
-    SAY_CAST_SHOCKVAWE_1                           = -1877002,
-    SAY_CAST_SHOCKVAWE_2                           = -1877003,
-	YELL_KILL_PLAYER_1                             = -1877021,
-	YELL_TREAD_LIGHTLY                             = -1877022,
+    SAY_DEATH                                      = 0,
+    SAY_AGGRO                                      = 1,
+    SAY_CAST_SHOCKVAWE_1                           = 2,
+    SAY_CAST_SHOCKVAWE_2                           = 3,
+    YELL_KILL_PLAYER                               = 4,
+    YELL_TREAD_LIGHTLY                             = 5,
 };
 
 class boss_general_husam : public CreatureScript
 {
-public:
-    boss_general_husam() : CreatureScript("boss_general_husam") { }
+    public:
+        boss_general_husam() : CreatureScript("boss_general_husam") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_general_husamAI (creature);
-    }
-
-    struct boss_general_husamAI : public ScriptedAI
-    {
-        boss_general_husamAI(Creature* creature) : ScriptedAI(creature), lSummons(me)
+        struct boss_general_husamAI : public BossAI
         {
-            instance = creature->GetInstanceScript();
-            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-            me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-        }
-
-        SummonList lSummons;
-        InstanceScript* instance;
-        uint8 uiHammerFistCount;
-        EventMap events;
-
-        void Reset()
-        {
-            if (Vehicle* vehicle = me->GetVehicleKit())
-                vehicle->RemoveAllPassengers();
-
-            if (instance)
-                instance->SetData(DATA_GENERAL_HUSAM, NOT_STARTED);
-
-            lSummons.DespawnAll();
-            events.Reset();
-            uiHammerFistCount = 0;
-        }
-
-        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply)
-        {
-            if (apply)
-                me->CastSpell(who, SPELL_HURL_SCRIPT, false);
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            if (instance)
-                instance->SetData(DATA_GENERAL_HUSAM, IN_PROGRESS);
-
-            DoScriptText(SAY_START, me);
-            events.ScheduleEvent(EVENT_SUMMON_LAND_MINES, 3000);
-            // To do: fix client crash
-            //events.ScheduleEvent(EVENT_SUMMON_SHOCKWAVE, urand(12000, 17000));
-            events.ScheduleEvent(EVENT_HAMMER_FIST, 5000);
-            //events.ScheduleEvent(EVENT_BAD_INTENTIONS, urand(7000, 11000));
-
-            if (IsHeroic())
-                events.ScheduleEvent(EVENT_COUNTDOWN_LAND_MINES, 15000);
-        }
-
-        void JustSummoned(Creature* summoned)
-        {
-            if (summoned->GetEntry() == 44798)
+            boss_general_husamAI(Creature* creature) : BossAI(creature, DATA_GENERAL_HUSAM)
             {
-                float x, y, z;
-                summoned->GetPosition(x, y, z);
-                
-                if (Creature* mine = me->SummonCreature(44796, x, y, z))
-                {
-                    mine->EnterVehicle(summoned);
-                    mine->ClearUnitState(UNIT_STATE_ONVEHICLE);
-                }
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->setActive(true);
             }
 
-            lSummons.Summon(summoned);
-        }
+            uint8 uiHammerFistCount;
 
-		void KilledUnit(Unit* victim)
-		{
-			if (victim->GetTypeId() == TYPEID_PLAYER)
-				DoScriptText(YELL_KILL_PLAYER_1, me);
-		}
-
-        void JustDied(Unit* /*killer*/)
-        {
-            if (instance)
-                instance->SetData(DATA_GENERAL_HUSAM, DONE);
-
-            DoScriptText(SAY_FINISH, me);
-            lSummons.DespawnAll();
-            events.Reset();
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            if (uint32 eventId = events.ExecuteEvent())
+            void Reset() override
             {
-                switch (eventId)
-                {
-                    case EVENT_COUNTDOWN_LAND_MINES:
-						DoScriptText(YELL_TREAD_LIGHTLY, me);
-                        events.ScheduleEvent(EVENT_COUNTDOWN_LAND_MINES, 15000);
-                        me->CastSpell(me, SPELL_DETONATE_TRAPS, false);
-                        break;
-                    case EVENT_SUMMON_LAND_MINES:
-                        {
-                            me->CastSpell(me, SPELL_MYSTIC_TRAP_FIND_TARGET, false);
-                            std::list<Creature*> lTriggers;
-                            me->GetCreatureListWithEntryInGrid(lTriggers, NPC_MYSTIC_TRAP_TARGET, 50.0f);
+                _Reset();
 
-                            if (!lTriggers.empty())
-                                for (std::list<Creature*>::const_iterator itr = lTriggers.begin(); itr != lTriggers.end(); ++itr)
-                                    if (*itr)
-                                        me->CastSpell((*itr), SPELL_THROW_LAND_MINES, false);
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
-                            events.ScheduleEvent(EVENT_SUMMON_LAND_MINES, 11000);
-                        }
-                        break;
-                    case EVENT_SUMMON_SHOCKWAVE:
-                        {
-                            me->SetReactState(REACT_PASSIVE);
-                            me->AttackStop();
-                            DoScriptText(SAY_CAST_SHOCKVAWE_1, me);
-                            DoScriptText(SAY_CAST_SHOCKVAWE_2, me);
+                if (Vehicle* vehicle = me->GetVehicleKit())
+                    vehicle->RemoveAllPassengers();
 
-                            float _x, _y, x, y, z, o;
-                            me->GetPosition(x, y, z, o);
-
-                            for (int i = 0; i < 4; ++i)
-                            {
-                                _x = x + 3.0f * cos(o);
-                                _y = y + 3.0f * sin(o);
-                                me->SummonCreature(44711, _x, _y, z, o);
-                                o += M_PI / 2;
-                            }
-
-                            me->CastSpell(me, SPELL_SHOCKWAVE, false);
-                            events.ScheduleEvent(EVENT_AFTER_SHOCKWAVE, 5500);
-                        }
-                        break;
-                    case EVENT_AFTER_SHOCKWAVE:
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        events.ScheduleEvent(EVENT_SUMMON_SHOCKWAVE, urand(25000, 50000));
-                        break;
-                    case EVENT_HAMMER_FIST:
-                        {
-                            ++uiHammerFistCount;
-                            me->CastSpell(me->getVictim(), SPELL_HAMMER_FIST, false);
-
-                            if (uiHammerFistCount < 4)
-                                events.ScheduleEvent(EVENT_HAMMER_FIST, 500);
-                            else
-                            {
-                                uiHammerFistCount = 0;
-                                events.ScheduleEvent(EVENT_HAMMER_FIST, urand(5000, 15000));
-                            }
-                        }
-                        break;
-                    case EVENT_BAD_INTENTIONS:
-                        {
-                            events.ScheduleEvent(EVENT_BAD_INTENTIONS, urand(15000, 20000));
-
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 100.0f, true))
-                                me->CastSpell(target, SPELL_BAD_INTENTIONS, false);
-                        }
-                        break;
-                }
+                summons.DespawnAll();
+                uiHammerFistCount = 0;
             }
 
-            DoMeleeAttackIfReady();
+            void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply) override
+            {
+                if (apply)
+                    me->CastSpell(who, SPELL_HURL_SCRIPT, false);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+                Talk(SAY_AGGRO);
+                events.ScheduleEvent(EVENT_SUMMON_LAND_MINES, 3000);
+                // To do: fix client crash
+                //events.ScheduleEvent(EVENT_SUMMON_SHOCKWAVE, urand(12000, 17000));
+                events.ScheduleEvent(EVENT_HAMMER_FIST, 5000);
+                //events.ScheduleEvent(EVENT_BAD_INTENTIONS, urand(7000, 11000));
+
+                if (IsHeroic())
+                    events.ScheduleEvent(EVENT_COUNTDOWN_LAND_MINES, 15000);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon->GetEntry() == 44798)
+                {
+                    float x, y, z;
+                    summon->GetPosition(x, y, z);
+                    
+                    if (Creature* mine = me->SummonCreature(44796, x, y, z))
+                    {
+                        mine->EnterVehicle(summon);
+                    }
+                }
+
+                summons.Summon(summon);
+            }
+
+            void KilledUnit(Unit* victim) override
+            {
+                if (victim->GetTypeId() == TYPEID_PLAYER)
+                    Talk(YELL_KILL_PLAYER);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                Talk(SAY_DEATH);
+                summons.DespawnAll();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_COUNTDOWN_LAND_MINES:
+                            Talk(YELL_TREAD_LIGHTLY);
+                            events.ScheduleEvent(EVENT_COUNTDOWN_LAND_MINES, 15000);
+                            me->CastSpell(me, SPELL_DETONATE_TRAPS, false);
+                            break;
+                        case EVENT_SUMMON_LAND_MINES:
+                            {
+                                me->CastSpell(me, SPELL_MYSTIC_TRAP_FIND_TARGET, false);
+                                std::list<Creature*> lTriggers;
+                                me->GetCreatureListWithEntryInGrid(lTriggers, NPC_MYSTIC_TRAP_TARGET, 50.0f);
+
+                                if (!lTriggers.empty())
+                                    for (std::list<Creature*>::const_iterator itr = lTriggers.begin(); itr != lTriggers.end(); ++itr)
+                                        if (*itr)
+                                            me->CastSpell((*itr), SPELL_THROW_LAND_MINES, false);
+
+                                events.ScheduleEvent(EVENT_SUMMON_LAND_MINES, 11000);
+                            }
+                            break;
+                        case EVENT_SUMMON_SHOCKWAVE:
+                            {
+                                me->SetReactState(REACT_PASSIVE);
+                                me->AttackStop();
+                                Talk(SAY_CAST_SHOCKVAWE_1);
+                                Talk(SAY_CAST_SHOCKVAWE_2);
+
+                                float _x, _y, x, y, z, o;
+                                me->GetPosition(x, y, z, o);
+
+                                for (int i = 0; i < 4; ++i)
+                                {
+                                    _x = x + 3.0f * cos(o);
+                                    _y = y + 3.0f * sin(o);
+                                    me->SummonCreature(44711, _x, _y, z, o);
+                                    o += M_PI / 2;
+                                }
+
+                                me->CastSpell(me, SPELL_SHOCKWAVE, false);
+                                events.ScheduleEvent(EVENT_AFTER_SHOCKWAVE, 5500);
+                            }
+                            break;
+                        case EVENT_AFTER_SHOCKWAVE:
+                            me->SetReactState(REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_SUMMON_SHOCKWAVE, urand(25000, 50000));
+                            break;
+                        case EVENT_HAMMER_FIST:
+                            {
+                                ++uiHammerFistCount;
+                                me->CastSpell(me->GetVictim(), SPELL_HAMMER_FIST, false);
+
+                                if (uiHammerFistCount < 4)
+                                    events.ScheduleEvent(EVENT_HAMMER_FIST, 500);
+                                else
+                                {
+                                    uiHammerFistCount = 0;
+                                    events.ScheduleEvent(EVENT_HAMMER_FIST, urand(5000, 15000));
+                                }
+                            }
+                            break;
+                        case EVENT_BAD_INTENTIONS:
+                            {
+                                events.ScheduleEvent(EVENT_BAD_INTENTIONS, urand(15000, 20000));
+
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 100.0f, true))
+                                    me->CastSpell(target, SPELL_BAD_INTENTIONS, false);
+                            }
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_general_husamAI>(creature);
         }
-    };
 };
 
 class npc_land_mine : public CreatureScript
 {
-public:
-    npc_land_mine() : CreatureScript("npc_land_mine") { }
+    public:
+        npc_land_mine() : CreatureScript("npc_land_mine") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_land_mineAI (creature);
-    }
-
-    struct npc_land_mineAI : public ScriptedAI
-    {
-        npc_land_mineAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_land_mineAI : public ScriptedAI
         {
-            uiState = LAND_MINE_STATE_JUSTADDED;
-            uiDespawnTimer = 1000;
-            uiActivationTimer = 2000;
-            uiCountdownTimer = urand(20000, 35000);
-            me->SetInCombatWithZone();
-        }
-        
-        uint32 uiActivationTimer;
-        uint32 uiCountdownTimer;
-        uint32 uiDespawnTimer;
-        uint8 uiState;
-
-        void AddMineState(uint32 state)
-        {
-            uiState |= state;
-        }
-
-        bool HasMineState(const uint32 state) const
-        {
-            return (uiState & state);
-        }
-
-        void ClearMineState(uint32 state)
-        {
-            uiState &= ~state;
-        }
-
-        void StartCountDown()
-        {
-            if (HasMineState(LAND_MINE_STATE_DETONATED | LAND_MINE_STATE_COUNTDOWN) || !HasMineState(LAND_MINE_STATE_ACTIVATED))
-                return;
-
-            AddMineState(LAND_MINE_STATE_DETONATED);
-            AddMineState(LAND_MINE_STATE_COUNTDOWN);
-            me->AddAura(SPELL_TOLVIR_LAND_MIVE_PERIODIC, me);
-            uiDespawnTimer = 5500;
-        }
-
-        void SpellHit(Unit* /*caster*/, const SpellInfo* spell)
-        {
-            if (spell->Id == SPELL_DETONATE_TRAPS)
-                StartCountDown();
-        }
-
-        void SpellHitTarget(Unit* target, const SpellInfo* spell, uint32 /*hitCount*/)
-        {
-            if (spell->Id == 83112)
+            npc_land_mineAI(Creature* creature) : ScriptedAI(creature)
             {
-                float x, y, _x, _y;
-                me->GetPosition(x, y);
-                target->GetPosition(_x, _y);
-
-                if (sqrt(pow(x - _x, 2) + pow(y - _y, 2)) < 1.4f)
-                {
-                    if (!HasMineState(LAND_MINE_STATE_ACTIVATED))
-                        return;
-
-                    ClearMineState(LAND_MINE_STATE_ACTIVATED);
-                    AddMineState(LAND_MINE_STATE_DETONATED);
-                    uiDespawnTimer = 1000;
-                    me->CastSpell(target, SPELL_MYSTIC_TRAP, true);
-                    me->RemoveAura(SPELL_TOLVIR_LAND_MINE_VISUAL);
-                    me->RemoveAura(SPELL_TOLVIR_MINE_PLAYER_SEARCH_TRIGGER);
-                }
+                uiState = LAND_MINE_STATE_JUSTADDED;
+                uiDespawnTimer = 1000;
+                uiActivationTimer = 2000;
+                uiCountdownTimer = urand(20000, 35000);
+                me->SetInCombatWithZone();
             }
-        }
+            
+            uint32 uiActivationTimer;
+            uint32 uiCountdownTimer;
+            uint32 uiDespawnTimer;
+            uint8 uiState;
 
-        void UpdateAI(const uint32 diff)
-        {
-            if (HasMineState(LAND_MINE_STATE_JUSTADDED))
+            void AddMineState(uint32 state)
             {
-                if (uiActivationTimer <= diff)
-                {
-                    ClearMineState(LAND_MINE_STATE_JUSTADDED);
-                    AddMineState(LAND_MINE_STATE_ACTIVATED);
-                    me->AddAura(SPELL_TOLVIR_LAND_MINE_VISUAL, me);
-                    me->AddAura(SPELL_TOLVIR_MINE_PLAYER_SEARCH_TRIGGER, me);
-                }
-                else
-                    uiActivationTimer -= diff;
+                uiState |= state;
             }
 
-            if (HasMineState(LAND_MINE_STATE_ACTIVATED) && !HasMineState(LAND_MINE_STATE_COUNTDOWN))
+            bool HasMineState(const uint32 state) const
             {
-                if (uiCountdownTimer <= diff)
+                return (uiState & state);
+            }
+
+            void ClearMineState(uint32 state)
+            {
+                uiState &= ~state;
+            }
+
+            void StartCountDown()
+            {
+                if (HasMineState(LAND_MINE_STATE_DETONATED | LAND_MINE_STATE_COUNTDOWN) || !HasMineState(LAND_MINE_STATE_ACTIVATED))
+                    return;
+
+                AddMineState(LAND_MINE_STATE_DETONATED);
+                AddMineState(LAND_MINE_STATE_COUNTDOWN);
+                me->AddAura(SPELL_TOLVIR_LAND_MIVE_PERIODIC, me);
+                uiDespawnTimer = 5500;
+            }
+
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
+            {
+                if (spell->Id == SPELL_DETONATE_TRAPS)
                     StartCountDown();
-                else
-                    uiCountdownTimer -= diff;
             }
 
-            if (HasMineState(LAND_MINE_STATE_DETONATED))
+            void SpellHitTarget(Unit* target, SpellInfo const* spell) override
             {
-                if (uiDespawnTimer <= diff)
+                if (spell->Id == 83112)
                 {
-                    if (Creature* pMineVehicle = me->GetVehicleCreatureBase())
-                        pMineVehicle->DespawnOrUnsummon();
+                    float x, y, _x, _y;
+                    me->GetPosition(x, y);
+                    target->GetPosition(_x, _y);
 
-                    me->DespawnOrUnsummon();
+                    if (sqrt(pow(x - _x, 2) + pow(y - _y, 2)) < 1.4f)
+                    {
+                        if (!HasMineState(LAND_MINE_STATE_ACTIVATED))
+                            return;
+
+                        ClearMineState(LAND_MINE_STATE_ACTIVATED);
+                        AddMineState(LAND_MINE_STATE_DETONATED);
+                        uiDespawnTimer = 1000;
+                        me->CastSpell(target, SPELL_MYSTIC_TRAP, true);
+                        me->RemoveAura(SPELL_TOLVIR_LAND_MINE_VISUAL);
+                        me->RemoveAura(SPELL_TOLVIR_MINE_PLAYER_SEARCH_TRIGGER);
+                    }
                 }
-                else
-                    uiDespawnTimer -= diff;
             }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (HasMineState(LAND_MINE_STATE_JUSTADDED))
+                {
+                    if (uiActivationTimer <= diff)
+                    {
+                        ClearMineState(LAND_MINE_STATE_JUSTADDED);
+                        AddMineState(LAND_MINE_STATE_ACTIVATED);
+                        me->AddAura(SPELL_TOLVIR_LAND_MINE_VISUAL, me);
+                        me->AddAura(SPELL_TOLVIR_MINE_PLAYER_SEARCH_TRIGGER, me);
+                    }
+                    else
+                        uiActivationTimer -= diff;
+                }
+
+                if (HasMineState(LAND_MINE_STATE_ACTIVATED) && !HasMineState(LAND_MINE_STATE_COUNTDOWN))
+                {
+                    if (uiCountdownTimer <= diff)
+                        StartCountDown();
+                    else
+                        uiCountdownTimer -= diff;
+                }
+
+                if (HasMineState(LAND_MINE_STATE_DETONATED))
+                {
+                    if (uiDespawnTimer <= diff)
+                    {
+                        if (Creature* pMineVehicle = me->GetVehicleCreatureBase())
+                            pMineVehicle->DespawnOrUnsummon();
+
+                        me->DespawnOrUnsummon();
+                    }
+                    else
+                        uiDespawnTimer -= diff;
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_land_mineAI>(creature);
         }
-    };
 };
 
 class npc_shockwave_stalker : public CreatureScript
 {
-public:
-    npc_shockwave_stalker() : CreatureScript("npc_shockwave_stalker") { }
+    public:
+        npc_shockwave_stalker() : CreatureScript("npc_shockwave_stalker") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_shockwave_stalkerAI (creature);
-    }
-
-    struct npc_shockwave_stalkerAI : public ScriptedAI
-    {
-        npc_shockwave_stalkerAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_shockwave_stalkerAI : public ScriptedAI
         {
-            lSummonedGUID.clear();
-            CanCheck = true;
-            uiCheckTimer = 250;
-            instance = creature->GetInstanceScript();
+            npc_shockwave_stalkerAI(Creature* creature) : ScriptedAI(creature)
+            {
+                lSummonedGUID.clear();
+                CanCheck = true;
+                uiCheckTimer = 250;
+                instance = creature->GetInstanceScript();
 
-            if (me->IsSummon())
-                if (Unit* summoner = me->ToTempSummon()->GetSummoner())
-                {
-                    float x, y, _x, _y, z = me->GetPositionZ();
-                    summoner->GetPosition(_x, _y);
-                    pos.Relocate(_x, _y, z);
-                    me->GetNearPoint2D(x, y, 40.0f, M_PI - me->GetAngle(_x, _y));
-                    me->GetMotionMaster()->MovePoint(0, x, y, z);
-                }
-        }
+                if (me->IsSummon())
+                    if (Unit* summoner = me->ToTempSummon()->GetSummoner())
+                    {
+                        float x, y, _x, _y, z = me->GetPositionZ();
+                        summoner->GetPosition(_x, _y);
+                        pos.Relocate(_x, _y, z);
+                        me->GetNearPoint2D(x, y, 40.0f, M_PI - me->GetAngle(_x, _y));
+                        me->GetMotionMaster()->MovePoint(0, x, y, z);
+                    }
+            }
 
-        InstanceScript* instance;
-        std::list<uint64> lSummonedGUID;
-        Position pos;
-        uint32 uiCheckTimer;
-        bool CanCheck;
+            InstanceScript* instance;
+            std::list<uint64> lSummonedGUID;
+            Position pos;
+            uint32 uiCheckTimer;
+            bool CanCheck;
 
-        void JustSummoned(Creature* summoned)
-        {
-            summoned->SetReactState(REACT_PASSIVE);
-            summoned->SetInCombatWithZone();
-            summoned->AddAura(SPELL_SHOCKWAVE_STALKER_VISUAL, summoned);
+            void JustSummoned(Creature* summon) override
+            {
+                summon->SetReactState(REACT_PASSIVE);
+                summon->SetInCombatWithZone();
+                summon->AddAura(SPELL_SHOCKWAVE_STALKER_VISUAL, summon);
 
-            if (instance)
                 if (Creature* husam = Unit::GetCreature(*me, instance->GetData64(DATA_GENERAL_HUSAM)))
-                    husam->AI()->JustSummoned(summoned);
+                    husam->AI()->JustSummoned(summon);
 
-            if (uint64 uiGUID = summoned->GetGUID())
-                lSummonedGUID.push_back(uiGUID);
-        }
-
-        void SpellHit(Unit* caster, const SpellInfo* spell)
-        {
-            if (spell->Id == SPELL_SHOCKWAVE || spell->Id == 91257)
-            {
-                caster->CastSpell(me, SPELL_SHOCKWAVE_VISUAL, true);
-                me->RemoveAllAuras();
-                CanCheck = false;
-                
-                if (lSummonedGUID.empty())
-                    return;
-
-                for (std::list<uint64>::const_iterator itr = lSummonedGUID.begin(); itr != lSummonedGUID.end(); ++itr)
-                    if (Creature* shockwave = Unit::GetCreature(*me, (*itr)))
-                    {
-                        shockwave->CastSpell(shockwave, SPELL_SHOCKWAVE_DAMAGE, true);
-                        shockwave->RemoveAllAuras();
-                    }
+                if (uint64 uiGUID = summon->GetGUID())
+                    lSummonedGUID.push_back(uiGUID);
             }
-        }
 
-        void UpdateAI(const uint32 diff)
-        {
-            if (CanCheck)
+            void SpellHit(Unit* caster, const SpellInfo* spell) override
             {
-                if (uiCheckTimer <= diff)
+                if (spell->Id == SPELL_SHOCKWAVE || spell->Id == 91257)
                 {
-                    uiCheckTimer = 250;
-                    float x, y;
-                    me->GetPosition(x, y);
+                    caster->CastSpell(me, SPELL_SHOCKWAVE_VISUAL, true);
+                    me->RemoveAllAuras();
+                    CanCheck = false;
+                    
+                    if (lSummonedGUID.empty())
+                        return;
 
-                    if (pos.GetExactDist2d(x, y) >= 4.0f)
-                    {
-                        float dist = me->GetDistance(pos);
-                        float _x, _y, _z = me->GetPositionZ();
-                        me->GetNearPoint2D(_x, _y, dist - 4.0f, me->GetAngle(&pos));
-                        me->CastSpell(_x, _y, _z, SPELL_SUMMON_SHOCKWAVE, true);
-                    }
+                    for (std::list<uint64>::const_iterator itr = lSummonedGUID.begin(); itr != lSummonedGUID.end(); ++itr)
+                        if (Creature* shockwave = Unit::GetCreature(*me, (*itr)))
+                        {
+                            shockwave->CastSpell(shockwave, SPELL_SHOCKWAVE_DAMAGE, true);
+                            shockwave->RemoveAllAuras();
+                        }
                 }
-                else
-                    uiCheckTimer -= diff;
             }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (CanCheck)
+                {
+                    if (uiCheckTimer <= diff)
+                    {
+                        uiCheckTimer = 250;
+                        float x, y;
+                        me->GetPosition(x, y);
+
+                        if (pos.GetExactDist2d(x, y) >= 4.0f)
+                        {
+                            float dist = me->GetDistance(pos);
+                            float _x, _y, _z = me->GetPositionZ();
+                            me->GetNearPoint2D(_x, _y, dist - 4.0f, me->GetAngle(&pos));
+                            me->CastSpell(_x, _y, _z, SPELL_SUMMON_SHOCKWAVE, true);
+                        }
+                    }
+                    else
+                        uiCheckTimer -= diff;
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shockwave_stalkerAI>(creature);
         }
-    };
 };
 
 class npc_bad_intentios_target : public CreatureScript
 {
-public:
-    npc_bad_intentios_target() : CreatureScript("npc_bad_intentios_target") { }
+    public:
+        npc_bad_intentios_target() : CreatureScript("npc_bad_intentios_target") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_bad_intentios_targetAI (creature);
-    }
-
-    struct npc_bad_intentios_targetAI : public ScriptedAI
-    {
-        npc_bad_intentios_targetAI(Creature* creature) : ScriptedAI(creature){}
-
-        uint32 uiExitTimer;
-        bool Passenger;
-
-        void Reset()
+        struct npc_bad_intentios_targetAI : public ScriptedAI
         {
-            uiExitTimer = 1000;
-            Passenger = false;
+            npc_bad_intentios_targetAI(Creature* creature) : ScriptedAI(creature) { }
 
-            if (Vehicle* vehicle = me->GetVehicleKit())
-                vehicle->RemoveAllPassengers();
-        }
+            uint32 uiExitTimer;
+            bool Passenger;
 
-        void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply)
-        {
-            if (apply)
+            void Reset() override
             {
-                me->CastSpell(who, SPELL_HARD_IMPACT, false);
-                Passenger = true;
-            }
-        }
+                uiExitTimer = 1000;
+                Passenger = false;
 
-        void UpdateAI(const uint32 diff)
-        {
-            if (Passenger)
-            {
-                if (uiExitTimer <= diff)
-                    Reset();
-                else
-                    uiExitTimer -= diff;
+                if (Vehicle* vehicle = me->GetVehicleKit())
+                    vehicle->RemoveAllPassengers();
             }
+
+            void PassengerBoarded(Unit* who, int8 /*seatId*/, bool apply) override
+            {
+                if (apply)
+                {
+                    me->CastSpell(who, SPELL_HARD_IMPACT, false);
+                    Passenger = true;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (Passenger)
+                {
+                    if (uiExitTimer <= diff)
+                        Reset();
+                    else
+                        uiExitTimer -= diff;
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_bad_intentios_targetAI>(creature);
         }
-    };
 };
 
 class spell_bad_intentions : public SpellScriptLoader
@@ -526,13 +525,13 @@ class spell_bad_intentions : public SpellScriptLoader
                 target->CastSpell(caster, SPELL_RIDE_VEHICLE_HARDCODED, false);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_bad_intentions_SpellScript::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_bad_intentions_SpellScript();
         }
@@ -560,13 +559,13 @@ class spell_hurl : public SpellScriptLoader
                 target->CastSpell(target, SPELL_HURL_RIDE, false);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_hurl_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_hurl_SpellScript();
         }

@@ -75,30 +75,30 @@ enum Other
     POINT_HIGH  = 1,
     DATA_PHASE  = 2, // don't change that! Related with TargetedMovementGenerator
     POINT_DOWN  = 3,
+    POINT_HIGH2 = 4,
 };
 
 #define LEVEL_HEIGHT 100.0f
 #define GROUND_HEIGHT 74.05f
 
-const Position highPos = {75.68f, 397.199f, 110.0f, 3.63f};
+const Position highPos = { 75.68f, 397.199f, 110.0f, 3.63f };
 const Position addsPos[9] = 
 {
-    {24.691f, 298.297f, 81.54f, 0.0f}, // spiderling
-    {134.570f, 360.037f, 85.420f, 0.0f}, // spiderling
-    {86.338f, 442.826f, 76.72f, 0.0f}, // spiderling
-    {11.773f, 479.865f, 78.51f, 0.0f}, // Drone
-    {48.428f, 376.85f, 106.8785f, 0.0f}, // Spiderweb Filament
-    {41.594f, 378.043f, 74.05f, 0.0f}, // center of the room
-    {55.301f, 375.729f, 111.0f, 0.94f}, 
-    {75.372f, 374.039f, 111.0f, 2.18f},
-    {59.665f, 406.437f, 111.0f, 5.02f}
+    { 24.691f,  298.297f, 81.54f,    0.0f  }, // spiderling
+    { 134.570f, 360.037f, 85.420f,   0.0f  }, // spiderling
+    { 86.338f,  442.826f, 76.72f,    0.0f  }, // spiderling
+    { 11.773f,  479.865f, 78.51f,    0.0f  }, // Drone
+    { 48.428f,  376.85f,  106.8785f, 0.0f  }, // Spiderweb Filament
+    { 41.594f,  378.043f, 74.05f,    0.0f  }, // center of the room
+    { 55.301f,  375.729f, 111.0f,    0.94f }, 
+    { 75.372f,  374.039f, 111.0f,    2.18f },
+    { 59.665f,  406.437f, 111.0f,    5.02f }
 };
 
 struct PositionSelector : public std::unary_function<Unit*, bool>
 {
     public:
-        
-        PositionSelector(bool b, uint32 spellId) : _b(b), _spellId(spellId) {}
+        PositionSelector(bool b, uint32 spellId) : _b(b), _spellId(spellId) { }
 
         bool operator()(Unit const* target) const
         {
@@ -119,14 +119,9 @@ class boss_bethtilac : public CreatureScript
     public:
         boss_bethtilac() : CreatureScript("boss_bethtilac") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_bethtilacAI(pCreature);
-        }
-
         struct boss_bethtilacAI : public BossAI
         {
-            boss_bethtilacAI(Creature* pCreature) : BossAI(pCreature, DATA_BETHTILAC)
+            boss_bethtilacAI(Creature* creature) : BossAI(creature, DATA_BETHTILAC)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -147,20 +142,7 @@ class boss_bethtilac : public CreatureScript
             uint8 uiCount;
             uint8 uiSide;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            bool AllowAchieve()
-            {
-                return false;
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 DespawnCreatures(NPC_CINDERWEB_SPINNER);
@@ -168,16 +150,25 @@ class boss_bethtilac : public CreatureScript
 
                 DoCast(me, SPELL_ZERO_POWER, true);
                 me->SetReactState(REACT_PASSIVE);
-                //me->SetUInt32Value(UNIT_FIELD_BYTES_1, 50331648);
+                //me->SetAnimationTier(UnitAnimationTier::Fly);
                 //me->SetUInt32Value(UNIT_FIELD_BYTES_2, 1);
+                me->GetMap()->SetWorldState(WORLDSTATE_DEATH_FROM_ABOVE, 1);
                 uiPhase = 0;
                 uiCount = 0;
                 uiSide = 0;
                 me->SetMaxPower(POWER_MANA, 9000);
                 me->SetPower(POWER_MANA, 9000);
+
+                me->SetCanFly(true);
+                me->SetDisableGravity(true);
+                me->SetAnimationTier(UnitAnimationTier::Hover);
+
+                float hx, hy, hz, ho;
+                me->GetHomePosition(hx, hy, hz, ho);
+                me->NearTeleportTo(hx, hy, hz, ho);
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 uiPhase = 0;
                 uiCount = 0;
@@ -188,11 +179,14 @@ class boss_bethtilac : public CreatureScript
                 me->RemoveAurasByType(SPELL_AURA_MOD_TAUNT);
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                if (type = POINT_MOTION_TYPE)
-                    if (id == POINT_HIGH)
+                if (type == POINT_MOTION_TYPE)
+                {
+                    if (pointId == POINT_HIGH)
                     {
+                        me->SetFacingTo(highPos.GetOrientation());
+                        me->SetAnimationTier(UnitAnimationTier::Ground);
                         me->RemoveAurasByType(SPELL_AURA_MOD_TAUNT);
                         //me->SetUInt32Value(UNIT_FIELD_BYTES_1, 0);
                         //me->SetUInt32Value(UNIT_FIELD_BYTES_2, 0);
@@ -204,9 +198,12 @@ class boss_bethtilac : public CreatureScript
                         events.ScheduleEvent(EVENT_EMBER_FLARE, urand(7000, 8000));
                         events.ScheduleEvent(EVENT_ENERGY, 1000);
                     }
+                    else if (pointId == POINT_HIGH2)
+                        me->SetFacingTo(highPos.GetOrientation());
+                }
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 if (type == DATA_PHASE)
                     return uiPhase;
@@ -214,7 +211,7 @@ class boss_bethtilac : public CreatureScript
                 return 0;
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 DespawnCreatures(NPC_CINDERWEB_SPINNER);
@@ -223,7 +220,7 @@ class boss_bethtilac : public CreatureScript
                 AddSmoulderingAura(me);
             }
             
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim() || !CheckInArea(diff, 5764))
                     return;
@@ -233,16 +230,49 @@ class boss_bethtilac : public CreatureScript
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
 
+                if (me->GetVictim() && !PositionSelector(uiPhase, 0)(me->GetVictim()))
+                {
+                    Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(uiPhase, 0));
+                    if (uiPhase == 0) // above
+                    {
+                        if (target)
+                        {
+                            AttackStart(target);
+                            me->GetMotionMaster()->MoveChase(target);
+                        }
+                        else
+                        {
+                            me->AttackStop();
+                            if (me->GetExactDist(&highPos) > 5)
+                                me->GetMotionMaster()->MovePoint(POINT_HIGH2, highPos);
+                        }
+                    }
+                    else // below
+                    {
+                        if (target)
+                        {
+                            AttackStart(target);
+                            me->GetMotionMaster()->MoveChase(target);
+                        }
+                        else
+                        {
+                            me->AttackStop();
+                            if (me->GetExactDist(&addsPos[5]) > 5)
+                                me->GetMotionMaster()->MovePoint(0, addsPos[5]);
+                        }
+                    }
+                }
+
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_CHECK_HIGH:
                         {
-                            //if (!me->getVictim() || !me->IsWithinMeleeRange(me->getVictim()))
+                            //if (!me->GetVictim() || !me->IsWithinMeleeRange(me->GetVictim()))
                             std::list<Player*> PlayerList;
                             PlayerPositionCheck checker(true);
-                            JadeCore::PlayerListSearcher<PlayerPositionCheck> searcher(me, PlayerList, checker);
+                            Trinity::PlayerListSearcher<PlayerPositionCheck> searcher(me, PlayerList, checker);
                             me->VisitNearbyWorldObject(300.0f, searcher);
                             if (PlayerList.size() == 0)
                                 DoCastAOE(SPELL_VENOM_RAIN);
@@ -254,7 +284,7 @@ class boss_bethtilac : public CreatureScript
                             {
                                 std::list<Player*> PlayerList;
                                 PlayerPositionCheck checker(true);
-                                JadeCore::PlayerListSearcher<PlayerPositionCheck> searcher(me, PlayerList, checker);
+                                Trinity::PlayerListSearcher<PlayerPositionCheck> searcher(me, PlayerList, checker);
                                 me->VisitNearbyWorldObject(300.0f, searcher);
                                 if (PlayerList.size() > 0)
                                     DoCastAOE(SPELL_EMBER_FLARE_1);
@@ -275,8 +305,8 @@ class boss_bethtilac : public CreatureScript
                         case EVENT_SUMMON_DRONE:
                             if (Creature* pDrone = me->SummonCreature(NPC_CINDERWEB_DRONE, addsPos[3]))
                                 //pDrone->GetMotionMaster()->MovePoint(0, addsPos[5]);
-                                if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
-                                    pDrone->GetMotionMaster()->MoveChase(pTarget);
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
+                                    pDrone->GetMotionMaster()->MoveChase(target);
                             events.ScheduleEvent(EVENT_SUMMON_DRONE, 60000);
                             break;
                         case EVENT_SUMMON_SPIDERLING:
@@ -294,11 +324,11 @@ class boss_bethtilac : public CreatureScript
                             break;
                         case EVENT_SUMMON_BROODLING_1:
                             if (Creature* pBroodling = me->SummonCreature(NPC_ENGORGED_BROODLING, addsPos[uiSide]))
-                                if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
                                 {
-                                    pBroodling->CastSpell(pTarget, SPELL_FIXATE_BROODLING, true);
+                                    pBroodling->CastSpell(target, SPELL_FIXATE_BROODLING, true);
                                     pBroodling->ClearUnitState(UNIT_STATE_CASTING);
-                                    pBroodling->GetMotionMaster()->MoveFollow(pTarget, 0.0f, 0.0f);
+                                    pBroodling->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
                                 }
                             break;
                         case EVENT_ENERGY_2:
@@ -347,7 +377,7 @@ class boss_bethtilac : public CreatureScript
                             if (!PlayerList.isEmpty())
                             {
                                 for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                                    if (Player* player = i->getSource())
+                                    if (Player* player = i->GetSource())
                                         if (player->GetPositionZ() > 100.0f)
                                             player->NearTeleportTo(addsPos[5].GetPositionX(), addsPos[5].GetPositionY(), addsPos[5].GetPositionZ(), 0.0f);
                             }
@@ -363,11 +393,10 @@ class boss_bethtilac : public CreatureScript
                             break;
                     }
                 }
-                
                 DoMeleeAttackIfReady();
             }
-        private:
 
+        private:
             void DespawnCreatures(uint32 entry)
             {
                 std::list<Creature*> creatures;
@@ -383,7 +412,7 @@ class boss_bethtilac : public CreatureScript
             class PlayerPositionCheck
             {
                 public:
-                    PlayerPositionCheck(bool bRev): _bRev(bRev) {}
+                    PlayerPositionCheck(bool bRev): _bRev(bRev) { }
                     bool operator()(Player* u)
                     {
                         return _bRev? (u->GetPositionZ() > 100.0f): (u->GetPositionZ() < 100.0f);
@@ -392,8 +421,12 @@ class boss_bethtilac : public CreatureScript
                 private:
                     bool _bRev;
             };
-
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_bethtilacAI>(creature);
+        }
 };
 
 class npc_bethtilac_spiderweb_filament : public CreatureScript
@@ -401,80 +434,80 @@ class npc_bethtilac_spiderweb_filament : public CreatureScript
     public:
         npc_bethtilac_spiderweb_filament() : CreatureScript("npc_bethtilac_spiderweb_filament") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_bethtilac_spiderweb_filamentAI : public ScriptedAI
         {
-            return new npc_bethtilac_spiderweb_filamentAI(pCreature);
-        }
-
-        struct npc_bethtilac_spiderweb_filamentAI : public Scripted_NoMovementAI
-        {
-            npc_bethtilac_spiderweb_filamentAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_bethtilac_spiderweb_filamentAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                SetCombatMovement(false);
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
             }
 
-            void OnSpellClick(Unit* who)
+            void OnSpellClick(Unit* clicker, bool& /*result*/) override
             {
-                if (who->GetTypeId() == TYPEID_PLAYER)
+                if (clicker->GetTypeId() == TYPEID_PLAYER)
                 {
                     uint32 i = urand(6, 8);
-                    who->NearTeleportTo(addsPos[i].GetPositionX(), addsPos[i].GetPositionY(), addsPos[i].GetPositionZ(), addsPos[i].GetOrientation());
+                    clicker->NearTeleportTo(addsPos[i].GetPositionX(), addsPos[i].GetPositionY(), addsPos[i].GetPositionZ(), addsPos[i].GetOrientation());
                 }
                 if (me->GetOwner() && (me->GetOwner()->GetEntry() == NPC_SPIDERWEB_FILAMENT || me->GetOwner()->GetEntry() == NPC_BETHTILAC))
                     me->GetOwner()->ToCreature()->DespawnOrUnsummon();
                 me->DespawnOrUnsummon();
             }
 
-            void IsSummonedBy(Unit* owner)
+            void IsSummonedBy(Unit* summoner) override
             {
-                if (!owner)
-                    me->DespawnOrUnsummon();
-
-                if (owner->GetEntry() == NPC_BETHTILAC)
+                if (summoner->GetEntry() == NPC_BETHTILAC)
                 {
                     if (Creature* pSpinner = me->SummonCreature(NPC_CINDERWEB_SPINNER, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation()))
                     {
                         pSpinner->SetCanFly(true);
+                        pSpinner->SetDisableGravity(true);
+                        pSpinner->SetAnimationTier(UnitAnimationTier::Hover);
                         DoCast(pSpinner, SPELL_SPIDERWEB_FILAMENT_ANY, true);
                         //pSpinner->CastSpell(pSpinner, SPELL_CREEPER, true);
                         pSpinner->CastSpell(pSpinner, SPELL_TEMPERAMENT, true);
-                        //float z = pSpinner->GetMap()->GetHeight(pSpinner->GetPositionX(), pSpinner->GetPositionY(), pSpinner->GetPositionZ(), true);
-                        float z = GROUND_HEIGHT;
+                        float z = pSpinner->GetMap()->GetHeight(pSpinner->GetPositionX(), pSpinner->GetPositionY(), pSpinner->GetPositionZ() - 5.0f, true);
+                        //float z = GROUND_HEIGHT;
                         pSpinner->GetMotionMaster()->MovePoint(0, pSpinner->GetPositionX(), pSpinner->GetPositionY(), z + 5.0f); 
                     }
                 }
-                else if (owner->GetEntry() == NPC_SPIDERWEB_FILAMENT)
+                else if (summoner->GetEntry() == NPC_SPIDERWEB_FILAMENT)
                 {
                     DoCast(me, SPELL_SPIDERWEB_FILAMENT_DOWN, true);
-                    //float z = me->GetMap()->GetHeight(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), true, 100.0f);
-                    float z = GROUND_HEIGHT;
+                    float z = me->GetMap()->GetHeight(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() - 5.0f, true, 100.0f);
+                    //float z = GROUND_HEIGHT;
                     me->GetMotionMaster()->MovePoint(POINT_DOWN, me->GetPositionX(), me->GetPositionY(), z); 
                 }
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
-                    if (data == POINT_DOWN)
+                    if (pointId == POINT_DOWN)
                         me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 /*diff*/) override
             {
-                if (pInstance->GetBossState(DATA_BETHTILAC) != IN_PROGRESS)
+                if (instance->GetBossState(DATA_BETHTILAC) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_bethtilac_spiderweb_filamentAI>(creature);
+        }
 };
 
 class npc_bethtilac_cinderweb_spinner : public CreatureScript
@@ -482,47 +515,43 @@ class npc_bethtilac_cinderweb_spinner : public CreatureScript
     public:
         npc_bethtilac_cinderweb_spinner() : CreatureScript("npc_bethtilac_cinderweb_spinner") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_bethtilac_cinderweb_spinnerAI(pCreature);
-        }
-
         struct npc_bethtilac_cinderweb_spinnerAI : public ScriptedAI
         {
-            npc_bethtilac_cinderweb_spinnerAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_bethtilac_cinderweb_spinnerAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 bTaunted = false;
                 owner = NULL;
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
             }
 
             bool bTaunted;
             Unit* owner;
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* who) override
             {
                 events.ScheduleEvent(EVENT_BURNING_ACID, urand(7000, 15000));
                 if (IsHeroic())
                     events.ScheduleEvent(EVENT_FIERY_WEB_SPIN, urand(5000, 15000));
             }
 
-            void IsSummonedBy(Unit* who)
+            void IsSummonedBy(Unit* summoner) override
             {
-                if (who)
-                    owner = who;
+                if (summoner)
+                    owner = summoner;
             }
 
-            void JustDied(Unit* who)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->SetCanFly(false);
+                me->SetDisableGravity(false);
 
                 /*if (bTaunted)
                     return;
@@ -537,17 +566,17 @@ class npc_bethtilac_cinderweb_spinner : public CreatureScript
                     }*/
             }
 
-            void SpellHit(Unit* who, const SpellInfo* spellInfo)
+            void SpellHit(Unit* caster, const SpellInfo* spell) override
             {
                 if (bTaunted)
                     return;
 
-                if (spellInfo->HasEffect(SPELL_EFFECT_ATTACK_ME) || spellInfo->HasAura(SPELL_AURA_MOD_TAUNT))
+                if (spell->HasEffect(SPELL_EFFECT_ATTACK_ME) || spell->HasAura(SPELL_AURA_MOD_TAUNT))
                 {
                     bTaunted = true;
                     me->SetReactState(REACT_AGGRESSIVE);
                     if (owner && owner->GetEntry() == NPC_SPIDERWEB_FILAMENT)
-                        if (Creature* pFilament = me->SummonCreature(NPC_SPIDERWEB_FILAMENT, owner->GetPositionX(), owner->GetPositionY(), owner->GetPositionZ(), 0.0f, TEMPSUMMON_TIMED_DESPAWN, 15000))
+                        if (Creature* pFilament = owner->SummonCreature(NPC_SPIDERWEB_FILAMENT, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f, TEMPSUMMON_TIMED_DESPAWN, 15000))
                         {
                             pFilament->SetCanFly(true);
                             owner->CastSpell(pFilament, SPELL_SPIDERWEB_FILAMENT_ANY, true);
@@ -559,12 +588,15 @@ class npc_bethtilac_cinderweb_spinner : public CreatureScript
                     //me->RemoveAura(SPELL_CREEPER);
                     me->RemoveAura(SPELL_TEMPERAMENT);
                     me->SetCanFly(false);
+                    me->SetDisableGravity(false);
+                    me->SetAnimationTier(UnitAnimationTier::Ground);
+                    AttackStart(caster);
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (pInstance->GetBossState(DATA_BETHTILAC) != IN_PROGRESS)
+                if (instance->GetBossState(DATA_BETHTILAC) != IN_PROGRESS)
                     me->DespawnOrUnsummon();
 
                 if (!UpdateVictim())
@@ -584,8 +616,8 @@ class npc_bethtilac_cinderweb_spinner : public CreatureScript
                             events.ScheduleEvent(EVENT_BURNING_ACID, urand(7000, 15000));
                             break;
                         case EVENT_FIERY_WEB_SPIN:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, SPELL_FIERY_WEB_SPIN)))
-                                DoCast(pTarget, SPELL_FIERY_WEB_SPIN);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, SPELL_FIERY_WEB_SPIN)))
+                                DoCast(target, SPELL_FIERY_WEB_SPIN);
                             events.ScheduleEvent(EVENT_FIERY_WEB_SPIN, urand(25000, 30000));
                             break;
                     }
@@ -594,6 +626,11 @@ class npc_bethtilac_cinderweb_spinner : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_bethtilac_cinderweb_spinnerAI>(creature);
+        }
 };
 
 class npc_bethtilac_cinderweb_drone : public CreatureScript
@@ -601,14 +638,9 @@ class npc_bethtilac_cinderweb_drone : public CreatureScript
     public:
         npc_bethtilac_cinderweb_drone() : CreatureScript("npc_bethtilac_cinderweb_drone") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_bethtilac_cinderweb_droneAI(pCreature);
-        }
-
         struct npc_bethtilac_cinderweb_droneAI : public ScriptedAI
         {
-            npc_bethtilac_cinderweb_droneAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_bethtilac_cinderweb_droneAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -622,20 +654,27 @@ class npc_bethtilac_cinderweb_drone : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                bClimbed = false;
             }
 
             EventMap events;
+            bool bClimbed;
 
-            void Reset()
+            void Reset() override
             {
+                events.Reset();
                 DoCast(me, SPELL_ZERO_POWER, true);
+                me->SetPowerType(POWER_MANA);
                 me->SetMaxPower(POWER_MANA, 90);
+
+                if (bClimbed)
+                    return;
+
                 me->SetPower(POWER_MANA, 90);
                 DoCast(me, SPELL_ENERGIZE, true);
-                events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_BURNING_ACID, urand(7000, 15000));
                 events.ScheduleEvent(EVENT_BOILING_SPATTER, urand(14000, 20000));
@@ -645,36 +684,100 @@ class npc_bethtilac_cinderweb_drone : public CreatureScript
                     events.ScheduleEvent(EVENT_FIXATE, urand(12000, 15000));
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
+                if (me->GetPositionZ() < 100)
+                    me->GetMap()->SetWorldState(WORLDSTATE_DEATH_FROM_ABOVE, 0);
+
                 for (uint8 i = 0; i < 3; ++i)
                     DoCast(me, SPELL_CREATE_CHITINOUS_FRAGMENT, true);
             }
 
-            void UpdateAI(const uint32 diff)
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type == POINT_MOTION_TYPE && pointId == POINT_HIGH)
+                {
+                    me->SetAnimationTier(UnitAnimationTier::Ground);
+                    me->SetReactState(REACT_AGGRESSIVE);
+                }
+            }
+
+            bool CanAIAttack(Unit const* who) const override
+            {
+                return PositionSelector(!bClimbed, 0)(who);
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
+                if (!bClimbed && !me->GetPower(POWER_MANA))
+                {
+                    bClimbed = true;
+                    me->SetReactState(REACT_PASSIVE);
+                    me->AttackStop();
+                    me->SetCanFly(true);
+                    me->SetDisableGravity(true);
+                    me->SetAnimationTier(UnitAnimationTier::Hover);
+                    me->RemoveAurasDueToSpell(SPELL_ENERGIZE);
+                    float z = std::max(110.0f, me->GetMap()->GetHeight(me->GetPositionX(), me->GetPositionY(), MAX_HEIGHT, true, MAX_HEIGHT * 2));
+                    me->GetMotionMaster()->Clear();
+                    me->GetMotionMaster()->MovePoint(POINT_HIGH, me->GetPositionX(), me->GetPositionY(), z);
+                    me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), z, me->GetOrientation());
+                }
+
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
+
+                if (me->GetVictim() && !PositionSelector(!bClimbed, 0)(me->GetVictim()))
+                {
+                    Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(!bClimbed, 0));
+                    if (bClimbed) // above
+                    {
+                        if (target)
+                        {
+                            AttackStart(target);
+                            me->GetMotionMaster()->MoveChase(target);
+                        }
+                        else
+                        {
+                            me->AttackStop();
+                            Position pos = me->GetHomePosition();
+                            if (me->GetExactDist(&pos) > 5)
+                                me->GetMotionMaster()->MovePoint(0, pos);
+                        }
+                    }
+                    else // below
+                    {
+                        if (target)
+                        {
+                            AttackStart(target);
+                            me->GetMotionMaster()->MoveChase(target);
+                        }
+                        else
+                        {
+                            me->AttackStop();
+                        }
+                    }
+                }
 
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_FIXATE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
                             {
                                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_TAUNT, true);
                                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
                                 DoResetThreat();
                                 DoCast(me, SPELL_FIXATE_SELF, true);
-                                DoCast(pTarget, SPELL_FIXATE, true);
-                                me->AddThreat(pTarget, 1000000.0f);
-                                AttackStart(pTarget);
+                                DoCast(target, SPELL_FIXATE, true);
+                                me->AddThreat(target, 1000000.0f);
+                                AttackStart(target);
                                 events.ScheduleEvent(EVENT_FIXATE_OFF, 10000);
                             }
                             break;
@@ -692,10 +795,10 @@ class npc_bethtilac_cinderweb_drone : public CreatureScript
                             events.ScheduleEvent(EVENT_BURNING_ACID, urand(10000, 15000));
                             break;
                         case EVENT_CHECK_TARGET:
-                            if (me->getVictim())
-                                if (me->getVictim()->GetPositionZ() > 100.0f)
-                                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(true, 0)))
-                                        AttackStart(pTarget);
+                            if (me->GetVictim())
+                                if (bClimbed ? (me->GetVictim()->GetPositionZ() < 100.0f) : (me->GetVictim()->GetPositionZ() > 100.0f))
+                                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector(!bClimbed, 0)))
+                                        AttackStart(target);
 
                             events.ScheduleEvent(EVENT_CHECK_TARGET, 2000);
                             break;
@@ -710,6 +813,11 @@ class npc_bethtilac_cinderweb_drone : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_bethtilac_cinderweb_droneAI>(creature);
+        }
 };
 
 class npc_bethtilac_cinderweb_spiderling : public CreatureScript
@@ -717,14 +825,9 @@ class npc_bethtilac_cinderweb_spiderling : public CreatureScript
     public:
         npc_bethtilac_cinderweb_spiderling() : CreatureScript("npc_bethtilac_cinderweb_spiderling") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_bethtilac_cinderweb_spiderlingAI(pCreature);
-        }
-
         struct npc_bethtilac_cinderweb_spiderlingAI : public ScriptedAI
         {
-            npc_bethtilac_cinderweb_spiderlingAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_bethtilac_cinderweb_spiderlingAI(Creature* creature) : ScriptedAI(creature)
             {
                 pDrone = NULL;
                 me->SetReactState(REACT_PASSIVE);
@@ -733,12 +836,12 @@ class npc_bethtilac_cinderweb_spiderling : public CreatureScript
             Unit* pDrone;
             EventMap events;
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_CHECK_DRONE, 2000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -750,16 +853,22 @@ class npc_bethtilac_cinderweb_spiderling : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CHECK_DRONE:
-                            if (!pDrone || !pDrone->isAlive())
+                            if (!pDrone || !pDrone->IsAlive() || !pDrone->HasAura(SPELL_ENERGIZE))
                             {
-                                if (Creature* pTarget = me->FindNearestCreature(NPC_CINDERWEB_DRONE, 500.0f))
+                                std::list<Creature*> drones;
+                                GetCreatureListWithEntryInGrid(drones, me, NPC_CINDERWEB_DRONE, 500.0f);
+                                drones.remove_if(Trinity::UnitAuraCheck(false, SPELL_ENERGIZE));
+                                if (drones.size() > 2)
+                                    drones.sort(Trinity::DistanceCompareOrderPred(me));
+                                if (drones.size())
                                 {
-                                    pDrone = pTarget;
+                                    pDrone = drones.front();;
                                     me->GetMotionMaster()->MovementExpired(false);
                                     me->GetMotionMaster()->MoveFollow(pDrone, 0.0f, 0.0f);
                                 }
                                 else
                                 {
+                                    pDrone = NULL;
                                     if (!me->isMoving())
                                     {
                                         me->GetMotionMaster()->MovementExpired(false);
@@ -773,6 +882,11 @@ class npc_bethtilac_cinderweb_spiderling : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_bethtilac_cinderweb_spiderlingAI>(creature);
+        }
 };
 
 class npc_bethtilac_engorged_broodling : public CreatureScript
@@ -780,14 +894,9 @@ class npc_bethtilac_engorged_broodling : public CreatureScript
     public:
         npc_bethtilac_engorged_broodling() : CreatureScript("npc_bethtilac_engorged_broodling") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_bethtilac_engorged_broodlingAI(pCreature);
-        }
-
         struct npc_bethtilac_engorged_broodlingAI : public ScriptedAI
         {
-            npc_bethtilac_engorged_broodlingAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_bethtilac_engorged_broodlingAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -809,12 +918,12 @@ class npc_bethtilac_engorged_broodling : public CreatureScript
 
             bool bBurst;
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 bBurst = false;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 /*diff*/) override
             {
                 if (!bBurst && me->SelectNearestPlayer(3.0f))
                 {
@@ -828,29 +937,17 @@ class npc_bethtilac_engorged_broodling : public CreatureScript
                 }
             }
         };
-};
 
-class achievement_death_from_above : public AchievementCriteriaScript
-{
-    public:
-        achievement_death_from_above() : AchievementCriteriaScript("achievement_death_from_above") { }
-
-        bool OnCheck(Player* source, Unit* target)
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (!target)
-                return false;
-
-            if (boss_bethtilac::boss_bethtilacAI* BethtilacAI = CAST_AI(boss_bethtilac::boss_bethtilacAI, target->GetAI()))
-                return BethtilacAI->AllowAchieve();
-
-            return false;
+            return GetInstanceAI<npc_bethtilac_engorged_broodlingAI>(creature);
         }
 };
 
 class PositionCheck
 {
     public:
-        PositionCheck(bool b) : _b(b) {}
+        PositionCheck(bool b) : _b(b) { }
 
         bool operator()(WorldObject* unit)
         {
@@ -892,21 +989,21 @@ class spell_bethtilac_smoldering_devastation : public SpellScriptLoader
                         if (Creature* pFocus = (*itr)->ToCreature())
                         {
                             pFocus->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                            pFocus->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            pFocus->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                             pFocus->CastSpell(pFocus, SPELL_TRANSFORM_CHARGED_CHITINOUS_FOCUS, true);
                         }
                     }
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_bethtilac_smoldering_devastation_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 AfterCast += SpellCastFn(spell_bethtilac_smoldering_devastation_SpellScript::HandleAfterCast);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_bethtilac_smoldering_devastation_SpellScript();
         }
@@ -929,7 +1026,7 @@ class spell_bethtilac_ember_flare : public SpellScriptLoader
                 targets.remove_if(PositionCheck(false));
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_bethtilac_ember_flare_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
@@ -938,7 +1035,7 @@ class spell_bethtilac_ember_flare : public SpellScriptLoader
 
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_bethtilac_ember_flare_SpellScript();
         }
@@ -961,7 +1058,7 @@ class spell_bethtilac_burning_acid : public SpellScriptLoader
                 targets.remove_if(PositionCheck(true));
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_bethtilac_burning_acid_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
@@ -970,7 +1067,7 @@ class spell_bethtilac_burning_acid : public SpellScriptLoader
 
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_bethtilac_burning_acid_SpellScript();
         }
@@ -987,5 +1084,4 @@ void AddSC_boss_bethtilac()
     new spell_bethtilac_smoldering_devastation();
     new spell_bethtilac_ember_flare();
     new spell_bethtilac_burning_acid();
-    new achievement_death_from_above();
 }

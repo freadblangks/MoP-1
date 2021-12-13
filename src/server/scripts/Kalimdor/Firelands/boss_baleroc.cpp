@@ -22,13 +22,11 @@ enum Spells
     SPELL_TORMENT                   = 99255,
     SPELL_TORMENT_DMG               = 99256,
     SPELL_TORMENTED                 = 99257,
-    SPELL_TORMENTED_25H             = 99404,
     SPELL_TORMENTED_AOE             = 99489,
     SPELL_WAVE_OF_TORMENT           = 99261,
     SPELL_VITAL_SPARK               = 99262,
     SPELL_VITAL_FLAME               = 99263,
     SPELL_DECIMATION_BLADE          = 99352,
-    SPELL_DECIMATION_BLADE_25       = 99405,
     SPELL_DECIMATION_BLADE_DMG      = 99353,
     SPELL_INFERNO_BLADE             = 99350,
     SPELL_INFERNO_BLADE_DMG         = 99351,
@@ -62,14 +60,9 @@ class boss_baleroc : public CreatureScript
     public:
         boss_baleroc() : CreatureScript("boss_baleroc") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_balerocAI(pCreature);
-        }
-
         struct boss_balerocAI : public BossAI
         {
-            boss_balerocAI(Creature* pCreature) : BossAI(pCreature, DATA_BALEROC)
+            boss_balerocAI(Creature* creature) : BossAI(creature, DATA_BALEROC)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -88,43 +81,27 @@ class boss_baleroc : public CreatureScript
 
             std::map<uint32, uint8> tormentedPlayers;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            bool AllowAchieve()
-            {
-                if (tormentedPlayers.empty())
-                    return false;
-
-                for (std::map<uint32, uint8>::const_iterator itr = tormentedPlayers.begin(); itr != tormentedPlayers.end(); ++itr)
-                    if (itr->second > 3)
-                        return false;
-
-                return true;
-            }
-
             void AddTormentedPlayer(uint32 guid)
             {
                 tormentedPlayers[guid]++;
+
+                if (tormentedPlayers.find(guid)->second > 3)
+                    me->GetMap()->SetWorldState(WORLDSTATE_SHARE_THE_PAIN, 0);
             }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
                 tormentedPlayers.clear();
 
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BLAZE_OF_GLORY);
+                me->GetMap()->SetWorldState(WORLDSTATE_SHARE_THE_PAIN, 1);
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* who) override
             {
-                if (!instance->CheckRequiredBosses(DATA_BALEROC, attacker->ToPlayer()))
+                if (!instance->CheckRequiredBosses(DATA_BALEROC, who->ToPlayer()))
                 {
                     EnterEvadeMode();
                     instance->DoNearTeleportPlayers(FLEntrancePos);
@@ -143,7 +120,7 @@ class boss_baleroc : public CreatureScript
                 instance->SetBossState(DATA_BALEROC, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BLAZE_OF_GLORY);
                 _JustDied();
@@ -152,12 +129,12 @@ class boss_baleroc : public CreatureScript
                 AddSmoulderingAura(me);
             }
             
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim() || !CheckInArea(diff, 5767))
                     return;
@@ -178,9 +155,9 @@ class boss_baleroc : public CreatureScript
                             {
                                 for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
                                 {
-                                    if (Player* pPlayer = i->getSource())
-                                        if (pPlayer->GetPositionZ() > 70.0f)
-                                            pPlayer->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
+                                    if (Player* player = i->GetSource())
+                                        if (player->GetPositionZ() > 70.0f)
+                                            player->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
                                 }
                             }
                             events.ScheduleEvent(EVENT_CHECK_PLAYERS, 5000);
@@ -221,15 +198,15 @@ class boss_baleroc : public CreatureScript
                 
                 if (me->HasAura(SPELL_INFERNO_BLADE))
                 {
-                    if (!me->HasUnitState(UNIT_STATE_CASTING) && me->isAttackReady() && me->IsWithinMeleeRange(me->getVictim()))
+                    if (!me->HasUnitState(UNIT_STATE_CASTING) && me->isAttackReady() && me->IsWithinMeleeRange(me->GetVictim()))
                     {
                         DoCastVictim(SPELL_INFERNO_BLADE_DMG, true);
                         me->resetAttackTimer();
                     }
                 }
-                else if (me->HasAura(SPELL_DECIMATION_BLADE) || me->HasAura(SPELL_DECIMATION_BLADE_25))
+                else if (me->HasAura(SPELL_DECIMATION_BLADE))
                 {
-                    if (!me->HasUnitState(UNIT_STATE_CASTING) && me->isAttackReady() && me->IsWithinMeleeRange(me->getVictim()))
+                    if (!me->HasUnitState(UNIT_STATE_CASTING) && me->isAttackReady() && me->IsWithinMeleeRange(me->GetVictim()))
                     {
                         DoCastVictim(SPELL_DECIMATION_BLADE_DMG, true);
                         me->resetAttackTimer();
@@ -239,6 +216,11 @@ class boss_baleroc : public CreatureScript
                     DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_balerocAI>(creature);
+        }
 };
 
 class npc_baleroc_shard_of_torment : public CreatureScript
@@ -246,34 +228,30 @@ class npc_baleroc_shard_of_torment : public CreatureScript
     public:
         npc_baleroc_shard_of_torment() : CreatureScript("npc_baleroc_shard_of_torment") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_baleroc_shard_of_tormentAI : public ScriptedAI
         {
-            return new npc_baleroc_shard_of_tormentAI(pCreature);
-        }
-
-        struct npc_baleroc_shard_of_tormentAI : public Scripted_NoMovementAI
-        {
-            npc_baleroc_shard_of_tormentAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_baleroc_shard_of_tormentAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                SetCombatMovement(false);
             }
 
             bool bReady;
             uint32 uiReadyTimer;
             uint32 uiSelectTargetTimer;
-            Player* curVictim;
+            uint64 curVictim;
 
-            void Reset()
+            void Reset() override
             {
                 bReady = false;
                 uiReadyTimer = 3000;
                 uiSelectTargetTimer = 1000;
-                curVictim = NULL;
+                curVictim = 0;
                 DoCast(me, SPELL_TORMENT_VISUAL, true);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!bReady)
                 {
@@ -287,23 +265,23 @@ class npc_baleroc_shard_of_torment : public CreatureScript
                 
                 if (uiSelectTargetTimer <= diff)
                 {
-                    if(Player* newVictim = me->SelectNearestPlayer(15.0f))
+                    if (Player* newVictim = me->SelectNearestPlayer(15.0f))
                     {
-                        if (newVictim == curVictim)
+                        if (newVictim->GetGUID() == curVictim && newVictim->HasAura(SPELL_TORMENT))
                             return;
                 
                         me->InterruptNonMeleeSpells(false);
-                        curVictim = newVictim;
+                        curVictim = newVictim->GetGUID();
                         
                         if (Creature* pBaleroc = me->FindNearestCreature(NPC_BALEROC, 200.0f))
                             if (boss_baleroc::boss_balerocAI* BalerocAI = CAST_AI(boss_baleroc::boss_balerocAI, pBaleroc->GetAI()))
-                                BalerocAI->AddTormentedPlayer(curVictim->GetGUIDLow());
+                                BalerocAI->AddTormentedPlayer(newVictim->GetGUIDLow());
                         
-                        DoCast(curVictim, SPELL_TORMENT);
+                        DoCast(newVictim, SPELL_TORMENT);
                     }
                     else
                     {
-                        curVictim = NULL;
+                        curVictim = 0;
                         me->InterruptNonMeleeSpells(false);
                         DoCastAOE(SPELL_WAVE_OF_TORMENT);
                     }
@@ -313,6 +291,11 @@ class npc_baleroc_shard_of_torment : public CreatureScript
                     uiSelectTargetTimer -= diff;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_baleroc_shard_of_tormentAI>(creature);
+        }
 };
 
 class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
@@ -334,8 +317,8 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
 
                 switch (GetCaster()->GetMap()->GetDifficulty())
                 {
-                    case MAN10_DIFFICULTY:
-                    case MAN10_HEROIC_DIFFICULTY:
+                    case RAID_DIFFICULTY_10MAN_NORMAL:
+                    case RAID_DIFFICULTY_10MAN_HEROIC:
                     {    
                         std::list<WorldObject*> meleetargets;
 
@@ -354,18 +337,18 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
                                 meleetargets.remove_if(AuraCheck(SPELL_BLAZE_OF_GLORY));
                             
                             if (meleetargets.size() > 1)
-                                JadeCore::Containers::RandomResizeList(meleetargets, 1);
+                                Trinity::Containers::RandomResizeList(meleetargets, 1);
 
                             targets.clear();
                             targets.push_back(meleetargets.front());
                         }
                         else
-                            JadeCore::Containers::RandomResizeList(targets, 1);
+                            Trinity::Containers::RandomResizeList(targets, 1);
 
                         break;
                     }
-                    case MAN25_DIFFICULTY:
-                    case MAN25_HEROIC_DIFFICULTY:
+                    case RAID_DIFFICULTY_25MAN_NORMAL:
+                    case RAID_DIFFICULTY_25MAN_HEROIC:
                     {    
                         std::list<WorldObject*> meleetargets;
                         std::list<WorldObject*> rangetargets;
@@ -387,7 +370,7 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
                                 targets.remove_if(AuraCheck(SPELL_BLAZE_OF_GLORY));
                             
                             if (targets.size() > 2)
-                                JadeCore::Containers::RandomResizeList(targets, 2);
+                                Trinity::Containers::RandomResizeList(targets, 2);
                         }
                         else if (!meleetargets.empty() && !rangetargets.empty())
                         {
@@ -395,13 +378,13 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
                                 meleetargets.remove_if(AuraCheck(SPELL_BLAZE_OF_GLORY));
                             
                             if (meleetargets.size() > 1)
-                                JadeCore::Containers::RandomResizeList(meleetargets, 1);
+                                Trinity::Containers::RandomResizeList(meleetargets, 1);
 
                             if (GetMembersWithoutAura(rangetargets, SPELL_BLAZE_OF_GLORY) >= 1)
                                 rangetargets.remove_if(AuraCheck(SPELL_BLAZE_OF_GLORY));
                             
                             if (rangetargets.size() > 1)
-                                JadeCore::Containers::RandomResizeList(rangetargets, 1);
+                                Trinity::Containers::RandomResizeList(rangetargets, 1);
 
                             targets.clear();;
                             targets.push_back(meleetargets.front());
@@ -413,14 +396,14 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
             }
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
 
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_SHARDS_OF_TORMENT, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_baleroc_shards_of_torment_aoe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 OnEffectHitTarget += SpellEffectFn(spell_baleroc_shards_of_torment_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
@@ -446,7 +429,7 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
                 class AuraCheck
                 {
                     public:
-                        AuraCheck(uint32 spellId) : _spellId(spellId) {}
+                        AuraCheck(uint32 spellId) : _spellId(spellId) { }
 
                         bool operator()(WorldObject* unit)
                         {
@@ -460,7 +443,7 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
                 class DistanceCheckWithoutTanks
                 {
                     public:
-                        DistanceCheckWithoutTanks(WorldObject* searcher, float range) : _searcher(searcher), _range(range) {}
+                        DistanceCheckWithoutTanks(WorldObject* searcher, float range) : _searcher(searcher), _range(range) { }
 
                         bool operator()(WorldObject* unit)
                         {
@@ -473,7 +456,7 @@ class spell_baleroc_shards_of_torment_aoe : public SpellScriptLoader
                 };
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_baleroc_shards_of_torment_aoe_SpellScript();
         }
@@ -489,23 +472,23 @@ class spell_baleroc_tormented_aoe : public SpellScriptLoader
             PrepareSpellScript(spell_baleroc_tormented_aoe_SpellScript);
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
-				if (!GetCaster() || !GetHitUnit())
-					return;
-
-                if ((GetCaster() == GetHitUnit()) ||  GetHitUnit()->HasAura(SPELL_TORMENTED_25H))
+            {
+                if (!GetCaster() || !GetHitUnit())
                     return;
 
-                GetHitUnit()->CastSpell(GetHitUnit(), SPELL_TORMENTED_25H, true);
+                if (GetCaster() == GetHitUnit() || GetHitUnit()->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_HEROIC)
+                    return;
+
+                GetHitUnit()->CastSpell(GetHitUnit(), SPELL_TORMENTED, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_baleroc_tormented_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_baleroc_tormented_aoe_SpellScript();
         }
@@ -520,7 +503,7 @@ class spell_baleroc_final_countdown : public SpellScriptLoader
         {
             PrepareSpellScript(spell_baleroc_final_countdown_SpellScript);
             
-            bool Load()
+            bool Load() override
             {
                 bCanLink = false;
                 target1 = NULL;
@@ -533,8 +516,8 @@ class spell_baleroc_final_countdown : public SpellScriptLoader
                 if (!GetCaster())
                     return;
 
-                if (bCanLink &&target1 && target1->isAlive() && target1->IsInWorld() &&
-                    target2 && target2->isAlive() && target2->IsInWorld())
+                if (bCanLink &&target1 && target1->IsAlive() && target1->IsInWorld() &&
+                    target2 && target2->IsAlive() && target2->IsInWorld())
                 {
                     GetCaster()->CastSpell(target1, SPELL_FINAL_COUNTDOWN_AURA, true);
                     GetCaster()->CastSpell(target2, SPELL_FINAL_COUNTDOWN_AURA, true);
@@ -544,8 +527,8 @@ class spell_baleroc_final_countdown : public SpellScriptLoader
             
             void FilterTargets(std::list<WorldObject*>& targets)
             {
-                //if (!targets.empty() && GetCaster() && GetCaster()->getVictim())
-                //    targets.remove_if(GuidCheck(GetCaster()->getVictim()->GetGUID()));
+                //if (!targets.empty() && GetCaster() && GetCaster()->GetVictim())
+                //    targets.remove_if(GuidCheck(GetCaster()->GetVictim()->GetGUID()));
 
                 if (targets.size() < 2)
                     bCanLink = false;
@@ -559,7 +542,7 @@ class spell_baleroc_final_countdown : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_baleroc_final_countdown_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 AfterCast += SpellCastFn(spell_baleroc_final_countdown_SpellScript::HandleDummy);
@@ -573,7 +556,7 @@ class spell_baleroc_final_countdown : public SpellScriptLoader
             class GuidCheck
             {
                 public:
-                    GuidCheck(uint64 guid) : _guid(guid) {}
+                    GuidCheck(uint64 guid) : _guid(guid) { }
 
                     bool operator()(WorldObject* unit)
                     {
@@ -585,7 +568,7 @@ class spell_baleroc_final_countdown : public SpellScriptLoader
             };
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_baleroc_final_countdown_SpellScript();
         }
@@ -609,32 +592,15 @@ class spell_baleroc_final_countdown_script : public SpellScriptLoader
                 GetHitUnit()->RemoveAurasDueToSpell(SPELL_FINAL_COUNTDOWN_AURA);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_baleroc_final_countdown_script_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_baleroc_final_countdown_script_SpellScript();
-        }
-};
-
-class achievement_share_the_pain : public AchievementCriteriaScript
-{
-    public:
-        achievement_share_the_pain() : AchievementCriteriaScript("achievement_share_the_pain") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (boss_baleroc::boss_balerocAI* BalerocAI = CAST_AI(boss_baleroc::boss_balerocAI, target->GetAI()))
-                return BalerocAI->AllowAchieve();
-
-            return false;
         }
 };
 
@@ -646,5 +612,4 @@ void AddSC_boss_baleroc()
     new spell_baleroc_tormented_aoe();
     new spell_baleroc_final_countdown();
     new spell_baleroc_final_countdown_script();
-    new achievement_share_the_pain();
 }

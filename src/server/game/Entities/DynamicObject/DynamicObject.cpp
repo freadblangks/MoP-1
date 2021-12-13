@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -26,6 +27,9 @@
 #include "CellImpl.h"
 #include "GridNotifiersImpl.h"
 #include "ScriptMgr.h"
+#include "Group.h"
+#include "GroupMgr.h"
+#include "Transport.h"
 
 DynamicObject::DynamicObject(bool isWorldObject) : WorldObject(isWorldObject),
     _aura(NULL), _removedAura(NULL), _caster(NULL), _duration(0), _isViewpoint(false)
@@ -44,6 +48,7 @@ DynamicObject::~DynamicObject()
     ASSERT(!_aura);
     ASSERT(!_caster);
     ASSERT(!_isViewpoint);
+    delete _removedAura;
 }
 
 void DynamicObject::AddToWorld()
@@ -53,7 +58,9 @@ void DynamicObject::AddToWorld()
     {
         sObjectAccessor->AddObject(this);
         WorldObject::AddToWorld();
-        BindToCaster();
+
+        if (GetType() != DYNAMIC_OBJECT_RAID_MARKER)
+            BindToCaster();
     }
 }
 
@@ -72,7 +79,9 @@ void DynamicObject::RemoveFromWorld()
         if (!IsInWorld())
             return;
 
-        UnbindFromCaster();
+        if (GetType() != DYNAMIC_OBJECT_RAID_MARKER)
+            UnbindFromCaster();
+
         WorldObject::RemoveFromWorld();
         sObjectAccessor->RemoveObject(this);
     }
@@ -80,22 +89,29 @@ void DynamicObject::RemoveFromWorld()
 
 bool DynamicObject::CreateDynamicObject(uint32 guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type)
 {
-    _spell = spell;
     _type = type;
 
     SetMap(caster->GetMap());
     Relocate(pos);
     if (!IsPositionValid())
     {
-        sLog->outError(LOG_FILTER_GENERAL, "DynamicObject (spell %u) not created. Suggested coordinates isn't valid (X: %f Y: %f)", spell->Id, GetPositionX(), GetPositionY());
+        TC_LOG_ERROR("misc", "DynamicObject (spell %u) not created. Suggested coordinates isn't valid (X: %f Y: %f)", spell->Id, GetPositionX(), GetPositionY());
         return false;
     }
 
     WorldObject::_Create(guidlow, HIGHGUID_DYNAMICOBJECT, caster->GetPhaseMask());
 
     SetEntry(spell->Id);
-    SetObjectScale(1.0f);
-    SetUInt64Value(DYNAMICOBJECT_CASTER, caster->GetGUID());
+    SetObjectScale(1);
+    SetUInt64Value(DYNAMICOBJECT_FIELD_CASTER, caster->GetGUID());
+
+    if (type == DYNAMIC_OBJECT_RAID_MARKER) // The group is considered the caster.
+    {
+        ASSERT(caster->GetTypeId() == TYPEID_PLAYER && caster->ToPlayer()->GetGroup() && "DYNAMIC_OBJECT_RAID_MARKER must only be casted by players which are in the group.");
+        SetUInt64Value(DYNAMICOBJECT_FIELD_CASTER, caster->ToPlayer()->GetGroup()->GetGUID());
+    }
+    else
+        SetUInt64Value(DYNAMICOBJECT_FIELD_CASTER, caster->GetGUID());
 
     // The lower word of DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID must be 0x0001. This value means that the visual radius will be overriden
     // by client for most of the "ground patch" visual effect spells and a few "skyfall" ones like Hurricane.
@@ -108,27 +124,56 @@ bool DynamicObject::CreateDynamicObject(uint32 guidlow, Unit* caster, SpellInfo 
     if (spellInfo)
     {
         uint32 visual = spellInfo->SpellVisual[0] ? spellInfo->SpellVisual[0] : spellInfo->SpellVisual[1];
+        if ((spellInfo->Id == 5740 || spellInfo->Id == 104232) && caster->HasAura(101508)) // The Codex of Xerrath
+            visual = 25761;
         SetUInt32Value(DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID, 0x10000000 | visual);
     }
 
-    SetUInt32Value(DYNAMICOBJECT_SPELLID, spell->Id);
-    SetFloatValue(DYNAMICOBJECT_RADIUS, radius);
-    SetUInt32Value(DYNAMICOBJECT_CASTTIME, getMSTime());
+    SetUInt32Value(DYNAMICOBJECT_FIELD_SPELL_ID, spell->Id);
+    SetFloatValue(DYNAMICOBJECT_FIELD_RADIUS, radius);
+    SetUInt32Value(DYNAMICOBJECT_FIELD_CAST_TIME, getMSTime());
+
+    LoadCustomVisibility();
 
     if (IsWorldObject())
-        setActive(true);    //must before add to map to be put in world container
+        setActive(true, ActiveFlags::IsWorldObject);    //must before add to map to be put in world container
+
+    // This object must be added to transport before adding to map for the client to properly display it
+    if (AddToTransportIfNeeded(caster->GetTransport()))
+        setActive(true, ActiveFlags::OnTransport);
 
     if (!GetMap()->AddToMap(this))
+    {
+        // Returning false will cause the object to be deleted - remove from transport
+        if (Transport* transport = GetTransport())
+            transport->RemovePassenger(this);
         return false;
+    }
 
     return true;
 }
 
 void DynamicObject::Update(uint32 p_time)
 {
-    // caster has to be always available and in the same map
-    ASSERT(_caster);
-    ASSERT(_caster->GetMap() == GetMap());
+    // caster has to be always available and in the same map except for raid markers
+    if (GetType() == DYNAMIC_OBJECT_RAID_MARKER)
+    {
+        Group* group = sGroupMgr->GetGroupByGUID(GetCasterGUID());
+        if (!group || !group->HasRaidMarker(GetGUID()))
+        {
+            Remove();
+            return;
+        }
+    }
+    else
+    {
+        // Caster can be 'not in world' at the time dynamic objects update, but are not yet deleted in Unit destructor.
+        if (!_caster || _caster->GetMap() != GetMap())
+        {
+            Remove();
+            return;
+        }
+    }
 
     bool expired = false;
 
@@ -150,7 +195,13 @@ void DynamicObject::Update(uint32 p_time)
     }
 
     if (expired)
+    {
+        if (GetType() == DYNAMIC_OBJECT_RAID_MARKER)
+            if (Group* group = sGroupMgr->GetGroupByGUID(GetCasterGUID()))
+                group->RemoveRaidMarker(group->GetRaidMarkerByGuid(GetGUID()));
+
         Remove();
+    }
     else
         sScriptMgr->OnDynamicObjectUpdate(this, p_time);
 }
@@ -183,10 +234,10 @@ void DynamicObject::SetDuration(int32 newDuration)
 
 void DynamicObject::Delay(int32 delaytime)
 {
-    SetDuration(GetDuration() - delaytime);
+    SetDuration(GetDuration() + delaytime);
 }
 
-void DynamicObject::SetAura(AuraPtr aura)
+void DynamicObject::SetAura(Aura* aura)
 {
     ASSERT(!_aura && aura);
     _aura = aura;
@@ -196,7 +247,7 @@ void DynamicObject::RemoveAura()
 {
     ASSERT(_aura && !_removedAura);
     _removedAura = _aura;
-    _aura = NULLAURA;
+    _aura = NULL;
     if (!_removedAura->IsRemoved())
         _removedAura->_Remove(AURA_REMOVE_BY_DEFAULT);
 }
@@ -221,17 +272,75 @@ void DynamicObject::RemoveCasterViewpoint()
 
 void DynamicObject::BindToCaster()
 {
-    //ASSERT(!_caster);
+    ASSERT(!_caster);
     _caster = ObjectAccessor::GetUnit(*this, GetCasterGUID());
-    //ASSERT(_caster);
-    //ASSERT(_caster->GetMap() == GetMap());
-    if (_caster)
-        _caster->_RegisterDynObject(this);
+    ASSERT(_caster);
+    ASSERT(_caster->GetMap() == GetMap());
+    _caster->_RegisterDynObject(this);
 }
 
 void DynamicObject::UnbindFromCaster()
 {
-    //ASSERT(_caster);
+    ASSERT(_caster);
     _caster->_UnregisterDynObject(this);
     _caster = NULL;
+}
+
+void DynamicObject::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target) const
+{
+    if (!target)
+        return;
+
+    UpdateBuilder builder;
+    builder.SetSource(updateType == UPDATETYPE_VALUES ? _changesMask.GetBits() : m_uint32Values, m_valuesCount);
+    builder.SetDest(data);
+
+    uint32* flags = nullptr;
+    uint32 visibleFlag = GetUpdateFieldData(target, flags);
+
+    for (uint16 index = 0; index < m_valuesCount; ++index)
+    {
+        if (_fieldNotifyFlags & flags[index] || (builder.GetSrcBit(index) && (flags[index] & visibleFlag)))
+        {
+            builder.SetDestBit(index);
+
+            if (index == DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID)
+                *data << ((m_uint32Values[index] & 0xFFFF0000) | GetVisualForTarget(target));
+            else
+                *data << m_uint32Values[index];
+        }
+    }
+
+    builder.Finish();
+    BuildDynamicValuesUpdate(updateType, data);
+}
+
+uint32 DynamicObject::GetVisualForTarget(Player const* target) const
+{
+    auto getVisualIfHostile = [=](Player const* target, uint32 hostileViusal)
+    {
+        if (GetMap()->IsBattlegroundOrArena())
+        {
+            if (GetCaster()->ToPlayer())
+                if (GetCaster()->ToPlayer()->GetBGTeam() != target->GetBGTeam())
+                    return hostileViusal;
+        }
+        else if (GetCaster()->IsHostileTo(target))
+            return hostileViusal;
+        return m_uint32Values[DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID];
+    };
+
+    switch (GetSpellId())
+    {
+        case 43265:     // Death and Decay
+            return getVisualIfHostile(target, 29872);
+        case 76577:     // Smoke Bomb
+            return getVisualIfHostile(target, 20733);
+        case 118009:    // Desecrated Ground
+            return getVisualIfHostile(target, 20722);
+        default:
+            break;
+    }
+
+    return m_uint32Values[DYNAMICOBJECT_FIELD_TYPE_AND_VISUAL_ID];
 }

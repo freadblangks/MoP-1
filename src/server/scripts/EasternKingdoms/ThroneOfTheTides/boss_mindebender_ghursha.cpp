@@ -23,10 +23,8 @@ enum Spells
     SPELL_EARTH_SHARDS              = 84931,
     SPELL_EARTH_SHARDS_AURA         = 84935,
     SPELL_EARTH_SHARDS_DMG          = 84945,
-    SPELL_EARTH_SHARDS_DMG_H        = 91491,
     SPELL_EMBERSTRIKE               = 76165,
     SPELL_LAVA_BOLT                 = 76171,
-    SPELL_LAVA_BOLT_H               = 91412,
     SPELL_MAGMA_SPLASH              = 76170,
 
     // Mindbender Ghur'sha
@@ -38,7 +36,6 @@ enum Spells
     SPELL_MIND_FOG_VISUAL           = 76231,
     SPELL_UNRELENTING_AGONY         = 76339,
     SPELL_UNRELENTING_AGONY_DMG     = 76341,
-    SPELL_UNRELENTING_AGONY_DMG_H   = 91493,
 };
 
 enum Events
@@ -69,14 +66,9 @@ class boss_erunak_stonespeaker : public CreatureScript
     public:
         boss_erunak_stonespeaker() : CreatureScript("boss_erunak_stonespeaker") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_erunak_stonespeakerAI(pCreature);
-        }
-
         struct boss_erunak_stonespeakerAI : public ScriptedAI
         {
-            boss_erunak_stonespeakerAI(Creature* pCreature) : ScriptedAI(pCreature), summons(me)
+            boss_erunak_stonespeakerAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -90,79 +82,71 @@ class boss_erunak_stonespeaker : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
             SummonList summons;
-
             bool bPhase;
 
-            void Reset()
+            void Reset() override
             {
                 bPhase = false;
                 events.Reset();
-                summons.DespawnAll();
-                if (pInstance)
-                    if (pInstance->GetBossState(DATA_MINDBENDER_GHURSHA) == DONE || bPhase)
-                        me->setFaction(35);
+                summons.DespawnAll(2000);
+                if (instance->GetBossState(DATA_MINDBENDER_GHURSHA) == DONE || bPhase)
+                    me->setFaction(35);
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                if (pInstance)
-                    if (Creature* pGhursha = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_MINDBENDER_GHURSHA)))
-                        pGhursha->AI()->Talk(SAY_KILL);
+                if (Creature* pGhursha = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_MINDBENDER_GHURSHA)))
+                    pGhursha->AI()->Talk(SAY_KILL);
             }
 
-            void SpellHit(Unit* caster, SpellInfo const* spell)
+            void SpellHit(Unit* caster, const SpellInfo* spell) override
             {
                 if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
-                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_LAVA_BOLT
-                        || me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_LAVA_BOLT_H)
+                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_LAVA_BOLT)
                         for (uint8 i = 0; i < 3; ++i)
-						    if (spell->Effects[i].Effect == SPELL_EFFECT_INTERRUPT_CAST)
-							    me->InterruptSpell(CURRENT_GENERIC_SPELL);
+                            if (spell->Effects[i].Effect == SPELL_EFFECT_INTERRUPT_CAST)
+                                me->InterruptSpell(CURRENT_GENERIC_SPELL);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_EARTH_SHARDS, 8000);
                 events.ScheduleEvent(EVENT_EMBERSTRIKE, 11000);
                 events.ScheduleEvent(EVENT_LAVA_BOLT, 13000);
                 events.ScheduleEvent(EVENT_MAGMA_SPLASH, 6000);
-                if (pInstance)
-                    pInstance->SetBossState(DATA_MINDBENDER_GHURSHA, IN_PROGRESS);
+                instance->SetBossState(DATA_MINDBENDER_GHURSHA, IN_PROGRESS);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     summon->SetInCombatWithZone();
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 summons.Despawn(summon);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
-                if(me->GetHealthPct() < 50 && !bPhase)
+                if (me->GetHealthPct() < 50 && !bPhase)
                 {
                     bPhase = true;
                     events.Reset();
                     me->setFaction(35);
                     EnterEvadeMode();
-                    if (pInstance)
-                    {
-                        if (Creature* pGhursha = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_MINDBENDER_GHURSHA)))
-                            pGhursha->AI()->DoAction(ACTION_GHURSHA_START);
-                    }
+                    if (Creature* pGhursha = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_MINDBENDER_GHURSHA)))
+                        pGhursha->AI()->DoAction(ACTION_GHURSHA_START);
                     return;
                 }
 
@@ -175,29 +159,34 @@ class boss_erunak_stonespeaker : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_EARTH_SHARDS:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                            DoCast(pTarget, SPELL_EARTH_SHARDS);
-                        events.ScheduleEvent(EVENT_EARTH_SHARDS, 20000);
-                        break;
-                    case EVENT_EMBERSTRIKE:
-                        DoCast(me->getVictim(), SPELL_EMBERSTRIKE);
-                        events.ScheduleEvent(EVENT_EMBERSTRIKE, 11000);
-                        break;
-                    case EVENT_LAVA_BOLT:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                            DoCast(pTarget, SPELL_LAVA_BOLT);
-                        events.ScheduleEvent(EVENT_LAVA_BOLT, 14000);
-                        break;
-                    case EVENT_MAGMA_SPLASH:
-                        DoCast(me, SPELL_MAGMA_SPLASH);
-                        events.ScheduleEvent(EVENT_MAGMA_SPLASH, 13000);
-                        break;
+                        case EVENT_EARTH_SHARDS:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_EARTH_SHARDS);
+                            events.ScheduleEvent(EVENT_EARTH_SHARDS, 20000);
+                            break;
+                        case EVENT_EMBERSTRIKE:
+                            DoCast(me->GetVictim(), SPELL_EMBERSTRIKE);
+                            events.ScheduleEvent(EVENT_EMBERSTRIKE, 11000);
+                            break;
+                        case EVENT_LAVA_BOLT:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_LAVA_BOLT);
+                            events.ScheduleEvent(EVENT_LAVA_BOLT, 14000);
+                            break;
+                        case EVENT_MAGMA_SPLASH:
+                            DoCast(me, SPELL_MAGMA_SPLASH);
+                            events.ScheduleEvent(EVENT_MAGMA_SPLASH, 13000);
+                            break;
                     }
                 }            
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_erunak_stonespeakerAI>(creature);
+        }
 };
 
 class boss_mindbender_ghursha : public CreatureScript
@@ -205,14 +194,9 @@ class boss_mindbender_ghursha : public CreatureScript
     public:
         boss_mindbender_ghursha() : CreatureScript("boss_mindbender_ghursha") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_mindbender_ghurshaAI (pCreature);
-        }
-
         struct boss_mindbender_ghurshaAI : public BossAI
         {
-            boss_mindbender_ghurshaAI(Creature* pCreature) : BossAI(pCreature, DATA_MINDBENDER_GHURSHA)
+            boss_mindbender_ghurshaAI(Creature* creature) : BossAI(creature, DATA_MINDBENDER_GHURSHA)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -228,17 +212,12 @@ class boss_mindbender_ghursha : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(TotTScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
@@ -248,29 +227,33 @@ class boss_mindbender_ghursha : public CreatureScript
                     pErunak->AI()->EnterEvadeMode();
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_GHURSHA_START)
                 {
                     me->SetReactState(REACT_AGGRESSIVE);
                     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                    if (Unit* pTarget = me->SelectNearestTarget(100.0f))
-                        me->GetMotionMaster()->MoveChase(pTarget);
+                    if (Unit* target = me->SelectNearestTarget(100.0f))
+                        me->GetMotionMaster()->MoveChase(target);
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 events.ScheduleEvent(EVENT_ENSLAVE, 13000);
                 events.ScheduleEvent(EVENT_ABSORB_MAGIC, 20000);
                 events.ScheduleEvent(EVENT_MIND_FOG, urand(6000,12000));
                 events.ScheduleEvent(EVENT_UNRELENTING_AGONY, 10000);
                 Talk(SAY_PHASE);
-                instance->SetBossState(DATA_MINDBENDER_GHURSHA, IN_PROGRESS);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -284,35 +267,39 @@ class boss_mindbender_ghursha : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_ENSLAVE:
-                        Talk(SAY_ENCLAVE);
-                        events.ScheduleEvent(EVENT_ENSLAVE, 31000);
-                        break;
-                    case EVENT_ABSORB_MAGIC:
-                        DoCast(me, SPELL_ABSORB_MAGIC);
-                        events.ScheduleEvent(EVENT_ABSORB_MAGIC, 15000);
-                        break;
-                    case EVENT_MIND_FOG:
-                        DoCast(me, SPELL_MIND_FOG);
-                        events.ScheduleEvent(EVENT_MIND_FOG, urand(23000,25000));
-                        break;
-                    case EVENT_UNRELENTING_AGONY:
-                        DoCast(me, SPELL_UNRELENTING_AGONY);
-                        events.ScheduleEvent(EVENT_UNRELENTING_AGONY, 30000);
-                        break;
+                        case EVENT_ENSLAVE:
+                            Talk(SAY_ENCLAVE);
+                            events.ScheduleEvent(EVENT_ENSLAVE, 31000);
+                            break;
+                        case EVENT_ABSORB_MAGIC:
+                            DoCast(me, SPELL_ABSORB_MAGIC);
+                            events.ScheduleEvent(EVENT_ABSORB_MAGIC, 15000);
+                            break;
+                        case EVENT_MIND_FOG:
+                            DoCast(me, SPELL_MIND_FOG);
+                            events.ScheduleEvent(EVENT_MIND_FOG, urand(23000,25000));
+                            break;
+                        case EVENT_UNRELENTING_AGONY:
+                            DoCast(me, SPELL_UNRELENTING_AGONY);
+                            events.ScheduleEvent(EVENT_UNRELENTING_AGONY, 30000);
+                            break;
                     }
-                }		
+                }        
                 DoMeleeAttackIfReady();
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 Talk(SAY_DEATH);
                 if (Creature* pErunak = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_ERUNAK_STONESPEAKER)))
                 {
@@ -321,6 +308,11 @@ class boss_mindbender_ghursha : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_mindbender_ghurshaAI>(creature);
+        }
 };
 
 class npc_erunak_earth_shards : public CreatureScript
@@ -328,29 +320,25 @@ class npc_erunak_earth_shards : public CreatureScript
     public:
         npc_erunak_earth_shards() : CreatureScript("npc_erunak_earth_shards") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_erunak_earth_shardsAI : public ScriptedAI
         {
-            return new npc_erunak_earth_shardsAI(pCreature);
-        }
-
-        struct npc_erunak_earth_shardsAI : public Scripted_NoMovementAI
-        {
-            npc_erunak_earth_shardsAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_erunak_earth_shardsAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
             uint32 uiDespawnTimer;
 
-            void Reset()
+            void Reset() override
             {
                 uiDespawnTimer = 5000;
                 DoCast(me, SPELL_EARTH_SHARDS_AURA);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (uiDespawnTimer <= diff)
                 {
@@ -360,6 +348,11 @@ class npc_erunak_earth_shards : public CreatureScript
                     uiDespawnTimer -= diff;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_erunak_earth_shardsAI>(creature);
+        }
 };
 
 class npc_ghursha_mind_fog : public CreatureScript
@@ -367,30 +360,29 @@ class npc_ghursha_mind_fog : public CreatureScript
     public:
         npc_ghursha_mind_fog() : CreatureScript("npc_ghursha_mind_fog") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_ghursha_mind_fogAI : public ScriptedAI
         {
-            return new npc_ghursha_mind_fogAI (pCreature);
-        }
-
-        struct npc_ghursha_mind_fogAI : public Scripted_NoMovementAI
-        {
-            npc_ghursha_mind_fogAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_ghursha_mind_fogAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 DoCast(me, SPELL_MIND_FOG_AURA, true);
                 DoCast(me, SPELL_MIND_FOG_VISUAL, true);
             }
 
-            void UpdateAI(const uint32 diff)
-            {
-            }
+            void UpdateAI(uint32 diff) override { }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_ghursha_mind_fogAI>(creature);
+        }
 };
 
 void AddSC_boss_erunak_stonespeaker()

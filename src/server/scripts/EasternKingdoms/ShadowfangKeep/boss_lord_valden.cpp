@@ -1,30 +1,25 @@
 #include"ScriptPCH.h"
 #include"shadowfang_keep.h"
 
-#define SAY_AGGRO "Even here i find myself beset by fools!"
-#define SAY_DEATH "My new life was just beginning..."
-#define SAY_KILL1 "This childish effort ends now!"
-#define SAY_KILL2 "You shall annoy me no longer!"
-
 enum ScriptTexts
 {
+    SAY_AGGRO = 0,
+    SAY_DEATH = 1,
+    SAY_KILL  = 2,
 };
 
 enum Spells
 {
     SPELL_ICE_SHARDS                    = 93527,
     SPELL_CONJURE_POISONOUS_MIXTURE     = 93697,
-    SPELL_CONJURE_POISONOUS_MIXTURE_H   = 93704,
     SPELL_CONJURE_FROST_MIXTURE         = 93505,
-    SPELL_CONJURE_FROST_MIXTURE_H       = 93702,
-
 
     SPELL_CONJURE_MYSTERY_TOXIN_1       = 93695,
     SPELL_CONJURE_MYSTERY_TOXIN_2       = 93563,
     
 
     SPELL_CONJURE_MYSTERY_PERIODIC      = 93562,
-                                        
+
     SPELL_TOXIC_COAGULANT_AURA          = 93572,
     SPELL_TOXIC_COAGULANT_DMG           = 93617,
 
@@ -50,15 +45,14 @@ class boss_lord_valden : public CreatureScript
 {
     public:
         boss_lord_valden() : CreatureScript("boss_lord_valden") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_lord_valdenAI(pCreature);
-        }
 
         struct boss_lord_valdenAI : public BossAI
         {
-            boss_lord_valdenAI(Creature* pCreature) : BossAI(pCreature, DATA_VALDEN)
+            boss_lord_valdenAI(Creature* creature) : BossAI(creature, DATA_VALDEN) { }
+
+            bool bRed;
+
+            void InitializeAI() override
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -71,76 +65,96 @@ class boss_lord_valden : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                Reset();
             }
 
-            bool bRed;
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                me->HandleEmoteCommand(EMOTE_STATE_USE_STANDING);
                 bRed = false;
             }
             
-            void EnterCombat(Unit* pWho)
+            void EnterCombat(Unit* /*who*/) override
             {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 if (IsHeroic())
-                {
-                    events.ScheduleEvent(EVENT_CONJURE_FROST_MIXTURE, 7500);
                     events.ScheduleEvent(EVENT_CONJURE_MYSTERY_TOXIN, 15000);
-                }
+
                 events.ScheduleEvent(EVENT_ICE_SHARDS, 30000);
                 events.ScheduleEvent(EVENT_CONJURE_POISONOUS_MIXTURE, 6000);
-                instance->SetBossState(DATA_VALDEN, IN_PROGRESS);
-                me->MonsterYell(SAY_AGGRO, 0, 0);
+                events.ScheduleEvent(EVENT_CONJURE_FROST_MIXTURE, 7500);
+                Talk(SAY_AGGRO);
+                me->HandleEmoteCommand(EMOTE_STATE_NONE);
                 DoZoneInCombat();
             }
-            
-            void JustDied(Unit* who)
+
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
 
-                me->MonsterYell(SAY_DEATH, 0, 0);
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                scheduler.CancelAll();
+                instance->SetData(DATA_VALDEN, DONE);
+                Talk(SAY_DEATH);
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                me->MonsterYell(urand(0, 1)? SAY_KILL1: SAY_KILL2, 0, 0);
+                Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 uiDiff)
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (me->HealthBelowPct(30) && !bRed && IsHeroic())
+                {
+                    bRed = true;
+                    DoCast(me, SPELL_CONJURE_MYSTERY_TOXIN_2);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
-                if (me->HealthBelowPct(30) && !bRed)
-                {
-                    bRed = true;
-                    DoCast(me, SPELL_CONJURE_MYSTERY_TOXIN_2);
-                    return;
-                }
-
-                events.Update(uiDiff);
+                events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
 
-                while(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
                         case EVENT_ICE_SHARDS:
                             DoCast(me, SPELL_ICE_SHARDS);
                             events.ScheduleEvent(EVENT_ICE_SHARDS, urand(20000, 25000));
                             break;
                         case EVENT_CONJURE_POISONOUS_MIXTURE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0,NonTankTargetSelector(me)))
                                 DoCast(target, SPELL_CONJURE_POISONOUS_MIXTURE);
+                            else if (Unit* target=me->GetVictim())
+                                DoCast(target, SPELL_CONJURE_POISONOUS_MIXTURE);
+
                             events.ScheduleEvent(EVENT_CONJURE_POISONOUS_MIXTURE, urand(8000, 14000));
                             break;
                         case EVENT_CONJURE_FROST_MIXTURE:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, NonTankTargetSelector(me)))
                                 DoCast(target, SPELL_CONJURE_FROST_MIXTURE);
+                            else if (Unit* target = me->GetVictim())
+                                DoCast(target, SPELL_CONJURE_FROST_MIXTURE);
+
                             events.ScheduleEvent(EVENT_CONJURE_FROST_MIXTURE, urand(8000, 14000));
                             break;
                         case EVENT_CONJURE_MYSTERY_TOXIN:
@@ -152,24 +166,26 @@ class boss_lord_valden : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_lord_valdenAI>(creature);
+        }
 };
 
 class npc_valden_mystery_toxin : public CreatureScript
 {
     public:
         npc_valden_mystery_toxin() : CreatureScript("npc_valden_mystery_toxin") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+
+        struct npc_valden_mystery_toxinAI : public ScriptedAI
         {
-            return new npc_valden_mystery_toxinAI(pCreature);
-        }
-        struct npc_valden_mystery_toxinAI : public Scripted_NoMovementAI
-        {
-            npc_valden_mystery_toxinAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_valden_mystery_toxinAI(Creature* creature) : ScriptedAI(creature)
             {
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 switch (me->GetEntry())
                 {
@@ -182,7 +198,12 @@ class npc_valden_mystery_toxin : public CreatureScript
                         break;
                 }
             }
-     };
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_valden_mystery_toxinAI>(creature);
+        }
 };
 
 class spell_valden_toxic_coagulant : public SpellScriptLoader
@@ -193,8 +214,8 @@ class spell_valden_toxic_coagulant : public SpellScriptLoader
         class spell_valden_toxic_coagulant_AuraScript : public AuraScript
         {
             PrepareAuraScript(spell_valden_toxic_coagulant_AuraScript);
-            
-            void HandleTick(constAuraEffectPtr aurEff)
+
+            void HandleTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetTarget())
                     return;
@@ -203,13 +224,13 @@ class spell_valden_toxic_coagulant : public SpellScriptLoader
                     GetTarget()->RemoveAuraFromStack(SPELL_TOXIC_COAGULANT_DMG);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_valden_toxic_coagulant_AuraScript::HandleTick, EFFECT_1, SPELL_AURA_PERIODIC_DAMAGE);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_valden_toxic_coagulant_AuraScript();
         }

@@ -15,8 +15,9 @@ enum Spells
     SPELL_DIVINE_RECKONING      = 75592,
     SPELL_REVERBERATING_HYMN    = 75322,
     SPELL_SEARING_FLAME         = 75115,
-    SPELL_SEARING_FLAME_SUM     = 75114,
-    SPELL_SEARING_FLAME_DMG     = 75116,
+    SPELL_BURNING_LIGHT_SUM     = 75114,
+    SPELL_BURNING_LIGHT_DMG     = 75116,
+    SPELL_BURNING_LIGHT_FORCE   = 75115,
     SPELL_SHIELD_OF_LIGHT       = 74938,
     SPELL_BEAM_LEFT             = 83697, 
     SPELL_BEAM_RIGHT            = 83698, 
@@ -85,82 +86,84 @@ class boss_temple_guardian_anhuur : public CreatureScript
     public:
         boss_temple_guardian_anhuur() : CreatureScript("boss_temple_guardian_anhuur") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_temple_guardian_anhuurAI(pCreature);
-        }
-
         struct boss_temple_guardian_anhuurAI : public BossAI
         {
-            boss_temple_guardian_anhuurAI(Creature* pCreature) : BossAI(pCreature, DATA_TEMPLE_GUARDIAN_ANHUUR)
+            boss_temple_guardian_anhuurAI(Creature* creature) : BossAI(creature, DATA_TEMPLE_GUARDIAN_ANHUUR)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
             uint8 phase;
             uint8 beacons;
             bool achieve;
+            bool casting;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HOScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
                 me->SetReactState(REACT_AGGRESSIVE);
                 phase = 0;
                 beacons = 0;
                 achieve = false;
+                casting = false;
+                summons.DespawnAll();
+                me->GetMap()->SetWorldState(WORLDSTATE_I_HATE_THAT_SONG, 1);
             }
 
-            void KilledUnit(Unit* /*Killed*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* /*Kill*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 Talk(SAY_DEATH);
             }
 
-            void EnterCombat(Unit* /*Ent*/)
+            void EnterCombat(Unit* /*who*/) override
             {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 events.ScheduleEvent(EVENT_DIVINE_RECKONING, urand(3000, 10000));
                 events.ScheduleEvent(EVENT_SEARING_FLAME, urand(2000, 7000));
                 Talk(SAY_AGGRO);
                 DoZoneInCombat();
-                instance->SetBossState(DATA_TEMPLE_GUARDIAN_ANHUUR, IN_PROGRESS);
             }
 
-            void JustReachedHome()
-		    {
-			    _JustReachedHome();
-		    }
+            void JustReachedHome() override
+            {
+                _JustReachedHome();
+            }
 
             bool HasAchieved()
             {
                 return achieve;
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_ACTIVATE)
                 {
@@ -173,34 +176,55 @@ class boss_temple_guardian_anhuur : public CreatureScript
                 }
             }
 
-            void SpellHit(Unit* caster, SpellInfo const* spell)
-		    {
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
+            {
                 if (me->HasAura(SPELL_SHIELD_OF_LIGHT))
                     return;
 
                 if (spell->HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
-			        if (me->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
-				        if (me->GetCurrentSpell(CURRENT_CHANNELED_SPELL)->m_spellInfo->Id == SPELL_REVERBERATING_HYMN)
+                    if (me->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+                        if (me->GetCurrentSpell(CURRENT_CHANNELED_SPELL)->m_spellInfo->Id == SPELL_REVERBERATING_HYMN)
                         {
                             me->InterruptSpell(CURRENT_CHANNELED_SPELL);
+                            casting = false;
                             phase++;
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
+                            events.CancelEvent(EVENT_ACHIEVEMENT);
                             events.ScheduleEvent(EVENT_DIVINE_RECKONING, urand(3000, 10000));
                             events.ScheduleEvent(EVENT_SEARING_FLAME, urand(2000, 7000));
                         }
-		    }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-                if (summon->GetEntry() != NPC_PIT_SNAKE)
-                    if (me->isInCombat())
-                        DoZoneInCombat(summon);
             }
 
-            void UpdateAI(const uint32 diff)
+            void JustSummoned(Creature* summon) override
             {
+                summons.Summon(summon);
+
+                switch (summon->GetEntry())
+                {
+                    case NPC_PIT_SNAKE:
+                        if (me->IsInCombat())
+                            DoZoneInCombat(summon);
+                        break;
+                    case NPC_SEARING_LIGHT:
+                        summon->CastSpell(summon, SPELL_BURNING_LIGHT_DMG, true);
+                        break;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (casting && !me->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+                {
+                    casting = false;
+                    phase++;
+                    me->SetReactState(REACT_AGGRESSIVE);
+                    me->GetMotionMaster()->MoveChase(me->GetVictim());
+                    events.CancelEvent(EVENT_ACHIEVEMENT);
+                    events.ScheduleEvent(EVENT_DIVINE_RECKONING, urand(3000, 10000));
+                    events.ScheduleEvent(EVENT_SEARING_FLAME, urand(2000, 7000));
+                }
+
                 if (!UpdateVictim())
                     return;
 
@@ -214,20 +238,15 @@ class boss_temple_guardian_anhuur : public CreatureScript
                     for (uint32 i = 0; i < 21; ++i)
                         me->SummonCreature(NPC_PIT_SNAKE,SpawnPosition[i],TEMPSUMMON_CORPSE_TIMED_DESPAWN, 3000);
                     
-                    if (GameObject* pGo = me->FindNearestGameObject(GO_BEACON_LEFT, 100.0f))
-                        pGo->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_INTERACT_COND);
-                    if (GameObject* pGo = me->FindNearestGameObject(GO_BEACON_RIGHT, 100.0f))
-                        pGo->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_INTERACT_COND);
+                    if (GameObject* go = me->FindNearestGameObject(GO_BEACON_LEFT, 100.0f))
+                        go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                    if (GameObject* go = me->FindNearestGameObject(GO_BEACON_RIGHT, 100.0f))
+                        go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
 
                     Talk(SAY_EVENT);
                     
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
-                    if (!achieve)
-                    {
-                        achieve = true;
-                        events.ScheduleEvent(EVENT_ACHIEVEMENT, 15000);
-                    }
                     //DoTeleportTo(bosspos.GetPositionX(), bosspos.GetPositionY(), bosspos.GetPositionZ());
                     events.ScheduleEvent(EVENT_SHIELD_OF_LIGHT, 2000);
                     return;
@@ -235,7 +254,7 @@ class boss_temple_guardian_anhuur : public CreatureScript
 
                 events.Update(diff);
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
@@ -245,19 +264,25 @@ class boss_temple_guardian_anhuur : public CreatureScript
                             events.ScheduleEvent(EVENT_REVERBERATING_HYMN, 1000);
                             break;
                         case EVENT_REVERBERATING_HYMN:
+                            if (!achieve)
+                            {
+                                achieve = true;
+                                events.ScheduleEvent(EVENT_ACHIEVEMENT, 15000);
+                            }
                             DoCast(me, SPELL_REVERBERATING_HYMN);
+                            casting = true;
                             break;
                         case EVENT_ACHIEVEMENT:
                             achieve = false;
                             break;
                         case EVENT_DIVINE_RECKONING:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_DIVINE_RECKONING);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                DoCast(target, SPELL_DIVINE_RECKONING);
                             events.ScheduleEvent(EVENT_DIVINE_RECKONING, urand(15000, 17000));
                             break;
                         case EVENT_SEARING_FLAME:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_SEARING_FLAME_SUM);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                DoCast(target, SPELL_BURNING_LIGHT_FORCE);
                             events.ScheduleEvent(EVENT_SEARING_FLAME, urand(8000, 10000));
                             break;
                     }
@@ -266,6 +291,11 @@ class boss_temple_guardian_anhuur : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_temple_guardian_anhuurAI>(creature);
+        }
 };
 
 class npc_pit_snake : public CreatureScript
@@ -273,42 +303,35 @@ class npc_pit_snake : public CreatureScript
     public:
         npc_pit_snake() : CreatureScript("npc_pit_snake") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_pit_snakeAI(pCreature);
-        }
-
         struct npc_pit_snakeAI : public ScriptedAI
         {
-            npc_pit_snakeAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-            }
+            npc_pit_snakeAI(Creature* creature) : ScriptedAI(creature) { }
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_POISON_TIPPED_FANGS, urand(2000, 8000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_POISON_TIPPED_FANGS:
-                            DoCast(me->getVictim(), SPELL_POISON_TIPPED_FANGS);
+                            DoCast(me->GetVictim(), SPELL_POISON_TIPPED_FANGS);
                             events.ScheduleEvent(EVENT_POISON_TIPPED_FANGS, urand(5000, 10000));
                             break;
                     }
@@ -317,39 +340,46 @@ class npc_pit_snake : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_pit_snakeAI>(creature);
+        }
 };
 
 class go_beacon_of_light : public GameObjectScript
 {
-public:
-    go_beacon_of_light() : GameObjectScript("go_beacon_of_light") { }
-
-    bool OnGossipHello(Player* pPlayer, GameObject* pGO)
-    {
-        if (Creature* pAnhuur = pGO->FindNearestCreature(NPC_TEMPLE_GUARDIAN_ANHUUR, 100.0f))
-            pAnhuur->GetAI()->DoAction(ACTION_ACTIVATE);
-        pGO->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_INTERACT_COND);
-        return false;
-    }
-};
-
-typedef boss_temple_guardian_anhuur::boss_temple_guardian_anhuurAI AnhuurAI;
-
-class achievement_i_hate_that_song : public AchievementCriteriaScript
-{
     public:
-        achievement_i_hate_that_song() : AchievementCriteriaScript("achievement_i_hate_that_song") { }
+        go_beacon_of_light() : GameObjectScript("go_beacon_of_light") { }
 
-        bool OnCheck(Player* source, Unit* target)
+        bool OnGossipHello(Player* /*player*/, GameObject* go) override
         {
-            if (!target)
-                return false;
-
-            if (AnhuurAI* anhuurAI = CAST_AI(AnhuurAI, target->GetAI()))
-                return anhuurAI->HasAchieved();
+            if (Creature* pAnhuur = go->FindNearestCreature(NPC_TEMPLE_GUARDIAN_ANHUUR, 100.0f))
+                pAnhuur->GetAI()->DoAction(ACTION_ACTIVATE);
+            go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
 
             return false;
         }
+};
+
+// Reverberating Hymn 75322
+class spell_halls_of_orig_reverberating_hymn : public AuraScript
+{
+    PrepareAuraScript(spell_halls_of_orig_reverberating_hymn)
+
+    void HandleRemove(AuraEffect const* pAuraEffect, AuraEffectHandleModes eMode)
+    {
+        if (pAuraEffect->GetBase()->GetDuration() > 165 * IN_MILLISECONDS)
+            return;
+
+        if (Unit* owner = GetOwner()->ToUnit())
+            owner->GetMap()->SetWorldState(WORLDSTATE_I_HATE_THAT_SONG, 0);
+    }
+
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(spell_halls_of_orig_reverberating_hymn::HandleRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+    }
 };
 
 void AddSC_boss_temple_guardian_anhuur()
@@ -357,5 +387,5 @@ void AddSC_boss_temple_guardian_anhuur()
     new boss_temple_guardian_anhuur();
     new npc_pit_snake();
     new go_beacon_of_light();
-    new achievement_i_hate_that_song();
+    new aura_script<spell_halls_of_orig_reverberating_hymn>("spell_halls_of_orig_reverberating_hymn");
 }

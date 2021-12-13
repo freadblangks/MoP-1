@@ -84,58 +84,52 @@ const Position posHatchersWay[2][5] =
 
 const Position posEggs[36] =
 {
-    {-41.177f, 1084.59f, 18.7948f, 1.06465f},
-    {-33.6638f, 1087.02f, 18.7948f, 0.959931f},
-    {-36.2434f, 1088.15f, 18.7948f, 1.72788f},
-    {-31.0391f, 1088.33f, 18.7948f, 2.70526f},
-    {-35.0347f, 1084.92f, 18.7948f, 5.21853f},
-    {-28.0851f, 1214.22f, 18.7947f, 3.38594f},
-    {-27.0043f, 1211.99f, 18.7947f, 3.94444f},
-    {-29.8651f, 1211.38f, 18.7947f, 2.94961f},
-    {-29.1757f, 1090.27f, 18.7948f, 0.680678f},
-    {-40.7069f, 1088.51f, 18.7948f, 0.0174533f},
-    {-34.4183f, 1213.35f, 18.7947f, 2.26893f},
-    {-32.7619f, 1215.33f, 18.7947f, 2.80998f},
-    {-36.2872f, 1218.1f, 18.7947f, 0.0349066f},
-    {-38.5764f, 1218.68f, 18.7947f, 4.97419f},
-    {-26.5745f, 1084.44f, 18.7948f, 2.79253f},
-    {-40.0005f, 1090.55f, 18.7948f, 1.11701f},
-    {-38.2802f, 1088.14f, 18.7948f, 1.27409f},
-    {-37.3368f, 1212.53f, 18.7947f, 0.314159f},
-    {-36.4398f, 1209.93f, 18.7947f, 0.331613f},
-    {-39.3636f, 1209.73f, 18.7947f, 0.593412f},
-    {-39.7272f, 1216.09f, 18.7947f, 5.58505f},
-    {-29.7244f, 1208.43f, 18.7947f, 4.93928f},
-    {-38.9577f, 1207.25f, 18.7947f, 4.06662f},
-    {-34.0586f, 1207.23f, 18.7947f, 4.60767f},
-    {-28.0705f, 1216.81f, 18.7947f, 1.39626f},
-    {-30.4305f, 1216.39f, 18.7947f, 4.90438f},
-    {-32.0784f, 1218.55f, 18.7947f, 5.65487f},
-    {-33.1212f, 1209.77f, 18.7947f, 2.77507f},
-    {-28.4201f, 1082.09f, 18.7948f, 4.01426f},
-    {-30.5147f, 1084.72f, 18.7948f, 1.79769f},
-    {-34.0568f, 1082.02f, 18.7947f, 2.67035f},
-    {-31.6647f, 1081.88f, 18.7948f, 6.17846f},
-    {-38.8813f, 1084.2f, 18.7948f, 0.575959f},
-    {-33.5926f, 1090.16f, 18.7948f, 5.13127f},
-    {-42.8135f, 1085.94f, 18.7948f, 2.04204f},
-    {-39.7956f, 1081.47f, 18.7948f, 2.74017f}
+    { -41.177f,  1084.59f, 18.7948f, 1.06465f   },
+    { -33.6638f, 1087.02f, 18.7948f, 0.959931f  },
+    { -36.2434f, 1088.15f, 18.7948f, 1.72788f   },
+    { -31.0391f, 1088.33f, 18.7948f, 2.70526f   },
+    { -35.0347f, 1084.92f, 18.7948f, 5.21853f   },
+    { -28.0851f, 1214.22f, 18.7947f, 3.38594f   },
+    { -27.0043f, 1211.99f, 18.7947f, 3.94444f   },
+    { -29.8651f, 1211.38f, 18.7947f, 2.94961f   },
+    { -29.1757f, 1090.27f, 18.7948f, 0.680678f  },
+    { -40.7069f, 1088.51f, 18.7948f, 0.0174533f },
+    { -34.4183f, 1213.35f, 18.7947f, 2.26893f   },
+    { -32.7619f, 1215.33f, 18.7947f, 2.80998f   },
+    { -36.2872f, 1218.1f,  18.7947f, 0.0349066f },
+    { -38.5764f, 1218.68f, 18.7947f, 4.97419f   },
+    { -26.5745f, 1084.44f, 18.7948f, 2.79253f   },
+    { -40.0005f, 1090.55f, 18.7948f, 1.11701f   },
+    { -38.2802f, 1088.14f, 18.7948f, 1.27409f   },
+    { -37.3368f, 1212.53f, 18.7947f, 0.314159f  },
+    { -36.4398f, 1209.93f, 18.7947f, 0.331613f  },
+    { -39.3636f, 1209.73f, 18.7947f, 0.593412f  },
+    { -39.7272f, 1216.09f, 18.7947f, 5.58505f   },
+    { -29.7244f, 1208.43f, 18.7947f, 4.93928f   },
+    { -38.9577f, 1207.25f, 18.7947f, 4.06662f   },
+    { -34.0586f, 1207.23f, 18.7947f, 4.60767f   },
+    { -28.0705f, 1216.81f, 18.7947f, 1.39626f   },
+    { -30.4305f, 1216.39f, 18.7947f, 4.90438f   },
+    { -32.0784f, 1218.55f, 18.7947f, 5.65487f   },
+    { -33.1212f, 1209.77f, 18.7947f, 2.77507f   },
+    { -28.4201f, 1082.09f, 18.7948f, 4.01426f   },
+    { -30.5147f, 1084.72f, 18.7948f, 1.79769f   },
+    { -34.0568f, 1082.02f, 18.7947f, 2.67035f   },
+    { -31.6647f, 1081.88f, 18.7948f, 6.17846f   },
+    { -38.8813f, 1084.2f,  18.7948f, 0.575959f  },
+    { -33.5926f, 1090.16f, 18.7948f, 5.13127f   },
+    { -42.8135f, 1085.94f, 18.7948f, 2.04204f   },
+    { -39.7956f, 1081.47f, 18.7948f, 2.74017f   }
 };
 
 class boss_janalai : public CreatureScript
 {
     public:
-
-        boss_janalai() : CreatureScript("boss_janalai") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_janalaiAI(pCreature);
-        }
+        boss_janalai() : CreatureScript("boss_janalai") { }
 
         struct boss_janalaiAI : public BossAI
         {
-            boss_janalaiAI(Creature* pCreature) : BossAI(pCreature, DATA_JANALAI)
+            boss_janalaiAI(Creature* creature) : BossAI(creature, DATA_JANALAI)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -156,7 +150,7 @@ class boss_janalai : public CreatureScript
             uint8 bombsCount;
             uint64 FireBombsGUID[40];
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -168,18 +162,18 @@ class boss_janalai : public CreatureScript
                 bEnraged = false;
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
             }
 
-            void KilledUnit(Unit* /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 bEnraged = false;
                 Talk(SAY_AGGRO);
@@ -212,7 +206,7 @@ class boss_janalai : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -238,14 +232,14 @@ class boss_janalai : public CreatureScript
                         case EVENT_FLAME_BREATH:
                             me->SetReactState(REACT_PASSIVE);
                             me->AttackStop();
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_FLAME_BREATH);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_FLAME_BREATH);
                             events.ScheduleEvent(EVENT_CONTINUE, 3000);
                             events.ScheduleEvent(EVENT_FLAME_BREATH, 9000);
                             break;
                         case EVENT_CONTINUE:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            AttackStart(me->getVictim());
+                            AttackStart(me->GetVictim());
                             break;
                         case EVENT_SUMMON_HATCHERS:
                             Talk(SAY_HATCHER);
@@ -299,37 +293,35 @@ class boss_janalai : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_janalaiAI>(creature);
+        }
 };
 
 class npc_janalai_hatcher : public CreatureScript
 {
     public:
-        npc_janalai_hatcher() : CreatureScript("npc_janalai_hatcher") {}
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_janalai_hatcherAI(pCreature);
-        }
+        npc_janalai_hatcher() : CreatureScript("npc_janalai_hatcher") { }
 
         struct npc_janalai_hatcherAI : public ScriptedAI
         {
-            npc_janalai_hatcherAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_janalai_hatcherAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetSpeed(MOVE_RUN, 0.8f);
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
-
+            InstanceScript* instance;
             uint32 waypoint;
             uint32 WaitTimer;
-
             bool side;
             bool hasChangedSide;
             bool isHatching;
 
-            void Reset()
+            void Reset() override
             {
                 side =(me->GetEntry() ==  24504);
                 waypoint = 0;
@@ -337,7 +329,8 @@ class npc_janalai_hatcher : public CreatureScript
                 hasChangedSide = false;
                 WaitTimer = 1;
             }
-            void MovementInform(uint32, uint32)
+
+            void MovementInform(uint32 /*type*/, uint32 /*pointId*/) override
             {
                 if (waypoint == 5)
                 {
@@ -348,9 +341,9 @@ class npc_janalai_hatcher : public CreatureScript
                     WaitTimer = 1;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!pInstance || !(pInstance->GetBossState(DATA_JANALAI) == IN_PROGRESS))
+                if (instance->GetBossState(DATA_JANALAI) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
@@ -390,26 +383,26 @@ class npc_janalai_hatcher : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_janalai_hatcherAI>(creature);
+        }
 };
 
 class npc_janalai_egg : public CreatureScript
 {
     public:
-        npc_janalai_egg(): CreatureScript("npc_janalai_egg") {}
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_janalai_eggAI(pCreature);
-        }
+        npc_janalai_egg(): CreatureScript("npc_janalai_egg") { }
 
         struct npc_janalai_eggAI : public ScriptedAI
         {
-            npc_janalai_eggAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_janalai_eggAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void SpellHit(Unit* /*caster*/, const SpellInfo* spell)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
                 if (spell->Id == SPELL_HATCH_EGG || spell->Id == SPELL_HATCH_ALL)
                 {
@@ -418,56 +411,56 @@ class npc_janalai_egg : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_janalai_eggAI>(creature);
+        }
 };
 
 class npc_janalai_firebomb : public CreatureScript
 {
     public:
-        npc_janalai_firebomb() : CreatureScript("npc_janalai_firebomb") {}
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_janalai_firebombAI(pCreature);
-        }
+        npc_janalai_firebomb() : CreatureScript("npc_janalai_firebomb") { }
 
         struct npc_janalai_firebombAI : public ScriptedAI
         {
-            npc_janalai_firebombAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_janalai_firebombAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void SpellHit(Unit* /*caster*/, const SpellInfo* spell)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
                 if (spell->Id == SPELL_FIRE_BOMB_THROW)
                 {
                     DoCast(me, SPELL_FIRE_BOMB_DUMMY, true);
                 }
             }
-      };
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_janalai_firebombAI>(creature);
+        }
 };
 
 class npc_janalai_hatchling : public CreatureScript
 {
     public:
-        npc_janalai_hatchling() : CreatureScript("npc_janalai_hatchling")  {}
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_janalai_hatchlingAI(pCreature);
-        }
+        npc_janalai_hatchling() : CreatureScript("npc_janalai_hatchling")  { }
 
         struct npc_janalai_hatchlingAI : public ScriptedAI
         {
-            npc_janalai_hatchlingAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_janalai_hatchlingAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
                 if (me->GetPositionY() > 1150)
@@ -478,14 +471,14 @@ class npc_janalai_hatchling : public CreatureScript
                 //me->SetUnitMovementFlags(MOVEMENTFLAG_DISABLE_GRAVITY);
             }
 
-            void EnterCombat(Unit* /*who*/) 
+            void EnterCombat(Unit* /*who*/) override 
             {
                 events.ScheduleEvent(EVENT_FLAMEBUFFET, urand(7000, 15000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!pInstance || !(pInstance->GetBossState(DATA_JANALAI) == IN_PROGRESS))
+                if (instance->GetBossState(DATA_JANALAI) != IN_PROGRESS)
                 {
                     me->DisappearAndDie();
                     return;
@@ -507,6 +500,11 @@ class npc_janalai_hatchling : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_janalai_hatchlingAI>(creature);
+        }
 };
 
 class spell_janalai_flame_breath : public SpellScriptLoader
@@ -518,13 +516,13 @@ class spell_janalai_flame_breath : public SpellScriptLoader
         {
             PrepareAuraScript(spell_janalai_flame_breath_AuraScript);
             
-            bool Load()
+            bool Load() override
             {
                 count = 0;
                 return true;
             }
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
@@ -535,7 +533,7 @@ class spell_janalai_flame_breath : public SpellScriptLoader
                 GetCaster()->CastSpell(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), SPELL_FLAME_BREATH_1, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_janalai_flame_breath_AuraScript::PeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
             }
@@ -544,7 +542,7 @@ class spell_janalai_flame_breath : public SpellScriptLoader
             uint8 count;
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_janalai_flame_breath_AuraScript();
         }
@@ -559,4 +557,3 @@ void AddSC_boss_janalai()
     new npc_janalai_egg();
     new spell_janalai_flame_breath();
 }
-

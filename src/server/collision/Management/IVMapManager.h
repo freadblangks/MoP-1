@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -47,6 +48,7 @@ namespace VMAP
         private:
             bool iEnableLineOfSightCalc;
             bool iEnableHeightCalc;
+            bool iForMMapsGenerator = false;
 
         public:
             IVMapManager() : iEnableLineOfSightCalc(true), iEnableHeightCalc(true) { }
@@ -61,7 +63,7 @@ namespace VMAP
             virtual void unloadMap(unsigned int pMapId) = 0;
 
             virtual bool isInLineOfSight(unsigned int pMapId, float x1, float y1, float z1, float x2, float y2, float z2) = 0;
-            virtual float getHeight(unsigned int pMapId, float x, float y, float z, float maxSearchDist) = 0;
+            virtual float getHeight(unsigned int pMapId, float x, float y, float z, float maxSearchDist, bool ceiling = false) = 0;
             /**
             test if we hit an object. return true if we hit one. rx, ry, rz will hold the hit position or the dest position, if no intersection was found
             return a position, that is pReduceDist closer to the origin
@@ -82,10 +84,17 @@ namespace VMAP
             It is enabled by default. If it is enabled in mid game the maps have to loaded manualy
             */
             void setEnableHeightCalc(bool pVal) { iEnableHeightCalc = pVal; }
+            /**
+            Enable/disable special rules when loading vmaps for mmaps_generator
+            It is disabled by default.
+            */
+            void setForMMapsGenerator(bool value) { iForMMapsGenerator = value; }
+
 
             bool isLineOfSightCalcEnabled() const { return(iEnableLineOfSightCalc); }
             bool isHeightCalcEnabled() const { return(iEnableHeightCalc); }
             bool isMapLoadingEnabled() const { return(iEnableLineOfSightCalc || iEnableHeightCalc  ); }
+            bool isForMMapsGenerator() const { return iForMMapsGenerator; }
 
             virtual std::string getDirFileName(unsigned int pMapId, int x, int y) const =0;
             /**

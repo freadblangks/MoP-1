@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -31,6 +32,9 @@
 #include "Timer.h"
 #include "WorldRunnable.h"
 #include "OutdoorPvPMgr.h"
+#include "AppenderDB.h"
+#include "InstanceSaveMgr.h"
+#include "AuctionHouseMgr.h"
 
 #define WORLD_SLEEP_CONST 25
 
@@ -38,6 +42,21 @@
 #include "ServiceWin32.h"
 extern int m_ServiceStatus;
 #endif
+
+void AppenderDB::_write(LogMessage const& message)
+{
+    // Avoid infinite loop, PExecute triggers Logging with "sql.sql" type
+    if (!enabled || message.type.find("sql") == 0)
+        return;
+
+    PreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_INS_LOG);
+    stmt->setUInt64(0, message.mtime);
+    stmt->setUInt32(1, realmId);
+    stmt->setString(2, message.type);
+    //stmt->setUInt8(3, uint8(message.level));
+    stmt->setString(3, message.text);
+    LoginDatabase.Execute(stmt);
+}
 
 /// Heartbeat for the World
 void WorldRunnable::run()
@@ -47,6 +66,7 @@ void WorldRunnable::run()
 
     uint32 prevSleepTime = 0;                               // used for balanced full tick time length near WORLD_SLEEP_CONST
 
+    sWorld->OnStartup();
     sScriptMgr->OnStartup();
 
     ///- While we have not World::m_stopEvent, update the world
@@ -86,6 +106,10 @@ void WorldRunnable::run()
     sWorld->KickAll();                                       // save and kick all players
     sWorld->UpdateSessions( 1 );                             // real players unload required UpdateSessions call
 
+    sInstanceSaveMgr->Unload(); // After UpdateSessions, checks for players which not removed from instance save.
+
+    sAuctionMgr->Unload();
+
     // unload battleground templates before different singletons destroyed
     sBattlegroundMgr->DeleteAllBattlegrounds();
 
@@ -95,4 +119,6 @@ void WorldRunnable::run()
     sObjectAccessor->UnloadAll();             // unload 'i_player2corpse' storage and remove from world
     sScriptMgr->Unload();
     sOutdoorPvPMgr->Die();
+
+    TaskMgr::Stop();
 }

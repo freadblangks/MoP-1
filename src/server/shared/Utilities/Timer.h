@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -21,11 +22,13 @@
 
 #include "ace/OS_NS_sys_time.h"
 #include "Common.h"
+#include "TimeValue.h"
 
 inline uint32 getMSTime()
 {
-    static const ACE_Time_Value ApplicationStartTime = ACE_OS::gettimeofday();
-    return (ACE_OS::gettimeofday() - ApplicationStartTime).msec();
+    using namespace std::chrono;
+    static const steady_clock::time_point ApplicationStartTime = steady_clock::now();
+    return duration_cast<milliseconds>((steady_clock::now() - ApplicationStartTime)).count();
 }
 
 inline uint32 getMSTimeDiff(uint32 oldMSTime, uint32 newMSTime)
@@ -66,7 +69,7 @@ struct IntervalTimer
         void Reset()
         {
             if (_current >= _interval)
-                _current -= _interval;
+                _current %= _interval;
         }
 
         void SetCurrent(time_t current)
@@ -196,6 +199,59 @@ struct PeriodicTimer
 
         int32 i_period;
         int32 i_expireTime;
+};
+
+class Stopwatch
+{
+public:
+    Stopwatch(bool runNow = true)
+    {
+        Reset();
+
+        if (runNow)
+            Start();
+    }
+
+    ~Stopwatch() { }
+
+    void Start()
+    {
+        _running = true;
+        _startTime = Now();
+    }
+
+    void Stop()
+    {
+        _stopTime = Now();
+        _running = false;
+    }
+
+    void Reset()
+    {
+        _startTime = TimeValue::zero();
+        _stopTime = TimeValue::zero();
+        _running = false;
+    }
+
+    uint64 GetMicroSec()
+    {
+        return ((_running ? Now() : _stopTime) - _startTime).ToMicroseconds();
+    }
+
+    uint64 GetMilliSec()
+    {
+        return ((_running ? Now() : _stopTime) - _startTime).ToMilliseconds();
+    }
+
+    TimeValue Now()
+    {
+        return TimeValue::Now();
+    }
+
+private:
+    TimeValue   _startTime;
+    TimeValue   _stopTime;
+    bool        _running;
 };
 
 #endif

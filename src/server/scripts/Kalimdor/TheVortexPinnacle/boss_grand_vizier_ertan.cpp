@@ -1,63 +1,46 @@
 #include"ScriptPCH.h"
 #include"the_vortex_pinnacle.h"
+#include <ctgmath>
 
 enum ScriptTexts
 {
-    SAY_AGGRO    = 0,
-    SAY_KILL    = 1,
-    SAY_DEATH    = 2,
+    SAY_AGGRO = 0,
+    SAY_KILL  = 1,
 };
 
 enum Spells
 {
-    SPELL_CYCLONE_SHIELD        = 86267,
-    SPELL_CYCLONE_SHIELD_DMG    = 86292,
-    SPELL_CYCLONE_SHIELD_DMG_H    = 93991,
-    SPELL_SUMMON_TEMPEST        = 86340,
-    SPELL_STORM_EDGE            = 86309,
-    SPELL_STORM_EDGE_H            = 93992,
-    SPELL_LIGHTNING_BOLT        = 86331,
-    SPELL_LIGHTNING_BOLT_H        = 93990,
+    SPELL_CYCLONE_SHIELD     = 86267,
+    SPELL_CYCLONE_SHIELD_DMG = 86292,
+    SPELL_SUMMON_TEMPEST     = 86340,
+    SPELL_STORM_EDGE         = 86309,
+    SPELL_LIGHTNING_BOLT     = 86331,
 };
 
 enum Events
 {
-    EVENT_LIGHTNING_BOLT    = 1,
-    EVENT_STORM_EDGE        = 2,
-    EVENT_CALL_VORTEX        = 3,
-    EVENT_RESET_VORTEX        = 4,
+    EVENT_LIGHTNING_BOLT = 1,
+    EVENT_STORM_EDGE,
+    EVENT_CALL_VORTEX,
+    EVENT_RESET_VORTEX,
+    EVENT_SUMMON_TEMPEST,
+
 };
 
-enum Adds
+enum Actions
 {
-    NPC_ERTAN_VORTEX    = 46007,
-    NPC_SLIPSTREAM        = 45455,
-};
-
-const Position ertanvortexPos_1[8] = 
-{
-    {-702.11f, -13.50f, 635.67f, 0.0f},
-    {-694.54f, 4.25f, 635.67f, 0.0f},
-    {-702.07f, 22.15f, 635.67f, 0.0f},
-    {-720.19f, 29.54f, 635.67f, 0.0f},
-    {-737.65f, 21.79f, 635.67f, 0.0f},
-    {-745.00f, 3.99f, 635.67f, 0.0f},
-    {-737.42f, -13.97f, 635.67f, 0.0f},
-    {-719.55f,   -21.19f, 635.67f, 0.0f},
+    ACTION_VORTEX_PULL_FORWARD,
+    ACTION_VORTEX_PULL_BACK,
 };
 
 class boss_grand_vizier_ertan : public CreatureScript
 {
     public:
         boss_grand_vizier_ertan() : CreatureScript("boss_grand_vizier_ertan") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_grand_vizier_ertanAI(pCreature);
-        }
+    
         struct boss_grand_vizier_ertanAI : public BossAI
         {
-            boss_grand_vizier_ertanAI(Creature* pCreature) : BossAI(pCreature, DATA_ERTAN)
+            boss_grand_vizier_ertanAI(Creature* creature) : BossAI(creature, DATA_ERTAN)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -74,134 +57,235 @@ class boss_grand_vizier_ertan : public CreatureScript
                 me->setActive(true);
             }
 
-            Creature* _vortexes[8];
-            float _distance;
-    
-            void Reset()
+            std::vector<uint64> _vortexes;
+            uint32 m_cPos;
+            float _distance, x, y;
+
+            void Reset() override
             {
                 _Reset();
-                memset(_vortexes, NULL, sizeof(_vortexes));
+                _vortexes.clear();
+                m_cPos = 0;
+                x = 0.0f;
+                y = 0.0f;
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
-    
-            void EnterCombat(Unit* /*pWho*/)
+
+            void EnterCombat(Unit* /*who*/) override
             {
-                //for (uint8 i = 0; i < 8; i++)
-                    //_vortexes[i] = me->SummonCreature(NPC_ERTAN_VORTEX, ertanvortexPos_1[i]);
+                for (uint8 i = 0; i < 8; i++)
+                    if (TempSummon* m_vortex = me->SummonCreature(NPC_ERTAN_VORTEX, ertanvortexPos_1[i]))
+                        _vortexes.push_back(m_vortex->GetGUID());
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
 
                 events.ScheduleEvent(EVENT_LIGHTNING_BOLT, 3000);
-                //events.ScheduleEvent(EVENT_CALL_VORTEX, urand(18000, 21000));
-                //events.ScheduleEvent(EVENT_STORM_EDGE, 5000);
+                events.ScheduleEvent(EVENT_CALL_VORTEX, urand(18000, 21000));
+                events.ScheduleEvent(EVENT_STORM_EDGE, 5000);
+
+                if (IsHeroic())
+                    events.ScheduleEvent(EVENT_SUMMON_TEMPEST, 10 * IN_MILLISECONDS);
+
                 Talk(SAY_AGGRO);
                 DoZoneInCombat();
                 instance->SetBossState(DATA_ERTAN, IN_PROGRESS);
-            }    
-
-            void AttackStart(Unit* who)
-            {
-                if (who)
-                    me->Attack(who, false);
             }
 
-            void KilledUnit(Unit* who)
+            void AttackStart(Unit* target) override
+            {
+                if (target)
+                    me->Attack(target, false);
+            }
+
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);                
             }
 
-            void JustDied(Unit* pWho)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-                Talk(SAY_DEATH);
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
-            
-            void UpdateAI(const uint32 diff)
+
+            void HandleVortexMovement(int32 actionId)
+            {
+                for (auto&& itr : _vortexes)
+                    if (Creature* vortex = ObjectAccessor::GetCreature(*me, itr))
+                        vortex->AI()->DoAction(actionId);
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
-                if (uint32 eventId = events.ExecuteEvent())
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_LIGHTNING_BOLT:
-                            if (me->HasUnitState(UNIT_STATE_CASTING))
-                                return;
-                            DoCast(me->getVictim(), SPELL_LIGHTNING_BOLT);
+                            if (Unit* target = me->GetVictim())
+                                DoCast(target, SPELL_LIGHTNING_BOLT);
+                        
                             events.ScheduleEvent(EVENT_LIGHTNING_BOLT, 2000);
                             break;
                         case EVENT_CALL_VORTEX:
-                            for (uint8 i = 0; i < 8; i++)
-                                if (_vortexes[i])
-                                {
-                                    float _angle;
-                                    Position _pos;
-                                    _angle = me->GetAngle(_vortexes[i]->GetPositionX(), _vortexes[i]->GetPositionY());
-                                    me->GetNearPosition(_pos, 5.0f, _angle);
-                                    _vortexes[i]->GetMotionMaster()->MovementExpired(false);
-                                    _vortexes[i]->GetMotionMaster()->MovePoint(1, _pos);
-                                }
-                            
+                            HandleVortexMovement(ACTION_VORTEX_PULL_FORWARD);
                             events.ScheduleEvent(EVENT_RESET_VORTEX, urand(14000, 17000));
                             break;
                         case EVENT_RESET_VORTEX:
-                            for (uint8 i = 0; i < 8; i++)
-                                if (_vortexes[i])
-                                {
-                                    _vortexes[i]->GetMotionMaster()->MovementExpired(false);
-                                    _vortexes[i]->GetMotionMaster()->MovePoint(2, ertanvortexPos_1[i]);
-                                }
+                            HandleVortexMovement(ACTION_VORTEX_PULL_BACK);
                             events.ScheduleEvent(EVENT_CALL_VORTEX, urand(20000, 25000));
                             break;
                         case EVENT_STORM_EDGE:
-                            _distance = me->GetDistance2d(_vortexes[1]);
+                            if (_vortexes.empty())
+                                break;
+
+                            if (Creature* m_vortex = ObjectAccessor::GetCreature(*me, Trinity::Containers::SelectRandomContainerElement(_vortexes)))
+                                _distance = me->GetDistance2d(m_vortex);
+
                             if (me->GetMap()->GetPlayers().isEmpty())
                                 return;
-                            for (Map::PlayerList::const_iterator itr = me->GetMap()->GetPlayers().begin(); itr != me->GetMap()->GetPlayers().end(); ++itr)
+
+                            for (auto&& itr : instance->instance->GetPlayers())
                             {
-                                if (Player* pPlayer = itr->getSource())
+                                if (Player* player = itr.GetSource())
                                 {
-                                    if (me->GetDistance2d(pPlayer) > _distance)
+                                    if (me->GetDistance2d(player) > _distance)
                                     {
-                                        //uint8 i = urand(0, 7);
-                                        //if (_vortexes[i])
-                                            //_vortexes[i]->CastSpell(itr->getSource(), SPELL_STORM_EDGE, true);
-                                        DoCast(pPlayer, SPELL_STORM_EDGE, true);
+                                        if (uint64 m_vGuid = Trinity::Containers::SelectRandomContainerElement(_vortexes))
+                                            if (Creature* m_vortex = ObjectAccessor::GetCreature(*me, m_vGuid))
+                                                m_vortex->CastSpell(player, SPELL_STORM_EDGE, true);
+
+                                        DoCast(player, SPELL_STORM_EDGE, true);
                                     }
                                 }
                             }
                             events.ScheduleEvent(EVENT_STORM_EDGE, 2000);
                             break;
+                        case EVENT_SUMMON_TEMPEST:
+                            DoCast(me, SPELL_SUMMON_TEMPEST);
+                            events.ScheduleEvent(EVENT_SUMMON_TEMPEST, urand(20 * IN_MILLISECONDS, 25 * IN_MILLISECONDS));
+                            break;
                     }
-                }                    
+                }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_grand_vizier_ertanAI>(creature);
+        }
 };
 
-class npc_ertan_vortex : public CreatureScript
+// Ertan`t Vortex 46007
+struct npc_ertan_vortex : public ScriptedAI
 {
-    public:
-        npc_ertan_vortex() : CreatureScript("npc_ertan_vortex") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+    npc_ertan_vortex(Creature* creature) : ScriptedAI(creature) { }
+
+    TaskScheduler scheduler;
+    float x, y, dist, prevX, prevY;
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        x = 0.0f; y = 0.0f;
+        SetCombatMovement(false);
+        DoCast(me, SPELL_CYCLONE_SHIELD);
+
+        dist = 35.8f;
+        SetHandleCycleMovement();
+    }
+
+    void DoAction(int32 actionId) override
+    {
+        switch (actionId)
         {
-            return new npc_ertan_vortexAI(pCreature);
+            case ACTION_VORTEX_PULL_FORWARD:
+                me->StopMoving();
+                prevX = me->GetPositionX();
+                prevY = me->GetPositionY();
+
+                if (Creature* ertan = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(DATA_ERTAN) : 0))
+                {
+                    GetPositionWithDistInOrientation(me, dist - 5.0f, me->GetAngle(ertan), x, y);
+                    me->GetMotionMaster()->MovePoint(0, x, y, me->GetPositionZ(), me->GetAngle(ertan));
+                }
+                break;
+            case ACTION_VORTEX_PULL_BACK:
+                me->StopMoving();
+
+                me->GetMotionMaster()->MovePoint(0, prevX, prevY, me->GetPositionZ(), 0.0f);
+                scheduler
+                    .Schedule(Milliseconds(me->GetSplineDuration()), [this](TaskContext context)
+                {
+                    me->StopMoving();
+                    SetHandleCycleMovement();
+                });
+                break;
         }
-        struct npc_ertan_vortexAI : public Scripted_NoMovementAI
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
+
+    private:
+        void SetHandleCycleMovement()
         {
-            npc_ertan_vortexAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            Movement::MoveSplineInit init(me);
+            for (uint8 i = 1; i < 25; ++i)
             {
+                x = EranCenterPos.GetPositionX() + dist * cos(Position::NormalizeOrientation(me->GetAngle(EranCenterPos.GetPositionX(), EranCenterPos.GetPositionY()) + (i * M_PI / 12) - M_PI));
+                y = EranCenterPos.GetPositionY() + dist * sin(Position::NormalizeOrientation(me->GetAngle(EranCenterPos.GetPositionX(), EranCenterPos.GetPositionY()) + (i * M_PI / 12) - M_PI));
+                init.Path().push_back(G3D::Vector3(x, y, me->GetPositionZ()));
             }
 
-            void Reset()
-            {
-                DoCast(me, SPELL_CYCLONE_SHIELD);
-            }
-     };
+            init.SetSmooth();
+            init.SetCyclic();
+            init.Launch();
+        }
+};
+
+// Summon Lurker Tempest 86340
+class spell_summon_lurker_tempest : public SpellScript
+{
+    PrepareSpellScript(spell_summon_lurker_tempest);
+
+    void SelectTargets(SpellDestination& dest)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            // In Description it should summon on edge of area only
+            GetPositionWithDistInOrientation(caster, 35.0f, frand(0, 2 * M_PI), x, y);
+            Position newPos = { x, y, caster->GetPositionZ(), 0 };
+            dest.Relocate(newPos);
+        }
+    }
+
+    private:
+        float x, y;
+
+        void Register() override
+        {
+            OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_summon_lurker_tempest::SelectTargets, EFFECT_0, TARGET_DEST_DEST_RADIUS);
+        }
 };
 
 void AddSC_boss_grand_vizier_ertan()
 {
     new boss_grand_vizier_ertan();
-    new npc_ertan_vortex();
+    new creature_script<npc_ertan_vortex>("npc_ertan_vortex");
+    new spell_script<spell_summon_lurker_tempest>("spell_summon_lurker_tempest");
 }

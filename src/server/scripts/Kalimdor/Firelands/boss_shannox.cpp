@@ -12,7 +12,6 @@ enum ScriptTexts
     SAY_SPEAR           = 2,
     SAY_DEATH           = 1,
     SAY_DOG             = 3,
-    SAY_DISENGAGE       = 9,
 };
 
 enum Spells
@@ -49,9 +48,6 @@ enum Spells
     SPELL_FEEDING_FRENZY            = 100655,
     SPELL_FRENZIED_DEVOTION         = 100064,
     SPELL_WARRY                     = 100167,
-    SPELL_WARRY_25                  = 101215,
-    SPELL_WARRY_10H                 = 101216,
-    SPELL_WARRY_25H                 = 101217,
 };
 
 enum Events
@@ -100,6 +96,15 @@ enum AreaIds
     AREA_5          = 5765, // Огненный портал
 };
 
+const uint32 CriteriaWorldStates[5]
+{
+    5984,
+    5986,
+    5985,
+    5987,
+    5983,
+};
+
 const Position dogPos[2] = 
 {
     {-153.604f, 198.994f, 46.174f, 3.68f}, // Riplimb
@@ -111,14 +116,9 @@ class boss_shannox : public CreatureScript
     public:
         boss_shannox() : CreatureScript("boss_shannox") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_shannoxAI(pCreature);
-        }
-
         struct boss_shannoxAI : public BossAI
         {
-            boss_shannoxAI(Creature* pCreature) : BossAI(pCreature, DATA_SHANNOX)
+            boss_shannoxAI(Creature* creature) : BossAI(creature, DATA_SHANNOX)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -142,14 +142,6 @@ class boss_shannox : public CreatureScript
             bool bRagefaceDead;
             bool bFrenzy;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
             bool AllowAchieve()
             {
                 for (uint8 i = 0; i < 5; ++i)
@@ -158,7 +150,7 @@ class boss_shannox : public CreatureScript
                 return true;
             }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -168,15 +160,20 @@ class boss_shannox : public CreatureScript
                 bRagefaceDead = false;
                 bFrenzy = false;
                 memset(areas, false, sizeof(areas));
+
+                for (uint8 i = 0; i < 5; ++i)
+                    instance->DoUpdateWorldState(CriteriaWorldStates[i], 0);
+
+                me->GetMap()->SetWorldState(WORLDSTATE_BUCKET_LIST, 1); // controlled by achiev script
             }
 
-            void DamageTaken(Unit* attacker, uint32 &damage)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
                 if (attacker->GetGUID() == me->GetGUID())
                     damage = 0;
             }
 
-            void MoveInLineOfSight(Unit* who)
+            void MoveInLineOfSight(Unit* who) override
             {
                 if (!bIntro && me->GetDistance2d(who) < 100.0f)
                 {
@@ -185,7 +182,7 @@ class boss_shannox : public CreatureScript
                 }
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -197,7 +194,7 @@ class boss_shannox : public CreatureScript
                 }
             }
 
-            void SummonedCreatureDies(Creature* summon, Unit* killer)
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
             {
                 if (summon->GetEntry() == NPC_RIPLIMB)
                 {
@@ -217,7 +214,7 @@ class boss_shannox : public CreatureScript
                 }
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (Creature* pRiplimb = me->FindNearestCreature(NPC_RIPLIMB, 300.0f))
                     DoZoneInCombat(pRiplimb);
@@ -233,16 +230,18 @@ class boss_shannox : public CreatureScript
                 events.ScheduleEvent(EVENT_BERSERK, 10 * MINUTE * IN_MILLISECONDS);
                 events.ScheduleEvent(EVENT_HURL_SPEAR, 15000);
                 events.ScheduleEvent(EVENT_SEPARATION_ANXIETY, 2000);
-
                 events.ScheduleEvent(EVENT_IMMOLATION_TRAP, urand(10000, 20000));
                 events.ScheduleEvent(EVENT_CRYSTAL_PRISON_TRAP, urand(10000, 25500));
                 events.ScheduleEvent(EVENT_ARCING_SLASH, urand(10000, 12000));
                 events.ScheduleEvent(EVENT_CHECK_COMBAT, 5000);
                 DoZoneInCombat();
                 instance->SetBossState(DATA_SHANNOX, IN_PROGRESS);
+
+                for (uint8 i = 0; i < 5; ++i)
+                    instance->DoUpdateWorldState(CriteriaWorldStates[i], 0);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
@@ -250,15 +249,15 @@ class boss_shannox : public CreatureScript
                 AddSmoulderingAura(me);
             }
             
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
 
                 if (summon->GetEntry() == NPC_SPEAR_OF_SHANNOX_1)
@@ -268,35 +267,38 @@ class boss_shannox : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 // Bucket List
+                int32 updateWorldState = -1;
                 switch (me->GetAreaId())
                 {
                     case AREA_1:
                         if (!areas[0])
-                            areas[0] = true;
+                            areas[updateWorldState = 0] = true;
                         break;
                     case AREA_2:
                         if (!areas[1])
-                            areas[1] = true;
+                            areas[updateWorldState = 1] = true;
                         break;
                     case AREA_3:
                         if (!areas[2])
-                            areas[2] = true;
+                            areas[updateWorldState = 2] = true;
                         break;
                     case AREA_4:
                         if (!areas[3])
-                            areas[3] = true;
+                            areas[updateWorldState = 3] = true;
                         break;
                     case AREA_5:
                         if (!areas[4])
-                            areas[4] = true;
+                            areas[updateWorldState = 4] = true;
                         break;
                 }
+                if (updateWorldState != -1)
+                    instance->DoUpdateWorldState(CriteriaWorldStates[updateWorldState], 1);
 
                 events.Update(diff);
 
@@ -305,11 +307,11 @@ class boss_shannox : public CreatureScript
                     bFrenzy = true;
                     
                     if (Creature* pRiplimb = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RIPLIMB)))
-                        if (pRiplimb->isAlive())
+                        if (pRiplimb->IsAlive())
                             pRiplimb->CastSpell(pRiplimb, SPELL_FRENZIED_DEVOTION, true);
 
                     if (Creature* pRageface = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAGEFACE)))
-                        if (pRageface->isAlive())
+                        if (pRageface->IsAlive())
                             pRageface->CastSpell(pRageface, SPELL_FRENZIED_DEVOTION, true);
                 }
 
@@ -321,25 +323,25 @@ class boss_shannox : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CHECK_COMBAT:
-                            if (me->isInCombat())
+                            if (me->IsInCombat())
                             {
                                 if (Creature* pRiplimb = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RIPLIMB)))
-                                    if (!pRiplimb->isInCombat() && !pRiplimb->IsInEvadeMode())
-                                        if (pRiplimb->isAlive())
+                                    if (!pRiplimb->IsInCombat() && !pRiplimb->IsInEvadeMode())
+                                        if (pRiplimb->IsAlive())
                                             DoZoneInCombat(pRiplimb);
 
                                 if (Creature* pRageface = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAGEFACE)))
-                                    if (!pRageface->isInCombat() && !pRageface->IsInEvadeMode())
-                                        if (pRageface->isAlive())
+                                    if (!pRageface->IsInCombat() && !pRageface->IsInEvadeMode())
+                                        if (pRageface->IsAlive())
                                             DoZoneInCombat(pRageface);
                             }
                             events.ScheduleEvent(EVENT_CHECK_COMBAT, 5000);
                         case EVENT_SEPARATION_ANXIETY:
                             if (Creature* pRiplimb = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RIPLIMB)))
-                                if (pRiplimb->isAlive() && !me->IsWithinDist(pRiplimb, 80.0f) && !me->HasAura(SPELL_SEPARATION_ANXIETY))
+                                if (pRiplimb->IsAlive() && !me->IsWithinDist(pRiplimb, 80.0f) && !me->HasAura(SPELL_SEPARATION_ANXIETY))
                                     DoCast(me, SPELL_SEPARATION_ANXIETY, true);
                             if (Creature* pRageface = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAGEFACE)))
-                                if (pRageface->isAlive() && !me->IsWithinDist(pRageface, 80.0f) && !me->HasAura(SPELL_SEPARATION_ANXIETY))
+                                if (pRageface->IsAlive() && !me->IsWithinDist(pRageface, 80.0f) && !me->HasAura(SPELL_SEPARATION_ANXIETY))
                                     DoCast(me, SPELL_SEPARATION_ANXIETY, true);
                             events.ScheduleEvent(EVENT_SEPARATION_ANXIETY, 2000);
                             break;
@@ -356,13 +358,13 @@ class boss_shannox : public CreatureScript
                             events.ScheduleEvent(EVENT_HURL_SPEAR, 42000);
                             break;
                         case EVENT_IMMOLATION_TRAP:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_THROW_IMMOLATION_TRAP);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_THROW_IMMOLATION_TRAP);
                             events.ScheduleEvent(EVENT_IMMOLATION_TRAP, urand(23000, 30000));
                             break;
                         case EVENT_CRYSTAL_PRISON_TRAP:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_THROW_CRYSTAL_PRISON_TRAP);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_THROW_CRYSTAL_PRISON_TRAP);
                             events.ScheduleEvent(EVENT_CRYSTAL_PRISON_TRAP, 25500);
                             break;
                         case EVENT_MAGMA_RUPTURE:
@@ -387,6 +389,11 @@ class boss_shannox : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_shannoxAI>(creature);
+        }
 };
 
 class npc_shannox_riplimb : public CreatureScript
@@ -394,14 +401,9 @@ class npc_shannox_riplimb : public CreatureScript
     public:
         npc_shannox_riplimb() : CreatureScript("npc_shannox_riplimb") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_shannox_riplimbAI(pCreature);
-        }
-
         struct npc_shannox_riplimbAI : public ScriptedAI
         {
-            npc_shannox_riplimbAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_shannox_riplimbAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -419,15 +421,15 @@ class npc_shannox_riplimb : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
                 me->setActive(true);
                 me->SetSpeed(MOVE_RUN, 1.1f);
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             bool bFetch;
             EventMap events;
             bool bDead;
 
-            void Reset()
+            void Reset() override
             {
                 bFetch = false;
                 bDead = false;
@@ -436,7 +438,7 @@ class npc_shannox_riplimb : public CreatureScript
                     DoCast(me, SPELL_FEEDING_FRENZY, true);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (Creature* pShannox = me->FindNearestCreature(NPC_SHANNOX, 300.0f))
                     DoZoneInCombat(pShannox);
@@ -449,7 +451,7 @@ class npc_shannox_riplimb : public CreatureScript
                 events.ScheduleEvent(EVENT_CHECK_COMBAT, 5000);
             }
 
-            void DamageTaken(Unit* attacker, uint32 &damage)
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
                 if (!IsHeroic())
                     return;
@@ -468,7 +470,7 @@ class npc_shannox_riplimb : public CreatureScript
                 }
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -489,11 +491,11 @@ class npc_shannox_riplimb : public CreatureScript
                 }
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
                 {
-                    if (id == POINT_SPEAR_OF_SHANNOX)
+                    if (pointId == POINT_SPEAR_OF_SHANNOX)
                     {
                         if (Creature* pSpear = me->FindNearestCreature(NPC_SPEAR_OF_SHANNOX_1, 300.0f))
                             pSpear->DespawnOrUnsummon();
@@ -503,7 +505,7 @@ class npc_shannox_riplimb : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (bFetch)
                 {
@@ -517,12 +519,12 @@ class npc_shannox_riplimb : public CreatureScript
                         me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SNARE, true);
                         me->SetReactState(REACT_AGGRESSIVE);
                         events.ScheduleEvent(EVENT_LIMB_RIP, 5000);
-                        if (me->getVictim())
-                            AttackStart(me->getVictim());
+                        if (me->GetVictim())
+                            AttackStart(me->GetVictim());
                         else
                         {
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0.0f, 0.0f, true))
-                                AttackStart(pTarget);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0.0f, 0.0f, true))
+                                AttackStart(target);
                         }
                     }
                     return;
@@ -541,16 +543,16 @@ class npc_shannox_riplimb : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CHECK_COMBAT:
-                            if (me->isInCombat())
+                            if (me->IsInCombat())
                             {
-                                if (Creature* pRageface = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_RAGEFACE)))
-                                    if (!pRageface->isInCombat() && !pRageface->IsInEvadeMode())
-                                        if (pRageface->isAlive())
+                                if (Creature* pRageface = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAGEFACE)))
+                                    if (!pRageface->IsInCombat() && !pRageface->IsInEvadeMode())
+                                        if (pRageface->IsAlive())
                                             DoZoneInCombat(pRageface);
 
-                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_SHANNOX)))
-                                    if (!pShannox->isInCombat() && !pShannox->IsInEvadeMode())
-                                        if (pShannox->isAlive())
+                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SHANNOX)))
+                                    if (!pShannox->IsInCombat() && !pShannox->IsInEvadeMode())
+                                        if (pShannox->IsAlive())
                                             DoZoneInCombat(pShannox);
                             }
                             events.ScheduleEvent(EVENT_CHECK_COMBAT, 5000);
@@ -561,8 +563,8 @@ class npc_shannox_riplimb : public CreatureScript
                             events.ScheduleEvent(EVENT_SEPARATION_ANXIETY, 2000);
                             break;
                         case EVENT_FETCH_SPEAR:
-                            if (pInstance)
-                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_SHANNOX)))
+                            if (instance)
+                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SHANNOX)))
                                 {
                                     bFetch = true;
                                     me->GetMotionMaster()->MovementExpired(false);
@@ -575,13 +577,12 @@ class npc_shannox_riplimb : public CreatureScript
                             break;
                         case EVENT_RESURRECT:
                             me->SetReactState(REACT_AGGRESSIVE);
-
                             me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE);
                             me->SetStandState(UNIT_STAND_STATE_STAND);
                             me->SetHealth(me->GetMaxHealth());
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
-                            if (pInstance)
-                                if (Unit* pShannox = ObjectAccessor::GetUnit(*me, pInstance->GetData64(DATA_SHANNOX)))
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
+                            if (instance)
+                                if (Unit* pShannox = ObjectAccessor::GetUnit(*me, instance->GetData64(DATA_SHANNOX)))
                                     pShannox->GetAI()->DoAction(ACTION_RESURRECT);
                             break;
                     }
@@ -589,6 +590,11 @@ class npc_shannox_riplimb : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shannox_riplimbAI>(creature);
+        }
 };
 
 class npc_shannox_rageface : public CreatureScript
@@ -596,14 +602,9 @@ class npc_shannox_rageface : public CreatureScript
     public:
         npc_shannox_rageface() : CreatureScript("npc_shannox_rageface") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_shannox_ragefaceAI(pCreature);
-        }
-
         struct npc_shannox_ragefaceAI : public ScriptedAI
         {
-            npc_shannox_ragefaceAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_shannox_ragefaceAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -621,20 +622,20 @@ class npc_shannox_rageface : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, true);
                 me->setActive(true);
                 me->SetSpeed(MOVE_RUN, 1.1f);
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
                 if (IsHeroic())
                     DoCast(me, SPELL_FEEDING_FRENZY, true);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (Creature* pShannox = me->FindNearestCreature(NPC_SHANNOX, 300.0f))
                     DoZoneInCombat(pShannox);
@@ -648,36 +649,36 @@ class npc_shannox_rageface : public CreatureScript
                 events.ScheduleEvent(EVENT_CHECK_COMBAT, 5000);
             }
 
-            void DamageTaken(Unit* who, uint32 &damage)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (who->GetTypeId() != TYPEID_PLAYER)
+                if (attacker->GetTypeId() != TYPEID_PLAYER)
                     return;
 
-                if (constAuraEffectPtr aurEff = me->GetAuraEffect(RAID_MODE(100129, 101212, 101213, 101214), EFFECT_1))
+                if (AuraEffect const* aurEff = me->GetAuraEffect(SPELL_FACE_RAGE_DUMMY, EFFECT_1))
                 {
                     if (int32(damage) >= aurEff->GetAmount())
                     {
                         me->InterruptSpell(CURRENT_CHANNELED_SPELL, false);
                         DoResetThreat();
-                        DoCast(who, SPELL_RAGE, true);
-                        me->AddThreat(who, 10000000.0f);
-                        AttackStart(who);
+                        DoCast(attacker, SPELL_RAGE, true);
+                        me->AddThreat(attacker, 10000000.0f);
+                        AttackStart(attacker);
                         events.ScheduleEvent(EVENT_FACE_RAGE, 27000);
-                        me->RemoveAurasDueToSpell(RAID_MODE(100129, 101212, 101213, 101214));
+                        me->RemoveAurasDueToSpell(SPELL_FACE_RAGE_DUMMY);
                     }
                 }
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 /*type*/, uint32 pointId) override
             {
-                if (id == EVENT_JUMP)
+                if (pointId == EVENT_JUMP)
                 {
-                    if (Unit* pTarget = me->getVictim())
-                        DoCast(pTarget, 99947, true);
+                    if (Unit* target = me->GetVictim())
+                        DoCast(target, 99947, true);
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -692,16 +693,16 @@ class npc_shannox_rageface : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CHECK_COMBAT:
-                            if (me->isInCombat())
+                            if (me->IsInCombat())
                             {
-                                if (Creature* pRiplimb = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_RIPLIMB)))
-                                    if (!pRiplimb->isInCombat() && !pRiplimb->IsInEvadeMode())
-                                        if (pRiplimb->isAlive())
+                                if (Creature* pRiplimb = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RIPLIMB)))
+                                    if (!pRiplimb->IsInCombat() && !pRiplimb->IsInEvadeMode())
+                                        if (pRiplimb->IsAlive())
                                             DoZoneInCombat(pRiplimb);
 
-                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_SHANNOX)))
-                                    if (!pShannox->isInCombat() && !pShannox->IsInEvadeMode())
-                                        if (pShannox->isAlive())
+                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SHANNOX)))
+                                    if (!pShannox->IsInCombat() && !pShannox->IsInEvadeMode())
+                                        if (pShannox->IsAlive())
                                             DoZoneInCombat(pShannox);
                             }
                             events.ScheduleEvent(EVENT_CHECK_COMBAT, 5000);
@@ -712,30 +713,30 @@ class npc_shannox_rageface : public CreatureScript
                             events.ScheduleEvent(EVENT_SEPARATION_ANXIETY, 2000);
                             break;
                         case EVENT_FACE_RAGE:
-                            if (pInstance)
-                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_SHANNOX)))
+                            if (instance)
+                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SHANNOX)))
                                     pShannox->AI()->Talk(SAY_DOG);
                             DoCastVictim(SPELL_FACE_RAGE);
                             break;
                         case EVENT_CHANGE_TARGET:
-                            if (pInstance && !(me->getVictim() && me->getVictim()->HasAura(SPELL_RAGE)) && !me->HasAura(SPELL_FACE_RAGE_DUMMY))
+                            if (instance && !(me->GetVictim() && me->GetVictim()->HasAura(SPELL_RAGE)) && !me->HasAura(SPELL_FACE_RAGE_DUMMY))
                             {
                                 DoResetThreat();
-                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_SHANNOX)))
+                                if (Creature* pShannox = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SHANNOX)))
                                 {
-                                    if (Unit* pTarget = pShannox->AI()->SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
+                                    if (Unit* target = pShannox->AI()->SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
                                     {
-                                        me->AddThreat(pTarget, 10000000.0f);
-                                        AttackStart(pTarget);
+                                        me->AddThreat(target, 10000000.0f);
+                                        AttackStart(target);
                                     }
                                 }
                                 else
                                 {
-                                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
+                                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
                                     {
                                         
-                                        me->AddThreat(pTarget, 10000000.0f);
-                                        AttackStart(pTarget);
+                                        me->AddThreat(target, 10000000.0f);
+                                        AttackStart(target);
                                     }
                                 }
                             }
@@ -746,6 +747,11 @@ class npc_shannox_rageface : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shannox_ragefaceAI>(creature);
+        }
 };
 
 class npc_shannox_spear_of_shannox : public CreatureScript
@@ -753,31 +759,26 @@ class npc_shannox_spear_of_shannox : public CreatureScript
     public:
         npc_shannox_spear_of_shannox() : CreatureScript("npc_shannox_spear_of_shannox") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_shannox_spear_of_shannoxAI : public ScriptedAI
         {
-            return new npc_shannox_spear_of_shannoxAI(pCreature);
-        }
-
-        struct npc_shannox_spear_of_shannoxAI : public Scripted_NoMovementAI
-        {
-            npc_shannox_spear_of_shannoxAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_shannox_spear_of_shannoxAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
 
-            void Reset()
+            void Reset() override
             {
                 DoCast(me, SPELL_SPEAR_TARGET, true);
             }
 
-            void SpellHit(Unit* caster, const SpellInfo* spellInfo)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
-                if (spellInfo->Id == SPELL_HURL_SPEAR_DMG)
+                if (spell->Id == SPELL_HURL_SPEAR_DMG)
                 {
-                     
                     std::list<Creature*> creatureList;
                     me->GetCreatureListWithEntryInGrid(creatureList, NPC_DULL_EMBERSTONE_FOCUS, 50.0f);
                     if (!creatureList.empty())
@@ -787,7 +788,7 @@ class npc_shannox_spear_of_shannox : public CreatureScript
                             if (Creature* pFocus = (*itr)->ToCreature())
                             {
                                 pFocus->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                                pFocus->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                                pFocus->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                                 pFocus->CastSpell(pFocus, SPELL_TRANSFORM_CHARGED_EMBERSTONE_FOCUS, true);
                             }
                         }
@@ -797,18 +798,15 @@ class npc_shannox_spear_of_shannox : public CreatureScript
                     DoCast(me, SPELL_MAGMA_FLARE, true);
                     DoCast(me, SPELL_SPEAR_VISUAL, true);
 
-                    if (pInstance)
+                    if (Creature* pShannox = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SHANNOX)))
                     {
-                        if (Creature* pShannox = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_SHANNOX)))
+                        // There will be a spiral, 3 "circles", 20 points per circle
+                        Position pos;
+                        for (uint8 i = 0; i < 60; ++i)
                         {
-                            // There will be a spiral, 3 "circles", 20 points per circle
-                            Position pos;
-                            for (uint8 i = 0; i < 60; ++i)
-                            {
-                                me->GetNearPosition(pos, 15.0f + i * 0.75f, (M_PI * i) / 10);
-                                pos.m_positionZ = me->GetMap()->GetHeight(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), true, MAX_HEIGHT);
-                                pShannox->CastSpell(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), SPELL_MAGMA_RUPTURE_MISSILE, true);
-                            }
+                            me->GetNearPosition(pos, 15.0f + i * 0.75f, (M_PI * i) / 10);
+                            pos.m_positionZ = me->GetMap()->GetHeight(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), true, MAX_HEIGHT);
+                            pShannox->CastSpell(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), SPELL_MAGMA_RUPTURE_MISSILE, true);
                         }
                     }
                     
@@ -820,6 +818,11 @@ class npc_shannox_spear_of_shannox : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shannox_spear_of_shannoxAI>(creature);
+        }
 };
 
 class npc_shannox_immolation_trap : public CreatureScript
@@ -827,26 +830,22 @@ class npc_shannox_immolation_trap : public CreatureScript
     public:
         npc_shannox_immolation_trap() : CreatureScript("npc_shannox_immolation_trap") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_shannox_immolation_trapAI : public ScriptedAI
         {
-            return new npc_shannox_immolation_trapAI(pCreature);
-        }
-
-        struct npc_shannox_immolation_trapAI : public Scripted_NoMovementAI
-        {
-            npc_shannox_immolation_trapAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_shannox_immolation_trapAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 bReady = false;
                 bExplode = false;
                 uiReadyTimer = 3000;
+                SetCombatMovement(false);
             }
 
             bool bReady;
             bool bExplode;
             uint32 uiReadyTimer;
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!bReady)
                 {
@@ -857,18 +856,15 @@ class npc_shannox_immolation_trap : public CreatureScript
                 }
                 else if (bReady && !bExplode)
                 {
-                    if (Player* pPlayer = me->SelectNearestPlayer(0.1f))
+                    if (Player* player = me->SelectNearestPlayer(0.1f))
                     {
                         bExplode = true;
-                        pPlayer->CastSpell(pPlayer, SPELL_IMMOLATION_TRAP_DMG, true);
+                        player->CastSpell(player, SPELL_IMMOLATION_TRAP_DMG, true);
                         me->DespawnOrUnsummon(1000);
                     }
                     else if (Creature* pRiplimb = me->FindNearestCreature(NPC_RIPLIMB, 0.1f))
                     {
-                        if (!pRiplimb->HasAura(SPELL_WARRY) &&
-                            !pRiplimb->HasAura(SPELL_WARRY_25) &&
-                            !pRiplimb->HasAura(SPELL_WARRY_10H) &&
-                            !pRiplimb->HasAura(SPELL_WARRY_25H))
+                        if (!pRiplimb->HasAura(SPELL_WARRY))
                         {
                             bExplode = true;
                             pRiplimb->CastSpell(pRiplimb, SPELL_IMMOLATION_TRAP_DMG, true);
@@ -877,10 +873,7 @@ class npc_shannox_immolation_trap : public CreatureScript
                     }
                     else if (Creature* pRageface = me->FindNearestCreature(NPC_RAGEFACE, 0.1f))
                     {
-                        if(!pRageface->HasAura(SPELL_WARRY) &&
-                            !pRageface->HasAura(SPELL_WARRY_25) &&
-                            !pRageface->HasAura(SPELL_WARRY_10H) &&
-                            !pRageface->HasAura(SPELL_WARRY_25H))
+                        if (!pRageface->HasAura(SPELL_WARRY))
                         {
                             bExplode = true;
                             pRageface->CastSpell(pRageface, SPELL_IMMOLATION_TRAP_DMG, true);
@@ -890,6 +883,11 @@ class npc_shannox_immolation_trap : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shannox_immolation_trapAI>(creature);
+        }
 };
 
 class npc_shannox_crystal_prison_trap : public CreatureScript
@@ -897,26 +895,22 @@ class npc_shannox_crystal_prison_trap : public CreatureScript
     public:
         npc_shannox_crystal_prison_trap() : CreatureScript("npc_shannox_crystal_prison_trap") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_shannox_crystal_prison_trapAI : public ScriptedAI
         {
-            return new npc_shannox_crystal_prison_trapAI(pCreature);
-        }
-
-        struct npc_shannox_crystal_prison_trapAI : public Scripted_NoMovementAI
-        {
-            npc_shannox_crystal_prison_trapAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_shannox_crystal_prison_trapAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 bReady = false;
                 bExplode = false;
                 uiReadyTimer = 3000;
+                SetCombatMovement(false);
             }
 
             bool bReady;
             bool bExplode;
             uint32 uiReadyTimer;
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!bReady)
                 {
@@ -927,18 +921,15 @@ class npc_shannox_crystal_prison_trap : public CreatureScript
                 }
                 else if (bReady && !bExplode)
                 {
-                    if (Player* pPlayer = me->SelectNearestPlayer(0.1f))
+                    if (Player* player = me->SelectNearestPlayer(0.1f))
                     {
                         bExplode = true;
-                        pPlayer->CastSpell(pPlayer, SPELL_CRYSTAL_PRISON_TRAP, true);
+                        player->CastSpell(player, SPELL_CRYSTAL_PRISON_TRAP, true);
                         me->DespawnOrUnsummon(500);
                     }
                     else if (Creature* pRiplimb = me->FindNearestCreature(NPC_RIPLIMB, 0.1f))
                     {
-                        if (!pRiplimb->HasAura(SPELL_WARRY) &&
-                            !pRiplimb->HasAura(SPELL_WARRY_25) &&
-                            !pRiplimb->HasAura(SPELL_WARRY_10H) &&
-                            !pRiplimb->HasAura(SPELL_WARRY_25H))
+                        if (!pRiplimb->HasAura(SPELL_WARRY))
                         {
                             bExplode = true;
                             pRiplimb->CastSpell(pRiplimb, SPELL_CRYSTAL_PRISON_TRAP, true);
@@ -947,10 +938,7 @@ class npc_shannox_crystal_prison_trap : public CreatureScript
                     }
                     else if (Creature* pRageface = me->FindNearestCreature(NPC_RAGEFACE, 0.1f))
                     {
-                        if (!pRageface->HasAura(SPELL_WARRY) &&
-                            !pRageface->HasAura(SPELL_WARRY_25) &&
-                            !pRageface->HasAura(SPELL_WARRY_10H) &&
-                            !pRageface->HasAura(SPELL_WARRY_25H))
+                        if (!pRageface->HasAura(SPELL_WARRY))
                         {
                             bExplode = true;
                             pRageface->CastSpell(pRageface, SPELL_CRYSTAL_PRISON_TRAP, true);
@@ -960,6 +948,11 @@ class npc_shannox_crystal_prison_trap : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shannox_crystal_prison_trapAI>(creature);
+        }
 };
 
 class npc_shannox_crystal_prison : public CreatureScript
@@ -967,17 +960,13 @@ class npc_shannox_crystal_prison : public CreatureScript
     public:
         npc_shannox_crystal_prison() : CreatureScript("npc_shannox_crystal_prison") { }
 
-        CreatureAI* GetAI(Creature* creature) const
+        struct npc_shannox_crystal_prisonAI : public ScriptedAI
         {
-            return new npc_shannox_crystal_prisonAI(creature);
-        }
-
-        struct npc_shannox_crystal_prisonAI : public Scripted_NoMovementAI
-        {
-            npc_shannox_crystal_prisonAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_shannox_crystal_prisonAI(Creature* creature) : ScriptedAI(creature)
             {
                 trappedUnit = 0;
                 bDog = false;
+                SetCombatMovement(false);
             }
 
             uint64 trappedUnit;
@@ -985,12 +974,12 @@ class npc_shannox_crystal_prison : public CreatureScript
             bool bDog;
             uint32 dogTimer;
 
-            void Reset()
+            void Reset() override
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void SetGUID(uint64 guid, int32 type)
+            void SetGUID(uint64 guid, int32 type) override
             {
                 trappedUnit = guid;
                 existenceCheckTimer = 1000;
@@ -1002,7 +991,7 @@ class npc_shannox_crystal_prison : public CreatureScript
                 }
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 if (!bDog)
                     DoCast(me, SPELL_CREATE_EMBERSTONE_FRAGMENT, true);
@@ -1015,7 +1004,7 @@ class npc_shannox_crystal_prison : public CreatureScript
                 me->DespawnOrUnsummon(800);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!trappedUnit)
                     return;
@@ -1041,6 +1030,11 @@ class npc_shannox_crystal_prison : public CreatureScript
                 }
             }            
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_shannox_crystal_prisonAI>(creature);
+        }
 };
 
 class spell_shannox_riplimb_dogged_determination : public SpellScriptLoader
@@ -1052,14 +1046,14 @@ class spell_shannox_riplimb_dogged_determination : public SpellScriptLoader
         {
             PrepareAuraScript(spell_shannox_riplimb_dogged_determination_AuraScript);
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
 
-                if (AuraPtr aur = GetAura())
+                if (Aura* aur = GetAura())
                 {
-                    if (AuraEffectPtr auraEff = aur->GetEffect(EFFECT_0))
+                    if (AuraEffect* auraEff = aur->GetEffect(EFFECT_0))
                     {
                         int32 curr_amount = auraEff->GetAmount();
                         if (curr_amount < 100)
@@ -1068,13 +1062,13 @@ class spell_shannox_riplimb_dogged_determination : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_shannox_riplimb_dogged_determination_AuraScript::PeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_shannox_riplimb_dogged_determination_AuraScript();
         }
@@ -1089,7 +1083,7 @@ class spell_shannox_crystal_prison_trap : public SpellScriptLoader
         {
             PrepareAuraScript(spell_shannox_crystal_prison_trap_AuraScript);
 
-            void OnApply(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetCaster() || !GetTarget())
                     return;
@@ -1100,7 +1094,7 @@ class spell_shannox_crystal_prison_trap : public SpellScriptLoader
                     pCrystalPrison->AI()->SetGUID(GetTarget()->GetGUID(), (GetTarget()->GetTypeId() == TYPEID_PLAYER)? DATA_TRAPPED_PLAYER: DATA_TRAPPED_DOG);   
             }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
@@ -1109,14 +1103,14 @@ class spell_shannox_crystal_prison_trap : public SpellScriptLoader
                     GetTarget()->CastSpell(GetTarget(), SPELL_WARRY, true);
             }
             
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_shannox_crystal_prison_trap_AuraScript::OnApply, EFFECT_0, SPELL_AURA_MOD_STUN, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_shannox_crystal_prison_trap_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_MOD_STUN, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_shannox_crystal_prison_trap_AuraScript();
         }
@@ -1139,13 +1133,13 @@ class spell_shannox_immolation_trap : public SpellScriptLoader
                     GetHitUnit()->CastSpell(GetHitUnit(), SPELL_WARRY, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_shannox_immolation_trap_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_shannox_immolation_trap_SpellScript();
         }
@@ -1158,7 +1152,7 @@ class achievement_bucket_list : public AchievementCriteriaScript
     public:
         achievement_bucket_list() : AchievementCriteriaScript("achievement_bucket_list") { }
 
-        bool OnCheck(Player* source, Unit* target)
+        bool OnCheck(Player* /*source*/, Unit* target) override
         {
             if (!target)
                 return false;

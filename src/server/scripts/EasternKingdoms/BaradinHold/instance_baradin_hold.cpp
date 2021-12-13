@@ -1,23 +1,17 @@
 #include "ScriptPCH.h"
 #include "baradin_hold.h"
 
-DoorData const doorData[] =
+static std::vector<DoorData> const doorData =
 {
     {GO_TOLBARAD_DOOR_2,    DATA_ARGALOTH,  DOOR_TYPE_ROOM,       BOUNDARY_NONE},
     {GO_CELL_DOOR,          DATA_OCCUTHAR,  DOOR_TYPE_ROOM,       BOUNDARY_NONE},
     {GO_TOLBARAD_DOOR_1,    DATA_ALIZABAL,  DOOR_TYPE_ROOM,       BOUNDARY_NONE},
-    {0,                     0,              DOOR_TYPE_ROOM,       BOUNDARY_NONE}, // END
 };
 
 class instance_baradin_hold : public InstanceMapScript
 {
     public:
         instance_baradin_hold() : InstanceMapScript("instance_baradin_hold", 757) { }
-
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
-        {
-            return new instance_baradin_hold_InstanceMapScript(map);
-        }
 
         struct instance_baradin_hold_InstanceMapScript : public InstanceScript
         {
@@ -27,7 +21,7 @@ class instance_baradin_hold : public InstanceMapScript
                 LoadDoorData(doorData);
             }
             
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
@@ -35,19 +29,19 @@ class instance_baradin_hold : public InstanceMapScript
                 return true;
             }
 
-            void OnGameObjectCreate(GameObject* pGo)
+            void OnGameObjectCreate(GameObject* go) override
             {
-                switch (pGo->GetEntry())
+                switch (go->GetEntry())
                 {
                     case GO_TOLBARAD_DOOR_2:
                     case GO_CELL_DOOR:
                     case GO_TOLBARAD_DOOR_1:
-                        AddDoor(pGo, true);
+                        AddDoor(go, true);
                         break;
                 }
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
@@ -58,7 +52,7 @@ class instance_baradin_hold : public InstanceMapScript
                 return saveStream.str();
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -88,8 +82,12 @@ class instance_baradin_hold : public InstanceMapScript
 
                 OUT_LOAD_INST_DATA_COMPLETE;
             }
-
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_baradin_hold_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_baradin_hold()

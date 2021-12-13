@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,8 +17,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef CHATLINK_H
-#define CHATLINK_H
+#ifndef TRINITYCORE_CHATLINK_H
+#define TRINITYCORE_CHATLINK_H
 
 #include "SharedDefines.h"
 #include <sstream>
@@ -56,18 +58,15 @@ protected:
 class ItemChatLink : public ChatLink
 {
 public:
-    ItemChatLink() : ChatLink(), _item(NULL), _suffix(NULL), _property(NULL)
-    { 
-        memset(_data, 0, sizeof(_data));
-    }
+    ItemChatLink() : ChatLink(), _item(NULL), _suffix(NULL), _property(NULL) { }
     virtual bool Initialize(std::istringstream& iss);
     virtual bool ValidateName(char* buffer, const char* context);
 
 protected:
-    std::string FormatName(uint8 index, ItemLocale const* locale, char* suffixStrings) const;
+    std::string FormatName(uint8 index, ItemLocale const* locale, DbcStr const* suffixStrings) const;
 
     ItemTemplate const* _item;
-    int32 _data[9];
+    int32 _data[10];
     ItemRandomSuffixEntry const* _suffix;
     ItemRandomPropertiesEntry const* _property;
 };
@@ -101,10 +100,7 @@ protected:
 class AchievementChatLink : public ChatLink
 {
 public:
-    AchievementChatLink() : ChatLink(), _guid(0), _achievement(NULL)
-    { 
-        memset(_data, 0, sizeof(_data));
-    }
+    AchievementChatLink() : ChatLink(), _guid(0), _achievement(NULL) { }
     virtual bool Initialize(std::istringstream& iss);
     virtual bool ValidateName(char* buffer, const char* context);
 
@@ -118,25 +114,14 @@ protected:
 class TradeChatLink : public SpellChatLink
 {
 public:
-    TradeChatLink() : SpellChatLink(), _minSkillLevel(0), _maxSkillLevel(0), _guid(0) { }
     virtual bool Initialize(std::istringstream& iss);
-private:
-    int32 _minSkillLevel;
-    int32 _maxSkillLevel;
-    uint32 _guid;
-    std::string _base64;
 };
 
 // TalentChatLink - link to talent
 class TalentChatLink : public SpellChatLink
 {
 public:
-    TalentChatLink() : SpellChatLink(), _talentId(0), _rankId(0) { }
     virtual bool Initialize(std::istringstream& iss);
-
-private:
-    uint32 _talentId;
-    int32 _rankId;
 };
 
 // EnchantmentChatLink - link to enchantment
@@ -151,11 +136,38 @@ public:
 class GlyphChatLink : public SpellChatLink
 {
 public:
-    GlyphChatLink() : SpellChatLink(), _slotId(0), _glyph(NULL) { }
     virtual bool Initialize(std::istringstream& iss);
+};
+
+class CurrencyLink : public ChatLink
+{
+public:
+    bool Initialize(std::istringstream& iss) override;
+    bool ValidateName(char* buffer, char const* context) override;
+
 private:
-    uint32 _slotId;
-    GlyphPropertiesEntry const* _glyph;
+    CurrencyTypesEntry const* _currency;
+};
+
+class BattlePetLink : public ChatLink
+{
+public:
+    bool Initialize(std::istringstream& iss) override;
+    bool ValidateName(char* buffer, char const* context) override;
+};
+
+class BattlePetAbilityLink : public ChatLink
+{
+public:
+    bool Initialize(std::istringstream& iss) override;
+    bool ValidateName(char* buffer, char const* context) override;
+};
+
+class JournalLink : public ChatLink
+{
+public:
+    bool Initialize(std::istringstream& iss) override;
+    bool ValidateName(char* buffer, char const* context) override;
 };
 
 class LinkExtractor
@@ -173,4 +185,4 @@ private:
 };
 
 
-#endif // CHATLINK_H
+#endif // TRINITYCORE_CHATLINK_H

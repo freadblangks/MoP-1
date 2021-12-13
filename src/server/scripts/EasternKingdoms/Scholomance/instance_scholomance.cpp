@@ -1,286 +1,302 @@
-#include "ScriptMgr.h"
-#include "InstanceScript.h"
+#include "ScriptPCH.h"
 #include "scholomance.h"
 
-// placeholder for chillheart: on death (113685) | boss back to box (111256), icechill dmg (105265) | channel before combat 122499
+#define MAX_ENCOUNTER 5
+
+static std::vector<DoorData> const doorData =
+{
+    { GO_CHILLHEART_EXIT_DOOR,       DATA_INSTRUCTOR_CHILLHEART, DOOR_TYPE_PASSAGE, BOUNDARY_NONE },
+    { GO_JANDICE_INTRO_DOOR,         DATA_JANDICE_BAROV,         DOOR_TYPE_ROOM,    BOUNDARY_NONE },
+    { GO_JANDICE_TO_RATTLEGORE_DOOR, DATA_JANDICE_BAROV,         DOOR_TYPE_PASSAGE, BOUNDARY_NONE },
+    { GO_JANDICE_TO_RATTLEGORE_DOOR, DATA_RATTLEGORE,            DOOR_TYPE_ROOM,    BOUNDARY_NONE },
+    { GO_RATTLEGORE_EXIT_DOOR,       DATA_RATTLEGORE,            DOOR_TYPE_PASSAGE, BOUNDARY_NONE },
+    { GO_LILIAN_INTRO_DOOR,          DATA_LILIAN_VOSS,           DOOR_TYPE_ROOM,    BOUNDARY_NONE },
+    { GO_LILIAN_CHEST_DOOR,          DATA_LILIAN_VOSS,           DOOR_TYPE_PASSAGE, BOUNDARY_NONE },
+    { GO_LILIAN_TO_GANDLING_DOOR,    DATA_LILIAN_VOSS,           DOOR_TYPE_PASSAGE, BOUNDARY_NONE},
+    { GO_GANDLING_PRE_INTRO_DOOR,    DATA_GRANDMASTER_GANDLING,  DOOR_TYPE_ROOM,    BOUNDARY_NONE },
+    { GO_GANDLING_INTRO_DOOR,        DATA_GRANDMASTER_GANDLING,  DOOR_TYPE_ROOM,    BOUNDARY_NONE },
+};
+
+static std::vector<ScenarioBosses> const scenarioBosses =
+{
+    { DATA_INSTRUCTOR_CHILLHEART, CRITERIA_INSTRUCTOR_CHILLHEART },
+    { DATA_JANDICE_BAROV,         CRITERIA_JANDICE_BAROV         },
+    { DATA_RATTLEGORE,            CRITERIA_RATTLEGORE            },
+    { DATA_LILIAN_VOSS,           CRITERIA_LILIAN_VOSS           },
+    { DATA_GRANDMASTER_GANDLING,  CRITERIA_GRANDMASTER_GANDLING  },
+};
 
 class instance_scholomance : public InstanceMapScript
 {
-public:
-    instance_scholomance() : InstanceMapScript("instance_scholomance", 1007) { }
+    public:
+        instance_scholomance() : InstanceMapScript("instance_scholomance", 1007) { }
 
-    struct instance_scholomance_InstanceMapScript: public InstanceScript
-    {
-        instance_scholomance_InstanceMapScript(InstanceMap* map): InstanceScript(map)  { }
-
-        uint64 chillheardguid;
-        uint64 jandiceguid;
-        uint64 rattlegoreguid;
-        uint64 vossguid;
-        uint64 gandlingguid;
-        uint64 vossrpguid;
-        uint64 vosssoulguid;
- 
-
-
-        uint64 teleporterguid;
-        uint64 gandlignrp1;
-        uint64 gandlingrp2;
-        uint64 vosscontroller;
-
-        uint64 ChillHeartDoorGUID;
-        uint64 RattleGoreDoorGUID;
-        uint64 RattleToLilianDoorGUID;
-        uint64 LilianVossDoorGUID;
-        uint64 LilianVossChestDoorGUID;
-        uint64 ProfessorDoorGuid;
-        
-        // bools
-        bool hasopenfirstdoor;
-
-        void Initialize()
+        struct instance_scholomance_InstanceMapScript : public InstanceScript
         {
-            SetBossNumber(5);
-            // bosses
-            chillheardguid = 0;
-            jandiceguid = 0;
-            rattlegoreguid = 0;
-            vossguid = 0;
-            gandlingguid = 0;
-            vosssoulguid = 0;
+            instance_scholomance_InstanceMapScript(Map* map) : InstanceScript(map) { }
 
-            // triggers
-            teleporterguid = 0;
-            gandlignrp1 = 0;
-            gandlingrp2 = 0;
-            vosscontroller = 0;
-        
-            // gobs
-            ChillHeartDoorGUID = 0;
-            RattleGoreDoorGUID = 0;
-            LilianVossDoorGUID = 0;
-            RattleToLilianDoorGUID = 0;
-            LilianVossChestDoorGUID = 0;
-            ProfessorDoorGuid = 0;
+            uint32 m_auiEncounter[MAX_ENCOUNTER];
+            std::unordered_map<uint32, uint64> m_mGoEntryGuidMap;
 
-
-            hasopenfirstdoor = false; 
-        }
-        void OnCreatureCreate(Creature* creature)
-        {
-            switch (creature->GetEntry())
+            void Initialize() override
             {
-            case BOSS_CHILLHEART:
-                chillheardguid = creature->GetGUID();
-                break;
-            case BOSS_JANDICE_2:
-                jandiceguid = creature->GetGUID();
-                break;
-            case BOSS_RATTLE_GORE:
-                rattlegoreguid = creature->GetGUID();
-                break;
-            case BOSS_VOSS:
-                vossguid = creature->GetGUID();
-                break;
-            case BOSS_GANDLING:
-                gandlingguid = creature->GetGUID();
-                break;
-            case CREATURE_VOSS:
-                vossrpguid = creature->GetGUID();
-                break;
-            case BOSS_VOSS_SOUL:
-                vosssoulguid = creature->GetGUID();
-                break;
-            case CREATURE_GANDLING:
-                gandlignrp1 = creature->GetGUID();
-                break;
-            case CREATURE_GANDLING_2:
-                gandlingrp2 = creature->GetGUID();
-                break;
-            case CREATURE_TELEPORT_TRIGGER:
-                teleporterguid = creature->GetGUID();
-                break;  
-            case CREATURE_CONTROLLER_LILIAN_VOSS:
-                vosscontroller = creature->GetGUID();
-                break;
-            default:
-                break;
-            }
-        }
-        void OnUnitDeath(Unit* unit)
-        {
-            Creature* creature = unit->ToCreature();
-            if (!creature)
-                return;
+                SetBossNumber(MAX_ENCOUNTER);
+                LoadDoorData(doorData);
+                memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
 
-            switch (creature->GetEntry())
-            {
-            case BOSS_CHILLHEART:
-                if (GameObject* door = instance->GetGameObject(ChillHeartDoorGUID))
-                    door->UseDoorOrButton();
-                break;       
-            case BOSS_JANDICE_2:
-                if (GameObject* door = instance->GetGameObject(RattleGoreDoorGUID))
-                    door->UseDoorOrButton();
-                break;
-            case BOSS_RATTLE_GORE:
-                if (GameObject* door = instance->GetGameObject(RattleToLilianDoorGUID))
-                    door->UseDoorOrButton();
-                break;
-            case BOSS_VOSS:
-                if (GameObject* door = instance->GetGameObject(ProfessorDoorGuid))
-                    door->UseDoorOrButton();
-                break;
-            default:
-                break;
-            }
-        }
-        void OnGameObjectCreate(GameObject* go)
-        {
-            switch (go->GetEntry())
-            {
-            case GAME_OBJECT_RATTLE_GORE_GATE:  
-                AddDoor(go, true);
-                RattleGoreDoorGUID = go->GetGUID();
-                break;
-            case GAME_OBJECT_DOOR_LILIAN_VOSS:
-                AddDoor(go, true);
-                LilianVossDoorGUID = go->GetGUID();
-                break;        
-            case GAME_OBJECT_CHILL_HEART_IRON_GATE:
-                AddDoor(go, true);
-                ChillHeartDoorGUID = go->GetGUID();
-                break;
-            case GAME_OBJECT_LILIAN_CHEST_DOOR:
-                LilianVossChestDoorGUID = go->GetGUID();
-                break;
-            case GAME_OBJECT_RATTLE_GORE_GATE_TO_BUTCHERY:
-                RattleToLilianDoorGUID = go->GetGUID();
-                break;
-            case GAME_OBJECT_PROFESSOR_DOOR:
-                ProfessorDoorGuid = go->GetGUID();
-                break;
-            default:
-                break;
-            }
-        }
-        void OnGameObjectRemove(GameObject* go)
-        {
-            switch (go->GetEntry())
-            {
-                break;
-            default:
-                break;
-            }
-        }
-        uint32 GetData(uint32 type)
-        {
-            switch (type)
-            {
-            default:
-                break;
+                if (instance->IsChallengeDungeon())
+                    LoadScenarioInfo(scenarioBosses, CRITERIA_ENEMIES);
             }
 
-            return 0;
-        }
-        uint64 GetData64(uint32 type)
-        {
-            switch (type)
+            void OnPlayerEnter(Player* player) override
             {
-            case DATA_BOSS_CHILLBORN:
-                return chillheardguid;
-                break;
-            case DATA_BOSS_JANDICE:
-                return jandiceguid;
-                break;
-            case DATA_RATTLE_GORE:
-                return rattlegoreguid;
-                break;
-            case DATA_LILLIAN_VOSS:
-                return vossguid;
-                break;
-            case DATA_BOSS_GANDLING:
-                return gandlingguid;
-                break;
-            case DATA_LILLIAN_VOSS_SOUL:
-                return vosssoulguid;
-                break;
-            case DATA_VOSS_RP:
-                return vossrpguid;
-                break;
-            case DATA_GANDLING_RP_1:
-                return gandlignrp1;
-                break;
-            case DATA_GANDLING_RP_2:
-                return gandlingrp2;
-                break;
-            case DATA_TELEPORTER:
-                return teleporterguid;
-                break;   
-            case DATA_LILIAN_CONTROLLER:
-                return vosscontroller;
-                break;
+                if (instance->IsChallengeDungeon())
+                    SendChallengeInfo(player, SCENARIO_ID);
             }
-            return 0;
-        }
-        bool SetBossState(uint32 type, EncounterState state)
-        {
-            if (!InstanceScript::SetBossState(type, state))
-                return false;
 
-            switch (type)
+            void OnCreatureCreate(Creature* creature) override
             {
-                case DATA_LILLIAN_VOSS:
+                if (instance->IsChallengeDungeon() && creature->isDead())
+                    creature->Respawn();
+
+                switch (creature->GetEntry())
                 {
-                    if (state == DONE)
-                    {
-                        if (GameObject* door = instance->GetGameObject(LilianVossDoorGUID))
+                    case NPC_INSTRUCTOR_CHILLHEART:
+                        ChillHeartGUID = creature->GetGUID();
+                        break;
+                    case NPC_JANDICE_BAROV:
+                        JandiceBarovGUID = creature->GetGUID();
+                        break;
+                    case NPC_RATTLEGORE:
+                        RattleGoreGUID = creature->GetGUID();
+                        break;
+                    case NPC_LILIAN_VOSS:
+                        LilianVossGUID = creature->GetGUID();
+                        break;
+                    case NPC_GRANDMASTER_GANDLING_2:
+                        GandlingGUID = creature->GetGUID();
+                        break;
+                    case NPC_GRANDMASTER_GANDLING_1:
+                        GandlingIntroGUID = creature->GetGUID();
+                        break;
+                    case NPC_BONE_PILE:
+                        creature->SetVisible(false);
+                        break;
+                    case NPC_THEOLEN_KRASTINOV:
+                        if (!instance->IsHeroic() || (instance->IsHeroic() && !roll_chance_i(10)))
                         {
-                            door->Delete();
+                            creature->SetVisible(false); // make spawm with 10% proc
+                            creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
                         }
-                        if (GameObject* chestdoor = instance->GetGameObject(LilianVossChestDoorGUID))
-                        {
-                            chestdoor->UseDoorOrButton();
-                        }
-                    }
-                    break;
+                        break;
+                    case NPC_TALKING_SKULL:
+                        SkullGUID = creature->GetGUID();
+                        break;
+                    case NPC_LILIAN_SOUL:
+                        LilianSoulGUID = creature->GetGUID();
+                        break;
                 }
-                    /*
-                case DATA_BOSS_JANDICE:
-                {
-                    if (state == DONE)
-                    {
-                        if (GameObject* door = instance->GetGameObject(RattleGoreDoorGUID))
-                        {
-                            door->UseDoorOrButton();
-                        }
-                    }
-                }
-                */
             }
-            return true;
-        }
-        bool IsWipe()
-        {
-            Map::PlayerList const& PlayerList = instance->GetPlayers();
 
-            if (PlayerList.isEmpty())
+            GameObject* GetGameObjectFromStorage(uint32 uiEntry)
             {
+                GameObject* go = NULL;
+
+                std::unordered_map<uint32, uint64>::iterator find = m_mGoEntryGuidMap.find(uiEntry);
+
+                if (find != m_mGoEntryGuidMap.cend())
+                    go = instance->GetGameObject(find->second);
+
+                return go;
+            }
+
+            void OnGameObjectCreate(GameObject* go) override
+            {
+                switch (go->GetEntry())
+                {
+                    case GO_CHILLHEART_INTRO_DOOR:
+                        m_mGoEntryGuidMap.insert(std::make_pair(go->GetEntry(), go->GetGUID()));
+                        go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                        break;
+                    case GO_ALCHEMY_BOTTLE_WHITE:
+                        go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                        break;
+                    case GO_CHILLHEART_EXIT_DOOR:
+                    case GO_JANDICE_INTRO_DOOR:
+                    case GO_JANDICE_TO_RATTLEGORE_DOOR:
+                    case GO_RATTLEGORE_EXIT_DOOR:
+                    case GO_LILIAN_INTRO_DOOR:
+                    case GO_LILIAN_CHEST_DOOR:
+                    case GO_LILIAN_TO_GANDLING_DOOR:
+                    case GO_GANDLING_PRE_INTRO_DOOR:
+                    case GO_GANDLING_INTRO_DOOR:
+                        AddDoor(go, true);
+                        break;
+                    case GO_COFFER_OF_FORGOTTEN_SOULS:
+                    case GO_COFFER_OF_FORGOTTEN_SOULS_HC:
+                        go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                        m_mGoEntryGuidMap.insert(std::make_pair(go->GetEntry(), go->GetGUID()));
+                        break;
+                    case GO_CHALLENGE_DOOR:
+                        SetChallengeDoorGuid(go->GetGUID());
+                        break;
+                }
+            }
+
+            void OnUnitDeath(Unit* unit) override
+            {
+                if (instance->IsChallengeDungeon() && !IsChallengeModeCompleted())
+                    if (Creature* creature = unit->ToCreature())
+                        UpdateConditionInfo(creature,  ENEMIES_COUNT);
+            }
+            void Update(uint32 diff) override
+            {
+                ScheduleBeginningTimeUpdate(diff);
+                ScheduleChallengeStartup(diff);
+                ScheduleChallengeTimeUpdate(diff);
+            }
+
+
+            void SetData(uint32 type, uint32 data) override 
+            {
+                m_auiEncounter[type] = data;
+                SaveToDB();
+            }
+
+            uint64 GetData64(uint32 type) const override
+            {
+                switch (type)
+                {
+                    case DATA_INSTRUCTOR_CHILLHEART:
+                        return ChillHeartGUID;
+                    case DATA_JANDICE_BAROV:
+                        return JandiceBarovGUID;
+                    case DATA_RATTLEGORE:
+                        return RattleGoreGUID;
+                    case DATA_LILIAN_VOSS:
+                        return LilianVossGUID;
+                    case DATA_GRANDMASTER_GANDLING:
+                        return GandlingGUID;
+                    case DATA_GRANDMASTER_GANDLING_INTRO:
+                        return GandlingIntroGUID;
+                    case NPC_TALKING_SKULL:
+                        return SkullGUID;
+                    case NPC_LILIAN_SOUL:
+                        return LilianSoulGUID;
+                }
+
+                return 0;
+            }
+
+            bool SetBossState(uint32 type, EncounterState state) override
+            {
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
+
+                if (state == DONE)
+                {
+                    switch (type)
+                    {
+                        case DATA_INSTRUCTOR_CHILLHEART:
+                            HandleGameObject(0, true, GetGameObjectFromStorage(GO_CHILLHEART_INTRO_DOOR));
+
+                            if (Creature* TalkingSkull = instance->GetCreature(GetData64(NPC_TALKING_SKULL)))
+                                TalkingSkull->AI()->Talk(TALK_CHILLHEART_DEATH);
+                            break;
+                        case DATA_JANDICE_BAROV:
+                            if (Creature* Gandling = instance->GetCreature(GetData64(DATA_GRANDMASTER_GANDLING_INTRO)))
+                                Gandling->AI()->DoAction(ACTION_INTRO);
+
+                            if (Creature* TalkingSkull = instance->GetCreature(GetData64(NPC_TALKING_SKULL)))
+                                TalkingSkull->AI()->Talk(TALK_JANDICE_DEATH);
+                            break;
+                        case DATA_RATTLEGORE:
+                            if (Creature* TalkingSkull = instance->GetCreature(GetData64(NPC_TALKING_SKULL)))
+                                TalkingSkull->AI()->Talk(TALK_RATTLEGORE_DEATH);
+                            break;
+                        case DATA_LILIAN_VOSS:
+                            if (GameObject* Chest = GetGameObjectFromStorage(instance->IsHeroic() ? GO_COFFER_OF_FORGOTTEN_SOULS_HC : GO_COFFER_OF_FORGOTTEN_SOULS))
+                                Chest->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+
+                            if (Creature* TalkingSkull = instance->GetCreature(GetData64(NPC_TALKING_SKULL)))
+                                TalkingSkull->AI()->Talk(TALK_LILIAN_DEFEAT);
+                            break;
+                        case DATA_GRANDMASTER_GANDLING:
+
+                            if (Creature* TalkingSkull = instance->GetCreature(GetData64(NPC_TALKING_SKULL)))
+                                TalkingSkull->AI()->DoAction(ACTION_ALEXEI);
+                            break;
+                    }
+
+                    if (Creature* TalkingSkull = instance->GetCreature(GetData64(NPC_TALKING_SKULL)))
+                        TalkingSkull->AI()->DoAction(ACTION_COUNTINUE_MOVE);
+                }
                 return true;
             }
 
-            return false;
-        }
+            std::string GetSaveData() override
+            {
+                std::ostringstream saveStream;
+                saveStream << m_auiEncounter[0] << ' ' << m_auiEncounter[1] << ' ' << m_auiEncounter[2] << ' ' << m_auiEncounter[3] << ' ' << m_auiEncounter[4];
+                return saveStream.str();
+            }
+
+            bool isWipe()
+            {
+                Map::PlayerList const& PlayerList = instance->GetPlayers();
+
+                if (!PlayerList.isEmpty())
+                {
+                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                    {
+                        if (Player* plr = i->GetSource())
+                            if (plr->IsAlive() && !plr->IsGameMaster())
+                                return false;
+                    }
+                }
+                return true;
+            }
+
+            void Load(const char* in) override
+            {
+                if (!in)
+                {
+                    OUT_LOAD_INST_DATA_FAIL;
+                    return;
+                }
+
+                OUT_LOAD_INST_DATA(in);
+                std::istringstream loadStream(in);
+
+                loadStream >> m_auiEncounter[0] >> m_auiEncounter[1] >> m_auiEncounter[2] >> m_auiEncounter[3] >> m_auiEncounter[4];
+
+                // Do not load an encounter as "In Progress" - reset it instead.
+                for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
+                {
+                    if (m_auiEncounter[i] == IN_PROGRESS)
+                        m_auiEncounter[i] = NOT_STARTED;
+
+                    SetBossState(i, EncounterState(m_auiEncounter[i]));
+                }
+
+                OUT_LOAD_INST_DATA_COMPLETE;
+            }
 
         protected:
-            EventMap Events;
-            
-    };
+            uint64 ChillHeartGUID;
+            uint64 JandiceBarovGUID;
+            uint64 RattleGoreGUID;
+            uint64 LilianVossGUID;
+            uint64 GandlingGUID;
+            uint64 GandlingIntroGUID;
+            uint64 LilianSoulGUID;
+            uint64 SkullGUID;
+        };
 
-    InstanceScript* GetInstanceScript(InstanceMap* map) const
-    {
-        return new instance_scholomance_InstanceMapScript(map);
-    }
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_scholomance_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_scholomance()

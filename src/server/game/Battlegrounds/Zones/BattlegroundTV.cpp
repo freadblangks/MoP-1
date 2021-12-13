@@ -5,6 +5,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "WorldPacket.h"
+#include "BattlegroundQueue.h"
 
 BattlegroundTV::BattlegroundTV()
 {
@@ -23,7 +24,6 @@ BattlegroundTV::BattlegroundTV()
 
 BattlegroundTV::~BattlegroundTV()
 {
-
 }
 
 void BattlegroundTV::StartingEventCloseDoors()
@@ -44,16 +44,19 @@ void BattlegroundTV::StartingEventOpenDoors()
 void BattlegroundTV::AddPlayer(Player* player)
 {
     Battleground::AddPlayer(player);
-    //create score and add it to map, default values are set in constructor
-    BattlegroundTVScore* sc = new BattlegroundTVScore;
-
-    PlayerScores[player->GetGUID()] = sc;
-
     UpdateArenaWorldState();
 }
 
-void BattlegroundTV::RemovePlayer(Player* /*player*/, uint64 /*guid*/, uint32 /*team*/)
+void BattlegroundTV::OnInvite(Player* player, GroupQueueInfo const* ginfo)
 {
+    BattlegroundTVScore* sc = new BattlegroundTVScore{};
+    sc->Team = ginfo->Team;
+    PlayerScores[player->GetGUID()] = sc;
+}
+
+void BattlegroundTV::RemovePlayer(Player* player, uint64 guid, uint32 team)
+{
+    Battleground::RemovePlayer(player, guid, team);
     if (GetStatus() == STATUS_WAIT_LEAVE)
         return;
 
@@ -68,7 +71,7 @@ void BattlegroundTV::HandleKillPlayer(Player* player, Player* killer)
 
     if (!killer)
     {
-        sLog->outError(LOG_FILTER_BATTLEGROUND, "BattlegroundTV: Killer player not found");
+        TC_LOG_ERROR("bg.battleground", "BattlegroundTV: Killer player not found");
         return;
     }
 
@@ -99,9 +102,9 @@ void BattlegroundTV::HandleAreaTrigger(Player* Source, uint32 Trigger)
     }
 }
 
-void BattlegroundTV::FillInitialWorldStates(WorldPacket &data)
+void BattlegroundTV::FillInitialWorldStates(WorldStateBuilder& builder)
 {
-    Player::AppendWorldState(data, uint32(0xE1A), uint32(1));
+    builder.AppendState(uint32(0xE1A), uint32(1));
     UpdateArenaWorldState();
 }
 
@@ -120,7 +123,7 @@ bool BattlegroundTV::SetupBattleground()
         || !AddObject(BG_TV_OBJECT_BUFF_1, BG_TV_OBJECT_TYPE_BUFF_1, -10717.63f, 383.8223f, 24.412825f, 1.555f, 0.0f, 0.0f, 0.70154f, 120)
         || !AddObject(BG_TV_OBJECT_BUFF_2, BG_TV_OBJECT_TYPE_BUFF_2, -10716.6f, 475.364f, 24.4131f, 0.0f, 0.0f, 0.70068f, -0.713476f, 120))
     {
-        sLog->outError(LOG_FILTER_SQL, "BattlegroundTV: Failed to spawn some object!");
+        TC_LOG_ERROR("bg.battleground", "BattlegroundTV: Failed to spawn some object!");
         return false;
     }
 

@@ -1,10 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -27,45 +29,38 @@ EndScriptData */
 npc_spirit_of_olum
 EndContentData */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-    #include "ScriptedGossip.h"
+#include "ScriptPCH.h"
 #include "black_temple.h"
 
-/*###
-# npc_spirit_of_olum
-####*/
-
-#define SPELL_TELEPORT      41566                           // s41566 - Teleport to Ashtongue NPC's
-#define GOSSIP_OLUM1        "Teleport me to the other Ashtongue Deathsworn"
+#define SPELL_TELEPORT      41566 // s41566 - Teleport to Ashtongue NPC's
+#define GOSSIP_OLUM1        8750
 
 class npc_spirit_of_olum : public CreatureScript
 {
-public:
-    npc_spirit_of_olum() : CreatureScript("npc_spirit_of_olum") { }
+    public:
+        npc_spirit_of_olum() : CreatureScript("npc_spirit_of_olum") { }
 
-    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action)
-    {
-        player->PlayerTalkClass->ClearMenus();
-        if (action == GOSSIP_ACTION_INFO_DEF + 1)
-            player->CLOSE_GOSSIP_MENU();
+        bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override
+        {
+            player->PlayerTalkClass->ClearMenus();
+            if (action == GOSSIP_ACTION_INFO_DEF + 1)
+                player->CLOSE_GOSSIP_MENU();
 
-        player->InterruptNonMeleeSpells(false);
-        player->CastSpell(player, SPELL_TELEPORT, false);
-        return true;
-    }
+            player->InterruptNonMeleeSpells(false);
+            player->CastSpell(player, SPELL_TELEPORT, false);
+            return true;
+        }
 
-    bool OnGossipHello(Player* player, Creature* creature)
-    {
-        InstanceScript* instance = creature->GetInstanceScript();
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            InstanceScript* instance = creature->GetInstanceScript();
 
-        if (instance && (instance->GetData(DATA_SUPREMUSEVENT) >= DONE) && (instance->GetData(DATA_HIGHWARLORDNAJENTUSEVENT) >= DONE))
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_OLUM1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            if (instance && (instance->GetData(DATA_SUPREMUS_EVENT) >= DONE) && (instance->GetData(DATA_HIGH_WARLORD_NAJENTUS_EVENT) >= DONE))
+                player->ADD_GOSSIP_ITEM_DB(GOSSIP_OLUM1, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
-        player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
-        return true;
-    }
-
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+            return true;
+        }
 };
 
 void AddSC_black_temple()

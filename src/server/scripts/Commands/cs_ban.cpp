@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,56 +24,58 @@ Comment: All ban related commands
 Category: commandscripts
 EndScriptData */
 
-#include "ScriptMgr.h"
-#include "Chat.h"
 #include "AccountMgr.h"
+#include "Chat.h"
+#include "Language.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "Player.h"
+#include "ScriptMgr.h"
+#include "ServiceMgr.h"
 
 class ban_commandscript : public CommandScript
 {
 public:
     ban_commandscript() : CommandScript("ban_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand unbanCommandTable[] =
+        static std::vector<ChatCommand> unbanCommandTable =
         {
-            { "account",        SEC_ADMINISTRATOR,  true,  &HandleUnBanAccountCommand,          "", NULL },
-            { "character",      SEC_ADMINISTRATOR,  true,  &HandleUnBanCharacterCommand,        "", NULL },
-            { "playeraccount",  SEC_ADMINISTRATOR,  true,  &HandleUnBanAccountByCharCommand,    "", NULL },
-            { "ip",             SEC_ADMINISTRATOR,  true,  &HandleUnBanIPCommand,               "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "account",        SEC_GAMEMASTER,  true,   &HandleUnBanAccountCommand,         },
+            { "character",      SEC_GAMEMASTER,  true,   &HandleUnBanCharacterCommand,       },
+            { "playeraccount",  SEC_GAMEMASTER,  true,   &HandleUnBanAccountByCharCommand,   },
+            { "ip",             SEC_GAMEMASTER,  true,   &HandleUnBanIPCommand,              },
+            { "solo",           SEC_GAMEMASTER,  true,   &HandleUnBanSoloCommand             },
         };
-        static ChatCommand banlistCommandTable[] =
+        static std::vector<ChatCommand> banlistCommandTable =
         {
-            { "account",        SEC_ADMINISTRATOR,  true,  &HandleBanListAccountCommand,        "", NULL },
-            { "character",      SEC_ADMINISTRATOR,  true,  &HandleBanListCharacterCommand,      "", NULL },
-            { "ip",             SEC_ADMINISTRATOR,  true,  &HandleBanListIPCommand,             "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "account",        SEC_GAMEMASTER,  true,   &HandleBanListAccountCommand,       },
+            { "character",      SEC_GAMEMASTER,  true,   &HandleBanListCharacterCommand,     },
+            { "ip",             SEC_GAMEMASTER,  true,   &HandleBanListIPCommand,            },
+            
         };
-        static ChatCommand baninfoCommandTable[] =
+        static std::vector<ChatCommand> baninfoCommandTable =
         {
-            { "account",        SEC_ADMINISTRATOR,  true,  &HandleBanInfoAccountCommand,        "", NULL },
-            { "character",      SEC_ADMINISTRATOR,  true,  &HandleBanInfoCharacterCommand,      "", NULL },
-            { "ip",             SEC_ADMINISTRATOR,  true,  &HandleBanInfoIPCommand,             "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "account",        SEC_GAMEMASTER,  true,   &HandleBanInfoAccountCommand,       },
+            { "character",      SEC_GAMEMASTER,  true,   &HandleBanInfoCharacterCommand,     },
+            { "ip",             SEC_GAMEMASTER,  true,   &HandleBanInfoIPCommand,            },
+            
         };
-        static ChatCommand banCommandTable[] =
+        static std::vector<ChatCommand> banCommandTable =
         {
-            { "account",        SEC_ADMINISTRATOR,  true,  &HandleBanAccountCommand,            "", NULL },
-            { "character",      SEC_ADMINISTRATOR,  true,  &HandleBanCharacterCommand,          "", NULL },
-            { "playeraccount",  SEC_ADMINISTRATOR,  true,  &HandleBanAccountByCharCommand,      "", NULL },
-            { "ip",             SEC_ADMINISTRATOR,  true,  &HandleBanIPCommand,                 "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "account",        SEC_GAMEMASTER,  true,   &HandleBanAccountCommand,           },
+            { "character",      SEC_GAMEMASTER,  true,   &HandleBanCharacterCommand,         },
+            { "playeraccount",  SEC_GAMEMASTER,  true,   &HandleBanAccountByCharCommand,     },
+            { "ip",             SEC_GAMEMASTER,  true,   &HandleBanIPCommand,                },
+            { "solo",           SEC_GAMEMASTER,  true,   &HandleBanSoloCommand               },
         };
-        static ChatCommand commandTable[] =
+        static std::vector<ChatCommand> commandTable =
         {
-            { "ban",            SEC_ADMINISTRATOR,  true,  NULL,                                "", banCommandTable },
-            { "baninfo",        SEC_ADMINISTRATOR,  true,  NULL,                                "", baninfoCommandTable },
-            { "banlist",        SEC_ADMINISTRATOR,  true,  NULL,                                "", banlistCommandTable },
-            { "unban",          SEC_ADMINISTRATOR,  true,  NULL,                                "", unbanCommandTable },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "ban",            SEC_GAMEMASTER,  true,   banCommandTable                     },
+            { "baninfo",        SEC_GAMEMASTER,  true,   baninfoCommandTable                 },
+            { "banlist",        SEC_GAMEMASTER,  true,   banlistCommandTable                 },
+            { "unban",          SEC_GAMEMASTER,  true,   unbanCommandTable                   },
         };
         return commandTable;
     }
@@ -127,24 +131,6 @@ public:
                 break;
         }
 
-         if (sWorld->getBoolConfig(CONFIG_ANNOUNCE_BAN))
-         {
-            std::string announce;
-
-            announce = "The character '";
-            announce += name.c_str();
-            announce += "' was banned for ";
-            announce += durationStr;
-            announce += " by the character '";
-            announce += handler->GetSession() ? handler->GetSession()->GetPlayerName().c_str() : "";
-            announce += "'. The reason is: ";
-            announce += reasonStr;
-
-            char buff[2048];
-            sprintf(buff, handler->GetTrinityString(LANG_SYSTEMMESSAGE), announce.c_str());
-            sWorld->SendServerMessage(SERVER_MSG_STRING, buff);
-         }
-
         return true;
     }
 
@@ -156,6 +142,11 @@ public:
     static bool HandleBanIPCommand(ChatHandler* handler, char const* args)
     {
         return HandleBanHelper(BAN_IP, args, handler);
+    }
+
+    static bool HandleBanSoloCommand(ChatHandler* handler, char const* args)
+    {
+        return HandleBanHelper(BAN_SOLO, args, handler);
     }
 
     static bool HandleBanHelper(BanMode mode, char const* args, ChatHandler* handler)
@@ -188,6 +179,7 @@ public:
                 }
                 break;
             case BAN_CHARACTER:
+            case BAN_SOLO:
                 if (!normalizePlayerName(nameOrIP))
                 {
                     handler->SendSysMessage(LANG_PLAYER_NOT_FOUND);
@@ -226,35 +218,37 @@ public:
                 }
                 handler->SetSentErrorMessage(true);
                 return false;
-            case BAN_ALREADY_PERMANENT:
-                handler->PSendSysMessage("Account already banned to life");
-                break;
-            case BAN_TOO_SMALL:
-                handler->PSendSysMessage("Account already banned");
-                break;
         }
 
-        if (sWorld->getBoolConfig(CONFIG_ANNOUNCE_BAN))
+        int32 sec = sWorld->getIntConfig(CONFIG_SHOW_INFO_BAN_PLAYER);
+        if (sec > -1)
         {
-            std::string announce;
+            char announce[1024];
+            uint32 stringID;
+            bool showAnnounce = true;
 
-            if (mode == BAN_CHARACTER)
-                announce = "The character '";
-            else if (mode == BAN_IP)
-                announce = "The IP '";
-            else
-                announce = "Account '";
-            announce += nameOrIP.c_str();
-            announce += "' was banned for ";
-            announce += durationStr;
-            announce += " by the character '";
-            announce += handler->GetSession() ? handler->GetSession()->GetPlayerName().c_str() : "";
-            announce += "'. The reason is: ";
-            announce += reasonStr;
+            switch (mode)
+            {
+                case BAN_ACCOUNT:
+                    stringID = LANG_ANNOUNCE_ACCOUNT_BANNED;
+                    break;
+                case BAN_CHARACTER:
+                    // stringID = LANG_ANNOUNCE_CHARACTER_BANNED; 
+                    showAnnounce = false;
+                    break;
+                case BAN_IP:
+                    stringID = LANG_ANNOUNCE_IP_BANNED;
+                    break;
+                default:
+                    return false;
+            }
 
-            char buff[2048];
-            sprintf(buff, handler->GetTrinityString(LANG_SYSTEMMESSAGE), announce.c_str());
-            sWorld->SendServerMessage(SERVER_MSG_STRING, buff);
+            if (showAnnounce)
+            {
+                std::string adminName = handler->GetSession() ? handler->GetSession()->GetPlayerName() : handler->GetTrinityString(LANG_CONSOLE_COMMAND);
+                snprintf(announce, 1024, handler->GetTrinityString(stringID), nameOrIP.c_str(), durationStr, adminName.c_str(), reasonStr);
+                handler->SecureLevelAnnounce(AccountTypes(sec), announce);
+            }
         }
 
         return true;
@@ -708,6 +702,7 @@ public:
             return false;
         }
 
+        handler->PSendSysMessage(LANG_UNBAN_UNBANNED, nameStr);
         return true;
     }
 
@@ -719,6 +714,11 @@ public:
     static bool HandleUnBanIPCommand(ChatHandler* handler, char const* args)
     {
         return HandleUnBanHelper(BAN_IP, args, handler);
+    }
+
+    static bool HandleUnBanSoloCommand(ChatHandler* handler, char const* args)
+    {
+        return HandleUnBanHelper(BAN_SOLO, args, handler);
     }
 
     static bool HandleUnBanHelper(BanMode mode, char const* args, ChatHandler* handler)
@@ -743,6 +743,7 @@ public:
                 }
                 break;
             case BAN_CHARACTER:
+            case BAN_SOLO:
                 if (!normalizePlayerName(nameOrIP))
                 {
                     handler->SendSysMessage(LANG_PLAYER_NOT_FOUND);
@@ -757,7 +758,12 @@ public:
         }
 
         if (sWorld->RemoveBanAccount(mode, nameOrIP))
+        {
             handler->PSendSysMessage(LANG_UNBAN_UNBANNED, nameOrIP.c_str());
+
+            if (mode == BAN_ACCOUNT)
+                sServiceMgr->ExecutedServices(0, SERVICE_TYPE_UNBAN, std::string("Unbanned Account: ") + nameOrIP, "");
+        }
         else
             handler->PSendSysMessage(LANG_UNBAN_ERROR, nameOrIP.c_str());
 

@@ -1,14 +1,12 @@
 #ifndef DEF_HALLS_OF_ORIGINATION_H
 #define DEF_HALLS_OF_ORIGINATION_H
 
-#define HOScriptName "instance_halls_of_origination"
-
 enum Data
 {
     DATA_TEMPLE_GUARDIAN_ANHUUR,
     DATA_EARTHRAGER_PTAH,
     DATA_ANRAPHET,
-    DATA_ISISET,                    
+    DATA_ISISET,
     DATA_AMMUNAE,
     DATA_SETESH,
     DATA_RAJH,
@@ -64,12 +62,34 @@ enum CreatureIds
     NPC_WATER_WARDEN           = 39802,
     NPC_AIR_WARDEN             = 39803,
     NPC_BRANN_BRONZEBEARD      = 39908,
+    NPC_SEARING_LIGHT          = 40283,
+    NPC_BEETLE_STALKER         = 40459,
+    NPC_ALPHA_BEAM             = 41144,
+    NPC_OMEGA_STANCE           = 41194,
 };
 
 enum Achievements
 {
-    SPELL_FASTER_THAN_LIGHT     = 94067,
-    EVENT_FASTER_THAN_LIGHT     = 24212,
+    SPELL_FASTER_THAN_LIGHT       = 94067,
+    EVENT_FASTER_THAN_LIGHT       = 24212,
+    ACHIEV_STRAW_THAT_BROKE_CAMEL = 5294,
 };
+
+enum Worldstates
+{
+    WORLDSTATE_I_HATE_THAT_SONG               = 8782,
+    WORLDSTATE_FASTER_THAN_THE_SPEED_OF_LIGHT = 8804,
+    WORLDSTATE_SUN_OF_A                       = 8783,
+};
+
+template<class AI>
+CreatureAI* GetInstanceAI(Creature* creature)
+{
+    if (InstanceMap* instance = creature->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptId("instance_halls_of_origination"))
+                return new AI(creature);
+    return NULL;
+}
 
 #endif

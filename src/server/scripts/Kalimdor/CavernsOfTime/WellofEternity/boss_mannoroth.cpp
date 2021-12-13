@@ -15,9 +15,9 @@ enum ScriptedTextMannoroth
 };
 enum ScriptedTextVarothen
 {
-    SAY_VAROTHEN_AGGRO  = 0,
-    SAY_VAROTHEN_DEATH  = 1,
-    SAY_VAROTHEN_KILL   = 2,
+    SAY_VAROTHEN_AGGRO      = 0,
+    SAY_VAROTHEN_DEATH      = 1,
+    SAY_VAROTHEN_KILL       = 2,
 };
 
 enum Spells
@@ -145,14 +145,9 @@ class boss_mannoroth : public CreatureScript
     public:
         boss_mannoroth() : CreatureScript("boss_mannoroth") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_mannorothAI(pCreature);
-        }
-
         struct boss_mannorothAI : public BossAI
         {
-            boss_mannorothAI(Creature* pCreature) : BossAI(pCreature, DATA_MANNOROTH)
+            boss_mannorothAI(Creature* creature) : BossAI(creature, DATA_MANNOROTH)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -166,19 +161,10 @@ class boss_mannoroth : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(WoEScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -186,12 +172,13 @@ class boss_mannoroth : public CreatureScript
 
                 phase = 0;
                 bVarothen = false;
-                bAchieve = false;
                 bDebilitating = false;
                 bEndEncounter = false;
+
+                me->GetMap()->SetWorldState(WORLDSTATE_THATS_NOT_CANON, 0);
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 if (Creature* pTyrande = me->FindNearestCreature(NPC_TYRANDE, 150.0f))
                     pTyrande->AI()->DoAction(7); // ACTION_MANNOROTH_RESET
@@ -199,18 +186,18 @@ class boss_mannoroth : public CreatureScript
                     pIllidan->AI()->DoAction(7); // ACTION_MANNOROTH_RESET
             }
 
-            void AttackStart(Unit* who)
+            void AttackStart(Unit* target) override
             {
-                if (!who)
+                if (!target)
                     return;
 
-                me->Attack(who, false);
+                me->Attack(target, false);
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (Creature* pVarothen = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_VAROTHEN)))
-                    if (!pVarothen->isInCombat())
+                    if (!pVarothen->IsInCombat())
                         DoZoneInCombat(pVarothen);
 
                 if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_2, 150.0f))
@@ -218,7 +205,7 @@ class boss_mannoroth : public CreatureScript
 
                 phase = 0;
                 bVarothen = false;
-                bAchieve = false;
+                me->GetMap()->SetWorldState(WORLDSTATE_THATS_NOT_CANON, 0);
                 bDebilitating = false;
                 bEndEncounter = false;
 
@@ -241,18 +228,13 @@ class boss_mannoroth : public CreatureScript
                 instance->SetBossState(DATA_MANNOROTH, IN_PROGRESS);
             }
             
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_MANNOROTH_KILL);
             }
 
-            bool AllowAchieve()
-            {
-                return bAchieve;
-            }
-
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_VAROTHEN_DIED)
                 {
@@ -265,7 +247,7 @@ class boss_mannoroth : public CreatureScript
                 }
             }
 
-            void DamageTaken(Unit* /*who*/, uint32 &damage)
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
                 if (!bDebilitating)
                     if (me->HealthBelowPctDamaged(88, damage))
@@ -275,7 +257,7 @@ class boss_mannoroth : public CreatureScript
                     damage = 0;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -290,7 +272,7 @@ class boss_mannoroth : public CreatureScript
                     Talk(SAY_MANNOROTH_VAROTHEN);
                     DoCast(me, SPELL_FEL_DRAIN);
                     bVarothen = true;
-                    bAchieve = true;
+                    me->GetMap()->SetWorldState(WORLDSTATE_THATS_NOT_CANON, 1);
                     return;
                 }
                 if (me->HealthBelowPct(85) && (phase == 0))
@@ -333,7 +315,6 @@ class boss_mannoroth : public CreatureScript
                 {
                     switch (eventId)
                     {
-
                         case EVENT_CHECK_PLAYERS:
                             if (!SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
                             {
@@ -443,10 +424,10 @@ class boss_mannoroth : public CreatureScript
 
                 //DoMeleeAttackIfReady();
             }
+
         private:
             uint8 phase;
             bool bVarothen;
-            bool bAchieve;
             bool bDebilitating;
             bool bEndEncounter;
 
@@ -454,25 +435,43 @@ class boss_mannoroth : public CreatureScript
             {
                 Talk(SAY_MANNOROTH_DEATH);
                 events.Reset();
-                summons.DespawnAll();
+                summons.DespawnAll(2000);
                 me->InterruptNonMeleeSpells(true);
 
-                if (instance)
+                // Achievement
+                instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_COMPLETE_ENCOUNTER, 0, me); 
+                    
+                // Guild Achievement
+                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
+                if (!PlayerList.isEmpty())
                 {
-                    // Achievement
-                    instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_COMPLETE_ENCOUNTER, 0, 0, me); 
-                    instance->DoKilledMonsterKredit(QUEST_THE_PATH_TO_THE_DRAGON_SOUL, 54969, 0);
-                    instance->UpdateEncounterState(ENCOUNTER_CREDIT_CAST_SPELL, SPELL_COMPLETE_ENCOUNTER, me); 
-                    instance->SetBossState(DATA_MANNOROTH, DONE);
-                    instance->DoModifyPlayerCurrencies(395, 7000);
+                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                    {
+                        if (Player* player = i->GetSource())
+                            if (Group* pGroup = player->GetGroup())
+                                if (player->GetGuildId() && pGroup->IsGuildGroup(player->GetGuildId(), player))
+                                {
+                                    pGroup->UpdateGuildAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_COMPLETE_ENCOUNTER, 0, 0, NULL, me);
+                                    break;
+                                }
+                    }
                 }
-                
+                instance->DoKilledMonsterKredit(QUEST_THE_PATH_TO_THE_DRAGON_SOUL, 54969, 0);
+                instance->UpdateEncounterState(ENCOUNTER_CREDIT_CAST_SPELL, SPELL_COMPLETE_ENCOUNTER, me); 
+                instance->SetBossState(DATA_MANNOROTH, DONE);
+                instance->DoModifyPlayerCurrencies(CURRENCY_TYPE_JUSTICE_POINTS, 7000);
+
                 if (Creature* pTyrande = me->FindNearestCreature(NPC_TYRANDE, 150.0f))
                     pTyrande->AI()->DoAction(11); // ACTION_MANNOROTH_END
 
                 events.ScheduleEvent(EVENT_DESPAWN, 5000);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_mannorothAI>(creature);
+        }
 };
 
 class npc_mannoroth_varothen : public CreatureScript
@@ -480,14 +479,9 @@ class npc_mannoroth_varothen : public CreatureScript
     public:
         npc_mannoroth_varothen() : CreatureScript("npc_mannoroth_varothen") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_mannoroth_varothenAI(pCreature);
-        }
-
         struct npc_mannoroth_varothenAI : public ScriptedAI
         {
-            npc_mannoroth_varothenAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_mannoroth_varothenAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -501,60 +495,56 @@ class npc_mannoroth_varothen : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
                 if (!me->FindNearestCreature(NPC_ILLIDAN_2, 100.0f))
                     me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_VAROTHEN_AGGRO);
                 events.ScheduleEvent(EVENT_MAGNISTRIKE, urand(3000, 7000));
 
-                if (pInstance)
-                    if (Creature* pMannoroth = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_MANNOROTH)))
-                        if (!pMannoroth->isInCombat())
+                if (instance)
+                    if (Creature* pMannoroth = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_MANNOROTH)))
+                        if (!pMannoroth->IsInCombat())
                             DoZoneInCombat(pMannoroth);
             }
             
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_VAROTHEN_KILL);
             }
 
-            void SpellHit(Unit* who, const SpellInfo* spellInfo)
+            void SpellHit(Unit* caster, const SpellInfo* spell) override
             {
-                if (spellInfo->Id == SPELL_ARCHIVED_VAROTHEN_1)
-                    DoCast(who, SPELL_ARCHIVED_VAROTHEN_2, true);
+                if (spell->Id == SPELL_ARCHIVED_VAROTHEN_1)
+                    DoCast(caster, SPELL_ARCHIVED_VAROTHEN_2, true);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 Talk(SAY_VAROTHEN_DEATH);
-                
-                if (pInstance)
-                {
-                    if (Creature* pMannoroth = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_MANNOROTH)))
-                        pMannoroth->AI()->DoAction(ACTION_VAROTHEN_DIED);
 
-                    Map::PlayerList const &PlayerList = pInstance->instance->GetPlayers();
-                    if (!PlayerList.isEmpty())
-                        for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                            if (Player* pPlayer = i->getSource())
-                                if (me->GetDistance(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(QUEST_DOCUMENTING_THE_TIMEWAYS) == QUEST_STATUS_INCOMPLETE)
-                                    pPlayer->CastSpell(me, SPELL_ARCHIVED_VAROTHEN_1, true);
-                }
+                if (Creature* pMannoroth = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_MANNOROTH)))
+                    pMannoroth->AI()->DoAction(ACTION_VAROTHEN_DIED);
+
+                Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
+                if (!PlayerList.isEmpty())
+                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                        if (Player* player = i->GetSource())
+                            if (me->GetDistance(player) <= 50.0f && player->GetQuestStatus(QUEST_DOCUMENTING_THE_TIMEWAYS) == QUEST_STATUS_INCOMPLETE)
+                                player->CastSpell(me, SPELL_ARCHIVED_VAROTHEN_1, true);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -575,10 +565,16 @@ class npc_mannoroth_varothen : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
             EventMap events;
-            InstanceScript* pInstance;
+            InstanceScript* instance;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_mannoroth_varothenAI>(creature);
+        }
 };
 
 class npc_mannoroth_doomguard_debilitator : public CreatureScript
@@ -586,14 +582,9 @@ class npc_mannoroth_doomguard_debilitator : public CreatureScript
     public:
         npc_mannoroth_doomguard_debilitator() : CreatureScript("npc_mannoroth_doomguard_debilitator") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_mannoroth_doomguard_debilitatorAI(pCreature);
-        }
-
         struct npc_mannoroth_doomguard_debilitatorAI : public ScriptedAI
         {
-            npc_mannoroth_doomguard_debilitatorAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_mannoroth_doomguard_debilitatorAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -607,27 +598,26 @@ class npc_mannoroth_doomguard_debilitator : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 events.ScheduleEvent(EVENT_DEBILITATING_FLAY, 1000);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 if (Creature* pTyrande = me->FindNearestCreature(NPC_TYRANDE, 100.0f))
                     pTyrande->AI()->DoAction(8); // ACTION_DEBILITATING_OFF
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
@@ -639,9 +629,15 @@ class npc_mannoroth_doomguard_debilitator : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_mannoroth_doomguard_debilitatorAI>(creature);
+        }
 };
 
 class spell_mannoroth_gift_of_sargeras : public SpellScriptLoader
@@ -661,34 +657,15 @@ class spell_mannoroth_gift_of_sargeras : public SpellScriptLoader
                 GetCaster()->CastSpell(GetCaster(), SPELL_GIFT_OF_SARGERAS_AOE, true);
             }
 
-            void Register()
+            void Register() override
             {
                 AfterHit += SpellHitFn(spell_mannoroth_gift_of_sargeras_SpellScript::HandleAfterHit);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_mannoroth_gift_of_sargeras_SpellScript();
-        }
-};
-
-typedef boss_mannoroth::boss_mannorothAI MannorothAI;
-
-class achievement_thats_not_cannon : public AchievementCriteriaScript
-{
-    public:
-        achievement_thats_not_cannon() : AchievementCriteriaScript("achievement_thats_not_cannon") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (MannorothAI* mannorothAI = CAST_AI(MannorothAI, target->GetAI()))
-                return mannorothAI->AllowAchieve();
-
-            return false;
         }
 };
 
@@ -698,5 +675,4 @@ void AddSC_boss_mannoroth()
     new npc_mannoroth_varothen();
     new npc_mannoroth_doomguard_debilitator();
     new spell_mannoroth_gift_of_sargeras();
-    new achievement_thats_not_cannon();
 }

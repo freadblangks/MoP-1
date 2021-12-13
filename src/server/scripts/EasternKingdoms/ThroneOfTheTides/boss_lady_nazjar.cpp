@@ -15,15 +15,11 @@ enum Spells
 {
     SPELL_FUNGAL_SPORES         = 76001,
     SPELL_FUNGAL_SPORES_DMG     = 80564,
-    SPELL_FUNGAL_SPORES_DMG_H   = 91470,
     SPELL_SHOCK_BLAST           = 76008,
-    SPELL_SHOCK_BLAST_H         = 91477,
     SPELL_SUMMON_GEYSER         = 75722,
     SPELL_GEYSER_VISUAL         = 75699,
     SPELL_GEYSER_ERRUPT         = 75700,
-    SPELL_GEYSER_ERRUPT_H       = 91469,
-    SPELL_GEYSER_ERRUPT_KNOCK   = 94046,
-    SPELL_GEYSER_ERRUPT_KNOCK_H = 94047,
+    SPELL_GEYSER_ERRUPT_ENTRY   = 94046,
     SPELL_WATERSPOUT            = 75683,
     SPELL_WATERSPOUT_KNOCK      = 75690,
     SPELL_WATERSPOUT_SUMMON     = 90495,
@@ -31,16 +27,16 @@ enum Spells
     SPELL_WATERSPOUT_DMG        = 90479,
     SPELL_VISUAL_INFIGHT_AURA   = 91349,
 
+    SPELL_ACHIEVEMENT           = 94042,
+
     // honnor guard
     SPELL_ARC_SLASH             = 75907,
     SPELL_ENRAGE                = 75998,
 
     // tempest witch
     SPELL_CHAIN_LIGHTNING       = 75813,
-    SPELL_CHAIN_LIGHTNING_H     = 91450,
     SPELL_LIGHTNING_SURGE       = 75992,
     SPELL_LIGHTNING_SURGE_DMG   = 75993,
-    SPELL_LIGHTNING_SURGE_DMG_H = 91451,
 };
 
 enum Events
@@ -68,8 +64,8 @@ enum Adds
     NPC_TEMPEST_WITCH       = 44404,
     NPC_HONNOR_GUARD        = 40633,
     NPC_WATERSPOUT          = 48571,
-	NPC_WATERSPOUT_H        = 49108,
-	NPC_GEYSER              = 40597,
+    NPC_WATERSPOUT_H        = 49108,
+    NPC_GEYSER              = 40597,
 };
 
 const Position summonPos[3] =
@@ -86,14 +82,9 @@ class boss_lady_nazjar : public CreatureScript
     public:
         boss_lady_nazjar() : CreatureScript("boss_lady_nazjar") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_lady_nazjarAI (pCreature);
-        }
-
         struct boss_lady_nazjarAI : public BossAI
         {
-            boss_lady_nazjarAI(Creature* pCreature) : BossAI(pCreature, DATA_LADY_NAZJAR)//, summons(me)
+            boss_lady_nazjarAI(Creature* creature) : BossAI(creature, DATA_LADY_NAZJAR)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -112,17 +103,12 @@ class boss_lady_nazjar : public CreatureScript
             uint8 uiSpawnCount;
             uint8 uiPhase;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(TotTScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
                 uiPhase = 0;
                 uiSpawnCount = 3;
@@ -130,75 +116,82 @@ class boss_lady_nazjar : public CreatureScript
                 events.Reset();
             }
 
-            void SummonedCreatureDies(Creature* summon, Unit* killer)
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
             {
-                switch(summon->GetEntry())
+                switch (summon->GetEntry())
                 {
-                case NPC_TEMPEST_WITCH:
-                case NPC_HONNOR_GUARD:
-                    uiSpawnCount--;
-                    break;
+                    case NPC_TEMPEST_WITCH:
+                    case NPC_HONNOR_GUARD:
+                        uiSpawnCount--;
+                        break;
                 }
             }
 
-            void KilledUnit(Unit* /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void SpellHit(Unit* caster, SpellInfo const* spell)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
                 if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
-                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_SHOCK_BLAST
-                        || me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_SHOCK_BLAST_H)
+                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_SHOCK_BLAST)
                         for (uint8 i = 0; i < 3; ++i)
-						    if (spell->Effects[i].Effect == SPELL_EFFECT_INTERRUPT_CAST)
-							    me->InterruptSpell(CURRENT_GENERIC_SPELL);
+                            if (spell->Effects[i].Effect == SPELL_EFFECT_INTERRUPT_CAST)
+                                me->InterruptSpell(CURRENT_GENERIC_SPELL);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
 
-                switch(summon->GetEntry())
+                switch (summon->GetEntry())
                 {
-                case NPC_TEMPEST_WITCH:
-                case NPC_HONNOR_GUARD:
-                    if (me->isInCombat())
-                        summon->SetInCombatWithZone();
-                    break;
-                case NPC_WATERSPOUT:
-                case NPC_WATERSPOUT_H:
-                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
-                    {
-                        float x, y;
-                        me->GetNearPoint2D(x, y, 30.0f, me->GetAngle(pTarget->GetPositionX(), pTarget->GetPositionY()));
-                        summon->GetMotionMaster()->MovePoint(POINT_WATERSPOUT, x, y, 808.0f);
-                    }
-                    break;
+                    case NPC_TEMPEST_WITCH:
+                    case NPC_HONNOR_GUARD:
+                        if (me->IsInCombat())
+                            summon->SetInCombatWithZone();
+                        break;
+                    case NPC_WATERSPOUT:
+                    case NPC_WATERSPOUT_H:
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100, true))
+                        {
+                            float x, y;
+                            me->GetNearPoint2D(x, y, 30.0f, me->GetAngle(target->GetPositionX(), target->GetPositionY()));
+                            summon->GetMotionMaster()->MovePoint(POINT_WATERSPOUT, x, y, 808.0f);
+                        }
+                        break;
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 events.ScheduleEvent(EVENT_GEYSER, 11000);
                 events.ScheduleEvent(EVENT_FUNGAL_SPORES, urand(3000,10000));
                 events.ScheduleEvent(EVENT_SHOCK_BLAST, urand(6000,12000));
                 instance->SetData(DATA_LADY_NAZJAR, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*pKiller*/)
+            void JustDied(Unit* /*killer*/)
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 Talk(SAY_DEATH);
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
                 {
-                    if (id == POINT_CENTER_1)
+                    if (pointId == POINT_CENTER_1)
                     {
                         Talk(SAY_66);
                         SetCombatMovement(false);
@@ -210,7 +203,7 @@ class boss_lady_nazjar : public CreatureScript
                         me->SummonCreature(NPC_TEMPEST_WITCH, summonPos[2]);
                         events.ScheduleEvent(EVENT_WATERSPOUT_END, 60000);
                     }
-                    else if (id == POINT_CENTER_2)
+                    else if (pointId == POINT_CENTER_2)
                     {
                         Talk(SAY_33);
                         SetCombatMovement(false);
@@ -234,13 +227,13 @@ class boss_lady_nazjar : public CreatureScript
                 me->CastStop();
                 SetCombatMovement(true);
                 me->SetReactState(REACT_AGGRESSIVE);
-                me->GetMotionMaster()->MoveChase(me->getVictim());
+                me->GetMotionMaster()->MoveChase(me->GetVictim());
                 events.RescheduleEvent(EVENT_GEYSER, 11000);
                 events.RescheduleEvent(EVENT_FUNGAL_SPORES, urand(3000,10000));
                 events.RescheduleEvent(EVENT_SHOCK_BLAST, urand(6000,12000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -278,64 +271,68 @@ class boss_lady_nazjar : public CreatureScript
 
                 switch (uiPhase)
                 {
-                case 1:
-                case 3:
-                    events.Update(diff);
-
-                    while (uint32 eventId = events.ExecuteEvent())
+                    case 1:
+                    case 3:
                     {
-                        switch (eventId)
+                        events.Update(diff);
+
+                        while (uint32 eventId = events.ExecuteEvent())
                         {
-                        case EVENT_WATERSPOUT_END:
-                            WaterspoutEnd();
-                            break;
+                            switch (eventId)
+                            {
+                            case EVENT_WATERSPOUT_END:
+                                WaterspoutEnd();
+                                break;
+                            }
                         }
+                        break;
                     }
-                    break;
-                case 0:
-                case 2:
-                case 4:
-                    events.Update(diff);
-
-                    if (me->HasUnitState(UNIT_STATE_CASTING))
-                        return;
-
-                    while (uint32 eventId = events.ExecuteEvent())
+                    case 0:
+                    case 2:
+                    case 4:
                     {
-                        switch (eventId)
+                        events.Update(diff);
+
+                        if (me->HasUnitState(UNIT_STATE_CASTING))
+                            return;
+
+                        while (uint32 eventId = events.ExecuteEvent())
                         {
-                        case EVENT_GEYSER:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_SUMMON_GEYSER);
-                            events.ScheduleEvent(EVENT_GEYSER, urand(14000,17000));
-                            break;
-                        case EVENT_FUNGAL_SPORES:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget,SPELL_FUNGAL_SPORES);
-                            events.ScheduleEvent(EVENT_FUNGAL_SPORES, urand(15000,18000));
-                            break;
-                        case EVENT_SHOCK_BLAST:
-                            DoCast(me->getVictim(), SPELL_SHOCK_BLAST);
-                            events.ScheduleEvent(EVENT_SHOCK_BLAST, urand(12000,14000));
-                            break;
+                            switch (eventId)
+                            {
+                                case EVENT_GEYSER:
+                                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                        DoCast(target, SPELL_SUMMON_GEYSER);
+                                    events.ScheduleEvent(EVENT_GEYSER, urand(14000,17000));
+                                    break;
+                                case EVENT_FUNGAL_SPORES:
+                                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                        DoCast(target,SPELL_FUNGAL_SPORES);
+                                    events.ScheduleEvent(EVENT_FUNGAL_SPORES, urand(15000,18000));
+                                    break;
+                                case EVENT_SHOCK_BLAST:
+                                    DoCast(me->GetVictim(), SPELL_SHOCK_BLAST);
+                                    events.ScheduleEvent(EVENT_SHOCK_BLAST, urand(12000,14000));
+                                    break;
+                            }
                         }
+                        DoMeleeAttackIfReady();
+                        break;
                     }
-                    DoMeleeAttackIfReady();
-                    break;
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_lady_nazjarAI>(creature);
+        }
 };
 
 class npc_lady_nazjar_honnor_guard : public CreatureScript
 {
     public:
         npc_lady_nazjar_honnor_guard() : CreatureScript("npc_lady_nazjar_honnor_guard") { }
-
-        CreatureAI* GetAI(Creature *creature) const
-        {
-            return new npc_lady_nazjar_honnor_guardAI (creature);
-        }
 
         struct npc_lady_nazjar_honnor_guardAI : public ScriptedAI
         {
@@ -347,13 +344,13 @@ class npc_lady_nazjar_honnor_guard : public CreatureScript
             EventMap events;
             bool bEnrage;
 
-            void Reset()
+            void Reset() override
             {
                 bEnrage = false;
                 events.ScheduleEvent(EVENT_START_ATTACK, 2000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -374,19 +371,24 @@ class npc_lady_nazjar_honnor_guard : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_START_ATTACK:
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        events.ScheduleEvent(EVENT_ARC_SLASH, 5000);
-                        break;
-                    case EVENT_ARC_SLASH:
-                        DoCast(me, SPELL_ARC_SLASH);
-                        events.ScheduleEvent(EVENT_ARC_SLASH, urand(7000, 10000));
-                        break;
+                        case EVENT_START_ATTACK:
+                            me->SetReactState(REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_ARC_SLASH, 5000);
+                            break;
+                        case EVENT_ARC_SLASH:
+                            DoCast(me, SPELL_ARC_SLASH);
+                            events.ScheduleEvent(EVENT_ARC_SLASH, urand(7000, 10000));
+                            break;
                     }
                 }
                 DoMeleeAttackIfReady();                
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_lady_nazjar_honnor_guardAI (creature);
+        }
 };
 
 class npc_lady_nazjar_tempest_witch : public CreatureScript
@@ -394,26 +396,21 @@ class npc_lady_nazjar_tempest_witch : public CreatureScript
     public:
         npc_lady_nazjar_tempest_witch() : CreatureScript("npc_lady_nazjar_tempest_witch") { }
 
-        CreatureAI* GetAI(Creature *creature) const
+        struct npc_lady_nazjar_tempest_witchAI : public ScriptedAI
         {
-            return new npc_lady_nazjar_tempest_witchAI (creature);
-        }
-
-        struct npc_lady_nazjar_tempest_witchAI : public Scripted_NoMovementAI
-        {
-            npc_lady_nazjar_tempest_witchAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_lady_nazjar_tempest_witchAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.ScheduleEvent(EVENT_START_ATTACK, 2000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -427,35 +424,35 @@ class npc_lady_nazjar_tempest_witch : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_START_ATTACK:
-                        me->SetReactState(REACT_AGGRESSIVE);
-                        events.ScheduleEvent(EVENT_LIGHTNING_SURGE, urand(5000, 7000));
-                        events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 2000);
-                        break;
-                    case EVENT_LIGHTNING_SURGE:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                            DoCast(pTarget, SPELL_LIGHTNING_SURGE);
-                        events.ScheduleEvent(EVENT_LIGHTNING_SURGE, urand(10000, 15000));
-                        break;
-                    case EVENT_CHAIN_LIGHTNING:
-                        DoCast(me->getVictim(), SPELL_CHAIN_LIGHTNING);
-                        events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 2000);
-                        break;
+                        case EVENT_START_ATTACK:
+                            me->SetReactState(REACT_AGGRESSIVE);
+                            events.ScheduleEvent(EVENT_LIGHTNING_SURGE, urand(5000, 7000));
+                            events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 2000);
+                            break;
+                        case EVENT_LIGHTNING_SURGE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_LIGHTNING_SURGE);
+                            events.ScheduleEvent(EVENT_LIGHTNING_SURGE, urand(10000, 15000));
+                            break;
+                        case EVENT_CHAIN_LIGHTNING:
+                            DoCast(me->GetVictim(), SPELL_CHAIN_LIGHTNING);
+                            events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 2000);
+                            break;
                     }
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_lady_nazjar_tempest_witchAI (creature);
+        }
 };
 
 class npc_lady_nazjar_waterspout : public CreatureScript
 {
     public:
         npc_lady_nazjar_waterspout() : CreatureScript("npc_lady_nazjar_waterspout") { }
-
-        CreatureAI* GetAI(Creature *creature) const
-        {
-            return new npc_lady_nazjar_waterspoutAI (creature);
-        }
 
         struct npc_lady_nazjar_waterspoutAI : public ScriptedAI
         {
@@ -471,29 +468,32 @@ class npc_lady_nazjar_waterspout : public CreatureScript
 
             bool bHit;
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
-                {
-                    if (id == POINT_WATERSPOUT)
+                    if (pointId == POINT_WATERSPOUT)
                         me->DespawnOrUnsummon();
-                }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (bHit)
                     return;
 
-                if (Unit* pTarget = me->SelectNearestTarget(2.0f))
+                if (Unit* target = me->SelectNearestTarget(2.0f))
                 {
-                    if (pTarget->GetTypeId() != TYPEID_PLAYER)
+                    if (target->GetTypeId() != TYPEID_PLAYER)
                         return;
                     bHit = true;
-                    pTarget->CastSpell(pTarget, SPELL_WATERSPOUT_DMG, true);
+                    target->CastSpell(target, SPELL_WATERSPOUT_DMG, true);
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_lady_nazjar_waterspoutAI (creature);
+        }
 };
 
 class npc_lady_nazjar_geyser : public CreatureScript
@@ -501,14 +501,9 @@ class npc_lady_nazjar_geyser : public CreatureScript
     public:
         npc_lady_nazjar_geyser() : CreatureScript("npc_lady_nazjar_geyser") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_lady_nazjar_geyserAI : public ScriptedAI
         {
-            return new npc_lady_nazjar_geyserAI (pCreature);
-        }
-
-        struct npc_lady_nazjar_geyserAI : public Scripted_NoMovementAI
-        {
-            npc_lady_nazjar_geyserAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_lady_nazjar_geyserAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
@@ -517,26 +512,59 @@ class npc_lady_nazjar_geyser : public CreatureScript
 
             uint32 uiErruptTimer;
             bool bErrupt;
+            std::set<uint64> affectedEnemyGuids;
+            std::set<uint64> killedEnemyGuids;
 
-            void Reset()
+            void Reset() override
             {
                 uiErruptTimer = 5000;
                 bErrupt = false;
                 DoCast(me, SPELL_GEYSER_VISUAL, true);
             }
 
-            void UpdateAI(const uint32 diff)
+            void SpellHitTarget(Unit* target, const SpellInfo* spell) override
+            {
+                if (IsHeroic() && spell->Id == SPELL_GEYSER_ERRUPT_ENTRY)
+                {
+                    if (killedEnemyGuids.find(target->GetGUID()) != killedEnemyGuids.end())
+                    {
+                        if (Creature* lady = me->FindNearestCreature(NPC_LADY_NAZJAR, 100))
+                            lady->CastSpell(lady, SPELL_ACHIEVEMENT, true);
+                    }
+                    else
+                        affectedEnemyGuids.insert(target->GetGUID());
+                }
+            }
+
+            void KilledUnit(Unit* victim) override
+            {
+                if (affectedEnemyGuids.find(victim->GetGUID()) != affectedEnemyGuids.end())
+                {
+                    if (Creature* lady = me->FindNearestCreature(NPC_LADY_NAZJAR, 100))
+                        lady->CastSpell(lady, SPELL_ACHIEVEMENT, true);
+                }
+                else
+                    killedEnemyGuids.insert(victim->GetGUID());
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 if (uiErruptTimer <= diff && !bErrupt)
                 {
                     bErrupt = true;
                     me->RemoveAurasDueToSpell(SPELL_GEYSER_VISUAL);
                     DoCast(me, SPELL_GEYSER_ERRUPT, true);
+                    me->DespawnOrUnsummon(1000);
                 }
                 else
                     uiErruptTimer -= diff;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lady_nazjar_geyserAI>(creature);
+        }
 };
 
 void AddSC_boss_lady_nazjar()

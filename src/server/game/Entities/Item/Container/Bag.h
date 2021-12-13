@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -19,7 +20,7 @@
 #ifndef TRINITY_BAG_H
 #define TRINITY_BAG_H
 
-// Maximum 36 Slots ((CONTAINER_END - CONTAINER_FIELD_SLOT_1)/2
+// Maximum 36 Slots ((CONTAINER_END - CONTAINER_FIELD_SLOTS)/2
 #define MAX_BAG_SIZE 36                                     // 2.0.12
 
 #include "Item.h"
@@ -54,7 +55,7 @@ class Bag : public Item
         // overwrite virtual Item::SaveToDB
         void SaveToDB(SQLTransaction& trans);
         // overwrite virtual Item::LoadFromDB
-        bool LoadFromDB(uint32 guid, uint64 owner_guid, Field* fields, uint32 entry);
+        bool LoadFromDB(uint32 guid, uint64 ownerGuid, Field* fields, uint32 entry, Player* owner);
         // overwrite virtual Item::DeleteFromDB
         void DeleteFromDB(SQLTransaction& trans);
 
@@ -71,4 +72,3 @@ inline Item* NewItemOrBag(ItemTemplate const* proto)
     return (proto->InventoryType == INVTYPE_BAG) ? new Bag : new Item;
 }
 #endif
-

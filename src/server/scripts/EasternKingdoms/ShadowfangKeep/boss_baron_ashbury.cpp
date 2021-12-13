@@ -2,17 +2,14 @@
 #include"Spell.h"
 #include"shadowfang_keep.h"
 
-
-#define SAY_AGGRO "Thalli ho! The hunt begins!"
-#define SAY_DEATH "Killed by lowly commoners, how droll..."
-#define SAY_ASPHYXIATE "This is just too easy..."
-#define SAY_STAY_OF_EXECUTION "HA! Let's at least keep it interesting."
-#define SAY_DARK_ARCHANGEL_FORM "I grow tired of this hunt... Time to die!"
-#define SAY_KILL1 "Pathetic."
-#define SAY_KILL2 "There was no sport in that kill."
-
 enum ScriptTexts
 {
+    SAY_AGGRO                = 0,
+    SAY_DEATH                = 1,
+    SAY_ASPHYXIATE           = 2,
+    SAY_STAY_OF_EXECUTION    = 3,
+    SAY_DARK_ARCHANGEL_FORM  = 4,
+    SAY_KILL                 = 5,
 };
 
 enum Events
@@ -27,12 +24,9 @@ enum Events
 enum Spells
 {
     SPELL_PAIN_AND_SUFFERING    = 93581,
-    SPELL_PAIN_AND_SUFFERING_H  = 93712,
     SPELL_ASPHYXIATE            = 93423,
-    SPELL_ASPHYXIATE_H          = 93710,
-    SPELL_ASPHYXIATE_DMG        = 93422,
+    SPELL_ASPHYXIATE_DMG        = 93424,
     SPELL_STAY_OF_EXECUTION     = 93468,
-    SPELL_STAY_OF_EXECUTION_H   = 93705,
     SPELL_STAY_OF_EXECUTION_H_T = 93706,
     SPELL_DARK_ARCHANGEL_FORM   = 93757,
     SPELL_DARK_ARCHANGEL_FORM_0 = 93766,
@@ -45,14 +39,14 @@ class boss_baron_ashbury : public CreatureScript
 {
     public:
         boss_baron_ashbury() : CreatureScript("boss_baron_ashbury") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_baron_ashburyAI(pCreature);
-        }
+
         struct boss_baron_ashburyAI : public BossAI
         {
-            boss_baron_ashburyAI(Creature* pCreature) : BossAI(pCreature, DATA_ASHBURY)
+            boss_baron_ashburyAI(Creature* creature) : BossAI(creature, DATA_ASHBURY) { }
+
+            bool bArchangel, bCombo;
+
+            void InitializeAI() override
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -65,61 +59,63 @@ class boss_baron_ashbury : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                Reset();
             }
 
-            bool bArchangel;
-            bool bCombo;
-            bool bHeal;
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 bArchangel = false;
                 bCombo = false;
-                bHeal = false;
+
+                me->GetMap()->SetWorldState(WORLDSTATE_PARDON_DENIED, 1);
             }
 
-            void EnterCombat(Unit* pWho)
+            void EnterCombat(Unit* who) override
             {
-                me->MonsterYell(SAY_AGGRO, 0, 0);
-                events.ScheduleEvent(EVENT_PAIN_AND_SUFFERING, urand(8000, 9000));
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+                Talk(SAY_AGGRO);
                 events.ScheduleEvent(EVENT_ASPHYXIATE, 30000);
                 if (IsHeroic())
                     events.ScheduleEvent(EVENT_WRACKING_PAIN, 15000);
-                instance->SetBossState(DATA_ASHBURY, IN_PROGRESS);
                 DoZoneInCombat();
             }
 
-            void SpellHit(Unit* caster, SpellEntry const* spell)
-            {
-            }
+            void SpellHit(Unit* /*caster*/, const SpellInfo* /*spell*/) override { }
 
-            bool AllowAchieve()
-            {
-                return !bHeal && IsHeroic();
-            }
-
-            void HealReceived(Unit* healer, uint32 &heal)
+            void HealReceived(Unit* healer, uint32& /*heal*/) override
             {
                 if (healer->GetGUID() == me->GetGUID())
-                    bHeal = true;
+                    me->GetMap()->SetWorldState(WORLDSTATE_PARDON_DENIED, 0);
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                me->MonsterYell(urand(0, 1)? SAY_KILL1: SAY_KILL2, 0, 0);
+                Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* pWho)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
 
-                me->MonsterYell(SAY_DEATH, 0, 0);
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                scheduler.CancelAll();
+                Talk(SAY_DEATH);
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_WRACKING_PAIN);
+                instance->SetData(DATA_ASHBURY, DONE);
             }
             
-            void UpdateAI(const uint32 uiDiff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -130,36 +126,36 @@ class boss_baron_ashbury : public CreatureScript
                     {
                         events.Reset();
                         bArchangel = true;
-                        me->MonsterYell(SAY_DARK_ARCHANGEL_FORM, 0, 0);
+                        Talk(SAY_DARK_ARCHANGEL_FORM);
                         DoCast(me, SPELL_DARK_ARCHANGEL_FORM);
                         events.ScheduleEvent(EVENT_CALAMITY, 3000);
                     }
                 }
 
-                events.Update(uiDiff);
+                events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
                     
                 while(uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
                         case EVENT_PAIN_AND_SUFFERING:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 80.0f, true))
                                 DoCast(target, SPELL_PAIN_AND_SUFFERING);
-                            events.ScheduleEvent(EVENT_PAIN_AND_SUFFERING, urand(8000, 9000));
                             break;
                         case EVENT_ASPHYXIATE:
                             bCombo = true;
                             events.DelayEvents(7000);
-                            me->MonsterYell(SAY_ASPHYXIATE, 0, 0);
-                            DoCast(DUNGEON_MODE(SPELL_ASPHYXIATE, SPELL_ASPHYXIATE_H));
+                            Talk(SAY_ASPHYXIATE);
+                            DoCast(SPELL_ASPHYXIATE);
                             events.ScheduleEvent(EVENT_STAY_OF_EXECUTION, 6100);
+                            events.ScheduleEvent(EVENT_PAIN_AND_SUFFERING, urand(8000, 9000));
                             events.ScheduleEvent(EVENT_ASPHYXIATE, 45000);
                             break;
                         case EVENT_STAY_OF_EXECUTION:
-                            me->MonsterYell(SAY_STAY_OF_EXECUTION, 0, 0);
+                            Talk(SAY_STAY_OF_EXECUTION);
                             DoCast(SelectTarget(SELECT_TARGET_NEAREST), SPELL_STAY_OF_EXECUTION);
                             bCombo = false;
                             break;
@@ -176,29 +172,50 @@ class boss_baron_ashbury : public CreatureScript
                     DoMeleeAttackIfReady();
             }
          };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_baron_ashburyAI>(creature);
+        }
 };
 
-typedef boss_baron_ashbury::boss_baron_ashburyAI AshburyAI;
-
-class achievement_pardon_denied : public AchievementCriteriaScript
+// Asphyxate 93423
+class spell_ashbery_asphyxate_dmg : public SpellScriptLoader
 {
     public:
-        achievement_pardon_denied() : AchievementCriteriaScript("achievement_pardon_denied") { }
+        spell_ashbery_asphyxate_dmg() : SpellScriptLoader("spell_ashbery_asphyxate_dmg") { }
 
-        bool OnCheck(Player* source, Unit* target)
+        class spell_ashbery_asphyxate_dmg_AuraScript : public AuraScript
         {
-            if (!target)
-                return false;
+            PrepareAuraScript(spell_ashbery_asphyxate_dmg_AuraScript);
 
-            if (AshburyAI* ashburyAI = CAST_AI(AshburyAI, target->GetAI()))
-                return ashburyAI->AllowAchieve();
+            // this is an additional effect to be executed
+            void PeriodicTick(AuraEffect const* aurEff)
+            {
+                SpellInfo const* damageSpell = sSpellMgr->GetSpellInfo(SPELL_ASPHYXIATE_DMG);
+                int32 damage = damageSpell->Effects[EFFECT_0].CalcValue();
 
-            return false;
+                if (Unit* m_caster = GetOwner()->ToUnit())
+                {
+                    damage = int32(0.2 * m_caster->GetMaxHealth()) < int32(m_caster->GetHealth()) ? int32(0.2 * m_caster->GetMaxHealth()) : m_caster->GetHealth() <= 1 ? 0 : int32(m_caster->GetHealth() - 1);
+                    m_caster->CastCustomSpell(m_caster, SPELL_ASPHYXIATE_DMG, &damage, NULL, NULL, true);
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_ashbery_asphyxate_dmg_AuraScript::PeriodicTick, EFFECT_2, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_ashbery_asphyxate_dmg_AuraScript();
         }
 };
 
 void AddSC_boss_baron_ashbury()
 {
     new boss_baron_ashbury();
-    new achievement_pardon_denied();
+    new spell_ashbery_asphyxate_dmg();
 }

@@ -3,19 +3,22 @@
 
 enum ScriptTexts
 {
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_RAGE    = 2,
-    SAY_EVENT_1 = 3, // near entrance
-    SAY_EVENT_2 = 4, // near entrance
-    SAY_EVENT_3 = 5, // near entrance
-    SAY_FOUND   = 6, // when eyes have found a player
-    SAY_ACHIEVE = 7,
-    SAY_HIDING  = 8,
-    SAY_INTRO   = 9,
-    SAY_KILL    = 10,
-    SAY_SPELL_1 = 11,
-    SAY_SPELL_2 = 12,
+    SAY_AGGRO              = 0,
+    SAY_DEATH              = 1,
+    SAY_RAGE               = 2,
+    SAY_EVENT_1            = 3, // near entrance
+    SAY_EVENT_2            = 4, // near entrance
+    SAY_EVENT_3            = 5, // near entrance
+    SAY_FOUND              = 6, // when eyes have found a player
+    SAY_ACHIEVE            = 7,
+    SAY_HIDING             = 8,
+    SAY_INTRO              = 9,
+    SAY_SPELL_1            = 10,
+    SAY_SPELL_2            = 11,
+
+    SAY_ANNOUNCE_HIDE      = 12,
+    SAY_ANNOUNCE_HUNTING   = 13,
+    SAY_ANNOUNCE_EASY_PREY = 14,
 };
 
 enum Spells
@@ -41,10 +44,13 @@ enum Spells
     SPELL_EASY_PREY                 = 105493,
     SPELL_ATTACK_ME_PEROTHARN       = 105509,
     SPELL_ENFEEBLED                 = 105442,
-    SPELL_ENDLESS_RAGE              = 105521,
+    SPELL_ENDLESS_FRENZY            = 105521,
 
     SPELL_PUNISHING_FLAMES          = 107532,
     SPELL_PUNISHING_FLAMES_DMG      = 107536, // 80m
+
+    SPELL_AGGRO_ILLIDAN             = 104683,
+    SPELL_END_EXHAUSTED             = 105548,
 
     //illidan
     SPELL_ABSORB_FEL_ENERGY         = 105543,
@@ -79,13 +85,17 @@ enum Events
     EVENT_ILLIDAN_OUTRO_1   = 11,
     EVENT_ILLIDAN_OUTRO_2   = 12,
     EVENT_END_HUNT          = 13,
-
+    EVENT_HIDING            = 14,
+    EVENT_ILLIDAN_RECOVERY  = 15,
 };
 
 enum Actions
 {
-    ACTION_START        = 1, 
-    ACTION_EASY_PREY    = 2,
+    ACTION_START            = 1,
+    ACTION_PREEVENT_APPEAR  = 2,
+    ACTION_TELEPORT_APPEAR  = 3,
+    ACTION_TELEPORT_CENTER  = 4,
+    ACTION_EASY_PREY        = 5,
 };
 
 enum Points
@@ -100,14 +110,9 @@ class boss_perotharn : public CreatureScript
     public:
         boss_perotharn() : CreatureScript("boss_perotharn") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_perotharnAI(pCreature);
-        }
-
         struct boss_perotharnAI : public BossAI
         {
-            boss_perotharnAI(Creature* pCreature) : BossAI(pCreature, DATA_PEROTHARN)
+            boss_perotharnAI(Creature* creature) : BossAI(creature, DATA_PEROTHARN)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -121,46 +126,69 @@ class boss_perotharn : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
-                me->setActive(true);
+                updatePositionTimer = 0;
+                preeventDisapperTimer = 0;
                 phase = 0;
-                bAchieve = false;
+                hasPreeventAppeared = false;
 
                 me->SetReactState(REACT_PASSIVE);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                DoCast(me, SPELL_CAMOUFLAGE, true);
+                me->GetMap()->SetWorldState(WORLDSTATE_LAZY_EYE, 0);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(WoEScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
                 phase = 0;
                 targetGUID = 0;
-                bAchieve = false;
+                me->GetMap()->SetWorldState(WORLDSTATE_LAZY_EYE, 0);
 
-                if (instance->GetData(DATA_EVENT_ILLIDAN_1) == IN_PROGRESS)
+                if (instance->GetData(DATA_EVENT_DEMON) == DONE)
                 {
-                    me->SetReactState(REACT_AGGRESSIVE);
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
-                    me->RemoveAura(SPELL_CAMOUFLAGE);
+                    if (instance->GetData(DATA_EVENT_ILLIDAN_1) == DONE)
+                    {
+                        hasPreeventAppeared = true;
+                        me->SetReactState(REACT_AGGRESSIVE);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                        me->RemoveAura(SPELL_CAMOUFLAGE);
+                        updatePositionTimer = 5000;
+                    }
+                    else
+                    {
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                        DoCast(me, SPELL_CAMOUFLAGE, true);
+                    }
                 }
+                else
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_START)
                 {
                     me->SetReactState(REACT_AGGRESSIVE);
                     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
                     DoCast(me, SPELL_CAMOUFLAGE_REMOVE, true);
+                }
+                else if (action == ACTION_PREEVENT_APPEAR)
+                {
+                    if (hasPreeventAppeared)
+                        return;
+                    hasPreeventAppeared = true;
+                    me->SetReactState(REACT_PASSIVE);
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                    DoCastAOE(SPELL_CAMOUFLAGE_REMOVE);
+                    Talk(SAY_INTRO);
+                    preeventDisapperTimer = 7000;
+                }
+                else if (action == ACTION_TELEPORT_APPEAR)
+                {
+                    me->NearTeleportTo(perotharnPosPreeventAppear.GetPositionX(), perotharnPosPreeventAppear.GetPositionY(), perotharnPosPreeventAppear.GetPositionZ(), perotharnPosPreeventAppear.GetOrientation());
+                }
+                else if (action == ACTION_TELEPORT_CENTER)
+                {
+                    me->NearTeleportTo(perotharnPosCenter.GetPositionX(), perotharnPosCenter.GetPositionY(), perotharnPosCenter.GetPositionZ(), perotharnPosCenter.GetOrientation());
                 }
                 else if (action == ACTION_EASY_PREY)
                 {
@@ -173,11 +201,12 @@ class boss_perotharn : public CreatureScript
                 }
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
 
-                events.ScheduleEvent(EVENT_ILLIDAN_AGGRO, 6000);
+                updatePositionTimer = 0;
+                events.ScheduleEvent(EVENT_ILLIDAN_AGGRO, 5000);
                 events.ScheduleEvent(EVENT_CORRUPTING_TOUCH, 5000);
                 events.ScheduleEvent(EVENT_FEL_FLAMES, urand(10000, 12000));
                 events.ScheduleEvent(EVENT_FEL_DECAY, urand(12000, 15000));
@@ -190,13 +219,14 @@ class boss_perotharn : public CreatureScript
 
                 DoZoneInCombat();
                 instance->SetBossState(DATA_PEROTHARN, IN_PROGRESS);
+
+                DoCastAOE(SPELL_AGGRO_ILLIDAN);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
-                instance->SetData(DATA_EVENT_ILLIDAN_1, DONE);
                 if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_1, 100.0f))
                     pIllidan->AI()->DoAction(1); // ACTION_PEROTHARN_DEAD
 
@@ -205,24 +235,39 @@ class boss_perotharn : public CreatureScript
                 instance->DoKilledMonsterKredit(QUEST_IN_UNENDING_NUMBERS, 58241, 0);                               
             }
             
-            void KilledUnit(Unit* who)
-            {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SAY_KILL);
-            }
+            void KilledUnit(Unit* victim) override { }
 
-            void SetGUID(uint64 guid, int32 type)
+            void SetGUID(uint64 guid, int32 /*type*/) override
             {
                 targetGUID = guid;
             }
 
-            bool AllowAchieve()
+            void UpdateAI(uint32 diff) override
             {
-                return bAchieve;
-            }
+                // Hack. Clients may not be notified about his position change if they are on a loading screen.
+                // So we repeat it multiple times before the encounter starts.
+                // Should happen only if players entered a newly created instance map while having a lockout with Illidan event done.
+                if (updatePositionTimer)
+                {
+                    if (updatePositionTimer <= diff)
+                    {
+                        updatePositionTimer = 5000;
+                        me->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
+                    }
+                    else updatePositionTimer -= diff;
+                }
 
-            void UpdateAI(const uint32 diff)
-            {
+                if (preeventDisapperTimer)
+                {
+                    if (preeventDisapperTimer <= diff)
+                    {
+                        preeventDisapperTimer = 0;
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                        DoCastAOE(SPELL_CAMOUFLAGE);
+                    }
+                    else preeventDisapperTimer -= diff;
+                }
+
                 if (!UpdateVictim())
                     return;
 
@@ -246,6 +291,8 @@ class boss_perotharn : public CreatureScript
                     events.ScheduleEvent(EVENT_ILLIDAN_BREAK, 4000);
                     return;
                 }
+                if (me->HealthBelowPct(20) && !me->HasAura(SPELL_ENDLESS_FRENZY))
+                    DoCastAOE(SPELL_ENDLESS_FRENZY);
 
                 if (uint32 eventId = events.ExecuteEvent())
                 {
@@ -253,27 +300,27 @@ class boss_perotharn : public CreatureScript
                     {
                         case EVENT_ILLIDAN_AGGRO:
                             if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_1, 100.0f))
-                                pIllidan->AI()->Talk(1); // SAY_ILLIDAN_1_AGGRO
+                                pIllidan->AI()->Talk(1); // SAY_ILLIDAN_1_BOSS_AGGRO
                             break;
                         case EVENT_CORRUPTING_TOUCH:
                             DoCastVictim(SPELL_CORRUPTING_TOUCH_DMG);
                             events.ScheduleEvent(EVENT_CORRUPTING_TOUCH, urand(13000, 17000)); 
                             break;
                         case EVENT_FEL_FLAMES:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_FEL_FLAMES);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_FEL_FLAMES);
                             events.ScheduleEvent(EVENT_FEL_FLAMES, urand(20000, 30000));
                             break;
                         case EVENT_FEL_DECAY:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
-                                DoCast(pTarget, SPELL_FEL_DECAY);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
+                                DoCast(target, SPELL_FEL_DECAY);
                             events.ScheduleEvent(EVENT_FEL_DECAY, urand(20000, 30000));
                             break;
                         case EVENT_ILLIDAN_BREAK:
                             DoCastAOE(SPELL_FEL_ADLED, true);
                             if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_1, 100.0f))
                             {
-                                pIllidan->AI()->Talk(5); // SAY_ILLIDAN_1_SPELL
+                                pIllidan->AI()->Talk(5); // SAY_ILLIDAN_1_BOSS_SPELL
                                 pIllidan->CastSpell(pIllidan, SPELL_CONSUME_ESSENCE);
                                 pIllidan->ClearUnitState(UNIT_STATE_CASTING);
                                 pIllidan->CastSpell(me, SPELL_ABSORB_FEL_ENERGY);
@@ -283,15 +330,24 @@ class boss_perotharn : public CreatureScript
                         case EVENT_CAMOUFLAGE:
                             phase = 3;
                             Talk(SAY_SPELL_2);
+                            Talk(SAY_ANNOUNCE_HIDE);
                             DoCast(me, SPELL_CAMOUFLAGE);
-                            events.ScheduleEvent(EVENT_ILLIDAN_HIDE, 5000);
+                            if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_1, 100.0f))
+                                pIllidan->CastSpell(pIllidan, SPELL_REGENERATION);
+                            events.ScheduleEvent(EVENT_ILLIDAN_HIDE, 2000);
+                            events.ScheduleEvent(EVENT_HIDING, 5000);
                             break;
                         case EVENT_ILLIDAN_HIDE:
                             if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_1, 100.0f))
-                                pIllidan->AI()->Talk(0); // SAY_ILLIDAN_1_HIDE
+                                pIllidan->AI()->Talk(0); // SAY_ILLIDAN_1_BOSS_HIDES
                             events.ScheduleEvent(EVENT_HUNTING, 2000);
                             break;
+                        case EVENT_HIDING:
+                            Talk(SAY_HIDING);
+                            events.ScheduleEvent(EVENT_HIDING, 15000);
+                            break;
                         case EVENT_HUNTING:
+                            Talk(SAY_ANNOUNCE_HUNTING);
                             events.ScheduleEvent(EVENT_END_HUNT, 45000);
                             for (float i = 0.0f; i < 2 * M_PI; i += (M_PI / 4))
                             {
@@ -305,21 +361,26 @@ class boss_perotharn : public CreatureScript
                         case EVENT_EASY_PREY:
                             phase = 4;
                             events.CancelEvent(EVENT_END_HUNT);
+                            events.CancelEvent(EVENT_HIDING);
                             me->SetReactState(REACT_AGGRESSIVE);
                             DoCast(me, SPELL_CAMOUFLAGE_REMOVE, true);
                             me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                            me->InterruptNonMeleeSpells(false);
                             if (targetGUID)
-                                if (Player* pPlayer = ObjectAccessor::GetPlayer(*me, targetGUID))
+                                if (Player* player = ObjectAccessor::GetPlayer(*me, targetGUID))
                                 {
-                                    pPlayer->CastSpell(pPlayer, SPELL_ATTACK_ME_PEROTHARN, true);
-                                    DoCast(pPlayer, SPELL_TRACKED_LOCK_ON_PLAYER);
+                                    Talk(SAY_ANNOUNCE_EASY_PREY);
+                                    player->CastSpell(player, SPELL_ATTACK_ME_PEROTHARN, true);
+                                    DoCast(player, SPELL_TRACKED_LOCK_ON_PLAYER);
                                 }
+                            events.ScheduleEvent(EVENT_ILLIDAN_RECOVERY, 5000);
                             events.ScheduleEvent(EVENT_CORRUPTING_TOUCH, 5000);
                             events.ScheduleEvent(EVENT_FEL_FLAMES, urand(10000, 12000));
                             events.ScheduleEvent(EVENT_FEL_DECAY, urand(12000, 15000));
                             break;
                         case EVENT_END_HUNT:
                             events.CancelEvent(EVENT_EASY_PREY);
+                            events.CancelEvent(EVENT_HIDING);
                             phase = 4; 
                             summons.DespawnEntry(NPC_EYE_OF_PEROTHARN_1);
                             summons.DespawnEntry(NPC_HUNTING_SUMMON_CIRCLE);
@@ -327,11 +388,17 @@ class boss_perotharn : public CreatureScript
                             DoCast(me, SPELL_CAMOUFLAGE_REMOVE, true);
                             me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
                             Talk(SAY_ACHIEVE);
-                            bAchieve = true;
+                            me->GetMap()->SetWorldState(WORLDSTATE_LAZY_EYE, 1);
                             DoCast(me, SPELL_ENFEEBLED, true);
+                            events.ScheduleEvent(EVENT_ILLIDAN_RECOVERY, 5000);
                             events.ScheduleEvent(EVENT_CORRUPTING_TOUCH, 20000);
                             events.ScheduleEvent(EVENT_FEL_FLAMES, urand(25000, 27000));
                             events.ScheduleEvent(EVENT_FEL_DECAY, urand(27000, 30000));
+                            break;
+                        case EVENT_ILLIDAN_RECOVERY:
+                            DoCastAOE(SPELL_END_EXHAUSTED);
+                            if (Creature* pIllidan = me->FindNearestCreature(NPC_ILLIDAN_1, 100.0f))
+                                pIllidan->AI()->Talk(31); // SAY_ILLIDAN_1_BOSS_RECOVERY
                             break;
                         default:
                             break;
@@ -340,63 +407,67 @@ class boss_perotharn : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
+            uint32 updatePositionTimer;
+            uint32 preeventDisapperTimer;
             uint8 phase;
             uint64 targetGUID;
-            bool bAchieve;
+            bool hasPreeventAppeared;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_perotharnAI>(creature);
+        }
 };
 
 class npc_perotharn_eye_of_perotharn : public CreatureScript
 {
     public:
-        npc_perotharn_eye_of_perotharn() : CreatureScript("npc_perotharn_eye_of_perotharn") {}
+        npc_perotharn_eye_of_perotharn() : CreatureScript("npc_perotharn_eye_of_perotharn") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_perotharn_eye_of_perotharnAI : public ScriptedAI
         {
-            return new npc_perotharn_eye_of_perotharnAI(pCreature);
-        }
-            
-        struct npc_perotharn_eye_of_perotharnAI : public Scripted_NoMovementAI
-        {
-            npc_perotharn_eye_of_perotharnAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_perotharn_eye_of_perotharnAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
                 bDespawn = false;
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
-                me->SetSpeed(MOVE_RUN, 0.5f, true);
+                me->SetSpeed(MOVE_RUN, 0.8f, true);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             { 
                 events.ScheduleEvent(EVENT_NEXT_MOVE, urand(500, 2000));
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
-                    if (data == POINT_EYE)
+                    if (pointId == POINT_EYE)
                         events.ScheduleEvent(EVENT_NEXT_MOVE, 500);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 if (!bDespawn)
                 {
-                    if (Player* pTarget = me->FindNearestPlayer(1.0f))
+                    if (Player* target = me->FindNearestPlayer(1.0f))
                     {
                         bDespawn = true;
                         if (Creature* pPerotharn = me->FindNearestCreature(NPC_PEROTHARN, 300.0f))
                         {
-                            pTarget->CastSpell(pTarget, SPELL_EASY_PREY, true);
-                            pPerotharn->AI()->SetGUID(pTarget->GetGUID());
+                            target->CastSpell(target, SPELL_EASY_PREY, true);
+                            pPerotharn->AI()->SetGUID(target->GetGUID());
                             pPerotharn->AI()->DoAction(ACTION_EASY_PREY);                        
                         }
                     }
@@ -417,8 +488,8 @@ class npc_perotharn_eye_of_perotharn : public CreatureScript
                             }
                             else
                             {
-                                if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                    me->GetMotionMaster()->MoveFollow(pTarget, 0.0f, 0.0f);
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                    me->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
                             }
                             events.ScheduleEvent(EVENT_NEXT_MOVE, urand(7000, 10000));
                             break;
@@ -427,10 +498,16 @@ class npc_perotharn_eye_of_perotharn : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
             bool bDespawn;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_perotharn_eye_of_perotharnAI>(creature);
+        }
 };
 
 class spell_perotharn_drain_essence : public SpellScriptLoader
@@ -442,26 +519,26 @@ class spell_perotharn_drain_essence : public SpellScriptLoader
         {
             PrepareAuraScript(spell_perotharn_drain_essence_AuraScript);
 
-            void OnApply(constAuraEffectPtr, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (GetUnitOwner())
                     GetUnitOwner()->SetControlled(true, UNIT_STATE_STUNNED);
             }
 
-            void OnRemove(constAuraEffectPtr, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (GetUnitOwner()) 
                     GetUnitOwner()->SetControlled(false, UNIT_STATE_STUNNED);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_perotharn_drain_essence_AuraScript::OnApply, EFFECT_0, SPELL_AURA_MOD_PACIFY_SILENCE, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_perotharn_drain_essence_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_MOD_PACIFY_SILENCE, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_perotharn_drain_essence_AuraScript();
         }
@@ -481,13 +558,13 @@ class spell_perotharn_drain_essence_dmg : public SpellScriptLoader
                 SetHitDamage(int32(GetHitUnit()->CountPctFromCurHealth(10)));
             }
 
-            void Register()
+            void Register() override
             {
                 OnHit += SpellHitFn(spell_perotharn_drain_essence_dmg_SpellScript::RecalculateDamage);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_perotharn_drain_essence_dmg_SpellScript();
         }
@@ -511,7 +588,7 @@ class spell_perotharn_punishing_flames_dmg : public SpellScriptLoader
                     targets.remove_if(DistanceCheck(GetCaster()));
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_perotharn_punishing_flames_dmg_SpellScript::FilterTargets, EFFECT_0,TARGET_UNIT_SRC_AREA_ENEMY);
             }
@@ -520,7 +597,7 @@ class spell_perotharn_punishing_flames_dmg : public SpellScriptLoader
             class DistanceCheck
             {
                 public:
-                    DistanceCheck(Unit* searcher) : _searcher(searcher) {}
+                    DistanceCheck(Unit* searcher) : _searcher(searcher) { }
             
                     bool operator()(WorldObject* unit)
                     {
@@ -532,28 +609,9 @@ class spell_perotharn_punishing_flames_dmg : public SpellScriptLoader
             };
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_perotharn_punishing_flames_dmg_SpellScript();
-        }
-};
-
-typedef boss_perotharn::boss_perotharnAI PerotharnAI;
-
-class achievement_lazy_eye : public AchievementCriteriaScript
-{
-    public:
-        achievement_lazy_eye() : AchievementCriteriaScript("achievement_lazy_eye") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (PerotharnAI* perotharnAI = CAST_AI(PerotharnAI, target->GetAI()))
-                return perotharnAI->AllowAchieve();
-
-            return false;
         }
 };
 
@@ -564,5 +622,4 @@ void AddSC_boss_perotharn()
     new spell_perotharn_drain_essence();
     new spell_perotharn_drain_essence_dmg();
     new spell_perotharn_punishing_flames_dmg();
-    new achievement_lazy_eye();
 }

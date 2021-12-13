@@ -1,627 +1,748 @@
-/*
-    Dungeon : Template of Mogu'shan Palace 87-89
-    Instance General Script
-    Jade servers
-*/
-
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
 #include "VMapFactory.h"
 #include "mogu_shan_palace.h"
+#include "Log.h"
+#include "Containers.h"
+
+#include <numeric>
+
+static std::vector<ScenarioBosses> const scenarioBosses =
+{
+    { DATA_TRIAL_OF_THE_KING,    CRITERIA_TRIAL_KING             },
+    { DATA_GEKKAN,               CRITERIA_GEKKAN                 },
+    { DATA_XIN_THE_WEAPONMASTER, CRITERIA_XIN_MASTER             },
+};
 
 class instance_mogu_shan_palace : public InstanceMapScript
 {
-public:
-    instance_mogu_shan_palace() : InstanceMapScript("instance_mogu_shan_palace", 994) { }
+    public:
+        instance_mogu_shan_palace() : InstanceMapScript("instance_mogu_shan_palace", 994) { }
 
-    InstanceScript* GetInstanceScript(InstanceMap* map) const
-    {
-        return new instance_mogu_shan_palace_InstanceMapScript(map);
-    }
-
-    struct instance_mogu_shan_palace_InstanceMapScript : public InstanceScript
-    {
-        /*
-        ** Trial of the king.
-        */
-        uint64 xin_guid;
-        uint64 kuai_guid;
-        uint64 ming_guid;
-        uint64 haiyan_guid;
-        std::list<uint64> scrappers;
-        std::list<uint64> adepts;
-        std::list<uint64> grunts;
-        /*
-        ** End of the trial of the king.
-        */
-        /*
-        ** Gekkan.
-        */
-        uint64 gekkan;
-        uint64 glintrok_ironhide;
-        uint64 glintrok_skulker;
-        uint64 glintrok_oracle;
-        uint64 glintrok_hexxer;
-        /*
-        ** End of Gekkan.
-        */
-        /*
-        ** Xin the weaponmaster.
-        */
-        std::list<uint64> animated_staffs;
-        std::list<uint64> animated_axes;
-        std::list<uint64> swordLauncherGuids;
-        /*
-        ** End of Xin the weaponmaster.
-        */
-
-        uint64 doorBeforeTrialGuid;
-        uint64 trialChestGuid;
-        uint64 doorAfterTrialGuid;
-        uint64 doorBeforeKingGuid;
-
-        instance_mogu_shan_palace_InstanceMapScript(Map* map) : InstanceScript(map) {}
-
-        void Initialize()
+        struct instance_mogu_shan_palace_InstanceMapScript : public InstanceScript
         {
-            xin_guid = 0;
-            kuai_guid = 0;
-            ming_guid = 0;
-            haiyan_guid = 0;
+            instance_mogu_shan_palace_InstanceMapScript(Map* map) : InstanceScript(map) { }
 
-            doorBeforeTrialGuid = 0;
-            trialChestGuid = 0;
-            doorAfterTrialGuid = 0;
-            doorBeforeKingGuid = 0;
+            uint32 m_auiEncounter[MAX_TYPES];
+            EventMap m_mEvents;
 
-            gekkan = 0;
-            glintrok_ironhide = 0;
-            glintrok_skulker = 0;
-            glintrok_oracle = 0;
-            glintrok_hexxer = 0;
-        }
+            // Trial of the king.
+            uint32 delay;
+            uint64 m_uiXinGuid;
+            uint64 m_uiKuaiGuid;
+            uint64 m_uiMingGuid;
+            uint64 m_uiHaiyanGuid;
+            uint64 m_uiBeaconGuid;
+            std::list<uint64> m_lScrapperList;
+            std::list<uint64> m_lAdeptList;
+            std::list<uint64> m_lGruntList;
 
-        bool SetBossState(uint32 id, EncounterState state)
-        {
-            if (!InstanceScript::SetBossState(id, state))
-                return false;
+            uint32 m_uiBossCount;
+            uint32 m_auiBossNumber[3];
 
-            switch (id)
+            // m_uiGekkanGuid.
+            uint64 m_uiGekkanGuid;
+            uint64 m_uiAncientTreasureGuid;
+
+            // Xin the weaponmaster.
+            std::list<uint64> m_lStaffList;
+            std::list<uint64> m_lAxeList;
+
+            uint64 m_uiScoutGuid;
+
+            // Storage
+            uint64 m_auiGuids64[MAX_GUIDS];
+            std::unordered_map<uint32, uint64> m_mGoEntryGuidMap;
+
+            void Initialize() override
             {
-                case DATA_TRIAL_OF_THE_KING:
-                    HandleGameObject(doorBeforeTrialGuid, state != IN_PROGRESS);
-                    if (GameObject* chest = instance->GetGameObject(trialChestGuid))
-                        chest->SetPhaseMask(state == DONE ? 1: 128, true);
-                    break;
-                case DATA_GEKKAN:
-                    HandleGameObject(doorAfterTrialGuid, state == DONE);
-                    // Todo : mod temp portal phasemask
-                    break;
-                case DATA_XIN_THE_WEAPONMASTER:
-                    HandleGameObject(doorBeforeTrialGuid, state != IN_PROGRESS);
-                    break;
+                memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
+
+                // pretty dumb to even try to utilize data without this... lol
+                SetBossNumber(MAX_ENCOUNTER);
+
+                delay = 0;
+                m_uiXinGuid = 0;
+                m_uiKuaiGuid = 0;
+                m_uiMingGuid = 0;
+                m_uiHaiyanGuid = 0;
+                m_uiBeaconGuid = 0;
+
+                m_uiGekkanGuid = 0;
+                m_uiAncientTreasureGuid = 0;
+
+                InitializeTrialOfKing();
+
+                m_uiScoutGuid = 0;
+
+                if (instance->IsChallengeDungeon())
+                    LoadScenarioInfo(scenarioBosses, CRITERIA_ENEMIES);
             }
 
-            return true;
-        }
-
-        void OnGameObjectCreate(GameObject* go)
-        {
-            switch (go->GetEntry())
+            void OnPlayerEnter(Player* player) override
             {
-                case GO_DOOR_BEFORE_TRIAL:  doorBeforeTrialGuid = go->GetGUID();    break;
-                case GO_TRIAL_CHEST:        trialChestGuid = go->GetGUID();         go->SetPhaseMask(128, true);    break;
-                case GO_DOOR_AFTER_TRIAL:   doorAfterTrialGuid = go->GetGUID();     break;
-                case GO_DOOR_BEFORE_KING:   doorBeforeKingGuid = go->GetGUID();     break;
-            }
-        }
-
-        void OnCreatureCreate(Creature* creature)
-        {
-            OnCreatureCreate_gekkan(creature);
-            OnCreatureCreate_trial_of_the_king(creature);
-            OnCreatureCreate_xin_the_weaponmaster(creature);
-        }
-
-        void OnUnitDeath(Unit* unit)
-        {
-            OnUnitDeath_gekkan(unit);
-        }
-
-        void SetData(uint32 type, uint32 data)
-        {
-            switch (type)
-            {
-                case DATA_GEKKAN_ADDS:
-                    if (Creature* pGekkan = instance->GetCreature(gekkan))
-                    {
-                        if (Unit * target = pGekkan->SelectNearestTarget(100.0f))
-                        {
-                            pGekkan->AI()->AttackStart(target);
-
-                            if (Creature* ironhide = instance->GetCreature(glintrok_ironhide))
-                                ironhide->AI()->AttackStart(target);
-
-                            if (Creature* skulker = instance->GetCreature(glintrok_skulker))
-                                skulker->AI()->AttackStart(target);
-
-                            if (Creature* oracle = instance->GetCreature(glintrok_oracle))
-                                oracle->AI()->AttackStart(target);
-
-                            if (Creature* hexxer = instance->GetCreature(glintrok_hexxer))
-                                hexxer->AI()->AttackStart(target);
-                        }
-                    }
-                    break;
+                if (instance->IsChallengeDungeon())
+                    SendChallengeInfo(player, SCENARIO_ID);
             }
 
-            SetData_trial_of_the_king(type, data);
-            SetData_xin_the_weaponmaster(type, data);
-        }
-
-        uint32 GetData(uint32 type)
-        {
-            return 0;
-        }
-
-        uint64 GetData64(uint32 type)
-        {
-            switch (type)
+            void InitializeTrialOfKing()
             {
-            case TYPE_GET_ENTOURAGE_0:
-                return glintrok_hexxer;
-            case TYPE_GET_ENTOURAGE_1:
-                return glintrok_ironhide;
-            case TYPE_GET_ENTOURAGE_2:
-                return glintrok_oracle;
-            case TYPE_GET_ENTOURAGE_3:
-                return glintrok_skulker;
+                m_uiBossCount = 0;
+
+                std::iota(std::begin(m_auiBossNumber), std::end(m_auiBossNumber), 0);
+                std::random_shuffle(std::begin(m_auiBossNumber), std::end(m_auiBossNumber));
             }
-            return 0;
-        }
 
-        bool isWipe()
-        {
-            Map::PlayerList const& PlayerList = instance->GetPlayers();
-
-            if (!PlayerList.isEmpty())
+            GameObject* GetGameObjectFromStorage(uint32 uiEntry)
             {
-                for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                {
-                    if(Player* plr = i->getSource())
-                        if (plr->isAlive() && !plr->isGameMaster())
-                            return false;
-                }
+                GameObject* go = NULL;
+
+                std::unordered_map<uint32, uint64>::iterator find = m_mGoEntryGuidMap.find(uiEntry);
+
+                if (find != m_mGoEntryGuidMap.cend())
+                    go = instance->GetGameObject(find->second);
+
+                return go;
             }
-            return true;
-        }
 
-        void SetData_xin_the_weaponmaster(uint32 type, uint32 data)
-        {
-            switch (type)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
-                case TYPE_ACTIVATE_ANIMATED_STAFF:
-                {
-                    if (Creature* creature = instance->GetCreature(JadeCore::Containers::SelectRandomContainerElement(animated_staffs)))
-                        if (creature->GetAI())
-                            creature->GetAI()->DoAction(0); //ACTION_ACTIVATE
-                    break;
-                }
-                case TYPE_ACTIVATE_ANIMATED_AXE:
-                {
-                    for (auto guid : animated_axes)
-                    {
-                        if (Creature* creature = instance->GetCreature(guid))
-                        {
-                            if (data)
-                            {
-                                creature->AddAura(SPELL_AXE_TOURBILOL, creature);
-                                creature->AddAura(SPELL_PERMANENT_FEIGN_DEATH, creature);
-                                creature->GetMotionMaster()->MoveRandom(50.0f);
-                            }
-                            else
-                            {
-                                creature->RemoveAurasDueToSpell(SPELL_AXE_TOURBILOL);
-                                creature->RemoveAurasDueToSpell(SPELL_PERMANENT_FEIGN_DEATH);
-                                creature->GetMotionMaster()->MoveTargetedHome();
-                            }
-                        }
-                    }
-                    break;
-                }
-                case TYPE_ACTIVATE_SWORD:
-                {
-                    Position center;
-                    center.Relocate(-4632.39f, -2613.20f, 22.0f);
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
 
-                    bool randPos = urand(0, 1);
-
-                    /*     Y
-                           -
-                       ***********
-                       -> 1 * 2 <-
-                     + *********** - X
-                       -> 3 * 4 <-
-                       ***********
-                           +         */
-
-                    for (auto itr: swordLauncherGuids)
-                    {
-                        bool mustActivate = false;
-
-                        if (Creature* launcher = instance->GetCreature(itr))
-                        {
-                            if (randPos) // Zone 2 & 3
-                            {
-                                if (launcher->GetPositionX() > center.GetPositionX() && launcher->GetPositionY() > center.GetPositionY()
-                                    || launcher->GetPositionX() < center.GetPositionX() && launcher->GetPositionY() < center.GetPositionY())
-                                    mustActivate = true;
-                            }
-                            else // Zone 1 & 4
-                            {
-                                if (launcher->GetPositionX() > center.GetPositionX() && launcher->GetPositionY() < center.GetPositionY()
-                                    || launcher->GetPositionX() < center.GetPositionX() && launcher->GetPositionY() > center.GetPositionY())
-                                    mustActivate = true;
-                            }
-
-                            if (data && mustActivate)
-                                launcher->AddAura(SPELL_THROW_AURA, launcher);
-                            else
-                                launcher->RemoveAurasDueToSpell(SPELL_THROW_AURA);
-                        }
-                    }
-                }
-                break;
-            }
-        }
-        void OnCreatureCreate_xin_the_weaponmaster(Creature* creature)
-        {
-            switch (creature->GetEntry())
-            {
-                case 59481:
-                    creature->SetReactState(REACT_PASSIVE);
-                    break;
-                case CREATURE_ANIMATED_STAFF:
-                    animated_staffs.push_back(creature->GetGUID());
-                    break;
-                case CREATURE_ANIMATED_AXE:
-                    animated_axes.push_back(creature->GetGUID());
-                    creature->SetReactState(REACT_PASSIVE);
-                    creature->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID, 30316);
-                    break;
-                case CREATURE_LAUNCH_SWORD:
-                    swordLauncherGuids.push_back(creature->GetGUID());
-                    creature->AddAura(SPELL_PERMANENT_FEIGN_DEATH, creature);
-                    break;
-            }
-        }
-
-        void OnUnitDeath_gekkan(Unit* unit)
-        {
-            if (unit->ToCreature())
-            {
-                switch (unit->ToCreature()->GetEntry())
+                switch (type)
                 {
-                    case CREATURE_GLINTROK_IRONHIDE:
-                    case CREATURE_GLINTROK_SKULKER:
-                    case CREATURE_GLINTROK_ORACLE:
-                    case CREATURE_GLINTROK_HEXXER:
-                    {
-                        if (Creature* c = instance->GetCreature(gekkan))
-                            if (c->GetAI())
-                                c->GetAI()->DoAction(0); //ACTION_ENTOURAGE_DIED
-                    }
-                    break;
-                }
-            }
-        }
-        void OnCreatureCreate_gekkan(Creature* creature)
-        {
-            switch (creature->GetEntry())
-            {
-                case CREATURE_GEKKAN:
-                    gekkan = creature->GetGUID();
-                    break;
-                case CREATURE_GLINTROK_IRONHIDE:
-                    glintrok_ironhide = creature->GetGUID();
-                    break;
-                case CREATURE_GLINTROK_SKULKER:
-                    glintrok_skulker = creature->GetGUID();
-                    break;
-                case CREATURE_GLINTROK_ORACLE:
-                    glintrok_oracle = creature->GetGUID();
-                    break;
-                case CREATURE_GLINTROK_HEXXER:
-                    glintrok_hexxer = creature->GetGUID();
-                    break;
-            }
-        }
-
-        void SetData_trial_of_the_king(uint32 type, uint32 data)
-        {
-            switch (type)
-            {
-            case TYPE_OUTRO_05:
-                {
-                    if (Creature* haiyan = instance->GetCreature(haiyan_guid))
-                        if (haiyan->GetAI())
-                            haiyan->GetAI()->DoAction(1); //ACTION_OUTRO_02
-                }
-                break;
-            case TYPE_OUTRO_04:
-                {
-                    if (Creature* kuai = instance->GetCreature(kuai_guid))
-                        if (kuai->GetAI())
-                            kuai->GetAI()->DoAction(3); //ACTION_OUTRO_02
-                }
-                break;
-            case TYPE_OUTRO_03:
-                {
-                    if (Creature* ming = instance->GetCreature(ming_guid))
-                        if (ming->GetAI())
-                            ming->GetAI()->DoAction(2); //ACTION_OUTRO_02
-                }
-                break;
-            case TYPE_OUTRO_02:
-                {
-                    if (Creature* haiyan = instance->GetCreature(haiyan_guid))
-                        if (haiyan->GetAI())
-                            haiyan->GetAI()->DoAction(0); //ACTION_OUTRO_01
-                }
-                break;
-            case TYPE_OUTRO_01:
-                {
-                    if (Creature* ming = instance->GetCreature(ming_guid))
-                        if (ming->GetAI())
-                            ming->GetAI()->DoAction(1); //ACTION_OUTRO_01
-                }
-                break;
-            case TYPE_MING_INTRO:
-                {
-                    if (Creature* ming = instance->GetCreature(ming_guid))
-                        if (ming->GetAI())
-                            ming->GetAI()->DoAction(0); //ACTION_INTRO
-                }
-                break;
-            case TYPE_WIPE_FIRST_BOSS:
-                {
-                    Creature* xin = instance->GetCreature(xin_guid);
-                    if (!xin)
-                        return;
-                    xin->SetVisible(true);
-                    if (xin->GetAI())
-                        xin->GetAI()->Reset();
-                    switch (data)
-                    {
-                    case 0:
-                        for (auto guid : adepts)
-                        {
-                            Creature* creature = instance->GetCreature(guid);
-                            if (!creature)
-                                continue;
-
-                            if (creature && creature->GetAI())
-                                creature->GetAI()->DoAction(1); //EVENT_RETIRE
-                            creature->RemoveAura(121569);
-                        }
+                    case DATA_GEKKAN:
+                        HandleGameObject(0, state == DONE, GetGameObjectFromStorage(GO_DOOR_AFTER_TRIAL));
+                        if (GameObject* pTreasure = instance->GetGameObject(m_uiAncientTreasureGuid))
+                            pTreasure->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
                         break;
-                    case 1:
-                        for (auto guid : scrappers)
-                        {
-                            Creature* creature = instance->GetCreature(guid);
-                            if (!creature)
-                                continue;
+                }
 
-                            if (creature && creature->GetAI())
-                                creature->GetAI()->DoAction(1); //EVENT_RETIRE
-                            creature->RemoveAura(121569);
-                        }
+                return true;
+            }
+
+            void OnGameObjectCreate(GameObject* go) override
+            {
+                switch (go->GetEntry())
+                {
+                    case GO_TRIAL_CHEST:
+                    case GO_TRIAL_CHEST_HC:
+                        m_mGoEntryGuidMap.insert(std::make_pair(go->GetEntry(), go->GetGUID()));
                         break;
-                    case 2:
-                        for (auto guid : grunts)
-                        {
-                            Creature* creature = instance->GetCreature(guid);
-                            if (!creature)
-                                continue;
+                    case GO_DOOR_BEFORE_TRIAL:
+                    case GO_DOOR_AFTER_TRIAL:
+                    case GO_DOOR_SECRET_STEPS:
+                    case GO_DOOR_BEFORE_KING:
+                    case GO_DOOR_BEFORE_KING2:
+                    case GO_GEKKAN_TREASURE_DOOR:
+                    case GO_ANCIENT_MOGU_TREASURE:
+                    case GO_ANCIENT_MOGU_TREASURE_HC:
+                        m_mGoEntryGuidMap.insert(std::make_pair(go->GetEntry(), go->GetGUID()));
+                        go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                        break;
+                    case GO_USELESS_DOOR:
+                        // dont need to use memory space for this
+                        go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND);
+                        break;
+                    case GO_CHALLENGE_DOOR:
+                        SetChallengeDoorGuid(go->GetGUID());
+                        break;
+                }
+            }
 
-                            if (creature && creature->GetAI())
-                                creature->GetAI()->DoAction(1); //EVENT_RETIRE
-                            creature->RemoveAura(121569);
+            void OnCreatureCreate(Creature* creature) override
+            {
+                if (instance->IsChallengeDungeon() && creature->isDead())
+                    creature->Respawn();
+
+                OnCreatureCreate_trial_of_the_king(creature);
+                OnCreatureCreate_xin_the_weaponmaster(creature);
+
+                switch (creature->GetEntry())
+                {
+                    case CREATURE_GLINTROK_SCOUT:
+                        m_uiScoutGuid = creature->GetGUID();
+                        creature->setActive(true);
+                        creature->SetVisible(false);
+                        break;
+                    case CREATURE_BEACON:
+                        m_uiBeaconGuid = creature->GetGUID();
+                        creature->SetVisible(false);
+                        break;
+                }
+            }
+
+            void OnUnitDeath(Unit* unit) override
+            {
+                if (unit->ToCreature() && unit->ToCreature()->GetEntry() == CREATURE_GEKKAN)
+                {
+                    SetBossState(DATA_GEKKAN, DONE);
+
+                    if (GameObject* go = GetGameObjectFromStorage(instance->GetDifficulty() == DUNGEON_DIFFICULTY_HEROIC ? GO_ANCIENT_MOGU_TREASURE_HC : GO_ANCIENT_MOGU_TREASURE))
+                        go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_INTERACT_COND | GO_FLAG_NOT_SELECTABLE);
+
+                    HandleGameObject(0, true, GetGameObjectFromStorage(GO_GEKKAN_TREASURE_DOOR));
+                }
+
+                if (instance->IsChallengeDungeon() && !IsChallengeModeCompleted())
+                {
+                    if (Creature* creature = unit->ToCreature())
+                    {
+                        switch (creature->GetEntry())
+                        {
+                            case CREATURE_GLINTROK_IRONHIDE:
+                            case CREATURE_GLINTROK_SKULKER:
+                            case CREATURE_GLINTROK_ORACLE:
+                            case CREATURE_GLINTROK_HEXXER:
+                                break;
+                            default:
+                                UpdateConditionInfo(creature, ENEMIES_COUNT);
+                                break;
+                        }
+                    }
+                }
+            }
+
+            void SetData(uint32 type, uint32 data) override
+            {
+                if (type >= MAX_TYPES)
+                    return;
+
+                SetData_trial_of_the_king(type, data);
+                SetData_xin_the_weaponmaster(type, data);
+
+                if (type == TYPE_SHUFFLE_ORDER && m_uiBossCount >= 3)
+                    m_auiEncounter[type] = DONE;
+                else
+                    m_auiEncounter[type] = data;
+
+                if (data == DONE)
+                    SaveToDB();
+            }
+
+            std::string GetSaveData() override
+            {
+                std::ostringstream saveStream;
+                saveStream << m_auiEncounter[0] << ' ' << m_auiEncounter[1] << ' ' << m_auiEncounter[2] << ' '
+                           << m_auiEncounter[3] << ' ' << m_auiEncounter[4] << ' ' << m_auiEncounter[5] << ' '
+                           << m_auiEncounter[6] << ' ' << m_auiEncounter[7] << ' ' << m_auiEncounter[8] << ' '
+                           << m_auiEncounter[9] << ' ' << m_auiEncounter[10] << ' ' << m_auiEncounter[11] << ' '
+                           << m_auiEncounter[12] << ' ' << m_auiEncounter[13];
+                return saveStream.str();
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                if (type >= MAX_TYPES)
+                    return 0;
+
+                return m_auiEncounter[type];
+            }
+
+            uint64 GetData64(uint32 type) const override
+            {
+                if (type < MAX_GUIDS)
+                    return m_auiGuids64[type];
+
+                auto const find = m_mGoEntryGuidMap.find(type);
+                if (find != m_mGoEntryGuidMap.cend())
+                    return find->second;
+
+                return 0;
+            }
+
+            bool isWipe()
+            {
+                Map::PlayerList const& PlayerList = instance->GetPlayers();
+
+                if (!PlayerList.isEmpty())
+                {
+                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                    {
+                        if (Player* plr = i->GetSource())
+                            if (plr->IsAlive() && !plr->IsGameMaster())
+                                return false;
+                    }
+                }
+                return true;
+            }
+
+            void SetData_xin_the_weaponmaster(uint32 type, uint32 data)
+            {
+                switch (type)
+                {
+                    case TYPE_ACTIVATE_ANIMATED_STAFF:
+                    {
+                        if (Creature* creature = instance->GetCreature(Trinity::Containers::SelectRandomContainerElement(m_lStaffList)))
+                            if (creature->GetAI())
+                                creature->GetAI()->DoAction(0); //ACTION_ACTIVATE
+                        break;
+                    }
+                    case TYPE_ACTIVATE_ANIMATED_AXE:
+                    {
+                        for (auto&& guid : m_lAxeList)
+                        {
+                            if (Creature* creature = instance->GetCreature(guid))
+                            {
+                                if (data)
+                                {
+                                    if (creature->AI())
+                                        creature->AI()->DoAction(0);
+                                }
+                                else
+                                {
+                                    if (creature->AI())
+                                        creature->AI()->DoAction(1);
+                                }
+                            }
                         }
                         break;
                     }
+                    case TYPE_XIN:
+                        HandleGameObject(0, type != IN_PROGRESS, GetGameObjectFromStorage(GO_DOOR_BEFORE_KING));
+                        HandleGameObject(0, type != IN_PROGRESS, GetGameObjectFromStorage(GO_DOOR_BEFORE_KING2));
+                        break;
                 }
-                break;
-            case TYPE_MING_ATTACK:
-                {
-                    //Move the adepts
-                    for (auto guid : adepts)
-                    {
-                        Creature* creature = instance->GetCreature(guid);
-
-                        if (creature && creature->GetAI())
-                            creature->GetAI()->DoAction(0); //EVENT_ENCOURAGE
-                    }
-                    Creature* ming = instance->GetCreature(ming_guid);
-                    if (!ming)
-                        return;
-                    ming->GetMotionMaster()->MovePoint(0, -4237.658f, -2613.860f, 16.48f);
-                    ming->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
-                    ming->SetReactState(REACT_AGGRESSIVE);
-                }
-                break;
-            case TYPE_KUAI_ATTACK:
-                {
-                    //Move the scrappers
-                    for (auto guid : scrappers)
-                    {
-                        Creature* creature = instance->GetCreature(guid);
-
-                        if (creature && creature->GetAI())
-                            creature->GetAI()->DoAction(0); //EVENT_ENCOURAGE
-                    }
-                    Creature* kuai = instance->GetCreature(kuai_guid);
-                    if (!kuai)
-                        return;
-                    kuai->GetMotionMaster()->MovePoint(0, -4215.359f, -2601.283f, 16.48f);
-                    kuai->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
-                    kuai->SetReactState(REACT_AGGRESSIVE);
-                }
-                break;
-            case TYPE_HAIYAN_ATTACK:
-                {
-                    //Move the scrappers
-                    for (auto guid : grunts)
-                    {
-                        Creature* creature = instance->GetCreature(guid);
-
-                        if (creature && creature->GetAI())
-                            creature->GetAI()->DoAction(0); //EVENT_ENCOURAGE
-                    }
-                    Creature* haiyan = instance->GetCreature(haiyan_guid);
-                    if (!haiyan)
-                        return;
-                    haiyan->GetMotionMaster()->MovePoint(0, -4215.772f, -2627.216f, 16.48f);
-                    haiyan->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
-                    haiyan->SetReactState(REACT_AGGRESSIVE);
-                }
-                break;
-            case TYPE_ALL_ATTACK:
-                {
-                    for (auto guid : adepts)
-                    {
-                        Creature* creature = instance->GetCreature(guid);
-
-                        if (creature && creature->GetAI())
-                            creature->GetAI()->DoAction(2); //ACTION_ATTACK
-                        
-                        std::list<uint64>::iterator itr = grunts.begin();
-                        std::advance(itr, urand(0, grunts.size() - 1));
-
-                        Creature* grunt = instance->GetCreature(*itr);
-                        if (creature && grunt)
-                            creature->Attack(grunt, true);
-                    }
-                    for (auto guid : grunts)
-                    {
-                        Creature* creature = instance->GetCreature(guid);
-
-                        if (creature && creature->GetAI())
-                            creature->GetAI()->DoAction(2); //ACTION_ATTACK
-
-                        std::list<uint64>::iterator itr = scrappers.begin();
-                        std::advance(itr, urand(0, scrappers.size() - 1));
-
-                        Creature* scrapper = instance->GetCreature(*itr);
-                        if (creature && scrapper)
-                            creature->Attack(scrapper, true);
-                    }
-                    for (auto guid : scrappers)
-                    {
-                        Creature* creature = instance->GetCreature(guid);
-
-                        if (creature && creature->GetAI())
-                            creature->GetAI()->DoAction(2); //ACTION_ATTACK
-
-                        std::list<uint64>::iterator itr = adepts.begin();
-                        std::advance(itr, urand(0, adepts.size() - 1));
-
-                        Creature* adept = instance->GetCreature(*itr);
-                        if (creature && adept)
-                            creature->Attack(adept, true);
-                    }
-
-                    SetBossState(DATA_TRIAL_OF_THE_KING, DONE);
-                }
-                break;
-            case TYPE_MING_RETIRED:
-                //Retire the adepts
-                for (auto guid : adepts)
-                {
-                    Creature* creature = instance->GetCreature(guid);
-
-                    if (creature && creature->GetAI())
-                        creature->GetAI()->DoAction(1); //EVENT_RETIRE
-                }
-                break;
-            case TYPE_KUAI_RETIRED:
-                //Retire the adepts
-                for (auto guid : scrappers)
-                {
-                    Creature* creature = instance->GetCreature(guid);
-
-                    if (creature && creature->GetAI())
-                        creature->GetAI()->DoAction(1); //EVENT_RETIRE
-                }
-                break;
-            case TYPE_HAIYAN_RETIRED:
-                //Retire the adepts
-                for (auto guid : grunts)
-                {
-                    Creature* creature = instance->GetCreature(guid);
-
-                    if (creature && creature->GetAI())
-                        creature->GetAI()->DoAction(1); //EVENT_RETIRE
-                }
-                break;
             }
-        }
 
-        void OnCreatureCreate_trial_of_the_king(Creature* creature)
-        {
-            switch (creature->GetEntry())
+            void OnCreatureCreate_xin_the_weaponmaster(Creature* creature)
             {
-            case CREATURE_GURTHAN_SCRAPPER:
-                scrappers.push_back(creature->GetGUID());
-                break;
-            case CREATURE_HARTHAK_ADEPT:
-                adepts.push_back(creature->GetGUID());
-                break;
-            case CREATURE_KARGESH_GRUNT:
-                grunts.push_back(creature->GetGUID());
-                break;
-            case CREATURE_KUAI_THE_BRUTE:
-                kuai_guid = creature->GetGUID();
-                creature->SetReactState(REACT_PASSIVE);
-                break;
-            case CREATURE_MING_THE_CUNNING:
-                ming_guid = creature->GetGUID();
-                creature->SetReactState(REACT_PASSIVE);
-                break;
-            case CREATURE_HAIYAN_THE_UNSTOPPABLE:
-                haiyan_guid = creature->GetGUID();
-                creature->SetReactState(REACT_PASSIVE);
-                break;
-            case CREATURE_XIN_THE_WEAPONMASTER_TRIGGER:
-                xin_guid = creature->GetGUID();
-                creature->SetReactState(REACT_PASSIVE);
-                break;
-            case CREATURE_WHIRLING_DERVISH:
-                break;
+                switch (creature->GetEntry())
+                {
+                    case 59481:
+                        creature->SetReactState(REACT_PASSIVE);
+                        break;
+                    case CREATURE_ANIMATED_STAFF:
+                        m_lStaffList.push_back(creature->GetGUID());
+                        break;
+                    case CREATURE_ANIMATED_AXE:
+                        m_lAxeList.push_back(creature->GetGUID());
+                        break;
+                    case CREATURE_CROSSBOW:
+                        creature->SetReactState(REACT_PASSIVE);
+                        creature->CastSpell(creature, SPELL_PERMANENT_FEIGN_DEATH, true);
+                        creature->SetDisplayId(42197);
+                        break;
+                }
             }
+
+            void SetData_trial_of_the_king(uint32 type, uint32 data)
+            {
+                switch (type)
+                {
+                    case TYPE_WIPE_FIRST_BOSS:
+                    {
+                        HandleGameObject(0, true, GetGameObjectFromStorage(GO_DOOR_BEFORE_TRIAL));
+                        switch (data)
+                        {
+                            case 0:
+                                for (auto&& guid : m_lAdeptList)
+                                {
+                                    Creature* creature = instance->GetCreature(guid);
+                                    if (!creature)
+                                        continue;
+
+                                    if (creature && creature->GetAI())
+                                        creature->GetAI()->DoAction(1); //EVENT_RETIRE
+                                        creature->RemoveAllAuras();
+                                }
+                                break;
+                            case 1:
+                                for (auto&& guid : m_lScrapperList)
+                                {
+                                    Creature* creature = instance->GetCreature(guid);
+                                    if (!creature)
+                                        continue;
+
+                                    if (creature && creature->GetAI())
+                                        creature->GetAI()->DoAction(1); //EVENT_RETIRE
+                                        creature->RemoveAllAuras();
+                                }
+                                break;
+                            case 2:
+                                for (auto&& guid : m_lGruntList)
+                                {
+                                    Creature* creature = instance->GetCreature(guid);
+                                    if (!creature)
+                                        continue;
+
+                                    if (creature && creature->GetAI())
+                                        creature->GetAI()->DoAction(1); //EVENT_RETIRE
+                                        creature->RemoveAllAuras();
+                                }
+                                break;
+                        }
+                        break;
+                    }
+                    case TYPE_MING:
+                    {
+                        //Move the m_lAdeptList
+                        for (auto&& guid : m_lAdeptList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(0); //EVENT_ENCOURAGE
+                        }
+                        Creature* pMing = instance->GetCreature(m_uiMingGuid);
+                        if (!pMing)
+                            return;
+
+                        Movement::MoveSplineInit init(pMing);
+                        init.MoveTo(pTrialIntroPositions[type].GetPositionX(), pTrialIntroPositions[type].GetPositionY(), pTrialIntroPositions[type].GetPositionZ());
+
+                        init.Launch();
+
+                        delay = 0;
+                        uint64 tempGUID = pMing->GetGUID();
+                        pMing->m_Events.Schedule(delay += pMing->GetSplineDuration(), 10, [this,tempGUID]()
+                        {
+                            if (Creature* Ming = instance->GetCreature(tempGUID))
+                            {
+                                Ming->StopMoving();
+                                Ming->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                                Ming->SetReactState(REACT_AGGRESSIVE);
+                                Ming->SetInCombatWithZone();
+                            }
+                        });
+
+                        if (pMing->GetAI())
+                            pMing->GetAI()->DoAction(0);
+                    }
+                    break;
+                    case TYPE_KUAI:
+                    {
+                        //Move the m_lScrapperList
+                        for (auto&& guid : m_lScrapperList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(0); //EVENT_ENCOURAGE
+                        }
+                        Creature* pKuai = instance->GetCreature(m_uiKuaiGuid);
+                        if (!pKuai)
+                            return;
+
+                        Movement::MoveSplineInit init(pKuai);
+                        init.MoveTo(pTrialIntroPositions[type].GetPositionX(), pTrialIntroPositions[type].GetPositionY(), pTrialIntroPositions[type].GetPositionZ());
+
+                        init.Launch();
+
+                        delay = 0;
+                        uint64 tempGUID = pKuai->GetGUID();
+                        pKuai->m_Events.Schedule(delay += pKuai->GetSplineDuration(), 10, [this, tempGUID]()
+                        {
+                            if (Creature* Kuai = instance->GetCreature(tempGUID))
+                            {
+                                Kuai->StopMoving();
+                                Kuai->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                                Kuai->SetReactState(REACT_AGGRESSIVE);
+                                Kuai->SetInCombatWithZone();
+                            }
+                        });
+
+                        // special case action 2 for kuai
+                        if (pKuai->GetAI())
+                            pKuai->GetAI()->DoAction(2);
+                        break;
+                    }
+                    case TYPE_HAIYAN:
+                    {
+                        //Move the m_lScrapperList
+                        for (auto&& guid : m_lGruntList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(0); //EVENT_ENCOURAGE
+                        }
+                        Creature* pHaiyan = instance->GetCreature(m_uiHaiyanGuid);
+                        if (!pHaiyan)
+                            return;
+
+                        Movement::MoveSplineInit init(pHaiyan);
+                        init.MoveTo(pTrialIntroPositions[type].GetPositionX(), pTrialIntroPositions[type].GetPositionY(), pTrialIntroPositions[type].GetPositionZ());
+
+                        init.Launch();
+
+                        delay = 0;
+                        uint64 tempGUID = pHaiyan->GetGUID();
+                        pHaiyan->m_Events.Schedule(delay += pHaiyan->GetSplineDuration(), 10, [this, tempGUID]()
+                        {
+                            if (Creature* Haiyan = instance->GetCreature(tempGUID))
+                            {
+                                Haiyan->StopMoving();
+                                Haiyan->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+                                Haiyan->SetReactState(REACT_AGGRESSIVE);
+                                Haiyan->SetInCombatWithZone();
+                            }
+                        });
+
+                        // Make sure he talks for the intro
+                        if (pHaiyan->GetAI())
+                            pHaiyan->GetAI()->DoAction(0);
+                        break;
+                    }
+                    case TYPE_TRIAL_ENDED:
+                    {
+                        for (auto&& guid : m_lAdeptList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(2); //ACTION_ATTACK
+
+                            std::list<uint64>::iterator itr = m_lGruntList.begin();
+                            std::advance(itr, urand(0, m_lGruntList.size() - 1));
+
+                            Creature* pGrunt = instance->GetCreature(*itr);
+                            if (creature && pGrunt)
+                            {
+                                creature->Attack(pGrunt, true);
+                                if (creature->AI())
+                                    creature->AI()->AttackStart(pGrunt);
+                            }
+                        }
+                        for (auto&& guid : m_lGruntList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(2); //ACTION_ATTACK
+
+                            std::list<uint64>::iterator itr = m_lScrapperList.begin();
+                            std::advance(itr, urand(0, m_lScrapperList.size() - 1));
+
+                            Creature* pScrapper = instance->GetCreature(*itr);
+                            if (creature && pScrapper)
+                            {
+                                creature->Attack(pScrapper, true);
+                                if (creature->AI())
+                                    creature->AI()->AttackStart(pScrapper);
+                            }
+                        }
+                        for (auto&& guid : m_lScrapperList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(2); //ACTION_ATTACK
+
+                            std::list<uint64>::iterator itr = m_lAdeptList.begin();
+                            std::advance(itr, urand(0, m_lAdeptList.size() - 1));
+
+                            Creature* pAdept = instance->GetCreature(*itr);
+                            if (creature && pAdept)
+                            {
+                                creature->Attack(pAdept, true);
+                                if (creature->AI())
+                                    creature->AI()->AttackStart(pAdept);
+                            }
+                        }
+
+                        if (Creature* pKuai = instance->GetCreature(m_uiKuaiGuid))
+                            pKuai->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_PACIFIED);
+
+                        if (Creature* pHaiyan = instance->GetCreature(m_uiHaiyanGuid))
+                            pHaiyan->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_PACIFIED);
+
+                        if (Creature* pMing = instance->GetCreature(m_uiMingGuid))
+                            pMing->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_PACIFIED);
+                        break;
+                    }
+                    case TYPE_MING_RETIRED:
+                        // This boss is down, move on to next
+                        ++m_uiBossCount;
+
+                        //Retire the m_lAdeptList
+                        for (auto&& guid : m_lAdeptList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(1); //EVENT_RETIRE
+                        }
+                        break;
+                    case TYPE_KUAI_RETIRED:
+                        // This boss is down, move on to next
+                        ++m_uiBossCount;
+
+                        //Retire the m_lAdeptList
+                        for (auto&& guid : m_lScrapperList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(1); //EVENT_RETIRE
+                        }
+                        break;
+                    case TYPE_HAIYAN_RETIRED:
+                        // This boss is down, move on to next
+                        ++m_uiBossCount;
+
+                        //Retire the m_lAdeptList
+                        for (auto&& guid : m_lGruntList)
+                        {
+                            Creature* creature = instance->GetCreature(guid);
+
+                            if (creature && creature->GetAI())
+                                creature->GetAI()->DoAction(1); //EVENT_RETIRE
+                        }
+                        break;
+                    case TYPE_SHUFFLE_ORDER:
+                        if (GetData(TYPE_SHUFFLE_ORDER) == DONE)
+                            return;
+
+                        if (m_uiBossCount < 3)
+                        {
+                            SetData(m_auiBossNumber[m_uiBossCount], 0);
+                            HandleGameObject(0, false, GetGameObjectFromStorage(GO_DOOR_BEFORE_TRIAL));
+                        }
+                        else
+                        {
+                            SetBossState(DATA_TRIAL_OF_THE_KING, DONE);
+
+                            if (GameObject* go = GetGameObjectFromStorage(GO_TRIAL_CHEST))
+                                SetData64(TYPE_TRIAL_ENDED, go->GetGUID());
+
+                            if (Creature* pScout = instance->GetCreature(m_uiScoutGuid))
+                            {
+                                if (pScout->AI())
+                                    pScout->AI()->DoAction(0);
+                            }
+
+                            HandleGameObject(0, true, GetGameObjectFromStorage(GO_DOOR_BEFORE_TRIAL));
+                        }
+                        break;
+                    case TYPE_TRIAL_CHEST:
+                        if (GameObject* go = GetGameObjectFromStorage(instance->GetDifficulty() == DUNGEON_DIFFICULTY_HEROIC ? GO_TRIAL_CHEST_HC : GO_TRIAL_CHEST))
+                            DoRespawnGameObject(go->GetGUID(), 7 * DAY);
+
+                        if (Creature* pBeacon = instance->GetCreature(m_uiBeaconGuid))
+                            pBeacon->SetVisible(true);
+
+                        if (!instance->IsChallengeDungeon())
+                            for (auto&& itr : instance->GetPlayers())
+                                itr.GetSource()->ModifyCurrency(395, (instance->IsHeroic() ? 125 : 70) * CURRENCY_PRECISION);
+
+                        HandleGameObject(0, true, GetGameObjectFromStorage(GO_DOOR_SECRET_STEPS));
+                        m_mEvents.ScheduleEvent(1, 5 * IN_MILLISECONDS);
+                        break;
+                }
+            }
+
+            void SetData64(uint32 type, uint64 data) override
+            {
+                if (type >= MAX_GUIDS)
+                    return;
+
+                m_auiGuids64[type] = data;
+            }
+
+            void OnCreatureCreate_trial_of_the_king(Creature* creature)
+            {
+                switch (creature->GetEntry())
+                {
+                    case CREATURE_GURTHAN_SCRAPPER:
+                    case CREATURE_GURTHAN_SCRAPPER_2:
+                        m_lScrapperList.push_back(creature->GetGUID());
+                        break;
+                    case CREATURE_HARTHAK_ADEPT:
+                    case CREATURE_HARTHAK_ADEPT_2:
+                        m_lAdeptList.push_back(creature->GetGUID());
+                        break;
+                    case CREATURE_KARGESH_GRUNT:
+                    case CREATURE_KARGESH_GRUNT_2:
+                        m_lGruntList.push_back(creature->GetGUID());
+                        break;
+                    case CREATURE_KUAI_THE_BRUTE:
+                        m_uiKuaiGuid = creature->GetGUID();
+                        SetData64(TYPE_KUAI, m_uiKuaiGuid);
+                        creature->SetReactState(REACT_PASSIVE);
+                        break;
+                    case CREATURE_MING_THE_CUNNING:
+                        m_uiMingGuid = creature->GetGUID();
+                        SetData64(TYPE_MING, m_uiMingGuid);
+                        creature->SetReactState(REACT_PASSIVE);
+                        break;
+                    case CREATURE_HAIYAN_THE_UNSTOPPABLE:
+                        m_uiHaiyanGuid = creature->GetGUID();
+                        SetData64(TYPE_HAIYAN, m_uiHaiyanGuid);
+                        creature->SetReactState(REACT_PASSIVE);
+                        break;
+                    case CREATURE_XIN_THE_WEAPONMASTER_TRIGGER:
+                        m_uiXinGuid = creature->GetGUID();
+                        creature->SetReactState(REACT_PASSIVE);
+                        break;
+                    case CREATURE_WHIRLING_DERVISH:
+                        break;
+                }
+            }
+
+            void Update(uint32 diff) override
+            {
+                m_mEvents.Update(diff);
+
+                while (uint32 eventId = m_mEvents.ExecuteEvent())
+                {
+                    if (eventId == 1)
+                    {
+                        if (Creature* Saurok = instance->SummonCreature(CREATURE_GLINTROK_PILLAGER, MiscCosmeticGlintrokPath[0]))
+                        {
+                            Movement::MoveSplineInit init(Saurok);
+                            for (auto itr : MiscCosmeticGlintrokPath)
+                                init.Path().push_back(G3D::Vector3(itr.GetPositionX() + frand(-2.0f, 2.0f), itr.GetPositionY() + frand(-2.0f, 2.0f), itr.GetPositionZ()));
+
+                            init.SetSmooth();
+                            init.SetUncompressed();
+                            init.Launch();
+                            Saurok->DespawnOrUnsummon(Saurok->GetSplineDuration());
+                        }
+
+                        m_mEvents.ScheduleEvent(1, 3 * IN_MILLISECONDS);
+                    }
+                    break;
+                }
+
+                ScheduleBeginningTimeUpdate(diff);
+                ScheduleChallengeStartup(diff);
+                ScheduleChallengeTimeUpdate(diff);
+            }
+
+            void Load(const char* in) override
+            {
+                if (!in)
+                {
+                    OUT_LOAD_INST_DATA_FAIL;
+                    return;
+                }
+
+                OUT_LOAD_INST_DATA(in);
+                std::istringstream loadStream(in);
+
+                loadStream >> m_auiEncounter[0] >> m_auiEncounter[1] >> m_auiEncounter[2] >> m_auiEncounter[3]
+                    >> m_auiEncounter[4] >> m_auiEncounter[5] >> m_auiEncounter[6] >> m_auiEncounter[7]
+                    >> m_auiEncounter[8] >> m_auiEncounter[9] >> m_auiEncounter[10] >> m_auiEncounter[11]
+                    >> m_auiEncounter[12] >> m_auiEncounter[13];
+
+                // Do not load an encounter as "In Progress" - reset it instead.
+                for (uint8 i = 0; i < MAX_TYPES; ++i)
+                    if (m_auiEncounter[i] == IN_PROGRESS)
+                        m_auiEncounter[i] = NOT_STARTED;
+
+                OUT_LOAD_INST_DATA_COMPLETE;
+            }
+        };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_mogu_shan_palace_InstanceMapScript(map);
         }
-    };
-
-};
-
-class go_mogushan_palace_temp_portal : public GameObjectScript
-{
-public:
-    go_mogushan_palace_temp_portal() : GameObjectScript("go_mogushan_palace_temp_portal") { }
-
-    bool OnGossipHello(Player* player, GameObject* go)
-    {
-        if (go->GetPositionZ() < 0.0f)
-            player->NearTeleportTo(go->GetPositionX(), go->GetPositionY(), 22.31f, go->GetOrientation());
-        else
-            player->NearTeleportTo(go->GetPositionX(), go->GetPositionY(), -39.0f, go->GetOrientation());
-
-        return false;
-    }
 };
 
 void AddSC_instance_mogu_shan_palace()
 {
     new instance_mogu_shan_palace();
-    new go_mogushan_palace_temp_portal();
 }

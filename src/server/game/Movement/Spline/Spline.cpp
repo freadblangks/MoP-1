@@ -1,19 +1,20 @@
 /*
- * Copyright (C) 2005-2011 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or (at your
+ * option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "Spline.h"
@@ -59,7 +60,7 @@ SplineBase::InitMethtod SplineBase::initializers[SplineBase::ModesEnd] =
 
 using G3D::Matrix4;
 static const Matrix4 s_catmullRomCoeffs(
-    -0.5f, 1.5f,-1.5f, 0.5f,
+    -0.5f, 1.5f, -1.5f, 0.5f,
     1.f, -2.5f, 2.f, -0.5f,
     -0.5f, 0.f,  0.5f, 0.f,
     0.f,  1.f,  0.f,  0.f);
@@ -199,85 +200,86 @@ float SplineBase::SegLengthBezier3(index_type index) const
     return length;
 }
 
-void SplineBase::init_spline(const Vector3 * controls, index_type count, EvaluationMode m)
+void SplineBase::init_spline(Vector3 const* controls, index_type count, float initialOrientation, EvaluationMode m)
 {
     m_mode = m;
     cyclic = false;
 
-    (this->*initializers[m_mode])(controls, count, cyclic, 0);
+    (this->*initializers[m_mode])(controls, count, initialOrientation, cyclic, 0);
 }
 
-void SplineBase::init_cyclic_spline(const Vector3 * controls, index_type count, EvaluationMode m, index_type cyclic_point)
+void SplineBase::init_cyclic_spline(Vector3 const* controls, index_type count, float initialOrientation, EvaluationMode m, index_type cyclic_point)
 {
     m_mode = m;
     cyclic = true;
 
-    (this->*initializers[m_mode])(controls, count, cyclic, cyclic_point);
+    (this->*initializers[m_mode])(controls, count, initialOrientation, cyclic, cyclic_point);
 }
 
-void SplineBase::InitLinear(const Vector3* controls, index_type count, bool cyclic, index_type cyclic_point)
+void SplineBase::InitLinear(Vector3 const* controls, index_type count, float initialOrientation, bool cyclic, index_type cyclic_point)
 {
     ASSERT(count >= 2);
     const int real_size = count + 1;
 
     points.resize(real_size);
 
-    memcpy(&points[0],controls, sizeof(Vector3) * count);
+    memcpy(&points[0], controls, sizeof(Vector3) * count);
 
     // first and last two indexes are space for special 'virtual points'
     // these points are required for proper C_Evaluate and C_Evaluate_Derivative methtod work
     if (cyclic)
         points[count] = controls[cyclic_point];
     else
-        points[count] = controls[count-1];
+        points[count] = controls[count - 1];
 
     index_lo = 0;
     index_hi = cyclic ? count : (count - 1);
 }
 
-void SplineBase::InitCatmullRom(const Vector3* controls, index_type count, bool cyclic, index_type cyclic_point)
+
+void SplineBase::InitCatmullRom(Vector3 const* controls, index_type count, float initialOrientation, bool cyclic, index_type cyclic_point)
 {
-    const int real_size = count + (cyclic ? (1+2) : (1+1));
+    const int real_size = count + (cyclic ? (1 + 2) : (1 + 1));
 
     points.resize(real_size);
 
     int lo_index = 1;
     int high_index = lo_index + count - 1;
 
-    memcpy(&points[lo_index],controls, sizeof(Vector3) * count);
+    memcpy(&points[lo_index], controls, sizeof(Vector3) * count);
 
     // first and last two indexes are space for special 'virtual points'
     // these points are required for proper C_Evaluate and C_Evaluate_Derivative methtod work
     if (cyclic)
     {
         if (cyclic_point == 0)
-            points[0] = controls[count-1];
+            points[0] = controls[count - 1];
         else
-            points[0] = controls[0].lerp(controls[1], -1);
+            points[0] = controls[0] - G3D::Vector3{ cos(initialOrientation), sin(initialOrientation), 0.0f };
 
-        points[high_index+1] = controls[cyclic_point];
-        points[high_index+2] = controls[cyclic_point+1];
+        points[high_index + 1] = controls[cyclic_point];
+        points[high_index + 2] = controls[cyclic_point + 1];
     }
     else
     {
-        points[0] = controls[0].lerp(controls[1], -1);
-        points[high_index+1] = controls[count-1];
+        points[0] = controls[0] - G3D::Vector3{ cos(initialOrientation), sin(initialOrientation), 0.0f };
+        points[high_index + 1] = controls[count - 1];
     }
 
     index_lo = lo_index;
     index_hi = high_index + (cyclic ? 1 : 0);
 }
 
-void SplineBase::InitBezier3(const Vector3* controls, index_type count, bool /*cyclic*/, index_type /*cyclic_point*/)
+void SplineBase::InitBezier3(Vector3 const* controls, index_type count, float initialOrientation, bool /*cyclic*/, index_type /*cyclic_point*/)
 {
     index_type c = count / 3u * 3u;
     index_type t = c / 3u;
 
     points.resize(c);
-    memcpy(&points[0],controls, sizeof(Vector3) * c);
+    memcpy(&points[0], controls, sizeof(Vector3) * c);
 
     index_lo = 0;
-    index_hi = t-1;
+    index_hi = t - 1;
     //mov_assert(points.size() % 3 == 0);
 }
 

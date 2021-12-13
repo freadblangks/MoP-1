@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,21 +17,27 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _GROUPMGR_H
-#define _GROUPMGR_H
+#ifndef SF_GROUPMGR_H
+#define SF_GROUPMGR_H
 
 #include "Group.h"
 
 class GroupMgr
 {
-    friend class ACE_Singleton<GroupMgr, ACE_Null_Mutex>;
 private:
     GroupMgr();
     ~GroupMgr();
 
 public:
+    static GroupMgr* instance()
+    {
+        static GroupMgr _instance;
+        return &_instance;
+    }
+
     typedef std::map<uint32, Group*> GroupContainer;
     typedef std::vector<Group*>      GroupDbContainer;
+    typedef std::multimap<uint64, Group*> PlayerGroups;
 
     Group* GetGroupByGUID(uint32 guid) const;
 
@@ -45,14 +53,19 @@ public:
     void   AddGroup(Group* group);
     void   RemoveGroup(Group* group);
 
+    void BindGroupToPlayer(uint64 playerGuid, Group* group);
+    void UnbindGroupFromPlayer(uint64 playerGuid, Group* group);
+
+    void LoadGroups(Player* player);
 
 protected:
     uint32           NextGroupId;
     uint32           NextGroupDbStoreId;
     GroupContainer   GroupStore;
     GroupDbContainer GroupDbStore;
+    PlayerGroups     GroupByPlayerStore;
 };
 
-#define sGroupMgr ACE_Singleton<GroupMgr, ACE_Null_Mutex>::instance()
+#define sGroupMgr GroupMgr::instance()
 
 #endif

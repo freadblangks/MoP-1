@@ -38,14 +38,9 @@ class boss_commander_ulthok : public CreatureScript
     public:
         boss_commander_ulthok() : CreatureScript("boss_commander_ulthok") { }
 
-        CreatureAI* GetAI(Creature *pCreature) const
-        {
-            return new boss_commander_ulthokAI (pCreature);
-        }
-
         struct boss_commander_ulthokAI : public BossAI
         {
-            boss_commander_ulthokAI(Creature* pCreature) : BossAI(pCreature, DATA_COMMANDER_ULTHOK)
+            boss_commander_ulthokAI(Creature* creature) : BossAI(creature, DATA_COMMANDER_ULTHOK)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -61,20 +56,15 @@ class boss_commander_ulthok : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(TotTScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_COMMANDER_ULTHOK_START_EVENT)
                 {
@@ -88,21 +78,28 @@ class boss_commander_ulthok : public CreatureScript
                 }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 events.ScheduleEvent(EVENT_DARK_FISSURE, urand(5000, 8000));
                 events.ScheduleEvent(EVENT_ENRAGE, urand(20000, 25000));
                 events.ScheduleEvent(EVENT_CURSE_OF_FATIGUE, urand(9000, 15000));
                 events.ScheduleEvent(EVENT_SQUEEZE, urand(14000, 20000));
-                instance->SetBossState(DATA_COMMANDER_ULTHOK, IN_PROGRESS);
             }
 
-            void JustDied(Unit* pKiller)
+            void JustDied(Unit* killer) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -116,30 +113,34 @@ class boss_commander_ulthok : public CreatureScript
                 {
                     switch (eventId)
                     {
-                    case EVENT_DARK_FISSURE:
-                        DoCast(me, SPELL_DARK_FISSURE);
-                        events.ScheduleEvent(EVENT_DARK_FISSURE, urand(20000, 22000));
-                        break;
-                    case EVENT_ENRAGE:
-                        DoCast(me, SPELL_ENRAGE);
-                        events.ScheduleEvent(EVENT_ENRAGE, urand(20000, 25000));
-                        break;
-                    case EVENT_SQUEEZE:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
-                            DoCast(pTarget, SPELL_SQUEEZE);
-                        events.ScheduleEvent(EVENT_SQUEEZE, urand(29000, 31000));
-                        break;
-                    case EVENT_CURSE_OF_FATIGUE:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
-                            DoCast(pTarget, SPELL_CURSE_OF_FATIGUE);
-                        events.ScheduleEvent(EVENT_CURSE_OF_FATIGUE, urand(13000, 15000));
-                        break;
+                        case EVENT_DARK_FISSURE:
+                            DoCast(me, SPELL_DARK_FISSURE);
+                            events.ScheduleEvent(EVENT_DARK_FISSURE, urand(20000, 22000));
+                            break;
+                        case EVENT_ENRAGE:
+                            DoCast(me, SPELL_ENRAGE);
+                            events.ScheduleEvent(EVENT_ENRAGE, urand(20000, 25000));
+                            break;
+                        case EVENT_SQUEEZE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
+                                DoCast(target, SPELL_SQUEEZE);
+                            events.ScheduleEvent(EVENT_SQUEEZE, urand(29000, 31000));
+                            break;
+                        case EVENT_CURSE_OF_FATIGUE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true))
+                                DoCast(target, SPELL_CURSE_OF_FATIGUE);
+                            events.ScheduleEvent(EVENT_CURSE_OF_FATIGUE, urand(13000, 15000));
+                            break;
                     }
                 }
                 DoMeleeAttackIfReady();
             }
         };
 
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_commander_ulthokAI (creature);
+        }
 };
 
 class npc_ulthok_dark_fissure : public CreatureScript
@@ -147,29 +148,28 @@ class npc_ulthok_dark_fissure : public CreatureScript
     public:
         npc_ulthok_dark_fissure() : CreatureScript("npc_ulthok_dark_fissure") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_ulthok_dark_fissureAI : public ScriptedAI
         {
-            return new npc_ulthok_dark_fissureAI (pCreature);
-        }
-
-        struct npc_ulthok_dark_fissureAI : public Scripted_NoMovementAI
-        {
-            npc_ulthok_dark_fissureAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_ulthok_dark_fissureAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 DoCast(me, IsHeroic()? SPELL_DARK_FISSURE_AURA_H: SPELL_DARK_FISSURE_AURA, true);
             }
 
-            void UpdateAI(const uint32 diff)
-            {
-            }
+            void UpdateAI(uint32 diff) override { }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_ulthok_dark_fissureAI>(creature);
+        }
 };
 
 class at_tott_commander_ulthok : public AreaTriggerScript
@@ -177,20 +177,19 @@ class at_tott_commander_ulthok : public AreaTriggerScript
     public:
         at_tott_commander_ulthok() : AreaTriggerScript("at_tott_commander_ulthok") { }
 
-        bool OnTrigger(Player* pPlayer, const AreaTriggerEntry* /*pAt*/)
+        bool OnTrigger(Player* player, const AreaTriggerEntry* /*trigger*/) override
         {
-		    if (InstanceScript* pInstance = pPlayer->GetInstanceScript())
-		    {
-			    if (pInstance->GetData(DATA_COMMANDER_ULTHOK_EVENT) != DONE
-                    && pInstance->GetBossState(DATA_LADY_NAZJAR) != DONE)
-			    {
-                    pInstance->SetData(DATA_COMMANDER_ULTHOK_EVENT, DONE);
-                    if (Creature* pUlthok = ObjectAccessor::GetCreature(*pPlayer, pInstance->GetData64(DATA_COMMANDER_ULTHOK)))
+            if (InstanceScript* instance = player->GetInstanceScript())
+            {
+                if (instance->GetData(DATA_COMMANDER_ULTHOK_EVENT) != DONE && instance->GetBossState(DATA_LADY_NAZJAR) == DONE)
+                {
+                    instance->SetData(DATA_COMMANDER_ULTHOK_EVENT, DONE);
+                    if (Creature* pUlthok = ObjectAccessor::GetCreature(*player, instance->GetData64(DATA_COMMANDER_ULTHOK)))
                     {
                         pUlthok->AI()->DoAction(ACTION_COMMANDER_ULTHOK_START_EVENT);
                     }
-			    }
-		    }
+                }
+            }
             return true;
         }
 };

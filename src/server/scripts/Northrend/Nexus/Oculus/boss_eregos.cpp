@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,37 +18,36 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "SpellScript.h"
-#include "SpellAuraEffects.h"
+#include "ScriptPCH.h"
 #include "oculus.h"
 
-// Types of drake mounts: Ruby (Tank), Amber (DPS), Emerald (Healer)
+// Types of drake mounts: Ruby (Tank),  Amber (DPS),  Emerald (Healer)
 // Two Repeating phases
 
 enum Events
 {
-    EVENT_ARCANE_BARRAGE = 1,
-    EVENT_ARCANE_VOLLEY,
-    EVENT_ENRAGED_ASSAULT,
-    EVENT_SUMMON_LEY_WHELP
+    EVENT_ARCANE_BARRAGE                          = 1,
+    EVENT_ARCANE_VOLLEY                           = 2,
+    EVENT_ENRAGED_ASSAULT                         = 3,
+    EVENT_SUMMON_LEY_WHELP                        = 4
 };
 
 enum Says
 {
-    SAY_SPAWN           = 0,
-    SAY_AGGRO           = 1,
-    SAY_ENRAGE          = 2,
-    SAY_KILL            = 3,
-    SAY_DEATH           = 4,
-    SAY_SHIELD          = 5,
+    SAY_SPAWN                                     = 0,
+    SAY_AGGRO                                     = 1,
+    SAY_ENRAGE                                    = 2,
+    SAY_KILL                                      = 3,
+    SAY_DEATH                                     = 4,
+    SAY_SHIELD                                    = 5,
 };
 
 enum Spells
 {
     SPELL_ARCANE_BARRAGE                          = 50804,
+    SPELL_ARCANE_BARRAGE_H                        = 59381,
     SPELL_ARCANE_VOLLEY                           = 51153,
+    SPELL_ARCANE_VOLLEY_H                         = 59382,
     SPELL_ENRAGED_ASSAULT                         = 51170,
     SPELL_PLANAR_ANOMALIES                        = 57959,
     SPELL_PLANAR_SHIFT                            = 51162,
@@ -56,26 +58,26 @@ enum Spells
 
 enum Npcs
 {
-    NPC_PLANAR_ANOMALY = 30879
+    NPC_PLANAR_ANOMALY                            = 30879
 };
 
 enum Phases
 {
-    PHASE_NORMAL        = 1,
-    PHASE_FIRST_PLANAR  = 2,
-    PHASE_SECOND_PLANAR = 3
+    PHASE_NORMAL                                  = 1,
+    PHASE_FIRST_PLANAR                            = 2,
+    PHASE_SECOND_PLANAR                           = 3
 };
 
 enum Actions
 {
-    ACTION_SET_NORMAL_EVENTS = 1
+    ACTION_SET_NORMAL_EVENTS                      = 1
 };
 
 enum EregosData
 {
-    DATA_RUBY_VOID          = 0,      // http://www.wowhead.com/achievement=2044
-    DATA_EMERALD_VOID       = 1,      // http://www.wowhead.com/achievement=2045
-    DATA_AMBER_VOID         = 2       // http://www.wowhead.com/achievement=2046
+    DATA_RUBY_VOID                                = 0,      // http://www.wowhead.com/achievement=2044
+    DATA_EMERALD_VOID                             = 1,      // http://www.wowhead.com/achievement=2045
+    DATA_AMBER_VOID                               = 2       // http://www.wowhead.com/achievement=2046
 };
 
 class boss_eregos : public CreatureScript
@@ -85,26 +87,35 @@ class boss_eregos : public CreatureScript
 
         struct boss_eregosAI : public BossAI
         {
-            boss_eregosAI(Creature* creature) : BossAI(creature, DATA_EREGOS) { }
-
-            void Reset() 
+            boss_eregosAI(Creature* creature) : BossAI(creature, DATA_EREGOS)
             {
-                _Reset();
+                Initialize();
+            }
+
+            void Initialize()
+            {
                 _phase = PHASE_NORMAL;
 
                 _rubyVoid = true;
                 _emeraldVoid = true;
                 _amberVoid = true;
+            }
+
+            void Reset() override
+            {
+                _Reset();
+                Initialize();
 
                 DoAction(ACTION_SET_NORMAL_EVENTS);
             }
 
-            void KilledUnit(Unit* /*victim*/) 
+            void KilledUnit(Unit* victim) override
             {
-                Talk(SAY_KILL);
+                if (victim->GetTypeId() == TYPEID_PLAYER)
+                    Talk(SAY_KILL);
             }
 
-            void EnterCombat(Unit* /*who*/) 
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
 
@@ -120,7 +131,16 @@ class boss_eregos : public CreatureScript
                     _amberVoid = false;
             }
 
-            uint32 GetData(uint32 type) const 
+            bool CanAIAttack(Unit const* who) const override
+            {
+                if (Unit* vehicle = who->GetVehicleBase())
+                    if (vehicle->GetEntry() == NPC_RUBY_DRAKE_VEHICLE || vehicle->GetEntry() == NPC_AMBER_DRAKE_VEHICLE || vehicle->GetEntry() == NPC_EMERALD_DRAKE_VEHICLE)
+                        return true;
+
+                return who->GetPositionZ() >= 400.0f;
+            }
+
+            uint32 GetData(uint32 type) const override
             {
                switch (type)
                {
@@ -136,42 +156,26 @@ class boss_eregos : public CreatureScript
                 return 0;
             }
 
-            void DoAction(const int32 action) 
+            void DoAction(int32 action) override
             {
                 if (action != ACTION_SET_NORMAL_EVENTS)
                     return;
 
+                DoResetThreat();
+
                 events.SetPhase(PHASE_NORMAL);
-                events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(3, 10) * IN_MILLISECONDS, 0, PHASE_NORMAL);
-                events.ScheduleEvent(EVENT_ARCANE_VOLLEY, urand(10, 25) * IN_MILLISECONDS, 0, PHASE_NORMAL);
-                events.ScheduleEvent(EVENT_ENRAGED_ASSAULT, urand(35, 50) * IN_MILLISECONDS, 0, PHASE_NORMAL);
-                events.ScheduleEvent(EVENT_SUMMON_LEY_WHELP, urand(15, 30) * IN_MILLISECONDS, 0, PHASE_NORMAL);
+                events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(3 * IN_MILLISECONDS, 10 * IN_MILLISECONDS), 0, PHASE_NORMAL);
+                events.ScheduleEvent(EVENT_ARCANE_VOLLEY, urand(10 * IN_MILLISECONDS, 25 * IN_MILLISECONDS), 0, PHASE_NORMAL);
+                events.ScheduleEvent(EVENT_ENRAGED_ASSAULT, urand(35 * IN_MILLISECONDS, 50 * IN_MILLISECONDS), 0, PHASE_NORMAL);
+                events.ScheduleEvent(EVENT_SUMMON_LEY_WHELP, urand(15 * IN_MILLISECONDS, 30 * IN_MILLISECONDS), 0, PHASE_NORMAL);
             }
 
-            void JustSummoned(Creature* summon) 
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
-                BossAI::JustSummoned(summon);
+                if (me->HasAura(SPELL_PLANAR_SHIFT))
+                    damage = 0;
 
-                if (summon->GetEntry() != NPC_PLANAR_ANOMALY)
-                    return;
-
-                summon->CombatStop(true);
-                summon->SetReactState(REACT_PASSIVE);
-                summon->GetMotionMaster()->MoveRandom(100.0f);
-            }
-
-            void SummonedCreatureDespawn(Creature* summon) 
-            {
-                if (summon->GetEntry() != NPC_PLANAR_ANOMALY)
-                    return;
-
-                /// @todo: See why the spell is not casted
-                summon->CastSpell(summon, SPELL_PLANAR_BLAST, true);
-            }
-
-            void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/) 
-            {
-                if (!IsHeroic())
+                if (!me->GetMap()->IsHeroic())
                     return;
 
                 if ( (me->GetHealthPct() < 60.0f  && me->GetHealthPct() > 20.0f && _phase < PHASE_FIRST_PLANAR)
@@ -190,7 +194,7 @@ class boss_eregos : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff) 
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -205,24 +209,22 @@ class boss_eregos : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_ARCANE_BARRAGE:
-                            DoCastVictim(SPELL_ARCANE_BARRAGE);
-                            events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(3, 10) * IN_MILLISECONDS, 0, PHASE_NORMAL);
+                            DoCastVictim(DUNGEON_MODE(SPELL_ARCANE_BARRAGE, SPELL_ARCANE_BARRAGE_H));
+                            events.ScheduleEvent(EVENT_ARCANE_BARRAGE, urand(3 * IN_MILLISECONDS, 10 * IN_MILLISECONDS), 0, PHASE_NORMAL);
                             break;
                         case EVENT_ARCANE_VOLLEY:
-                            DoCastAOE(SPELL_ARCANE_VOLLEY);
-                            events.ScheduleEvent(EVENT_ARCANE_VOLLEY, urand(10, 25) * IN_MILLISECONDS, 0, PHASE_NORMAL);
+                            DoCastAOE(DUNGEON_MODE(SPELL_ARCANE_VOLLEY, SPELL_ARCANE_VOLLEY_H));
+                            events.ScheduleEvent(EVENT_ARCANE_VOLLEY, urand(10 * IN_MILLISECONDS, 25 * IN_MILLISECONDS), 0, PHASE_NORMAL);
                             break;
                         case EVENT_ENRAGED_ASSAULT:
                             Talk(SAY_ENRAGE);
                             DoCast(SPELL_ENRAGED_ASSAULT);
-                            events.ScheduleEvent(EVENT_ENRAGED_ASSAULT, urand(35, 50) * IN_MILLISECONDS, 0, PHASE_NORMAL);
+                            events.ScheduleEvent(EVENT_ENRAGED_ASSAULT, urand(35 * IN_MILLISECONDS, 50 * IN_MILLISECONDS), 0, PHASE_NORMAL);
                             break;
                         case EVENT_SUMMON_LEY_WHELP:
                             for (uint8 i = 0; i < 3; i++)
                                 DoCast(SPELL_SUMMON_LEY_WHELP);
-                            events.ScheduleEvent(EVENT_SUMMON_LEY_WHELP, urand(15, 30) * IN_MILLISECONDS, 0, PHASE_NORMAL);
-                            break;
-                        default:
+                            events.ScheduleEvent(EVENT_SUMMON_LEY_WHELP, urand(15 * IN_MILLISECONDS, 30 * IN_MILLISECONDS), 0, PHASE_NORMAL);
                             break;
                     }
                 }
@@ -230,23 +232,67 @@ class boss_eregos : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-            void JustDied(Unit* /*killer*/) 
+            void JustDied(Unit* /*killer*/) override
             {
                 Talk(SAY_DEATH);
 
                 _JustDied();
+                me->SummonCreature(NPC_IMAGE_OF_BELGARISTRASZ, 1022.352f, 1051.535f, 605.7099f, 0.03490658f);
             }
 
-         private:
-             uint8 _phase;
-             bool _rubyVoid;
-             bool _emeraldVoid;
-             bool _amberVoid;
+        private:
+            uint8 _phase;
+            bool _rubyVoid;
+            bool _emeraldVoid;
+            bool _amberVoid;
         };
 
-        CreatureAI* GetAI(Creature* creature) const 
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new boss_eregosAI(creature);
+            return GetOculusAI<boss_eregosAI>(creature);
+        }
+};
+
+class npc_planar_anomaly : public CreatureScript
+{
+    public:
+        npc_planar_anomaly() : CreatureScript("npc_planar_anomaly") { }
+
+        struct npc_planar_anomalyAI : public ScriptedAI
+        {
+            npc_planar_anomalyAI(Creature* creature) : ScriptedAI(creature)
+            {
+                timer = 0;
+            }
+
+            void IsSummonedBy(Unit* summoner) override
+            {
+                me->SetReactState(REACT_PASSIVE);
+                me->GetMotionMaster()->MoveFollow(summoner, 0, 0);
+                timer = 15000;
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!timer)
+                    return;
+
+                if (timer <= diff)
+                {
+                    timer = 0;
+                    DoCastAOE(SPELL_PLANAR_BLAST);
+                }
+                else
+                    timer -= diff;
+            }
+
+        private:
+            uint32 timer;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetOculusAI<npc_planar_anomalyAI>(creature);
         }
 };
 
@@ -259,19 +305,19 @@ class spell_eregos_planar_shift : public SpellScriptLoader
         {
             PrepareAuraScript(spell_eregos_planar_shift_AuraScript);
 
-            void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
-                if (Creature* creature = GetTarget()->ToCreature())
-                    creature->AI()->DoAction(ACTION_SET_NORMAL_EVENTS);
+                if (Creature* caster = GetTarget()->ToCreature())
+                    caster->AI()->DoAction(ACTION_SET_NORMAL_EVENTS);
             }
 
-            void Register() 
+            void Register() override
             {
                 AfterEffectRemove += AuraEffectRemoveFn(spell_eregos_planar_shift_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_SCHOOL_IMMUNITY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const 
+        AuraScript* GetAuraScript() const override
         {
             return new spell_eregos_planar_shift_AuraScript();
         }
@@ -282,7 +328,7 @@ class achievement_gen_eregos_void : public AchievementCriteriaScript
     public:
         achievement_gen_eregos_void(char const* name, uint32 data) : AchievementCriteriaScript(name), _data(data) { }
 
-        bool OnCheck(Player* /*player*/, Unit* target) 
+        bool OnCheck(Player* /*source*/, Unit* target) override
         {
             return target && target->GetAI()->GetData(_data);
         }
@@ -291,11 +337,72 @@ class achievement_gen_eregos_void : public AchievementCriteriaScript
         uint32 _data;
 };
 
+// criteria_id = 7179
+class achievement_experienced_drake_rider_ruby : public AchievementCriteriaScript
+{
+    public:
+        achievement_experienced_drake_rider_ruby() : AchievementCriteriaScript("achievement_experienced_drake_rider_ruby") { }
+
+        bool OnCheck(Player* source, Unit* /*target*/) override
+        {
+            if (!source)
+                return false;
+
+            if (Creature* mount = source->GetVehicleCreatureBase())
+                if (mount->GetEntry() == NPC_RUBY_DRAKE_VEHICLE)
+                    return true;
+
+            return false;
+        }
+};
+
+// criteria_id = 7177
+class achievement_experienced_drake_rider_amber : public AchievementCriteriaScript
+{
+    public:
+        achievement_experienced_drake_rider_amber() : AchievementCriteriaScript("achievement_experienced_drake_rider_amber") { }
+
+        bool OnCheck(Player* source, Unit* /*target*/) override
+        {
+            if (!source)
+                return false;
+
+            if (Creature* mount = source->GetVehicleCreatureBase())
+                if (mount->GetEntry() == NPC_AMBER_DRAKE_VEHICLE)
+                    return true;
+
+            return false;
+        }
+};
+
+// criteria_id = 7178
+class achievement_experienced_drake_rider_emerald : public AchievementCriteriaScript
+{
+    public:
+        achievement_experienced_drake_rider_emerald() : AchievementCriteriaScript("achievement_experienced_drake_rider_emerald") { }
+
+        bool OnCheck(Player* source, Unit* /*target*/) override
+        {
+            if (!source)
+                return false;
+
+            if (Creature* mount = source->GetVehicleCreatureBase())
+                if (mount->GetEntry() == NPC_EMERALD_DRAKE_VEHICLE)
+                    return true;
+
+            return false;
+        }
+};
+
 void AddSC_boss_eregos()
 {
-   new boss_eregos();
-   new spell_eregos_planar_shift();
-   new achievement_gen_eregos_void("achievement_ruby_void", DATA_RUBY_VOID);
-   new achievement_gen_eregos_void("achievement_emerald_void", DATA_EMERALD_VOID);
-   new achievement_gen_eregos_void("achievement_amber_void", DATA_AMBER_VOID);
+    new boss_eregos();
+    new npc_planar_anomaly();
+    new spell_eregos_planar_shift();
+    new achievement_gen_eregos_void("achievement_ruby_void", DATA_RUBY_VOID);
+    new achievement_gen_eregos_void("achievement_emerald_void", DATA_EMERALD_VOID);
+    new achievement_gen_eregos_void("achievement_amber_void", DATA_AMBER_VOID);
+    new achievement_experienced_drake_rider_ruby();
+    new achievement_experienced_drake_rider_amber();
+    new achievement_experienced_drake_rider_emerald();
 }

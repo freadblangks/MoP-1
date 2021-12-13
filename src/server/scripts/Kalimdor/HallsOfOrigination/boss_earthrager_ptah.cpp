@@ -12,15 +12,12 @@ enum Spells
 {
     SPELL_FLAME_BOLT                = 77370,
     SPELL_FLAME_BOLT_DMG            = 75540, 
-    SPELL_FLAME_BOLT_DMG_H          = 89881, 
     SPELL_RAGING_SMASH              = 83650,
     SPELL_EARTH_SPIKE               = 94974,
     SPELL_EARTH_SPIKE_DMG           = 75339,
-    SPELL_EARTH_SPIKE_DMG_H         = 89882,
     SPELL_EARTH_SPIKE_KILL          = 89398,
     SPELL_QUICKSAND                 = 75546,
     SPELL_QUICKSAND_AOE             = 75547,
-    SPELL_QUICKSAND_AOE_H           = 89880,
     SPELL_QUICKSAND_DIS             = 89396,
 
     SPELL_SAND_VORTEX_DUMMY1        = 79441,
@@ -32,6 +29,7 @@ enum Spells
 
     SPELL_SUMMON_DUSTBONE_HORROR    = 75521,
     SPELL_SUMMON_JEWELED_SCARAB     = 75462,
+    SPELL_BEETLE_BURROW             = 75463,
 
     SPELL_SMASH                     = 75453,
 };
@@ -55,80 +53,96 @@ enum Adds
     NPC_DUSTBONE_HORROR         = 40450,
     NPC_JEWELED_SCARAB          = 40458,
     NPC_TUMULTUOUS_EARTHSTORM   = 40406,
-    NPC_BEETLE_STALKER          = 40459,
 };
  
 class boss_earthrager_ptah : public CreatureScript
 {
     public:
-        boss_earthrager_ptah() : CreatureScript("boss_earthrager_ptah") {}
- 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_earthrager_ptahAI(creature);
-        }
+        boss_earthrager_ptah() : CreatureScript("boss_earthrager_ptah") { }
 
         struct boss_earthrager_ptahAI : public BossAI
         {
-            boss_earthrager_ptahAI(Creature* pCreature) : BossAI(pCreature, DATA_EARTHRAGER_PTAH)
+            boss_earthrager_ptahAI(Creature* creature) : BossAI(creature, DATA_EARTHRAGER_PTAH)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
             uint8 count;
             uint8 phase;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HOScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
                 me->RemoveFlag(UNIT_FIELD_FLAGS,UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE);
                 
                 phase = 0;
             }
 
-            void EnterCombat(Unit * who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
 
                 events.ScheduleEvent(EVENT_FLAME_BOLT, urand(5000, 8000));
                 events.ScheduleEvent(EVENT_RAGING_SMASH, urand(7000, 10000));
                 events.ScheduleEvent(EVENT_EARTH_POINT, urand(12000, 15000));
-                DoZoneInCombat();
-                instance->SetBossState(DATA_EARTHRAGER_PTAH, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                    // Hackfix, default method won`t check this criteria
+                    if (AchievementEntry const* achievCamel = sAchievementStore.LookupEntry(ACHIEV_STRAW_THAT_BROKE_CAMEL))
+                    {
+                        for (auto&& itr : instance->instance->GetPlayers())
+                            if (Player* target = itr.GetSource())
+                                if (target->IsOnVehicle())
+                                    target->CompletedAchievement(achievCamel);
+                    }
+                }
+
                 Talk(SAY_DEATH);
             }
             
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
+
+            void HandleSetBurrow()
+            {
+                std::list<Creature*> m_burrowStalker;
+                GetCreatureListWithEntryInGrid(m_burrowStalker, me, NPC_BEETLE_STALKER, 200.0f);
+
+                if (!m_burrowStalker.empty())
+                    for (auto itr : m_burrowStalker)
+                        itr->CastSpell(itr, SPELL_BEETLE_BURROW, false);
+            }
       
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -153,17 +167,10 @@ class boss_earthrager_ptah : public CreatureScript
 
                 while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_SUBMERGE:
-                            for (uint8 i = 0; i < 2; ++i)
-                                if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                    DoCast(pTarget, SPELL_SUMMON_DUSTBONE_HORROR, true);
-                            
-                            for (uint8 i = 0; i < 6; ++i)
-                                if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                    DoCast(pTarget, SPELL_SUMMON_JEWELED_SCARAB, true);
-                            
+                        case EVENT_SUBMERGE:           
+                            HandleSetBurrow();
                             DoCast(me, SPELL_QUICKSAND, true);
                             DoCast(me, SPELL_SAND_VORTEX, true);
                             events.ScheduleEvent(EVENT_MERGE, 30000);
@@ -172,7 +179,7 @@ class boss_earthrager_ptah : public CreatureScript
                             me->RemoveAllAuras();
                             me->RemoveFlag(UNIT_FIELD_FLAGS,UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE);
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             events.ScheduleEvent(EVENT_FLAME_BOLT, urand(5000, 8000));
                             events.ScheduleEvent(EVENT_RAGING_SMASH, urand(7000, 10000));
                             events.ScheduleEvent(EVENT_EARTH_POINT, urand(12000, 15000));
@@ -186,8 +193,8 @@ class boss_earthrager_ptah : public CreatureScript
                             events.ScheduleEvent(EVENT_RAGING_SMASH, urand(10000, 15000));
                             break;
                         case EVENT_EARTH_POINT:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_EARTH_SPIKE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                DoCast(target->GetVehicleBase() ? target->GetVehicleBase() : target, SPELL_EARTH_SPIKE, true);
                             events.ScheduleEvent(EVENT_EARTH_POINT, urand(20000, 25000));
                             break;                            
                     }
@@ -196,6 +203,37 @@ class boss_earthrager_ptah : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_earthrager_ptahAI>(creature);
+        }
+};
+
+struct earthrager_typeAI : public ScriptedAI
+{
+    earthrager_typeAI(Creature* creature) : ScriptedAI(creature) { }
+
+    void Reset() override
+    {
+        DoZoneInCombat();
+    }
+};
+
+class npc_earthrager_base : public CreatureScript
+{
+    public:
+        npc_earthrager_base() : CreatureScript("npc_earthrager_base") { }
+
+        struct npc_earthrager_baseAI : public earthrager_typeAI
+        {
+            npc_earthrager_baseAI(Creature* creature) : earthrager_typeAI(creature) { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_earthrager_baseAI(creature);
+        }
 };
 
 class npc_ptah_dustbone_horror: public CreatureScript
@@ -203,42 +241,35 @@ class npc_ptah_dustbone_horror: public CreatureScript
     public:
         npc_ptah_dustbone_horror() : CreatureScript("npc_ptah_dustbone_horror") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_ptah_dustbone_horrorAI : public earthrager_typeAI
         {
-            return new npc_ptah_dustbone_horrorAI(pCreature);
-        }
-
-        struct npc_ptah_dustbone_horrorAI : public ScriptedAI
-        {
-            npc_ptah_dustbone_horrorAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-            }
+            npc_ptah_dustbone_horrorAI(Creature* creature) : earthrager_typeAI(creature) { }
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_SMASH, urand(2000, 8000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_SMASH:
-                            DoCast(me->getVictim(), SPELL_SMASH);
+                            DoCast(me->GetVictim(), SPELL_SMASH);
                             events.ScheduleEvent(EVENT_SMASH, urand(5000, 10000));
                             break;
                     }
@@ -247,10 +278,45 @@ class npc_ptah_dustbone_horror: public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_ptah_dustbone_horrorAI>(creature);
+        }
+};
+
+// Beetle Burrow 75463
+class spell_beetle_burrow : public SpellScriptLoader
+{
+    public:
+        spell_beetle_burrow() : SpellScriptLoader("spell_beetle_burrow") { }
+
+        class spell_beetle_burrow_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_beetle_burrow_AuraScript);
+
+            void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+            {
+                if (Unit* m_caster = GetCaster())
+                    m_caster->CastSpell(m_caster, urand(0, 1) ? SPELL_SUMMON_DUSTBONE_HORROR : SPELL_SUMMON_JEWELED_SCARAB, false);
+            }
+
+            void Register() override
+            {
+                OnEffectRemove += AuraEffectRemoveFn(spell_beetle_burrow_AuraScript::OnAuraEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_beetle_burrow_AuraScript();
+        }
 };
 
 void AddSC_boss_earthrager_ptah()
 {
     new boss_earthrager_ptah();
+    new npc_earthrager_base();
     new npc_ptah_dustbone_horror();
+    new spell_beetle_burrow();
 }

@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,8 +17,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef GAMEOBJECT_H
-#define GAMEOBJECT_H
+#ifndef TRINITYCORE_GAMEOBJECT_H
+#define TRINITYCORE_GAMEOBJECT_H
 
 #include "Common.h"
 #include "SharedDefines.h"
@@ -25,15 +26,11 @@
 #include "Object.h"
 #include "LootMgr.h"
 #include "DatabaseEnv.h"
+#include "DBCStores.h"
 
 class GameObjectAI;
-
-// GCC have alternative #pragma pack(N) syntax and old gcc version not support pack(push, N), also any gcc version not support it at some platform
-#if defined(__GNUC__)
-#pragma pack(1)
-#else
-#pragma pack(push, 1)
-#endif
+class Group;
+class Transport;
 
 #define MAX_GAMEOBJECT_QUEST_ITEMS 6
 
@@ -47,8 +44,6 @@ struct GameObjectTemplate
     std::string IconName;
     std::string castBarCaption;
     std::string unk1;
-    uint32  faction;
-    uint32  flags;
     float   size;
     uint32  questItems[MAX_GAMEOBJECT_QUEST_ITEMS];
     int32   unkInt32;
@@ -64,6 +59,10 @@ struct GameObjectTemplate
             uint32 openTextID;                              //4 can be used to replace castBarCaption?
             uint32 closeTextID;                             //5
             uint32 ignoredByPathing;                        //6
+            uint32 conditionID1;                            // 7 conditionID1, References: PlayerCondition, NoValue = 0
+            uint32 DoorisOpaque;                            // 8 Door is Opaque (Disable portal on close), enum { false, true, }; Default: true
+            uint32 GiganticAOI;                             // 9 Gigantic AOI, enum { false, true, }; Default: false
+            uint32 InfiniteAOI;                             // 10 Infinite AOI, enum { false, true, }; Default: false
         } door;
         //1 GAMEOBJECT_TYPE_BUTTON
         struct
@@ -73,7 +72,7 @@ struct GameObjectTemplate
             uint32 autoCloseTime;                           //2 secs till autoclose = autoCloseTime / 0x10000
             uint32 linkedTrap;                              //3
             uint32 noDamageImmune;                          //4 isBattlegroundObject
-            uint32 large;                                   //5
+            uint32 GiganticAOI;                                   //5
             uint32 openTextID;                              //6 can be used to replace castBarCaption?
             uint32 closeTextID;                             //7
             uint32 losOK;                                   //8
@@ -89,8 +88,8 @@ struct GameObjectTemplate
             uint32 noDamageImmune;                          //5
             uint32 openTextID;                              //6 can be used to replace castBarCaption?
             uint32 losOK;                                   //7
-            uint32 allowMounted;                            //8
-            uint32 large;                                   //9
+            uint32 allowMounted;                            //8 Is usable while on mount/vehicle. (0/1)
+            uint32 GiganticAOI;                             //9
         } questgiver;
         //3 GAMEOBJECT_TYPE_CHEST
         struct
@@ -99,8 +98,8 @@ struct GameObjectTemplate
             uint32 lootId;                                  //1
             uint32 chestRestockTime;                        //2
             uint32 consumable;                              //3
-            uint32 minSuccessOpens;                         //4
-            uint32 maxSuccessOpens;                         //5
+            uint32 minSuccessOpens;                         //4 Deprecated, pre 3.0 was used for mining nodes but since WotLK all mining nodes are usable once and grant all loot with a single use
+            uint32 maxSuccessOpens;                         //5 Deprecated, pre 3.0 was used for mining nodes but since WotLK all mining nodes are usable once and grant all loot with a single use
             uint32 eventId;                                 //6 lootedEvent
             uint32 linkedTrapId;                            //7
             uint32 questId;                                 //8 not used currently but store quest required for GO activation for player
@@ -112,6 +111,22 @@ struct GameObjectTemplate
             uint32 openTextID;                              //14 can be used to replace castBarCaption?
             uint32 groupLootRules;                          //15
             uint32 floatingTooltip;                         //16
+            uint32 conditionID1;                            //17 conditionID1, References: PlayerCondition, NoValue = 0
+            uint32 xpLevel;                                 //18
+            uint32 unk19;                                   //19
+            uint32 unk20;                                   //20
+            uint32 unk21;                                   //21
+            uint32 unk22;                                   //22
+            uint32 trivialSkillLow;                         // 23
+            uint32 trivialSkillHigh;                        // 24
+            uint32 DungeonEncounter;                        // 25 Dungeon Encounter, References: DungeonEncounter, NoValue = 0
+            uint32 spell;                                   // 26 spell, References: Spell, NoValue = 0
+            uint32 GiganticAOI;                             // 27 Gigantic AOI, enum { false, true, }; Default: false
+            uint32 LargeAOI;                                // 28 Large AOI, enum { false, true, }; Default: false
+            uint32 SpawnVignette;                           // 29 Spawn Vignette, References: vignette, NoValue = 0
+            uint32 chestPersonalLoot;                       // 30 chest Personal Loot, References: Treasure, NoValue = 0
+            uint32 turnpersonallootsecurityoff;             // 31 turn personal loot security off, enum { false, true, }; Default: false
+            uint32 ChestProperties;                         // 32 Chest Properties, References: ChestProperties, NoValue = 0
         } chest;
         //4 GAMEOBJECT_TYPE_BINDER - empty
         //5 GAMEOBJECT_TYPE_GENERIC
@@ -120,9 +135,12 @@ struct GameObjectTemplate
             uint32 floatingTooltip;                         //0
             uint32 highlight;                               //1
             uint32 serverOnly;                              //2
-            uint32 large;                                   //3
+            uint32 GiganticAOI;                             //3
             uint32 floatOnWater;                            //4
             int32 questID;                                  //5
+            uint32 conditionID1;                            // 6 conditionID1, References: PlayerCondition, NoValue = 0
+            uint32 LargeAOI;                                // 7 Large AOI, enum { false, true, }; Default: false
+            uint32 UseGarrisonOwnerGuildColors;             // 8 Use Garrison Owner Guild Colors, enum { false, true, }; Default: false
         } _generic;
         //6 GAMEOBJECT_TYPE_TRAP
         struct
@@ -137,7 +155,7 @@ struct GameObjectTemplate
             uint32 startDelay;                              //7
             uint32 serverOnly;                              //8
             uint32 stealthed;                               //9
-            uint32 large;                                   //10
+            uint32 GiganticAOI;                             //10
             uint32 invisible;                               //11
             uint32 openTextID;                              //12 can be used to replace castBarCaption?
             uint32 closeTextID;                             //13
@@ -159,7 +177,7 @@ struct GameObjectTemplate
             uint32 linkedTrapId;                            //2
             uint32 serverOnly;                              //3
             uint32 questID;                                 //4
-            uint32 large;                                   //5
+            uint32 GiganticAOI;                             //5
             uint32 floatingTooltip;                         //6
         } spellFocus;
         //9 GAMEOBJECT_TYPE_TEXT
@@ -168,7 +186,7 @@ struct GameObjectTemplate
             uint32 pageID;                                  //0
             uint32 language;                                //1
             uint32 pageMaterial;                            //2
-            uint32 allowMounted;                            //3
+            uint32 allowMounted;                            //3 Is usable while on mount/vehicle. (0/1)
         } text;
         //10 GAMEOBJECT_TYPE_GOOBER
         struct
@@ -186,14 +204,18 @@ struct GameObjectTemplate
             uint32 spellId;                                 //10
             uint32 noDamageImmune;                          //11
             uint32 linkedTrapId;                            //12
-            uint32 large;                                   //13
+            uint32 GiganticAOI;                             //13
             uint32 openTextID;                              //14 can be used to replace castBarCaption?
             uint32 closeTextID;                             //15
             uint32 losOK;                                   //16 isBattlegroundObject
-            uint32 allowMounted;                            //17
+            uint32 allowMounted;                            //17 Is usable while on mount/vehicle. (0/1)
             uint32 floatingTooltip;                         //18
             uint32 gossipID;                                //19
             uint32 WorldStateSetsState;                     //20
+            uint32 floatOnWater;                            //21 floatOnWater, enum { false, true, }; Default: false
+            uint32 conditionID1;                            //22 conditionID1, References: PlayerCondition, NoValue = 0
+            uint32 playerCast;                              //23 playerCast, enum { false, true, }; Default: false
+            uint32 SpawnVignette;                           //24 Spawn Vignette, References: vignette, NoValue = 0
         } goober;
         //11 GAMEOBJECT_TYPE_TRANSPORT
         struct
@@ -236,6 +258,9 @@ struct GameObjectTemplate
             uint32 transportPhysics;                        //5
             uint32 mapID;                                   //6
             uint32 worldState1;                             //7
+            uint32 canBeStopped;                            //8
+            uint32 InitStopped;                             //9 Init Stopped, enum { false, true, }; Default: false
+            uint32 TrueInfiniteAOI;                         //10 True Infinite AOI (programmer only!), enum { false, true, }; Default: false
         } moTransport;
         //16 GAMEOBJECT_TYPE_DUELFLAG - empty
         //17 GAMEOBJECT_TYPE_FISHINGNODE - empty
@@ -265,8 +290,8 @@ struct GameObjectTemplate
             uint32 spellId;                                 //0
             uint32 charges;                                 //1
             uint32 partyOnly;                               //2
-            uint32 allowMounted;                            //3
-            uint32 large;                                   //4
+            uint32 allowMounted;                            //3 Is usable while on mount/vehicle. (0/1)
+            uint32 GiganticAOI;                             //4
         } spellcaster;
         //23 GAMEOBJECT_TYPE_MEETINGSTONE
         struct
@@ -286,6 +311,11 @@ struct GameObjectTemplate
             uint32 noDamageImmune;                          //5
             uint32 openTextID;                              //6
             uint32 losOK;                                   //7
+            uint32 conditionID1;                            // 8 conditionID1, References: PlayerCondition, NoValue = 0
+            uint32 playerCast;                              // 9 playerCast, enum { false, true, }; Default: false
+            uint32 GiganticAOI;                             // 10 Gigantic AOI, enum { false, true, }; Default: false
+            uint32 InfiniteAOI;                             // 11 Infinite AOI, enum { false, true, }; Default: false
+            uint32 cooldown;                                // 12 cooldown, int, Min value: 0, Max value: 2147483647, Default value: 3000
         } flagstand;
         //25 GAMEOBJECT_TYPE_FISHINGHOLE
         struct
@@ -304,6 +334,11 @@ struct GameObjectTemplate
             uint32 pickupSpell;                             //2
             uint32 noDamageImmune;                          //3
             uint32 openTextID;                              //4
+            uint32 playerCast;                              // 5 playerCast, enum { false, true, }; Default: false
+            uint32 ExpireDuration;                          // 6 Expire Duration, int, Min value: 0, Max value: 60000, Default value: 10000
+            uint32 GiganticAOI;                             // 7 Gigantic AOI, enum { false, true, }; Default: false
+            uint32 InfiniteAOI;                             // 8 Infinite AOI, enum { false, true, }; Default: false
+            uint32 cooldown;                                // 9 cooldown, int, Min value: 0, Max value: 2147483647, Default value: 3000
         } flagdrop;
         //27 GAMEOBJECT_TYPE_MINI_GAME
         struct
@@ -331,7 +366,7 @@ struct GameObjectTemplate
             uint32 maxSuperiority;                          //15
             uint32 minTime;                                 //16
             uint32 maxTime;                                 //17
-            uint32 large;                                   //18
+            uint32 GiganticAOI;                             //18
             uint32 highlight;                               //19
             uint32 startingValue;                           //20
             uint32 unidirectional;                          //21
@@ -352,6 +387,15 @@ struct GameObjectTemplate
         {
             uint32 mapID;                                   //0
             uint32 difficulty;                              //1
+            uint32 DifficultyHeroic;                        // 2 Difficulty Heroic, References: animationdata, NoValue = 0
+            uint32 DifficultyEpic;                          // 3 Difficulty Epic, References: animationdata, NoValue = 0
+            uint32 DifficultyLegendary;                     // 4 Difficulty Legendary, References: animationdata, NoValue = 0
+            uint32 HeroicAttachment;                        // 5 Heroic Attachment, References: gameobjectdisplayinfo, NoValue = 0
+            uint32 ChallengeAttachment;                     // 6 Challenge Attachment, References: gameobjectdisplayinfo, NoValue = 0
+            uint32 DifficultyAnimations;                    // 7 Difficulty Animations, References: GameObjectDiffAnim, NoValue = 0
+            uint32 LargeAOI;                                // 8 Large AOI, enum { false, true, }; Default: false
+            uint32 GiganticAOI;                             // 9 Gigantic AOI, enum { false, true, }; Default: false
+            uint32 Legacy;                                  // 10 Legacy, enum { false, true, }; Default: false
         } dungeonDifficulty;
         //32 GAMEOBJECT_TYPE_BARBER_CHAIR
         struct
@@ -395,7 +439,7 @@ struct GameObjectTemplate
             uint32 startOpen;                               // 1
             uint32 autoClose;                               // 2
         } trapDoor;
-
+        // GAMEOBJECT_TYPE_FLAGSTAND_2
         struct
         {
             uint32 lockId;                                  // 0
@@ -430,16 +474,16 @@ struct GameObjectTemplate
             default: return false;
         }
     }
- 
-    bool IsUsableMounted() const 
+
+    bool IsUsableMounted() const
     {
-        switch (type) 
+        switch (type)
         {
-            case GAMEOBJECT_TYPE_QUESTGIVER: return questgiver.allowMounted; 
-            case GAMEOBJECT_TYPE_TEXT: return text.allowMounted; 
-            case GAMEOBJECT_TYPE_GOOBER: return goober.allowMounted; 
-            case GAMEOBJECT_TYPE_SPELLCASTER: return spellcaster.allowMounted; 
-            default: return false; 
+            case GAMEOBJECT_TYPE_QUESTGIVER: return questgiver.allowMounted;
+            case GAMEOBJECT_TYPE_TEXT: return text.allowMounted;
+            case GAMEOBJECT_TYPE_GOOBER: return goober.allowMounted;
+            case GAMEOBJECT_TYPE_SPELLCASTER: return spellcaster.allowMounted;
+            default: return false;
         }
     }
 
@@ -555,15 +599,140 @@ struct GameObjectTemplate
             default: return 0;
         }
     }
+
+    bool HasLargeAOI() const
+    {
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_CHEST:                 return chest.LargeAOI;
+            case GAMEOBJECT_TYPE_GENERIC:               return _generic.LargeAOI;
+            case GAMEOBJECT_TYPE_DUNGEON_DIFFICULTY:    return dungeonDifficulty.LargeAOI;
+            default: return false;
+        }
+    }
+
+    bool HasGiganticAOI() const
+    {
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_DOOR:                  return door.GiganticAOI;
+            case GAMEOBJECT_TYPE_BUTTON:                return button.GiganticAOI;
+            case GAMEOBJECT_TYPE_QUESTGIVER:            return questgiver.GiganticAOI;
+            case GAMEOBJECT_TYPE_CHEST:                 return chest.GiganticAOI;
+            case GAMEOBJECT_TYPE_GENERIC:               return _generic.GiganticAOI;
+            case GAMEOBJECT_TYPE_TRAP:                  return trap.GiganticAOI;
+            case GAMEOBJECT_TYPE_SPELL_FOCUS:           return spellFocus.GiganticAOI;
+            case GAMEOBJECT_TYPE_GOOBER:                return goober.GiganticAOI;
+            case GAMEOBJECT_TYPE_SPELLCASTER:           return spellcaster.GiganticAOI;
+            case GAMEOBJECT_TYPE_FLAGSTAND:             return flagstand.GiganticAOI;
+            case GAMEOBJECT_TYPE_FLAGDROP:              return flagdrop.GiganticAOI;
+            case GAMEOBJECT_TYPE_CAPTURE_POINT:         return capturePoint.GiganticAOI;
+            case GAMEOBJECT_TYPE_DUNGEON_DIFFICULTY:    return dungeonDifficulty.GiganticAOI;
+            default: return false;
+        }
+    }
+
+    bool HasInfiniteAOI() const
+    {
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_DOOR:                  return door.InfiniteAOI;
+            case GAMEOBJECT_TYPE_FLAGSTAND:             return flagstand.InfiniteAOI;
+            case GAMEOBJECT_TYPE_FLAGDROP:              return flagdrop.InfiniteAOI;
+            default: return false;
+        }
+    }
+
+    bool HasTrueInfiniteAOI() const
+    {
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_MO_TRANSPORT:          return moTransport.TrueInfiniteAOI;
+            default: return false;
+        }
+    }
+
+    bool IsServerOnly() const
+    {
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_GENERIC:       return _generic.serverOnly;
+            case GAMEOBJECT_TYPE_TRAP:          return trap.serverOnly;
+            case GAMEOBJECT_TYPE_SPELL_FOCUS:   return spellFocus.serverOnly;
+            case GAMEOBJECT_TYPE_AURA_GENERATOR:return auraGenerator.serverOnly;
+            default: return false;
+        }
+    }
+
+    uint32 GetTrackingQuestId() const
+    {
+        uint32 playerConditionID = 0;
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_CHEST:
+                playerConditionID = chest.conditionID1;
+                break;
+            case GAMEOBJECT_TYPE_GOOBER:
+                playerConditionID = goober.conditionID1;
+                break;
+            // Maybe somes others gameobject types can have tracking quest
+            default:
+                break;
+        }
+
+        if (!playerConditionID)
+            return 0;
+
+        auto playerCondition = sPlayerConditionStore.LookupEntry(playerConditionID);
+        if (!playerCondition || !(playerCondition->PrevQuestLogic & PrevQuestLogicFlags::TrackingQuest))
+            return 0;
+
+        return playerCondition->PrevQuestID[0];
+    }
+
+    uint32 GetVignetteId() const
+    {
+        switch (type)
+        {
+            case GAMEOBJECT_TYPE_CHEST:  return chest.SpawnVignette;
+            case GAMEOBJECT_TYPE_GOOBER: return goober.SpawnVignette;
+            default: return 0;
+        }
+    }
+};
+
+// From `gameobject_template_addon`
+struct GameObjectTemplateAddon
+{
+    uint32  entry;
+    uint32  faction;
+    uint32  flags;
+    uint32  mingold;
+    uint32  maxgold;
+    uint8   maxDuplicates;
 };
 
 // Benchmarked: Faster than std::map (insert/find)
-typedef UNORDERED_MAP<uint32, GameObjectTemplate> GameObjectTemplateContainer;
+typedef std::unordered_map<uint32, GameObjectTemplate> GameObjectTemplateContainer;
+typedef std::unordered_map<uint32, GameObjectTemplateAddon> GameObjectTemplateAddonContainer;
 
 class OPvPCapturePoint;
+struct TransportAnimation;
 
 union GameObjectValue
 {
+    //11 GAMEOBJECT_TYPE_TRANSPORT
+    struct
+    {
+        uint32 PathProgress;
+        TransportAnimation const* AnimationInfo;
+        uint32 CurrentSeg;
+    } Transport;
+    //25 GAMEOBJECT_TYPE_FISHINGHOLE
+    struct
+    {
+        uint32 MaxOpens;
+    } FishingHole;
     //29 GAMEOBJECT_TYPE_CAPTURE_POINT
     struct
     {
@@ -577,53 +746,49 @@ union GameObjectValue
     } Building;
 };
 
-// GCC have alternative #pragma pack() syntax and old gcc version not support pack(pop), also any gcc version not support it at some platform
-#if defined(__GNUC__)
-#pragma pack()
-#else
-#pragma pack(pop)
-#endif
-
 struct GameObjectLocale
 {
     StringVector Name;
     StringVector CastBarCaption;
 };
 
+// `gameobject_addon` table
+struct GameObjectAddon
+{
+    ::InvisibilityType InvisibilityType;
+    uint32 InvisibilityValue;
+};
+
+typedef std::unordered_map<uint32, GameObjectAddon> GameObjectAddonContainer;
+
 // client side GO show states
 enum GOState
 {
     GO_STATE_ACTIVE             = 0,                        // show in world as used and not reset (closed door open)
     GO_STATE_READY              = 1,                        // show in world as ready (closed door close)
-    GO_STATE_ACTIVE_ALTERNATIVE = 2                         // show in world as used in alt way and not reset (closed door open by cannon fire)
+    GO_STATE_ACTIVE_ALTERNATIVE = 2,                        // show in world as used in alt way and not reset (closed door open by cannon fire)
+    GO_STATE_PREPARE_TRANSPORT  = 24                        // reset transport to startpoint after endpoint
 };
-
-#define MAX_GO_STATE              3
 
 // from `gameobject`
 struct GameObjectData
 {
-    explicit GameObjectData() : dbData(true) {}
+    explicit GameObjectData() : dbData(true) { }
     uint32 id;                                              // entry in gamobject_template
     uint16 mapid;
-    uint16 zoneId;
-    uint16 areaId;
-    uint16 phaseMask;
+    uint32 phaseMask;
     float posX;
     float posY;
     float posZ;
     float orientation;
-    float rotation0;
-    float rotation1;
-    float rotation2;
-    float rotation3;
+    G3D::Quat rotation;
     int32  spawntimesecs;
     uint32 animprogress;
     GOState go_state;
-    uint32 spawnMask;
+    uint16 spawnMask;
     uint8 artKit;
-    bool isActive;
     bool dbData;
+    uint32 gameEventId = 0;
 };
 
 // For containers:  [GO_NOT_READY]->GO_READY (close)->GO_ACTIVATED (open) ->GO_JUST_DEACTIVATED->GO_READY        -> ...
@@ -644,24 +809,25 @@ class GameObjectModel;
 // 5 sec for bobber catch
 #define FISHING_BOBBER_READY_TIME 5
 
-class GameObject : public WorldObject, public GridObject<GameObject>
+class GameObject : public WorldObject, public GridObject<GameObject>, public MapObject
 {
     public:
         explicit GameObject();
         ~GameObject();
-        
+
         void BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, Player* target) const;
 
         void AddToWorld();
         void RemoveFromWorld();
         void CleanupsBeforeDelete(bool finalCleanup = true);
 
-        bool Create(uint32 guidlow, uint32 name_id, Map* map, uint32 phaseMask, float x, float y, float z, float ang, float rotation0, float rotation1, float rotation2, float rotation3, uint32 animprogress, GOState go_state, uint32 artKit = 0);
+        bool Create(uint32 guidlow, uint32 name_id, Map* map, uint32 phaseMask, float x, float y, float z, float ang, G3D::Quat const& rotation, uint32 animprogress, GOState go_state, uint32 artKit = 0);
         void Update(uint32 p_time);
         static GameObject* GetGameObject(WorldObject& object, uint64 guid);
         GameObjectTemplate const* GetGOInfo() const { return m_goInfo; }
+        GameObjectTemplateAddon const* GetTemplateAddon() const { return m_goTemplateAddon; }
         GameObjectData const* GetGOData() const { return m_goData; }
-        GameObjectValue * GetGOValue() const { return m_goValue; }
+        GameObjectValue const* GetGOValue() const { return &m_goValue; }
 
         bool IsTransport() const;
         bool IsDynTransport() const;
@@ -669,19 +835,19 @@ class GameObject : public WorldObject, public GridObject<GameObject>
 
         uint32 GetDBTableGUIDLow() const { return m_DBTableGuid; }
 
-        void UpdateRotationFields(float rotation2 = 0.0f, float rotation3 = 0.0f);
-
-        void Say(int32 textId, uint32 language, uint64 TargetGuid) { MonsterSay(textId, language, TargetGuid); }
-        void Yell(int32 textId, uint32 language, uint64 TargetGuid) { MonsterYell(textId, language, TargetGuid); }
-        void TextEmote(int32 textId, uint64 TargetGuid) { MonsterTextEmote(textId, TargetGuid); }
-        void Whisper(int32 textId, uint64 receiver) { MonsterWhisper(textId, receiver); }
-        void YellToZone(int32 textId, uint32 language, uint64 TargetGuid) { MonsterYellToZone(textId, language, TargetGuid); }
+        // z_rot, y_rot, x_rot - rotation angles around z, y and x axes
+        void SetWorldRotationAngles(float z_rot, float y_rot, float x_rot);
+        void SetWorldRotation(G3D::Quat rotation);
+        void SetParentRotation(G3D::Quat const& rotation);      // transforms(rotates) transport's path
+        int64 GetPackedWorldRotation() const { return m_packedRotation; }
+        G3D::Quat const& GetWorldRotation() const { return m_worldRotation; }
+        void SetOrientation(float orientation) = delete;
 
         // overwrite WorldObject function for proper name localization
-        const char* GetNameForLocaleIdx(LocaleConstant locale_idx) const;
+        std::string const& GetNameForLocaleIdx(LocaleConstant locale_idx) const;
 
         void SaveToDB();
-        void SaveToDB(uint32 mapid, uint32 spawnMask, uint32 phaseMask);
+        void SaveToDB(uint32 mapid, uint16 spawnMask, uint32 phaseMask);
         bool LoadFromDB(uint32 guid, Map* map) { return LoadGameObjectFromDB(guid, map, false); }
         bool LoadGameObjectFromDB(uint32 guid, Map* map, bool addToMap = true);
         void DeleteFromDB();
@@ -694,9 +860,9 @@ class GameObject : public WorldObject, public GridObject<GameObject>
                 ASSERT(false);
             }
             m_spawnedByDefault = false;                     // all object with owner is despawned after delay
-            SetUInt64Value(OBJECT_FIELD_CREATED_BY, owner);
+            SetUInt64Value(GAMEOBJECT_FIELD_CREATED_BY, owner);
         }
-        uint64 GetOwnerGUID() const { return GetUInt64Value(OBJECT_FIELD_CREATED_BY); }
+        uint64 GetOwnerGUID() const { return GetUInt64Value(GAMEOBJECT_FIELD_CREATED_BY); }
         Unit* GetOwner() const;
 
         void SetSpellId(uint32 id)
@@ -705,6 +871,8 @@ class GameObject : public WorldObject, public GridObject<GameObject>
             m_spellId = id;
         }
         uint32 GetSpellId() const { return m_spellId;}
+
+        void ForcedDespawn(uint32 msTimeToDespawn = 0);
 
         time_t GetRespawnTime() const { return m_respawnTime; }
         time_t GetRespawnTimeEx() const
@@ -734,18 +902,22 @@ class GameObject : public WorldObject, public GridObject<GameObject>
         void Refresh();
         void Delete();
         void getFishLoot(Loot* loot, Player* loot_owner);
-        GameobjectTypes GetGoType() const { return GameobjectTypes(GetByteValue(GAMEOBJECT_BYTES_1, 1)); }
-        void SetGoType(GameobjectTypes type) { SetByteValue(GAMEOBJECT_BYTES_1, 1, type); }
-        GOState GetGoState() const { return GOState(GetByteValue(GAMEOBJECT_BYTES_1, 0)); }
+        GOState GetGoState() const { return GOState(GetByteValue(GAMEOBJECT_FIELD_PERCENT_HEALTH, 0)); }
         void SetGoState(GOState state);
-        uint8 GetGoArtKit() const { return GetByteValue(GAMEOBJECT_FIELD_ANIM_PROGRESS, 1); }
+        GameobjectTypes GetGoType() const { return GameobjectTypes(GetByteValue(GAMEOBJECT_FIELD_PERCENT_HEALTH, 1)); }
+        void SetGoType(GameobjectTypes type) { SetByteValue(GAMEOBJECT_FIELD_PERCENT_HEALTH, 1, type); }
+        void SetGoHealth(uint8 health) { SetByteValue(GAMEOBJECT_FIELD_PERCENT_HEALTH, 3, health); }
+        virtual uint32 GetTransportPeriod() const;
+        uint8 GetGoArtKit() const { return GetByteValue(GAMEOBJECT_FIELD_STATE_SPELL_VISUAL_ID, 1); }
         void SetGoArtKit(uint8 artkit);
-        uint8 GetGoAnimProgress() const { return GetByteValue(GAMEOBJECT_FIELD_ANIM_PROGRESS, 2); }
-        void SetGoAnimProgress(uint8 animprogress) { SetByteValue(GAMEOBJECT_FIELD_ANIM_PROGRESS, 3, animprogress); }
+        uint8 GetGoAnimProgress() const { return GetByteValue(GAMEOBJECT_FIELD_STATE_SPELL_VISUAL_ID, 3); }
+        void SetGoAnimProgress(uint8 animprogress) { SetByteValue(GAMEOBJECT_FIELD_STATE_SPELL_VISUAL_ID, 3, animprogress); }
+        void SetGameobjectTransparence(uint8 transparency) { SetByteValue(GAMEOBJECT_FIELD_STATE_SPELL_VISUAL_ID, 0, transparency); }
         static void SetGoArtKit(uint8 artkit, GameObject* go, uint32 lowguid = 0);
 
         void SetPhaseMask(uint32 newPhaseMask, bool update);
         void EnableCollision(bool enable);
+        void UpdateCollision();
 
         void Use(Unit* user);
 
@@ -783,6 +955,7 @@ class GameObject : public WorldObject, public GridObject<GameObject>
 
         Player* GetLootRecipient() const;
         Group* GetLootRecipientGroup() const;
+        bool IsLootRecipientGroupMember(uint64 guid) const { return m_lootRecipientGroupMembers.empty() || m_lootRecipientGroupMembers.find(guid) != m_lootRecipientGroupMembers.end(); }
         void SetLootRecipient(Unit* unit);
         bool IsLootAllowedFor(Player const* player) const;
         bool HasLootRecipient() const { return m_lootRecipient || m_lootRecipientGroup; }
@@ -797,6 +970,8 @@ class GameObject : public WorldObject, public GridObject<GameObject>
         void ResetDoorOrButton();
 
         void TriggeringLinkedGameObject(uint32 trapEntry, Unit* target);
+
+        bool IsNeverVisible() const override;
 
         bool IsAlwaysVisibleFor(WorldObject const* seer) const;
         bool IsInvisibleDueToDespawn() const;
@@ -813,41 +988,65 @@ class GameObject : public WorldObject, public GridObject<GameObject>
 
         void CastSpell(Unit* target, uint32 spell);
         void SendCustomAnim(uint32 anim);
-        void SendActivateAnim(uint32 anim);
-        bool IsInRange(float x, float y, float z, float radius) const;
+        SpellInfo const* GetSpellForLock(Player const* player) const;
+        bool IsAtInteractDistance(Player const* player, SpellInfo const* spell = nullptr) const;
+        bool IsAtInteractDistance(Position const& pos, float radius) const;
 
         void ModifyHealth(int32 change, Unit* attackerOrHealer = NULL, uint32 spellId = 0);
         // sets GameObject type 33 destruction flags and optionally default health for that state
         void SetDestructibleState(GameObjectDestructibleState state, Player* eventInvoker = NULL, bool setHealth = false);
         GameObjectDestructibleState GetDestructibleState() const
         {
-            if (HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_DESTROYED))
+            if (HasFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_DESTROYED))
                 return GO_DESTRUCTIBLE_DESTROYED;
-            if (HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_DAMAGED))
+            if (HasFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_DAMAGED))
                 return GO_DESTRUCTIBLE_DAMAGED;
             return GO_DESTRUCTIBLE_INTACT;
         }
 
         void EventInform(uint32 eventId);
 
-        uint64 GetRotation() const { return m_rotation; }
         virtual uint32 GetScriptId() const { return GetGOInfo()->ScriptId; }
         GameObjectAI* AI() const { return m_AI; }
 
         std::string GetAIName() const;
         void SetDisplayId(uint32 displayid);
-        uint32 GetDisplayId() const { return GetUInt32Value(GAMEOBJECT_DISPLAYID); }
+        uint32 GetDisplayId() const { return GetUInt32Value(GAMEOBJECT_FIELD_DISPLAY_ID); }
 
-        GameObjectModel * m_model;
+        uint32 GetFaction() const { return GetUInt32Value(GAMEOBJECT_FIELD_FACTION_TEMPLATE); }
+        void SetFaction(uint32 faction) { SetUInt32Value(GAMEOBJECT_FIELD_FACTION_TEMPLATE, faction); }
+
+        GameObjectModel* m_model;
+        void GetRespawnPosition(float &x, float &y, float &z, float* ori = NULL) const;
+
+        Transport* ToTransport() { if (GetGOInfo()->type == GAMEOBJECT_TYPE_TRANSPORT || GetGOInfo()->type == GAMEOBJECT_TYPE_MO_TRANSPORT) return reinterpret_cast<Transport*>(this); else return NULL; }
+        Transport const* ToTransport() const { if (GetGOInfo()->type == GAMEOBJECT_TYPE_TRANSPORT || GetGOInfo()->type == GAMEOBJECT_TYPE_MO_TRANSPORT) return reinterpret_cast<Transport const*>(this); else return NULL; }
+
+        float GetStationaryX() const { if (GetGOInfo()->type != GAMEOBJECT_TYPE_MO_TRANSPORT) return m_stationaryPosition.GetPositionX(); return GetPositionX(); }
+        float GetStationaryY() const { if (GetGOInfo()->type != GAMEOBJECT_TYPE_MO_TRANSPORT) return m_stationaryPosition.GetPositionY(); return GetPositionY(); }
+        float GetStationaryZ() const { if (GetGOInfo()->type != GAMEOBJECT_TYPE_MO_TRANSPORT) return m_stationaryPosition.GetPositionZ(); return GetPositionZ(); }
+        float GetStationaryO() const { if (GetGOInfo()->type != GAMEOBJECT_TYPE_MO_TRANSPORT) return m_stationaryPosition.GetOrientation(); return GetOrientation(); }
+        void RelocateStationaryPosition(float x, float y, float z, float o) { m_stationaryPosition.Relocate(x, y, z, o); }
+
+        uint16 GetAIAnimKitId() const override { return _animKitId; }
+        void SetAnimKitId(uint16 animKitId, bool oneshot);
+
+        void UpdateModelPosition();
+
+        // Event handler
+        EventProcessor m_Events;
+
     protected:
         bool AIM_Initialize();
+        void UpdateModel();                                 // updates model in case displayId were changed
         uint32      m_spellId;
         time_t      m_respawnTime;                          // (secs) time of next respawn (or despawn if GO have owner()),
         uint32      m_respawnDelayTime;                     // (secs) if 0 then current GO state no dependent from timer
         LootState   m_lootState;
         bool        m_spawnedByDefault;
         time_t      m_cooldownTime;                         // used as internal reaction delay time store (not state change reaction).
-                                                            // For traps this: spell casting cooldown, for doors/buttons: reset time.
+        uint32      m_trapCooldownTime = 0;                 // higher resolution timer than time_t, used only for traps
+
         std::list<uint32> m_SkillupList;
 
         Player* m_ritualOwner;                              // used for GAMEOBJECT_TYPE_SUMMONING_RITUAL where GO is not summoned (no owner)
@@ -859,25 +1058,42 @@ class GameObject : public WorldObject, public GridObject<GameObject>
 
         uint32 m_DBTableGuid;                               ///< For new or temporary gameobjects is 0 for saved it is lowguid
         GameObjectTemplate const* m_goInfo;
+        GameObjectTemplateAddon const* m_goTemplateAddon;
         GameObjectData const* m_goData;
-        GameObjectValue * const m_goValue;
+        GameObjectValue m_goValue;
 
-        uint64 m_rotation;
+        int64 m_packedRotation;
+        G3D::Quat m_worldRotation;
+        Position m_stationaryPosition;
 
         uint64 m_lootRecipient;
         uint32 m_lootRecipientGroup;
+        std::set<uint64> m_lootRecipientGroupMembers;
         uint16 m_LootMode;                                  // bitmask, default LOOT_MODE_DEFAULT, determines what loot will be lootable
+
     private:
         void RemoveFromOwner();
         void SwitchDoorOrButton(bool activate, bool alternative = false);
-        void UpdateModel();                                 // updates model in case displayId were changed
+        void UpdatePackedRotation();
 
         //! Object distance/size - overridden from Object::_IsWithinDist. Needs to take in account proper GO size.
         bool _IsWithinDist(WorldObject const* obj, float dist2compare, bool /*is3D*/) const
         {
             //! Following check does check 3d distance
-            return IsInRange(obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ(), dist2compare);
+            return IsAtInteractDistance(obj->GetPosition(), dist2compare);
         }
         GameObjectAI* m_AI;
+        uint16 _animKitId;
 };
+
+class ForcedGoDespawnDelayEvent : public BasicEvent
+{
+    public:
+        ForcedGoDespawnDelayEvent(GameObject& owner) : BasicEvent(), m_owner(owner) { }
+        bool Execute(uint64 e_time, uint32 p_time);
+
+    private:
+        GameObject& m_owner;
+};
+
 #endif

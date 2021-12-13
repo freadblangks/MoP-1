@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -18,23 +21,31 @@
 #ifndef DEF_PIT_OF_SARON_H
 #define DEF_PIT_OF_SARON_H
 
+#include "Map.h"
+#include "Creature.h"
+
 #define PoSScriptName "instance_pit_of_saron"
 #define MAX_ENCOUNTER 3
 
 enum DataTypes
 {
     // Encounter states and GUIDs
-    DATA_GARFROST           = 0,
-    DATA_ICK                = 1,
-    DATA_TYRANNUS           = 2,
+    DATA_GARFROST                               = 0,
+    DATA_ICK                                    = 1,
+    DATA_TYRANNUS                               = 2,
 
     // GUIDs
-    DATA_RIMEFANG           = 3,
-    DATA_KRICK              = 4,
-    DATA_JAINA_SYLVANAS_1   = 5,    // GUID of either Jaina or Sylvanas part 1, depending on team, as it's the same spawn.
-    DATA_JAINA_SYLVANAS_2   = 6,    // GUID of either Jaina or Sylvanas part 2, depending on team, as it's the same spawn.
-    DATA_TYRANNUS_EVENT     = 7,
-    DATA_TEAM_IN_INSTANCE   = 8,
+    DATA_RIMEFANG                               = 3,
+    DATA_KRICK                                  = 4,
+    DATA_JAINA_SYLVANAS_1                       = 5,  // GUID of either Jaina or Sylvanas part 1, depending on team, as it's the same spawn.
+    DATA_JAINA_SYLVANAS_2                       = 6,  // GUID of either Jaina or Sylvanas part 2, depending on team, as it's the same spawn.
+    DATA_TYRANNUS_EVENT                         = 7,
+    DATA_TEAM_IN_INSTANCE                       = 8,
+
+    // Achievements
+    DATA_CAVE_GUARDIAN_SPAWN                    = 9,
+    DATA_CAVE_GUARDIAN_KILL                     = 10,
+    DATA_DONT_LOOK_UP_FAIL                      = 11
 };
 
 enum CreatureIds
@@ -91,7 +102,22 @@ enum GameObjectIds
 {
     GO_SARONITE_ROCK                            = 196485,
     GO_ICE_WALL                                 = 201885,
-    GO_HALLS_OF_REFLECTION_PORTCULLIS           = 201848,
 };
+
+enum Worldstates
+{
+    WORLDSTATE_DOESNT_GO_TO_ELEVEN = 7858,
+    WORLDSTATE_DONT_LOOK_UP        = 7859,
+};
+
+template<class AI>
+AI* GetPitOfSaronAI(Creature* creature)
+{
+    if (InstanceMap* instance = creature->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptId(PoSScriptName))
+                return new AI(creature);
+    return NULL;
+}
 
 #endif

@@ -1,7 +1,7 @@
-#ifndef __BATTLEGROUNDTV_H
-#define __BATTLEGROUNDTV_H
+#ifndef BATTLEGROUND_TV_H
+#define BATTLEGROUND_TV_H
 
-class Battleground;
+#include "Battleground.h"
 
 enum BattlegroundTVObjectTypes
 {
@@ -20,30 +20,28 @@ enum BattlegroundTVObjects
     BG_TV_OBJECT_TYPE_BUFF_2    = 184664
 };
 
-class BattlegroundTVScore : public BattlegroundScore
+struct BattlegroundTVScore : public BattlegroundScore
 {
-    public:
-        BattlegroundTVScore() {};
-        virtual ~BattlegroundTVScore() {};
 };
 
 class BattlegroundTV : public Battleground
 {
-    public:
-        BattlegroundTV();
-        ~BattlegroundTV();
+public:
+    BattlegroundTV();
+    ~BattlegroundTV();
 
-        /* inherited from BattlegroundClass */
-        virtual void AddPlayer(Player* player);
-        virtual void StartingEventCloseDoors();
-        virtual void StartingEventOpenDoors();
+    /* inherited from BattlegroundClass */
+    void AddPlayer(Player* player) override;
+    void OnInvite(Player* player, GroupQueueInfo const* ginfo) override;
+    void StartingEventCloseDoors() override;
+    void StartingEventOpenDoors() override;
 
-        void RemovePlayer(Player* player, uint64 guid, uint32 team);
-        void HandleAreaTrigger(Player* Source, uint32 Trigger);
-        bool SetupBattleground();
-        virtual void Reset();
-        virtual void FillInitialWorldStates(WorldPacket &d);
-        void HandleKillPlayer(Player* player, Player* killer);
-        bool HandlePlayerUnderMap(Player* player);
+    void RemovePlayer(Player* player, uint64 guid, uint32 team);
+    void HandleAreaTrigger(Player* Source, uint32 Trigger);
+    bool SetupBattleground();
+    void Reset() override;
+    void FillInitialWorldStates(WorldStateBuilder& builder) override;
+    void HandleKillPlayer(Player* player, Player* killer);
+    bool HandlePlayerUnderMap(Player* player);
 };
 #endif

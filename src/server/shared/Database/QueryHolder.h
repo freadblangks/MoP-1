@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -27,8 +29,8 @@ class SQLQueryHolder
         typedef std::pair<SQLElementData, SQLResultSetUnion> SQLResultPair;
         std::vector<SQLResultPair> m_queries;
     public:
-        SQLQueryHolder() {}
-        ~SQLQueryHolder();
+        SQLQueryHolder() { }
+        virtual ~SQLQueryHolder();
         bool SetQuery(size_t index, const char *sql);
         bool SetPQuery(size_t index, const char *format, ...) ATTR_PRINTF(3, 4);
         bool SetPreparedQuery(size_t index, PreparedStatement* stmt);
@@ -46,12 +48,10 @@ class SQLQueryHolderTask : public SQLOperation
     private:
         SQLQueryHolder * m_holder;
         QueryResultHolderFuture m_result;
-		bool m_executed;
 
     public:
         SQLQueryHolderTask(SQLQueryHolder *holder, QueryResultHolderFuture res)
-            : m_holder(holder), m_result(res), m_executed(false) {};
-        ~SQLQueryHolderTask();
+            : m_holder(holder), m_result(res){ };
         bool Execute();
 
 };

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2011-2021 Project SkyFire <https://www.projectskyfire.org/>
- * Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2021 MaNGOS <https://www.getmangos.eu/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -23,6 +23,7 @@
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
 #include <algorithm>
+#include <ace/Auto_Ptr.h>
 
 BigNumber::BigNumber()
     : _bn(BN_new())
@@ -170,8 +171,7 @@ bool BigNumber::isZero() const
     return BN_is_zero(_bn);
 }
 
-
-uint8* BigNumber::AsByteArray(int32 minSize, bool littleEndian)
+ACE_Auto_Array_Ptr<uint8> BigNumber::AsByteArray(int32 minSize, bool littleEndian)
 {
     int length = (minSize >= GetNumBytes()) ? minSize : GetNumBytes();
 
@@ -181,15 +181,13 @@ uint8* BigNumber::AsByteArray(int32 minSize, bool littleEndian)
     if (length > GetNumBytes())
         memset((void*)array, 0, length);
 
-    int paddingOffset = length - GetNumBytes();
-
-    BN_bn2bin(_bn, (unsigned char *)array + paddingOffset);
+    BN_bn2bin(_bn, (unsigned char *)array);
 
     // openssl's BN stores data internally in big endian format, reverse if little endian desired
     if (littleEndian)
         std::reverse(array, array + length);
 
-    uint8* ret(array);
+    ACE_Auto_Array_Ptr<uint8> ret(array);
     return ret;
 }
 

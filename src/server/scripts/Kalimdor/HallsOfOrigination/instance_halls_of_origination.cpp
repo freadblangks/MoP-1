@@ -3,25 +3,19 @@
 
 #define MAX_ENCOUNTER 7
 
-static const DoorData doorData[] =
+static std::vector<DoorData> doorData =
 {
     {GO_DOOR_ULDUM_14,              DATA_TEMPLE_GUARDIAN_ANHUUR, DOOR_TYPE_ROOM,    BOUNDARY_NONE},
     {GO_ANHUUR_BRIDGE,              DATA_TEMPLE_GUARDIAN_ANHUUR, DOOR_TYPE_PASSAGE, BOUNDARY_NONE},
     {GO_DOOR_ULDUM_15,              DATA_TEMPLE_GUARDIAN_ANHUUR, DOOR_TYPE_PASSAGE, BOUNDARY_NONE},
     {GO_ANHUUR_ELEVATOR,            DATA_TEMPLE_GUARDIAN_ANHUUR, DOOR_TYPE_PASSAGE, BOUNDARY_NONE},
     {GO_VAULT_OF_LIGHTS_ENTR_DOOR,  DATA_ANRAPHET,               DOOR_TYPE_PASSAGE, BOUNDARY_NONE},
-    {0,                0,                                        DOOR_TYPE_ROOM,    BOUNDARY_NONE} // END
 };
 
 class instance_halls_of_origination : public InstanceMapScript
 {
     public:
         instance_halls_of_origination() : InstanceMapScript("instance_halls_of_origination", 644) { }
-
-        InstanceScript* GetInstanceScript(InstanceMap *map) const
-        {
-            return new instance_halls_of_origination_InstanceMapScript(map);
-        }
 
         struct instance_halls_of_origination_InstanceMapScript: public InstanceScript
         {
@@ -44,63 +38,74 @@ class instance_halls_of_origination : public InstanceMapScript
                 uiAnhuurBridgeGUID = 0;
                 uiAnraphetEntranceDoorGUID = 0;
                 uiAnraphetBossDoorGUID = 0;
+
+                archaeologyQuestAura = 0;
+                instance->SetWorldState(WORLDSTATE_FASTER_THAN_THE_SPEED_OF_LIGHT, 1); // by default, controlled by achiev timer
             }
 
-            void OnPlayerEnter(Player* player)
+            void OnPlayerEnter(Player* player) override
             {
                 if (!uiTeamInInstance)
                     uiTeamInInstance = player->GetTeam();
+
+                if (archaeologyQuestAura)
+                    if (!player->HasAura(archaeologyQuestAura))
+                        player->CastSpell(player, archaeologyQuestAura, true);
             }
 
-            void OnCreatureCreate(Creature* pCreature)
+            void OnCreatureCreate(Creature* creature) override
             {
                 if (!uiTeamInInstance)
                 {
                     Map::PlayerList const &players = instance->GetPlayers();
                     if (!players.isEmpty())
-                        if (Player* player = players.begin()->getSource())
+                        if (Player* player = players.begin()->GetSource())
                             uiTeamInInstance = player->GetTeam();
                 }
 
-                switch (pCreature->GetEntry())
+                switch (creature->GetEntry())
                 {
                     case NPC_TEMPLE_GUARDIAN_ANHUUR:
-                        uiTempleGuardianAnhuurGUID = pCreature->GetGUID();
+                        uiTempleGuardianAnhuurGUID = creature->GetGUID();
                         break;
                     case NPC_EARTHRAGER_PTAH:
-                        uiEarthragerPtahGUID = pCreature->GetGUID();
+                        uiEarthragerPtahGUID = creature->GetGUID();
                         break;
                     case NPC_ANRAPHET:
-                        uiAnraphetGUID = pCreature->GetGUID();
+                        uiAnraphetGUID = creature->GetGUID();
                         if (uiWardensDone >= 4)
                         {
-                            pCreature->RemoveFlag(UNIT_FIELD_FLAGS,UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE);
-                            pCreature->SetHomePosition(-203.93f, 368.71f, 75.92f, pCreature->GetOrientation());
+                            creature->RemoveFlag(UNIT_FIELD_FLAGS,UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE);
+                            creature->SetHomePosition(-203.93f, 368.71f, 75.92f, creature->GetOrientation());
                             //DoTeleportTo(-203.93f, 368.71f, 75.92f);
-                            pCreature->GetMotionMaster()->MovePoint(0, -203.93f, 368.71f, 75.92f);
+                            creature->GetMotionMaster()->MovePoint(0, -203.93f, 368.71f, 75.92f);
                         }
                         break;
                     case NPC_ISISET:
-                        uiIsisetGUID = pCreature->GetGUID();
+                        uiIsisetGUID = creature->GetGUID();
                         break;
                     case NPC_AMMUNAE:
-                        uiAmmunaeGUID = pCreature->GetGUID();
+                        uiAmmunaeGUID = creature->GetGUID();
                         break;
                     case NPC_SETESH:
-                        uiSeteshGUID = pCreature->GetGUID();
+                        uiSeteshGUID = creature->GetGUID();
                         break;
                     case NPC_RAJH:
-                        uiRajhGUID = pCreature->GetGUID();
+                        uiRajhGUID = creature->GetGUID();
                         break;
                     case NPC_BRANN_BRONZEBEARD:
-                        uiBrannGUID = pCreature->GetGUID();
+                        uiBrannGUID = creature->GetGUID();
                         if (GetBossState(DATA_ANRAPHET) == DONE)
-                            pCreature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                        break;
+                    case NPC_BEETLE_STALKER:
+                    case NPC_ALPHA_BEAM:
+                        creature->SetDisplayId(11686);
                         break;
                 }
             }
 
-            void OnGameObjectCreate(GameObject* go)
+            void OnGameObjectCreate(GameObject* go) override
             {
                 switch (go->GetEntry()) 
                 {
@@ -124,9 +129,9 @@ class instance_halls_of_origination : public InstanceMapScript
                 }
             }
 
-            uint64 GetData64(uint32 identifier)
+            uint64 GetData64(uint32 type) const override
             {
-                switch(identifier)
+                switch (type)
                 {
                     case DATA_TEMPLE_GUARDIAN_ANHUUR:
                         return uiTempleGuardianAnhuurGUID;
@@ -152,20 +157,19 @@ class instance_halls_of_origination : public InstanceMapScript
                 return 0;
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
                 if (!InstanceScript::SetBossState(type, state))
                     return false;
-                
+
                 return true;
             }
 
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
                 switch (type)
                 {
                     case DATA_WARDENS:
-
                         uiWardensDone += data;
                         
                         if (uiWardensDone == 4)
@@ -175,7 +179,7 @@ class instance_halls_of_origination : public InstanceMapScript
                             if (Creature* pAnraphet = instance->GetCreature(uiAnraphetGUID))
                                 pAnraphet->AI()->DoAction(1);
                         }
-                            
+
                         switch (uiWardensDone)
                         {
                             case 1:
@@ -187,22 +191,30 @@ class instance_halls_of_origination : public InstanceMapScript
                                 break;
                         }
                         break;
+                    case uint32(-1):
+                        archaeologyQuestAura = data;
+                        break;
+                    case DATA_ANRAPHET:
+                        if (data == DONE)
+                            if (GameObject* uiElevator = instance->GetGameObject(uiOriginationElevatorGUID))
+                                DoRespawnGameObject(uiElevator->GetGUID(), 1 * DAY);
+                        break;
                 }
                 SaveToDB();
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
                 std::ostringstream saveStream;
-                saveStream << "H O" << GetBossSaveData() << uiWardensDone << " "; 
+                saveStream << "H O" << GetBossSaveData() << uiWardensDone << " " << archaeologyQuestAura; 
 
                 OUT_SAVE_INST_DATA_COMPLETE;
                 return saveStream.str();
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -232,6 +244,7 @@ class instance_halls_of_origination : public InstanceMapScript
                     //uiWardensDone = wardens;
                     if (wardens > 4) wardens = 4;
                     SetData(DATA_WARDENS, wardens);
+                    loadStream >> archaeologyQuestAura;
                 }else OUT_LOAD_INST_DATA_FAIL;
 
                 OUT_LOAD_INST_DATA_COMPLETE;
@@ -255,7 +268,13 @@ class instance_halls_of_origination : public InstanceMapScript
                 uint64 uiAnraphetEntranceDoorGUID;
                 uint64 uiAnraphetBossDoorGUID;
 
+                uint32 archaeologyQuestAura;
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_halls_of_origination_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_halls_of_origination()

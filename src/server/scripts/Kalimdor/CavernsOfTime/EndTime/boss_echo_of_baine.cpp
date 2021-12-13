@@ -42,14 +42,9 @@ class boss_echo_of_baine : public CreatureScript
     public:
         boss_echo_of_baine() : CreatureScript("boss_echo_of_baine") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_echo_of_baineAI(pCreature);
-        }
-
         struct boss_echo_of_baineAI : public BossAI
         {
-            boss_echo_of_baineAI(Creature* pCreature) : BossAI(pCreature, DATA_ECHO_OF_BAINE)
+            boss_echo_of_baineAI(Creature* creature) : BossAI(creature, DATA_ECHO_OF_BAINE)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -69,41 +64,32 @@ class boss_echo_of_baine : public CreatureScript
 
             bool bIntroDone;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
-                me->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, 5.0f);
-                me->SetFloatValue(UNIT_FIELD_COMBATREACH, 5.0f);
+                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, 5.0f);
+                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, 5.0f);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
 
-                events.ScheduleEvent(EVENT_PULVERIZE, 60000);
-                events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
-                events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
+                events.ScheduleEvent(EVENT_PULVERIZE, 30000);
+                events.ScheduleEvent(EVENT_THROW_TOTEM, 10000);
                 events.ScheduleEvent(EVENT_CHECK_SELF, 1000);
 
                 instance->SetBossState(DATA_ECHO_OF_BAINE, IN_PROGRESS);
                 DoZoneInCombat();
             }
 
-            void EnterEvadeMode()
+            void EnterEvadeMode() override
             {
                 instance->SetData(DATA_PLATFORMS, NOT_STARTED);
                 BossAI::EnterEvadeMode();
             }
 
-            void MoveInLineOfSight(Unit* who)
+            void MoveInLineOfSight(Unit* who) override
             {
                 if (bIntroDone)
                     return;
@@ -118,33 +104,35 @@ class boss_echo_of_baine : public CreatureScript
                 bIntroDone = true;
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_THROW_TOTEM_AURA);
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_THROW_TOTEM_BACK);
 
                 // Quest
                 Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
                 if (!PlayerList.isEmpty())
                     for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_BAINE, true);
+                        if (Player* player = i->GetSource())
+                            if (me->GetDistance2d(player) <= 150.0f && player->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
+                                DoCast(player, SPELL_ARCHIVED_BAINE, true);
             }
 
-            void KilledUnit(Unit * /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == EFFECT_MOTION_TYPE)
-                    if (data == EVENT_JUMP)
+                    if (pointId == EVENT_JUMP)
                         DoCastAOE(SPELL_PULVERIZE_DMG);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -159,8 +147,8 @@ class boss_echo_of_baine : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CHECK_SELF:
-                            //if (me->HasUnitMovementFlag(MOVEMENTFLAG_SWIMMING) && !me->HasAura(SPELL_MOLTEN_AXE))
-                                //DoCast(me, SPELL_MOLTEN_AXE);
+                            if (me->IsInWater() && !me->HasAura(SPELL_MOLTEN_AXE))
+                                DoCast(me, SPELL_MOLTEN_AXE);
                             if (me->GetPositionY() < 1398.0f)
                             {
                                 EnterEvadeMode();
@@ -171,18 +159,21 @@ class boss_echo_of_baine : public CreatureScript
                         case EVENT_PULVERIZE:
                             Talk(SAY_SPELL);
                             DoCastAOE(SPELL_PULVERIZE_AOE);
-                            events.ScheduleEvent(EVENT_PULVERIZE, 60000);
-                            events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
-                            events.ScheduleEvent(EVENT_THROW_TOTEM, 25000);
+                            events.ScheduleEvent(EVENT_PULVERIZE, 40000);
                             break;
                         case EVENT_THROW_TOTEM:
                         {
-                            Unit* pTarget = NULL;
-                            pTarget = SelectTarget(SELECT_TARGET_FARTHEST, 1, PositionSelector());
-                            if (!pTarget)
-                                pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector());
-                            if (pTarget)
-                                DoCast(pTarget, SPELL_THROW_TOTEM);
+                            Unit* target = NULL;
+                            target = SelectTarget(SELECT_TARGET_FARTHEST, 1, PositionSelector());
+                            if (!target)
+                                target = SelectTarget(SELECT_TARGET_RANDOM, 0, PositionSelector());
+                            if (target)
+                            {
+                                DoCast(target, SPELL_THROW_TOTEM);
+                                events.ScheduleEvent(EVENT_THROW_TOTEM, 26000);
+                            }
+                            else
+                                events.ScheduleEvent(EVENT_THROW_TOTEM, 1000);
                             break;
                         }
                     }
@@ -190,12 +181,12 @@ class boss_echo_of_baine : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
             struct PositionSelector : public std::unary_function<Unit*, bool>
             {
                 public:
-                    
-                    //PositionSelector(bool b) : _b(b) {}
+                    //PositionSelector(bool b) : _b(b) { }
 
                     bool operator()(Unit const* target) const
                     {
@@ -213,7 +204,12 @@ class boss_echo_of_baine : public CreatureScript
                 private:
                     bool _b;
             };
-        };      
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_echo_of_baineAI>(creature);
+        }        
 };
 
 class npc_echo_of_baine_baines_totem : public CreatureScript
@@ -221,30 +217,32 @@ class npc_echo_of_baine_baines_totem : public CreatureScript
     public:
         npc_echo_of_baine_baines_totem() : CreatureScript("npc_echo_of_baine_baines_totem") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_echo_of_baine_baines_totemAI : public ScriptedAI
         {
-            return new npc_echo_of_baine_baines_totemAI(pCreature);
-        }
-
-        struct npc_echo_of_baine_baines_totemAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_baine_baines_totemAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_echo_of_baine_baines_totemAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 bDespawn = false;
+                SetCombatMovement(false);
             }
 
             bool bDespawn;
 
-            void OnSpellClick(Unit* /*who*/)
+            void OnSpellClick(Unit* clicker, bool& /*result*/) override
             {
                 if (!bDespawn)
                 {
                     bDespawn = true;
                     me->DespawnOrUnsummon();
+                    clicker->SetSheath(SHEATH_STATE_UNARMED);
                 }
             }
-        };      
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_echo_of_baine_baines_totemAI>(creature);
+        }
 };
 
 class spell_echo_of_baine_pulverize_aoe : public SpellScriptLoader
@@ -258,7 +256,7 @@ class spell_echo_of_baine_pulverize_aoe : public SpellScriptLoader
 
             void FilterTargets(std::list<WorldObject*>& targets)
             {
-                if (!GetCaster() || !GetCaster()->getVictim())
+                if (!GetCaster() || !GetCaster()->GetVictim())
                     return;
 
                 std::list<WorldObject*> tempList;
@@ -267,29 +265,29 @@ class spell_echo_of_baine_pulverize_aoe : public SpellScriptLoader
                         tempList.push_back((*itr));
 
                 if (tempList.size() > 1)
-                    tempList.remove(GetCaster()->getVictim());
+                    tempList.remove(GetCaster()->GetVictim());
 
                 targets.clear();
                 if (!tempList.empty())
-                    targets.push_back(JadeCore::Containers::SelectRandomContainerElement(tempList));
+                    targets.push_back(Trinity::Containers::SelectRandomContainerElement(tempList));
             }
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
+            {
                 if (!GetCaster() || !GetHitUnit())
                     return;
 
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_PULVERIZE, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_echo_of_baine_pulverize_aoe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 OnEffectHitTarget += SpellEffectFn(spell_echo_of_baine_pulverize_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_echo_of_baine_pulverize_aoe_SpellScript();
         }

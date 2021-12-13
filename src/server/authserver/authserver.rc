@@ -1,20 +1,21 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+  *  Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+  *  Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+  *  Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+  *
+  *  This program is free software; you can redistribute it and/or modify it
+  *  under the terms of the GNU General Public License as published by the
+  *  Free Software Foundation; either version 3 of the License, or (at your
+  *  option) any later version.
+  *
+  *  This program is distributed in the hope that it will be useful, but WITHOUT
+  *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  *  FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+  *  more details.
+  *
+  *  You should have received a copy of the GNU General Public License along
+  *  with this program. If not, see <http://www.gnu.org/licenses/>.
+  */
 
 #include "resource.h"
 #include "revision.h"
@@ -53,8 +54,8 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_SYS_DEFAULT
 //
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     VER_FILEVERSION
-PRODUCTVERSION  VER_PRODUCTVERSION
+FILEVERSION     FILEVER
+PRODUCTVERSION  PRODUCTVER
 
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 
@@ -75,14 +76,13 @@ BEGIN
     BEGIN
         BLOCK "080004b0"
         BEGIN
-            VALUE "CompanyName",        VER_COMPANYNAME_STR
-            VALUE "FileDescription",    "JadeCore Authentication Server Daemon"
-            VALUE "FileVersion",        VER_FILEVERSION_STR
+            VALUE "FileDescription",    "authserver"
+            VALUE "FileVersion",        STRFILEVER
             VALUE "InternalName",       "authserver"
-            VALUE "LegalCopyright",     VER_LEGALCOPYRIGHT_STR
+            VALUE "LegalCopyright",     "Copyright (C) 2008-2016"
             VALUE "OriginalFilename",   "authserver.exe"
-            VALUE "ProductName",        "JadeCore Authentication Server"
-            VALUE "ProductVersion",     VER_PRODUCTVERSION_STR
+            VALUE "ProductName",        "authserver"
+            VALUE "ProductVersion",     STRPRODUCTVER
         END
     END
 

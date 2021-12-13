@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,15 +18,13 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "ScriptedGossip.h"
-#include "SpellScript.h"
-#include "SpellAuraEffects.h"
+#include "ScriptPCH.h"
 #include "CombatAI.h"
 #include "Player.h"
 #include "Vehicle.h"
 #include "oculus.h"
+
+#define HAS_ESSENCE(a) ((a)->HasItemCount(ITEM_EMERALD_ESSENCE,1) || (a)->HasItemCount(ITEM_AMBER_ESSENCE,1) || (a)->HasItemCount(ITEM_RUBY_ESSENCE,1))
 
 enum GossipNPCs
 {
@@ -38,44 +39,50 @@ enum GossipNPCs
 
 enum Drakes
 {
-/*Ruby Drake,
-(npc 27756) (item 37860)
-(summoned by spell Ruby Essence = 37860 ---> Call Amber Drake == 49462 ---> Summon 27756)
-*/
-    SPELL_RIDE_RUBY_DRAKE_QUE                     = 49463,          //Apply Aura: Periodic Trigger, Interval: 3 seconds ---> 49464
-    SPELL_RUBY_DRAKE_SADDLE                       = 49464,          //Allows you to ride on the back of an Amber Drake. ---> Dummy
-    SPELL_RUBY_SEARING_WRATH                      = 50232,          //(60 yds) - Instant - Breathes a stream of fire at an enemy dragon, dealing 6800 to 9200 Fire damage and then jumping to additional dragons within 30 yards. Each jump increases the damage by 50%. Affects up to 5 total targets
-    SPELL_RUBY_EVASIVE_AURA                       = 50248,          //Instant - Allows the Ruby Drake to generate Evasive Charges when hit by hostile attacks and spells.
-    SPELL_RUBY_EVASIVE_MANEUVERS                  = 50240,          //Instant - 5 sec. cooldown - Allows your drake to dodge all incoming attacks and spells. Requires Evasive Charges to use. Each attack or spell dodged while this ability is active burns one Evasive Charge. Lasts 30 sec. or until all charges are exhausted.
-    //you do not have acces to until you kill Mage-Lord Urom
-    SPELL_RUBY_MARTYR                             = 50253,          //Instant - 10 sec. cooldown - Redirect all harmful spells cast at friendly drakes to yourself for 10 sec.
+/*
+ * Ruby Drake (27756)
+ * (summoned by spell Ruby Essence (37860) --> Call Amber Drake (49462) --> Summon 27756)
+ */
+    SPELL_RIDE_RUBY_DRAKE_QUE           = 49463,          // Apply Aura: Periodic Trigger, Interval: 3 seconds --> 49464
+    SPELL_RUBY_DRAKE_SADDLE             = 49464,          // Allows you to ride on the back of an Amber Drake. --> Dummy
+    SPELL_RUBY_SEARING_WRATH            = 50232,          // (60 yds) - Instant - Breathes a stream of fire at an enemy dragon, dealing 6800 to 9200 Fire damage and then jumping to additional dragons within 30 yards. Each jump increases the damage by 50%. Affects up to 5 total targets
+    SPELL_RUBY_EVASIVE_AURA             = 50248,          // Instant - Allows the Ruby Drake to generate Evasive Charges when hit by hostile attacks and spells.
+    SPELL_RUBY_EVASIVE_CHARGES          = 50241,
+    SPELL_RUBY_EVASIVE_MANEUVERS        = 50240,          // Instant - 5 sec. cooldown - Allows your drake to dodge all incoming attacks and spells. Requires Evasive Charges to use. Each attack or spell dodged while this ability is active burns one Evasive Charge. Lasts 30 sec. or until all charges are exhausted.
+    // you do not have acces to until you kill Mage-Lord Urom
+    SPELL_RUBY_MARTYR                   = 50253,          // Instant - 10 sec. cooldown - Redirect all harmful spells cast at friendly drakes to yourself for 10 sec.
 
-/*Amber Drake,
-(npc 27755)  (item 37859)
-(summoned by spell Amber Essence = 37859 ---> Call Amber Drake == 49461 ---> Summon 27755)
-*/
-    SPELL_RIDE_AMBER_DRAKE_QUE                    = 49459,          //Apply Aura: Periodic Trigger, Interval: 3 seconds ---> 49460
-    SPELL_AMBER_DRAKE_SADDLE                      = 49460,          //Allows you to ride on the back of an Amber Drake. ---> Dummy
-    SPELL_AMBER_SHOCK_CHARGE                      = 49836,
-    SPELL_AMBER_SHOCK_LANCE                       = 49840,          //(60 yds) - Instant - Deals 4822 to 5602 Arcane damage and detonates all Shock Charges on an enemy dragon. Damage is increased by 6525 for each detonated.
-    // SPELL_AMBER_STOP_TIME                                        //Instant - 1 min cooldown - Halts the passage of time, freezing all enemy dragons in place for 10 sec. This attack applies 5 Shock Charges to each affected target.
-    //you do not have access to until you kill the  Mage-Lord Urom.
-    SPELL_AMBER_TEMPORAL_RIFT                     = 49592,          //(60 yds) - Channeled - Channels a temporal rift on an enemy dragon for 10 sec. While trapped in the rift, all damage done to the target is increased by 100%. In addition, for every 15, 000 damage done to a target affected by Temporal Rift, 1 Shock Charge is generated.
+/*
+ * Amber Drake (27755)
+ * (summoned by spell Amber Essence (37859) --> Call Amber Drake (49461) --> Summon 27755)
+ */
+    SPELL_RIDE_AMBER_DRAKE_QUE          = 49459,          // Apply Aura: Periodic Trigger, Interval: 3 seconds --> 49460
+    SPELL_AMBER_DRAKE_SADDLE            = 49460,          // Allows you to ride on the back of an Amber Drake. --> Dummy
+    SPELL_AMBER_SHOCK_CHARGE            = 49836,
+    SPELL_AMBER_SHOCK_LANCE             = 49840,          // (60 yds) - Instant - Deals 4822 to 5602 Arcane damage and detonates all Shock Charges on an enemy dragon. Damage is increased by 6525 for each detonated.
+    SPELL_AMBER_STOP_TIME               = 49838,          // Instant - 1 min cooldown - Halts the passage of time, freezing all enemy dragons in place for 10 sec. This attack applies 5 Shock Charges to each affected target.
+    // you do not have access to until you kill the Mage-Lord Urom.
+    SPELL_AMBER_TEMPORAL_RIFT           = 49592,          // (60 yds) - Channeled - Channels a temporal rift on an enemy dragon for 10 sec. While trapped in the rift, all damage done to the target is increased by 100%. In addition, for every 15, 000 damage done to a target affected by Temporal Rift, 1 Shock Charge is generated.
 
-/*Emerald Drake,
-(npc 27692)  (item 37815),
- (summoned by spell Emerald Essence = 37815 ---> Call Emerald Drake == 49345 ---> Summon 27692)
-*/
-    SPELL_RIDE_EMERALD_DRAKE_QUE                  = 49427,         //Apply Aura: Periodic Trigger, Interval: 3 seconds ---> 49346
-    SPELL_EMERALD_DRAKE_SADDLE                    = 49346,         //Allows you to ride on the back of an Amber Drake. ---> Dummy
-    SPELL_EMERALD_LEECHING_POISON                 = 50328,         //(60 yds) - Instant - Poisons the enemy dragon, leeching 1300 to the caster every 2 sec. for 12 sec. Stacks up to 3 times.
-    SPELL_EMERALD_TOUCH_THE_NIGHTMARE             = 50341,         //(60 yds) - Instant - Consumes 30% of the caster's max health to inflict 25, 000 nature damage to an enemy dragon and reduce the damage it deals by 25% for 30 sec.
+/*
+ * Emerald Drake (27692)
+ * (summoned by spell Emerald Essence (37815) --> Call Emerald Drake (49345) --> Summon 27692)
+ */
+    SPELL_RIDE_EMERALD_DRAKE_QUE        = 49427,         // Apply Aura: Periodic Trigger, Interval: 3 seconds --> 49346
+    SPELL_EMERALD_DRAKE_SADDLE          = 49346,         // Allows you to ride on the back of an Amber Drake. --> Dummy
+    SPELL_EMERALD_LEECHING_POISON       = 50328,         // (60 yds) - Instant - Poisons the enemy dragon, leeching 1300 to the caster every 2 sec. for 12 sec. Stacks up to 3 times.
+    SPELL_EMERALD_TOUCH_THE_NIGHTMARE   = 50341,         // (60 yds) - Instant - Consumes 30% of the caster's max health to inflict 25, 000 nature damage to an enemy dragon and reduce the damage it deals by 25% for 30 sec.
     // you do not have access to until you kill the Mage-Lord Urom
-    SPELL_EMERALD_DREAM_FUNNEL                    = 50344,         //(60 yds) - Channeled - Transfers 5% of the caster's max health to a friendly drake every second for 10 seconds as long as the caster channels.
+
+    SPELL_FLIGHT                        = 50296,
+    SPELL_SOAR                          = 50325,
+    SPELL_DRAKE_FLAG_VISUAL             = 53797,
+    SPELL_SIMPLE_TELEPORT               = 12980,
 
     // Misc
-    POINT_LAND                                    = 2,
-    POINT_TAKE_OFF                                = 3
+    POINT_LAND                          = 2,
+    POINT_TAKE_OFF                      = 3,
+    ACTION_GPS                          = 1,
 };
 
 enum DrakeEvents
@@ -92,12 +99,19 @@ enum Says
 {
     SAY_VAROS                         = 0,
     SAY_UROM                          = 1,
+    SAY_SPECIAL                       = 2,
     SAY_BELGARISTRASZ                 = 0,
     SAY_DRAKES_TAKEOFF                = 0,
+
     WHISPER_DRAKES_WELCOME            = 1,
     WHISPER_DRAKES_ABILITIES          = 2,
     WHISPER_DRAKES_SPECIAL            = 3,
-    WHISPER_DRAKES_LOWHEALTH          = 4
+    WHISPER_DRAKES_LOWHEALTH          = 4,
+    WHISPER_DRAKES_GPS_CONSTRUCTS     = 5,
+    WHISPER_DRAKES_GPS_CONSTRUCT      = 6,
+    WHISPER_DRAKES_GPS_VAROS          = 7,
+    WHISPER_DRAKES_GPS_UROM           = 8,
+    WHISPER_DRAKES_GPS_EREGOS         = 9,
 };
 
 class npc_verdisa_beglaristrasz_eternos : public CreatureScript
@@ -125,16 +139,16 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                 player->DestroyItemCount(itemId, 1, true, false);
             }
 
-            void sGossipSelect(Player* player, uint32 menuId, uint32 gossipListId) 
+            void sGossipSelect(Player* player, uint32 menuId, uint32 action) override
             {
                 switch (menuId)
                 {
                     case GOSSIP_MENU_VERDISA:
-                        if (gossipListId >= 1 && gossipListId <= 3)
+                        if (action >= 1 && action <= 3)
                         {
-                            if (gossipListId == 2)
+                            if (action == 2)
                                 RemoveEssence(player, ITEM_AMBER_ESSENCE);
-                            else if (gossipListId == 3)
+                            else if (action == 3)
                                 RemoveEssence(player, ITEM_RUBY_ESSENCE);
 
                             StoreEssence(player, ITEM_EMERALD_ESSENCE);
@@ -142,11 +156,11 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                         }
                         return;
                     case GOSSIP_MENU_ETERNOS:
-                        if (gossipListId >= 1 && gossipListId <= 3)
+                        if (action >= 1 && action <= 3)
                         {
-                            if (gossipListId == 2)
+                            if (action == 2)
                                 RemoveEssence(player, ITEM_EMERALD_ESSENCE);
-                            else if (gossipListId == 3)
+                            else if (action == 3)
                                 RemoveEssence(player, ITEM_RUBY_ESSENCE);
 
                             StoreEssence(player, ITEM_AMBER_ESSENCE);
@@ -154,11 +168,11 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                         }
                         return;
                     case GOSSIP_MENU_BELGARISTRASZ:
-                        if (gossipListId <= 2)
+                        if (action <= 2)
                         {
-                            if (gossipListId == 1)
+                            if (action == 1)
                                 RemoveEssence(player, ITEM_AMBER_ESSENCE);
-                            else if (gossipListId == 2)
+                            else if (action == 2)
                                 RemoveEssence(player, ITEM_EMERALD_ESSENCE);
 
                             StoreEssence(player, ITEM_RUBY_ESSENCE);
@@ -171,9 +185,9 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                 player->PlayerTalkClass->SendCloseGossip();
             }
 
-            void MovementInform(uint32 /*type*/, uint32 id) 
+            void MovementInform(uint32 /*type*/, uint32 pointId) override
             {
-                if (id != POINT_MOVE_OUT)
+                if (pointId != POINT_MOVE_OUT)
                     return;
 
                 // When Belgaristraz finish his moving say grateful text
@@ -181,13 +195,13 @@ class npc_verdisa_beglaristrasz_eternos : public CreatureScript
                     Talk(SAY_BELGARISTRASZ);
 
                 // The gossip flag should activate when Drakos die and not from DB
-                me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const 
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_verdisa_beglaristrasz_eternosAI(creature);
+            return GetOculusAI<npc_verdisa_beglaristrasz_eternosAI>(creature);
         }
 };
 
@@ -200,25 +214,57 @@ class npc_image_belgaristrasz : public CreatureScript
         {
             npc_image_belgaristraszAI(Creature* creature) : ScriptedAI(creature) { }
 
-            void IsSummonedBy(Unit* summoner) 
+            void IsSummonedBy(Unit* summoner) override
             {
+                DoCast(me, SPELL_SIMPLE_TELEPORT, true);
+
+                uint64 summonerGUID = summoner->GetGUID();
                 if (summoner->GetEntry() == NPC_VAROS)
                 {
-                   Talk(SAY_VAROS);
-                   me->DespawnOrUnsummon(60000);
+                    uint32 delay = 0;
+                    me->m_Events.Schedule(delay += 6000, [this, summonerGUID]
+                    {
+                        me->HandleEmoteStateCommand(EMOTE_STATE_TALK);
+                        Talk(SAY_VAROS, ObjectAccessor::GetPlayer(*me, summonerGUID));
+                    });
+                    me->m_Events.Schedule(delay += 6000, [this]
+                    {
+                        me->HandleEmoteStateCommand(0);
+                        me->DespawnOrUnsummon(60000);
+                    });
                 }
 
                 if (summoner->GetEntry() == NPC_UROM)
                 {
-                   Talk(SAY_UROM);
-                   me->DespawnOrUnsummon(60000);
+                    uint32 delay = 0;
+                    me->m_Events.Schedule(delay += 6000, [this, summonerGUID]
+                    {
+                        me->HandleEmoteStateCommand(EMOTE_STATE_TALK);
+                        Talk(SAY_UROM, ObjectAccessor::GetPlayer(*me, summonerGUID));
+                    });
+                    me->m_Events.Schedule(delay += 7000, [this, summonerGUID]
+                    {
+                        Talk(SAY_SPECIAL, ObjectAccessor::GetPlayer(*me, summonerGUID));
+                    });
+                    me->m_Events.Schedule(delay += 6000, [this]
+                    {
+                        me->HandleEmoteStateCommand(0);
+                        me->DespawnOrUnsummon(60000);
+                    });
+                }
+
+                if (summoner->GetEntry() == NPC_EREGOS)
+                {
+                    uint32 delay = 0;
+                    me->m_Events.Schedule(delay += 6000, [this] { me->HandleEmoteStateCommand(EMOTE_STATE_TALK); });
+                    me->m_Events.Schedule(delay += 6000, [this] { me->HandleEmoteStateCommand(0); });
                 }
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const 
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_image_belgaristraszAI(creature);
+            return GetOculusAI<npc_image_belgaristraszAI>(creature);
         }
 };
 
@@ -231,62 +277,76 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
         {
             npc_ruby_emerald_amber_drakeAI(Creature* creature) : VehicleAI(creature)
             {
+                Initialize();
                 _instance = creature->GetInstanceScript();
             }
 
-            void Reset() 
+            void Initialize()
             {
-                _events.Reset();
                 _healthWarning = true;
             }
 
-            void IsSummonedBy(Unit* summoner) 
+            void Reset() override
             {
-                if (!_instance || ! summoner)
-                    return;
+                _events.Reset();
+                Initialize();
+            }
 
-                if (_instance->GetBossState(DATA_EREGOS) == IN_PROGRESS)
-                    if (Creature* eregos = me->FindNearestCreature(NPC_EREGOS, 450.0f, true))
-                        eregos->DespawnOrUnsummon(); // On retail this kills abusive call of drake during engaged Eregos
-
+            void IsSummonedBy(Unit* summoner) override
+            {
                 me->SetFacingToObject(summoner);
+
+                if (summoner->ToPlayer())
+                    summoner->ToPlayer()->UnsummonPetTemporaryIfAny();
 
                 switch (me->GetEntry())
                 {
                     case NPC_RUBY_DRAKE_VEHICLE:
-                        me->CastSpell(summoner, SPELL_RIDE_RUBY_DRAKE_QUE);
+                        me->GetMap()->SetWorldState(WORLDSTATE_RUBY_VOID, 0);
+                        me->CastSpell(summoner, SPELL_RIDE_RUBY_DRAKE_QUE, true);
                         break;
                     case NPC_EMERALD_DRAKE_VEHICLE:
-                        me->CastSpell(summoner, SPELL_RIDE_EMERALD_DRAKE_QUE);
+                        me->GetMap()->SetWorldState(WORLDSTATE_EMERALD_VOID, 0);
+                        me->CastSpell(summoner, SPELL_RIDE_EMERALD_DRAKE_QUE, true);
                         break;
                     case NPC_AMBER_DRAKE_VEHICLE:
-                        me->CastSpell(summoner, SPELL_RIDE_AMBER_DRAKE_QUE);
+                        me->GetMap()->SetWorldState(WORLDSTATE_AMBER_VOID, 0);
+                        me->CastSpell(summoner, SPELL_RIDE_AMBER_DRAKE_QUE, true);
                         break;
                     default:
                         return;
                 }
 
-                Position pos;
-                summoner->GetPosition(&pos);
-                me->GetMotionMaster()->MovePoint(POINT_LAND, pos);
+                me->SetFlying(true);
+                me->GetMotionMaster()->MoveLand(POINT_LAND, summoner->GetPosition());
             }
 
-            void MovementInform(uint32 type, uint32 id) 
+            void JustDied(Unit* /*killer*/) override
             {
-                if (type == POINT_MOTION_TYPE && id == POINT_LAND)
-                    me->SetDisableGravity(false); // Needed this for proper animation after spawn, the summon in air fall to ground bug leave no other option for now, if this isn't used the drake will only walk on move.
+                me->GetMotionMaster()->MoveFall();
+                me->DespawnOrUnsummon(5000);
             }
 
-            void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) 
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                if (!_instance)
+                if (type == EFFECT_MOTION_TYPE && pointId == POINT_LAND)
+                    me->SetFlying(false); // Needed this for proper animation after spawn, the summon in air fall to ground bug leave no other option for now, if this isn't used the drake will only walk on move.
+            }
+
+            void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) override
+            {
+                if (passenger->GetTypeId() != TYPEID_PLAYER)
                     return;
 
-                if (passenger->GetTypeId() != TYPEID_PLAYER)
+                if (!me->IsAlive())
                     return;
 
                 if (apply)
                 {
+                    passenger->CastSpell(passenger, SPELL_DRAKE_FLAG_VISUAL, true);
+                    DoCast(me, SPELL_FLIGHT, true);
+                    DoCast(me, SPELL_SOAR, true);
+
                     if (_instance->GetBossState(DATA_VAROS) != DONE)
                         _events.ScheduleEvent(EVENT_WELCOME, 10 * IN_MILLISECONDS);
 
@@ -295,12 +355,38 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
                 }
                 else
                 {
+                    passenger->RemoveAurasDueToSpell(SPELL_DRAKE_FLAG_VISUAL);
+                    me->RemoveAurasDueToSpell(SPELL_FLIGHT);
+                    me->RemoveAurasDueToSpell(SPELL_SOAR);
+
                     _events.Reset();
                     _events.ScheduleEvent(EVENT_TAKE_OFF, 2 * IN_MILLISECONDS);
+
+                    if (passenger->ToPlayer())
+                        passenger->ToPlayer()->ResummonPetTemporaryUnSummonedIfAny();
                 }
             }
 
-            void UpdateAI(const uint32 diff) 
+            void DoAction(int32 action) override
+            {
+                if (action != ACTION_GPS)
+                    return;
+
+                if (_instance->GetBossState(DATA_EREGOS) == DONE)
+                    return;
+                else if (_instance->GetBossState(DATA_UROM) == DONE)
+                    Talk(WHISPER_DRAKES_GPS_EREGOS, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
+                else if (_instance->GetBossState(DATA_VAROS) == DONE)
+                    Talk(WHISPER_DRAKES_GPS_UROM, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
+                else if (!_instance->GetData(DATA_CENTRIFUGUE_CONSTRUCTS))
+                    Talk(WHISPER_DRAKES_GPS_VAROS, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
+                else if (_instance->GetData(DATA_CENTRIFUGUE_CONSTRUCTS) == 1)
+                    Talk(WHISPER_DRAKES_GPS_CONSTRUCT, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
+                else
+                    Talk(WHISPER_DRAKES_GPS_CONSTRUCTS, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
+            }
+
+            void UpdateAI(uint32 diff) override
             {
                 if (_healthWarning)
                 {
@@ -315,17 +401,17 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_WELCOME:
-                            Talk(WHISPER_DRAKES_WELCOME, me->GetCreatorGUID());
+                            Talk(WHISPER_DRAKES_WELCOME, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
                             _events.ScheduleEvent(EVENT_ABILITIES, 5 * IN_MILLISECONDS);
                             break;
                         case EVENT_ABILITIES:
-                            Talk(WHISPER_DRAKES_ABILITIES, me->GetCreatorGUID());
+                            Talk(WHISPER_DRAKES_ABILITIES, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
                             break;
                         case EVENT_SPECIAL_ATTACK:
-                            Talk(WHISPER_DRAKES_SPECIAL, me->GetCreatorGUID());
+                            Talk(WHISPER_DRAKES_SPECIAL, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
                             break;
                         case EVENT_LOW_HEALTH:
-                            Talk(WHISPER_DRAKES_LOWHEALTH, me->GetCreatorGUID());
+                            Talk(WHISPER_DRAKES_LOWHEALTH, ObjectAccessor::GetPlayer(*me, me->GetCreatorGUID()));
                             _healthWarning = false;
                             _events.ScheduleEvent(EVENT_RESET_LOW_HEALTH, 25000);
                             break;
@@ -335,15 +421,18 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
                         case EVENT_TAKE_OFF:
                         {
                             me->DespawnOrUnsummon(2050);
-                            me->SetOrientation(2.5f);
-                            me->SetSpeed(MOVE_FLIGHT, 1.0f, true);
+                            me->SetSpeed(MOVE_RUN, 1.0f, true);
                             Talk(SAY_DRAKES_TAKEOFF);
-                            Position pos;
-                            me->GetPosition(&pos);
-                            Position offset = { 10.0f, 10.0f, 12.0f, 0.0f };
-                            pos.RelocateOffset(offset);
-                            me->SetDisableGravity(true);
-                            me->GetMotionMaster()->MovePoint(POINT_TAKE_OFF, pos);
+                            float const angle = me->GetOrientation() + (M_PI * 100 / 180); // 100 degrees to the left
+                            float const pitch = M_PI * 50 / 180; // 50 degrees up
+                            float const distance = 50.0f;
+                            float x, y, z;
+                            me->GetPosition(x, y, z);
+                            x += distance * cos(pitch) * cos(angle);
+                            y += distance * cos(pitch) * sin(angle);
+                            z += distance * sin(pitch);
+                            me->SetFlying(true);
+                            me->GetMotionMaster()->MoveTakeoff(POINT_TAKE_OFF, Position { x, y, z });
                             break;
                         }
                         default:
@@ -358,9 +447,21 @@ class npc_ruby_emerald_amber_drake : public CreatureScript
             bool _healthWarning;
         };
 
-        CreatureAI* GetAI(Creature* creature) const 
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_ruby_emerald_amber_drakeAI(creature);
+            return GetOculusAI<npc_ruby_emerald_amber_drakeAI>(creature);
+        }
+};
+
+class go_nexus_portal : public GameObjectScript
+{
+    public:
+        go_nexus_portal() : GameObjectScript("go_nexus_portal") { }
+
+        bool OnGossipHello(Player* player, GameObject* /*go*/)
+        {
+            player->TeleportTo(player->GetMapId(), 985.33f, 1057.04f, 359.97f, 0.0f);
+            return false;
         }
 };
 
@@ -376,31 +477,19 @@ class spell_oculus_call_ruby_emerald_amber_drake : public SpellScriptLoader
         {
             PrepareSpellScript(spell_oculus_call_ruby_emerald_amber_drake_SpellScript);
 
-            void ChangeSummonPos(SpellEffIndex /*effIndex*/)
+            void SetDest(SpellDestination& dest)
             {
-                // Adjust effect summon position
-                WorldLocation summonPos = *GetExplTargetDest();
-                Position offset = { 0.0f, 0.0f, 12.0f, 0.0f };
-                summonPos.RelocateOffset(offset);
-                SetExplTargetDest(summonPos);
-                GetHitDest()->RelocateOffset(offset);
+                Position const offset = { 0.0f, 0.0f, 8.0f, 0.0f };
+                dest.RelocateOffset(offset);
             }
 
-            void ModDestHeight(SpellEffIndex /*effIndex*/)
+            void Register() override
             {
-                // Used to cast visual effect at proper position
-                Position offset = { 0.0f, 0.0f, 12.0f, 0.0f };
-                const_cast<WorldLocation*>(GetExplTargetDest())->RelocateOffset(offset);
-            }
-
-            void Register() 
-            {
-                OnEffectHit += SpellEffectFn(spell_oculus_call_ruby_emerald_amber_drake_SpellScript::ChangeSummonPos, EFFECT_0, SPELL_EFFECT_SUMMON);
-                OnEffectLaunch += SpellEffectFn(spell_oculus_call_ruby_emerald_amber_drake_SpellScript::ModDestHeight, EFFECT_0, SPELL_EFFECT_SUMMON);
+                OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_oculus_call_ruby_emerald_amber_drake_SpellScript::SetDest, EFFECT_0, TARGET_DEST_CASTER_FRONT);
             }
         };
 
-        SpellScript* GetSpellScript() const 
+        SpellScript* GetSpellScript() const override
         {
             return new spell_oculus_call_ruby_emerald_amber_drake_SpellScript();
         }
@@ -418,7 +507,7 @@ class spell_oculus_ride_ruby_emerald_amber_drake_que : public SpellScriptLoader
         {
             PrepareAuraScript(spell_oculus_ride_ruby_emerald_amber_drake_que_AuraScript);
 
-            void HandlePeriodic(constAuraEffectPtr aurEff)
+            void HandlePeriodic(AuraEffect const* aurEff)
             {
                 // caster of the triggered spell is wrong for an unknown reason, handle it here correctly
                 PreventDefaultAction();
@@ -426,15 +515,94 @@ class spell_oculus_ride_ruby_emerald_amber_drake_que : public SpellScriptLoader
                     GetTarget()->CastSpell(caster, GetSpellInfo()->Effects[aurEff->GetEffIndex()].TriggerSpell, true);
             }
 
-            void Register() 
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_oculus_ride_ruby_emerald_amber_drake_que_AuraScript::HandlePeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
             }
         };
 
-        AuraScript* GetAuraScript() const 
+        AuraScript* GetAuraScript() const override
         {
             return new spell_oculus_ride_ruby_emerald_amber_drake_que_AuraScript();
+        }
+};
+
+// 50240 - Evasive Maneuvers
+class spell_oculus_evasive_maneuvers : public SpellScriptLoader
+{
+    public:
+        spell_oculus_evasive_maneuvers() : SpellScriptLoader("spell_oculus_evasive_maneuvers") { }
+
+        class spell_oculus_evasive_maneuvers_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_oculus_evasive_maneuvers_AuraScript);
+
+            bool Validate(SpellInfo const* /*spellInfo*/) override
+            {
+                if (!sSpellMgr->GetSpellInfo(SPELL_RUBY_EVASIVE_CHARGES))
+                    return false;
+                return true;
+            }
+
+            void HandleProc(AuraEffect const* /*aurEff*/, ProcEventInfo& /*eventInfo*/)
+            {
+                PreventDefaultAction();
+                GetTarget()->RemoveAuraFromStack(SPELL_RUBY_EVASIVE_CHARGES);
+                if (!GetTarget()->HasAura(SPELL_RUBY_EVASIVE_CHARGES))
+                    Remove(AURA_REMOVE_BY_DEFAULT);
+            }
+
+            void Register() override
+            {
+                OnEffectProc += AuraEffectProcFn(spell_oculus_evasive_maneuvers_AuraScript::HandleProc, EFFECT_2, SPELL_AURA_PROC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_oculus_evasive_maneuvers_AuraScript();
+        }
+};
+
+// 49840 - Shock Lance
+class spell_oculus_shock_lance : public SpellScriptLoader
+{
+    public:
+        spell_oculus_shock_lance() : SpellScriptLoader("spell_oculus_shock_lance") { }
+
+        class spell_oculus_shock_lance_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_oculus_shock_lance_SpellScript);
+
+            bool Validate(SpellInfo const* /*spellInfo*/) override
+            {
+                if (!sSpellMgr->GetSpellInfo(SPELL_AMBER_SHOCK_CHARGE))
+                    return false;
+                return true;
+            }
+
+            void CalcDamage()
+            {
+                int32 damage = GetHitDamage();
+                if (Unit* target = GetHitUnit())
+                    if (AuraEffect const* shockCharges = target->GetAuraEffect(SPELL_AMBER_SHOCK_CHARGE, EFFECT_0, GetCaster()->GetGUID()))
+                    {
+                        damage += shockCharges->GetAmount();
+                        shockCharges->GetBase()->Remove();
+                    }
+
+                SetHitDamage(damage);
+            }
+
+            void Register() override
+            {
+                OnHit += SpellHitFn(spell_oculus_shock_lance_SpellScript::CalcDamage);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_oculus_shock_lance_SpellScript();
         }
 };
 
@@ -448,14 +616,14 @@ class spell_oculus_stop_time : public SpellScriptLoader
         {
             PrepareAuraScript(spell_oculus_stop_time_AuraScript);
 
-            bool Validate(SpellInfo const* /*spellInfo*/) 
+            bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 if (!sSpellMgr->GetSpellInfo(SPELL_AMBER_SHOCK_CHARGE))
                     return false;
                 return true;
             }
 
-            void Apply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void Apply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 Unit* caster = GetCaster();
                 if (!caster)
@@ -463,21 +631,66 @@ class spell_oculus_stop_time : public SpellScriptLoader
 
                 Unit* target = GetTarget();
                 for (uint32 i = 0; i < 5; ++i)
-                    caster->CastSpell(target, SPELL_AMBER_SHOCK_CHARGE, false);
+                    caster->CastSpell(target, SPELL_AMBER_SHOCK_CHARGE, true);
             }
 
-            void Register() 
+            void Register() override
             {
                 AfterEffectApply += AuraEffectApplyFn(spell_oculus_stop_time_AuraScript::Apply, EFFECT_0, SPELL_AURA_MOD_STUN, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const 
+        AuraScript* GetAuraScript() const override
         {
             return new spell_oculus_stop_time_AuraScript();
         }
 };
 
+// 49592 - Temporal Rift
+class spell_oculus_temporal_rift : public SpellScriptLoader
+{
+    public:
+        spell_oculus_temporal_rift() : SpellScriptLoader("spell_oculus_temporal_rift") { }
+
+        class spell_oculus_temporal_rift_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_oculus_temporal_rift_AuraScript);
+
+            bool Validate(SpellInfo const* /*spellInfo*/) override
+            {
+                if (!sSpellMgr->GetSpellInfo(SPELL_AMBER_SHOCK_CHARGE))
+                    return false;
+                return true;
+            }
+
+            void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+            {
+                PreventDefaultAction();
+                int32 amount = aurEff->GetAmount() + eventInfo.GetDamageInfo()->GetDamage();
+
+                if (amount >= 15000)
+                {
+                    if (Unit* caster = GetCaster())
+                        caster->CastSpell(GetTarget(), SPELL_AMBER_SHOCK_CHARGE, true);
+                    amount -= 15000;
+                }
+
+                const_cast<AuraEffect*>(aurEff)->SetAmount(amount);
+            }
+
+            void Register() override
+            {
+                OnEffectProc += AuraEffectProcFn(spell_oculus_temporal_rift_AuraScript::HandleProc, EFFECT_2, SPELL_AURA_DUMMY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_oculus_temporal_rift_AuraScript();
+        }
+};
+
+// 50341 - Touch the Nightmare
 class spell_oculus_touch_the_nightmare : public SpellScriptLoader
 {
     public:
@@ -492,19 +705,20 @@ class spell_oculus_touch_the_nightmare : public SpellScriptLoader
                 SetHitDamage(int32(GetCaster()->CountPctFromMaxHealth(30)));
             }
 
-            void Register() 
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_oculus_touch_the_nightmare_SpellScript::HandleDamageCalc, EFFECT_2, SPELL_EFFECT_SCHOOL_DAMAGE);
             }
         };
 
-        SpellScript* GetSpellScript() const 
+        SpellScript* GetSpellScript() const override
         {
             return new spell_oculus_touch_the_nightmare_SpellScript();
         }
 };
 
-class spell_oculus_dream_funnel: public SpellScriptLoader
+// 50344 - Dream Funnel
+class spell_oculus_dream_funnel : public SpellScriptLoader
 {
     public:
         spell_oculus_dream_funnel() : SpellScriptLoader("spell_oculus_dream_funnel") { }
@@ -513,7 +727,7 @@ class spell_oculus_dream_funnel: public SpellScriptLoader
         {
             PrepareAuraScript(spell_oculus_dream_funnel_AuraScript);
 
-            void HandleEffectCalcAmount(constAuraEffectPtr /*aurEff*/, int32& amount, bool& canBeRecalculated)
+            void HandleEffectCalcAmount(AuraEffect const* /*aurEff*/, float& amount, bool& canBeRecalculated)
             {
                 if (Unit* caster = GetCaster())
                     amount = int32(caster->CountPctFromMaxHealth(5));
@@ -521,16 +735,64 @@ class spell_oculus_dream_funnel: public SpellScriptLoader
                 canBeRecalculated = false;
             }
 
-            void Register() 
+            void Register() override
             {
                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_oculus_dream_funnel_AuraScript::HandleEffectCalcAmount, EFFECT_0, SPELL_AURA_PERIODIC_HEAL);
                 DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_oculus_dream_funnel_AuraScript::HandleEffectCalcAmount, EFFECT_2, SPELL_AURA_PERIODIC_DAMAGE);
             }
         };
 
-        AuraScript* GetAuraScript() const 
+        AuraScript* GetAuraScript() const override
         {
             return new spell_oculus_dream_funnel_AuraScript();
+        }
+};
+
+// 53389 - GPS (Greater drake Positioning System)
+class spell_oculus_gps : public SpellScriptLoader
+{
+    public:
+        spell_oculus_gps() : SpellScriptLoader("spell_oculus_gps") { }
+
+        class spell_oculus_gps_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_oculus_gps_AuraScript);
+
+            void HandleTriggerSpell(AuraEffect const* /*aurEff*/)
+            {
+                if (Unit* caster = GetCaster())
+                    if (caster->IsAIEnabled)
+                        caster->GetAI()->DoAction(ACTION_GPS);
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_oculus_gps_AuraScript::HandleTriggerSpell, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_oculus_gps_AuraScript();
+        }
+};
+
+class cond_loot_cache_of_the_ley_guardian : public ConditionScript
+{
+    public:
+        cond_loot_cache_of_the_ley_guardian() : ConditionScript("cond_loot_cache_of_the_ley_guardian") { }
+
+        bool OnConditionCheck(Condition* /*condition*/, ConditionSourceInfo& sourceInfo) override
+        {
+            if (!sourceInfo.mConditionTargets[0])
+                return false;
+
+            if (Player* player = sourceInfo.mConditionTargets[0]->ToPlayer())
+                if (InstanceScript* instance = player->GetInstanceScript())
+                    if (CacheEligibilityCheckAccessor* accessor = dynamic_cast<CacheEligibilityCheckAccessor*>(instance))
+                        return accessor->IsPlayerEligibleForCache(player->GetGUID());
+
+            return false;
         }
 };
 
@@ -539,9 +801,15 @@ void AddSC_oculus()
     new npc_verdisa_beglaristrasz_eternos();
     new npc_image_belgaristrasz();
     new npc_ruby_emerald_amber_drake();
+    new go_nexus_portal();
     new spell_oculus_call_ruby_emerald_amber_drake();
     new spell_oculus_ride_ruby_emerald_amber_drake_que();
+    new spell_oculus_evasive_maneuvers();
+    new spell_oculus_shock_lance();
     new spell_oculus_stop_time();
+    new spell_oculus_temporal_rift();
     new spell_oculus_touch_the_nightmare();
     new spell_oculus_dream_funnel();
+    new spell_oculus_gps();
+    new cond_loot_cache_of_the_ley_guardian();
 }

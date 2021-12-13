@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -21,31 +23,33 @@
 #include "MySQLConnection.h"
 #include "MySQLThreading.h"
 
-DatabaseWorker::DatabaseWorker(ACE_Activation_Queue* new_queue, MySQLConnection* con) :
-m_queue(new_queue),
-m_conn(con)
+DatabaseWorker::DatabaseWorker(MySQLConnection* conn)
+    : m_conn(conn)
 {
-    /// Assign thread to task
-    activate();
+    _thr = std::thread([this]() { Run(); });
 }
 
-int DatabaseWorker::svc()
+DatabaseWorker::~DatabaseWorker()
 {
-    if (!m_queue)
-        return -1;
+    m_queue.queue()->deactivate();
+    if (_thr.joinable())
+        _thr.join();
 
+    delete m_conn;
+}
+
+void DatabaseWorker::Run()
+{
     SQLOperation *request = NULL;
-    while (1)
+    while (true)
     {
-        request = (SQLOperation*)(m_queue->dequeue());
+        request = (SQLOperation*)(m_queue.dequeue());
         if (!request)
             break;
 
         request->SetConnection(m_conn);
         request->call();
-
+        --_count;
         delete request;
     }
-
-    return 0;
 }

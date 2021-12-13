@@ -1,10 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -19,18 +21,40 @@
 #ifndef DEF_SUNKEN_TEMPLE_H
 #define DEF_SUNKEN_TEMPLE_H
 
-#define TROLLBOSS1_DEATH 1
-#define TROLLBOSS2_DEATH 2
-#define TROLLBOSS3_DEATH 3
-#define TROLLBOSS4_DEATH 4
-#define TROLLBOSS5_DEATH 5
-#define TROLLBOSS6_DEATH 6
-#define JAMMALAN_DEATH 7
-#define MORPHAZ_DEATH 8
-#define HAZZAS_DEATH 9
-#define ERANIKUS_DEATH 10
-#define ATALALARION_DEATH 11 //optional
+int32 const EncounterCount = 4;
 
-#define EVENT_STATE 1
-#endif
+enum eData
+{
+    DATA_HAKKAR   = 0,
+    DATA_JAMMAL   = 1,
+    DATA_WARDENS  = 2,
+    DATA_ERANIKUS = 3,
+};
+
+enum eCreature
+{
+    NPC_AVATAR_OF_HAKKAR  = 8443,
+    NPC_JAMMALAN_PROPHET  = 5710,
+    // Wardens            
+    NPC_WEAVER            = 5720,
+    NPC_DREAMSCYTHE       = 5721,
+    NPC_MORPHAZ           = 5719,
+    NPC_HAZZAS            = 5722,
+    NPC_SHADE_OF_ERANIKUS = 5709,
+    NPC_OGOM_WRETCHED     = 5711,
+    NPC_EARTHGRAB_TOTEM   = 6066,
+};
+
+enum eActions
+{
+    ACTION_ERANIKUS_DREAM = 0,
+    ACTION_HAKKAR_RISE    = 1,
+};
+
+enum eGameObjects
+{
+    GO_SHRINE_OF_SOULFLAYER = 208321,
+};
+
+#endif // DEF_SUNKEN_TEMPLE_H
 

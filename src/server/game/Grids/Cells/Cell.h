@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -31,8 +32,8 @@ class WorldObject;
 
 struct CellArea
 {
-    CellArea() {}
-    CellArea(CellCoord low, CellCoord high) : low_bound(low), high_bound(high) {}
+    CellArea() { }
+    CellArea(CellCoord low, CellCoord high) : low_bound(low), high_bound(high) { }
 
     bool operator!() const { return low_bound == high_bound; }
 
@@ -61,13 +62,13 @@ struct Cell
 
     bool DiffCell(const Cell &cell) const
     {
-        return(data.Part.cell_x != cell.data.Part.cell_x ||
+        return (data.Part.cell_x != cell.data.Part.cell_x ||
             data.Part.cell_y != cell.data.Part.cell_y);
     }
 
     bool DiffGrid(const Cell &cell) const
     {
-        return(data.Part.grid_x != cell.data.Part.grid_x ||
+        return (data.Part.grid_x != cell.data.Part.grid_x ||
             data.Part.grid_y != cell.data.Part.grid_y);
     }
 
@@ -107,8 +108,8 @@ struct Cell
         uint32 All;
     } data;
 
-    template<class T, class CONTAINER> void Visit(CellCoord const&, TypeContainerVisitor<T, CONTAINER>& visitor, Map &, WorldObject const&, float) const;
-    template<class T, class CONTAINER> void Visit(CellCoord const&, TypeContainerVisitor<T, CONTAINER>& visitor, Map &, float, float, float) const;
+    template<class T, class CONTAINER> void Visit(CellCoord const&, TypeContainerVisitor<T, CONTAINER>& visitor, Map &, WorldObject const&, float, bool ignoreRadiusLimit = false) const;
+    template<class T, class CONTAINER> void Visit(CellCoord const&, TypeContainerVisitor<T, CONTAINER>& visitor, Map &, float, float, float, bool ignoreRadiusLimit = false) const;
 
     static CellArea CalculateCellArea(float x, float y, float radius);
 
@@ -117,4 +118,3 @@ private:
 };
 
 #endif
-

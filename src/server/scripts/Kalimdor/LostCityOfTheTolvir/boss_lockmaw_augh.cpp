@@ -1,5 +1,5 @@
 #include "lost_city_of_the_tolvir.h"
-#include "ScriptPCH.h"
+#include "CombatAI.h"
 
 enum eSpells
 {
@@ -7,8 +7,7 @@ enum eSpells
     SPELL_DUST_FLAIL                    = 81642,
     SPELL_DUST_FLAIL_AURA               = 81646,
     SPELL_VISCOUS_POISON                = 81630,
-    SPELL_SCENT_OF_BLOOD_NORMAL         = 81690,
-    SPELL_SCENT_OF_BLOOD_HEROIC         = 89998,
+    SPELL_SCENT_OF_BLOOD                = 81690,
     SPELL_VENOMOUS_RAGE                 = 81706,
     // Augh
     SPELL_SMOKE_BOMB                    = 84768,
@@ -32,16 +31,14 @@ enum eCreatures
 
 enum eTexts
 {
-    AUGH_SAY_INTRO_1                    = -1877007,
-    AUGH_SAY_INTRO_2                    = -1877008,
-    LOCKMAW_EMOTE_FRENZI                = -1877009,
-    AUGH_EMOTE_KILL_CROCK               = -1877014,
-    AUGH_SAY_HOW_YOU_KILL_CROCK         = -1877015,
-    AUGH_SAY_AUGH_SMART                 = -1877016,
-    AUGH_SAY_AUGH_BOSS                  = -1877017,
-    AUGH_SAY_AUGH_STEAL                 = -1877018,
-    AUGH_SAY_AUGH_BAD                   = -1877019,
-    AUGH_SAY_AAA                        = -1877020,
+    LOCKMAW_EMOTE_FRENZI                = 0,
+    AUGH_SAY_INTRO                      = 0,
+    AUGH_SAY_HOW_YOU_KILL_CROCK         = 1,
+    AUGH_SAY_AUGH_SMART                 = 2,
+    AUGH_SAY_AUGH_BOSS                  = 3,
+    AUGH_SAY_AUGH_STEAL                 = 4,
+    AUGH_SAY_AUGH_BAD                   = 5,
+    AUGH_SAY_AAA                        = 6,
 };
 
 enum ePhases
@@ -93,462 +90,440 @@ const uint32 SummonRandomAugh[3]=
 
 class boss_lockmaw : public CreatureScript
 {
-public:
-    boss_lockmaw() : CreatureScript("boss_lockmaw") { }
+    public:
+        boss_lockmaw() : CreatureScript("boss_lockmaw") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_lockmawAI (creature);
-    }
-
-    struct boss_lockmawAI : public ScriptedAI
-    {
-        boss_lockmawAI(Creature* creature) : ScriptedAI(creature), lSummons(me)
+        struct boss_lockmawAI : public BossAI
         {
-            instance = creature->GetInstanceScript();
-            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-            me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-        }
-
-        SummonList lSummons;
-        EventMap events;
-        InstanceScript* instance;
-        uint8 uiPrevAughId;
-        bool Rage;
-        
-        void Reset()
-        {
-            lSummons.DespawnAll();
-            events.Reset();
-            Rage = false;
-            uiPrevAughId = 0;
-
-            if (instance)
-                instance->SetData(DATA_LOCKMAW, NOT_STARTED);
-        }
-
-        void EnterCombat(Unit* /*pWho*/)
-        {
-            if (instance)
-                instance->SetData(DATA_LOCKMAW, IN_PROGRESS);
-
-            events.ScheduleEvent(EVENT_START_DUST_FLAIL, urand(5000, 10000));
-            events.ScheduleEvent(EVENT_VISCOUS_POISON, urand(2000, 5000));
-            events.ScheduleEvent(EVENT_SUMMON_CROCOLISK, urand(5000, 20000));
-        }
-
-        void JustSummoned(Creature* summoned)
-        {
-            if (summoned->GetEntry() == NPC_DUST_FLAIL)
+            boss_lockmawAI(Creature* creature) : BossAI(creature, DATA_LOCKMAW)
             {
-                me->SetReactState(REACT_PASSIVE);
-                me->AttackStop();
-                me->SetFacingToObject(summoned);
-                me->CastSpell(me, 81642, false);
-                return;
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->setActive(true);
+            }
+            
+            void Reset() override
+            {
+                _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                summons.DespawnAll();
+                Rage = false;
+                uiPrevAughId = 0;
             }
 
-            lSummons.Summon(summoned);
-        }
-
-        void JustDied(Unit* /*Killer*/)
-        {
-            lSummons.DespawnAll();
-            events.Reset();
-
-            if (instance)
+            void EnterCombat(Unit* /*who*/) override
             {
-                instance->SetData(DATA_LOCKMAW, DONE);
+                _EnterCombat();
 
-                if (Creature* augh = Unit::GetCreature(*me, instance->GetData64(DATA_AUGH)))
-                    augh->AI()->DoAction(ACTION_LOCKMAW_IS_DONE);
-            }
-        }
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
 
-        void SummonAugh()
-        {
-            if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
-            {
-                                
-                uint8 roll = urand(0, 3);
-
-                while (roll == uiPrevAughId)
-                    roll = urand(0, 2);
-
-                stalker->CastSpell(stalker, SummonRandomAugh[roll], false);
-                uiPrevAughId = roll;
-            }
-            else
-            {
-                ScriptedAI::EnterEvadeMode();
-                return;
-            }
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (!Rage && me->HealthBelowPct(30))
-            {
-                Rage = true;
-                DoCast(SPELL_VENOMOUS_RAGE);
-                DoScriptText(LOCKMAW_EMOTE_FRENZI, me);
+                events.ScheduleEvent(EVENT_START_DUST_FLAIL, urand(5000, 10000));
+                events.ScheduleEvent(EVENT_VISCOUS_POISON, urand(2000, 5000));
+                events.ScheduleEvent(EVENT_SUMMON_CROCOLISK, urand(5000, 20000));
             }
 
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            if (uint32 eventId = events.ExecuteEvent())
+            void JustSummoned(Creature* summon) override
             {
-                switch (eventId)
+                if (summon->GetEntry() == NPC_DUST_FLAIL)
                 {
-                    case EVENT_START_DUST_FLAIL:
-                        me->CastSpell(me, 81652, false);
-                        events.ScheduleEvent(EVENT_START_DUST_FLAIL, urand(15000, 30000));
-                        break;
-                    case EVENT_VISCOUS_POISON:
-                        {
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 45.0f, true))
-                                me->CastSpell(target, SPELL_VISCOUS_POISON, false);
+                    me->SetReactState(REACT_PASSIVE);
+                    me->AttackStop();
+                    me->SetFacingToObject(summon);
+                    me->CastSpell(me, 81642, false);
+                    return;
+                }
 
-                            events.ScheduleEvent(EVENT_VISCOUS_POISON, urand(3000, 10000));
-                        }
-                        break;
-                    case EVENT_SUMMON_CROCOLISK:
-                        {
-                            events.ScheduleEvent(EVENT_SUMMON_RANDOM_AUGH_1, 1500);
-                            std::list<Creature*> lStalkers;
-                            me->GetCreatureListWithEntryInGrid(lStalkers, 45124, 100.0f);
-                            me->CastSpell(me, DUNGEON_MODE(SPELL_SCENT_OF_BLOOD_NORMAL, SPELL_SCENT_OF_BLOOD_HEROIC), false);
+                summons.Summon(summon);
+            }
 
-                            if (lStalkers.empty())
-                            {
-                                ScriptedAI::EnterEvadeMode();
-                                return;
-                            }
+            void JustDied(Unit* /*killer*/) override
+            {
+                _JustDied();
 
-                            std::list<Creature*>::const_iterator itr = lStalkers.begin();
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
-                            for (int i = 0; i < 4; ++i)
-                            {
-                                if (itr == lStalkers.end())
-                                    itr = lStalkers.begin();
-
-                                if ((*itr) && (*itr)->isAlive())
-                                    (*itr)->CastSpell((*itr), 84242, false);
-
-                                ++itr;
-                            }
-                        }
-                        break;
-                    case EVENT_SUMMON_RANDOM_AUGH_1:
-                        events.ScheduleEvent(EVENT_SUMMON_RANDOM_AUGH_2, urand(15000, 30000));
-                        SummonAugh();
-                        break;
-                    case EVENT_SUMMON_RANDOM_AUGH_2:
-                        events.ScheduleEvent(EVENT_SUMMON_CROCOLISK, urand(5000, 25000));
-                        SummonAugh();
-                        break;
+                    if (Creature* augh = Unit::GetCreature(*me, instance->GetData64(DATA_AUGH)))
+                        augh->AI()->DoAction(ACTION_LOCKMAW_IS_DONE);
                 }
             }
 
-            DoMeleeAttackIfReady();
+            void SummonAugh()
+            {
+                if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
+                {
+                    uint8 roll = urand(0, 3);
+
+                    while (roll == uiPrevAughId)
+                        roll = urand(0, 2);
+
+                    stalker->CastSpell(stalker, SummonRandomAugh[roll], false);
+                    uiPrevAughId = roll;
+                }
+                else
+                {
+                    ScriptedAI::EnterEvadeMode();
+                    return;
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (!Rage && me->HealthBelowPct(30))
+                {
+                    Rage = true;
+                    DoCast(SPELL_VENOMOUS_RAGE);
+                    Talk(LOCKMAW_EMOTE_FRENZI);
+                }
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_START_DUST_FLAIL:
+                            me->CastSpell(me, 81652, false);
+                            events.ScheduleEvent(EVENT_START_DUST_FLAIL, urand(15000, 30000));
+                            break;
+                        case EVENT_VISCOUS_POISON:
+                            {
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 45.0f, true))
+                                    me->CastSpell(target, SPELL_VISCOUS_POISON, false);
+
+                                events.ScheduleEvent(EVENT_VISCOUS_POISON, urand(3000, 10000));
+                            }
+                            break;
+                        case EVENT_SUMMON_CROCOLISK:
+                            {
+                                events.ScheduleEvent(EVENT_SUMMON_RANDOM_AUGH_1, 1500);
+                                std::list<Creature*> lStalkers;
+                                me->GetCreatureListWithEntryInGrid(lStalkers, 45124, 100.0f);
+                                me->CastSpell(me, SPELL_SCENT_OF_BLOOD, false);
+
+                                if (lStalkers.empty())
+                                {
+                                    ScriptedAI::EnterEvadeMode();
+                                    return;
+                                }
+
+                                std::list<Creature*>::const_iterator itr = lStalkers.begin();
+                                for (int i = 0; i < 4; ++i)
+                                {
+                                    if (itr == lStalkers.end())
+                                        itr = lStalkers.begin();
+
+                                    if ((*itr) && (*itr)->IsAlive())
+                                        (*itr)->CastSpell((*itr), 84242, false);
+
+                                    ++itr;
+                                }
+                            }
+                            break;
+                        case EVENT_SUMMON_RANDOM_AUGH_1:
+                            events.ScheduleEvent(EVENT_SUMMON_RANDOM_AUGH_2, urand(15000, 30000));
+                            SummonAugh();
+                            break;
+                        case EVENT_SUMMON_RANDOM_AUGH_2:
+                            events.ScheduleEvent(EVENT_SUMMON_CROCOLISK, urand(5000, 25000));
+                            SummonAugh();
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+
+            private:
+                uint8 uiPrevAughId;
+                bool Rage;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_lockmawAI>(creature);
         }
-    };
 };
 
 class npc_frenzied_croc : public CreatureScript
 {
-public:
-    npc_frenzied_croc() : CreatureScript("npc_frenzied_croc") { }
+    public:
+        npc_frenzied_croc() : CreatureScript("npc_frenzied_croc") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_frenzied_crocAI (creature);
-    }
-
-    struct npc_frenzied_crocAI : public ScriptedAI
-    {
-        npc_frenzied_crocAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_frenzied_crocAI : public ScriptedAI
         {
-            me->SetInCombatWithZone();
-            UpdateThreat();
-            me->AddAura(SPELL_STEALTHED, me);
-            events.ScheduleEvent(EVENT_VICIOUS_CROC_UPDATE_THREAT, 1000);
-            events.ScheduleEvent(EVENT_VICIOUS_CROC_VICIOUS_BITE, urand(5000, 10000));
-            InstanceScript* instance = creature->GetInstanceScript();
+            npc_frenzied_crocAI(Creature* creature) : ScriptedAI(creature)
+            {
+                me->SetInCombatWithZone();
+                UpdateThreat();
+                me->AddAura(SPELL_STEALTHED, me);
+                events.ScheduleEvent(EVENT_VICIOUS_CROC_UPDATE_THREAT, 1000);
+                events.ScheduleEvent(EVENT_VICIOUS_CROC_VICIOUS_BITE, urand(5000, 10000));
+                InstanceScript* instance = creature->GetInstanceScript();
 
-            if (instance)
                 if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
                     lockmaw->AI()->JustSummoned(me);
-        }
-
-        EventMap events;
-
-        void UpdateThreat()
-        {
-            Map::PlayerList const &lPlayers = me->GetMap()->GetPlayers();
-
-            if(lPlayers.isEmpty())
-                return;
-
-            for(Map::PlayerList::const_iterator itr = lPlayers.begin(); itr != lPlayers.end(); ++itr)
-                if(Player* player = itr->getSource())
-                {
-                    if (player->HasAura(DUNGEON_MODE(SPELL_SCENT_OF_BLOOD_NORMAL, SPELL_SCENT_OF_BLOOD_HEROIC)))
-                        me->AddThreat(player, 100500.0f);
-                    else
-                        me->getThreatManager().modifyThreatPercent(player, -10);
-                }
-        }
-
-        void JustDied(Unit* /*Killer*/)
-        {
-            InstanceScript* instance = me->GetInstanceScript();
-
-            if (instance)
-                instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_CREATURE, 43658);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (uint32 eventId = events.ExecuteEvent())
-            {
-                switch (eventId)
-                {
-                    case EVENT_VICIOUS_CROC_UPDATE_THREAT:
-                        {
-                            events.ScheduleEvent(EVENT_VICIOUS_CROC_UPDATE_THREAT, 1000);
-                            UpdateThreat();
-                        }
-                        break;
-                    case EVENT_VICIOUS_CROC_VICIOUS_BITE:
-                        events.ScheduleEvent(EVENT_VICIOUS_CROC_VICIOUS_BITE, urand(5000, 10000));
-                        me->CastSpell(me->getVictim(), SPELL_VICIOUS_BITE, false);
-                        break;
-                }
             }
 
-            DoMeleeAttackIfReady();
+            void UpdateThreat()
+            {
+                Map::PlayerList const &lPlayers = me->GetMap()->GetPlayers();
+
+                if (lPlayers.isEmpty())
+                    return;
+
+                for (Map::PlayerList::const_iterator itr = lPlayers.begin(); itr != lPlayers.end(); ++itr)
+                    if (Player* player = itr->GetSource())
+                    {
+                        if (player->HasAura(SPELL_SCENT_OF_BLOOD))
+                            me->AddThreat(player, 100500.0f);
+                        else
+                            me->getThreatManager().modifyThreatPercent(player, -10);
+                    }
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                InstanceScript* instance = me->GetInstanceScript();
+
+                instance->DoStartCriteria(CRITERIA_START_TYPE_CREATURE, 43658);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_VICIOUS_CROC_UPDATE_THREAT:
+                            events.ScheduleEvent(EVENT_VICIOUS_CROC_UPDATE_THREAT, 1000);
+                            UpdateThreat();
+                            break;
+                        case EVENT_VICIOUS_CROC_VICIOUS_BITE:
+                            events.ScheduleEvent(EVENT_VICIOUS_CROC_VICIOUS_BITE, urand(5000, 10000));
+                            me->CastSpell(me->GetVictim(), SPELL_VICIOUS_BITE, false);
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+
+            private:
+                EventMap events;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_frenzied_crocAI>(creature);
         }
-    };
 };
 
 class npc_augh_intro : public CreatureScript
 {
-public:
-    npc_augh_intro() : CreatureScript("npc_augh_intro") { }
+    public:
+        npc_augh_intro() : CreatureScript("npc_augh_intro") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_augh_introAI (creature);
-    }
-
-    struct npc_augh_introAI : public ScriptedAI
-    {
-        npc_augh_introAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_augh_introAI : public ScriptedAI
         {
-            Active = true;
-            instance = creature->GetInstanceScript();
-        }
+            npc_augh_introAI(Creature* creature) : ScriptedAI(creature)
+            {
+                Active = true;
+            }
 
-        InstanceScript* instance;
-        bool Active;
+            bool Active;
 
-        void EnterCombat(Unit* /*pWho*/)
+            void UpdateAI(uint32 /*diff*/)
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (Active)
+                    if (me->GetHealthPct() <= 90)
+                    {
+                        Active = false;
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        me->SetReactState(REACT_PASSIVE);
+                        me->CombatStop();
+                        me->SetControlled(true, UNIT_STATE_ROOT);
+                        me->CastSpell(me, SPELL_SMOKE_BOMB, false);
+                        Talk(AUGH_SAY_INTRO);
+                        me->DespawnOrUnsummon(2000);
+                    }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (Active)
-                DoScriptText(AUGH_SAY_INTRO_1, me);
+            return GetInstanceAI<npc_augh_introAI>(creature);
         }
-
-        void UpdateAI(const uint32 /*diff*/)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (Active)
-                if (me->GetHealthPct() <= 90)
-                {
-                    Active = false;
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                    me->SetReactState(REACT_PASSIVE);
-                    me->CombatStop();
-                    me->SetControlled(true, UNIT_STATE_ROOT);
-                    me->CastSpell(me, SPELL_SMOKE_BOMB, false);
-                    DoScriptText(AUGH_SAY_INTRO_2, me);
-                    me->DespawnOrUnsummon(2000);
-                }
-
-            DoMeleeAttackIfReady();
-        }
-    };
 };
 
 class npc_augh_blow_dart : public CreatureScript
 {
-public:
-    npc_augh_blow_dart() : CreatureScript("npc_augh_blow_dart") { }
+    public:
+        npc_augh_blow_dart() : CreatureScript("npc_augh_blow_dart") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_augh_blow_dartAI (creature);
-    }
-
-    struct npc_augh_blow_dartAI : public CasterAI
-    {
-        npc_augh_blow_dartAI(Creature* creature) : CasterAI(creature)
+        struct npc_augh_blow_dartAI : public CasterAI
         {
-            me->AddAura(SPELL_STEALTHED, me);
-            me->SetInCombatWithZone();
-            uiEventTimer = 3000;
-            uiPhase = AUGH_PHASE_ACTIVE;
-            instance = creature->GetInstanceScript();
+            npc_augh_blow_dartAI(Creature* creature) : CasterAI(creature)
+            {
+                me->AddAura(SPELL_STEALTHED, me);
+                me->SetInCombatWithZone();
+                uiEventTimer = 3000;
+                uiPhase = AUGH_PHASE_ACTIVE;
+                instance = creature->GetInstanceScript();
 
-            if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
-                AttackStart(target);
+                if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+                    AttackStart(target);
 
-            if (instance)
                 if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
                     lockmaw->AI()->JustSummoned(me);
-        }
-
-        InstanceScript* instance;
-        uint32 uiEventTimer;
-        uint8 uiPhase;
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (uiPhase != AUGH_PHASE_DESPAWNED)
-            {
-                if (uiEventTimer <= diff)
-                {
-                    switch(uiPhase)
-                    {
-                        case AUGH_PHASE_ACTIVE:
-                            me->SetControlled(true, UNIT_STATE_ROOT);
-                            me->CastSpell(me->getVictim(), SPELL_PARALYTIC_BLOW_DART, false);
-                            me->CastSpell(me, SPELL_SMOKE_BOMB, false);
-                            uiPhase = AUGH_PHASE_STEALTHED;
-                            uiEventTimer = 1500;
-                            break;
-                        case AUGH_PHASE_STEALTHED:
-                            me->AddAura(SPELL_STEALTHED, me);
-                            uiPhase = AUGH_PHASE_DESPAWNED;
-                            me->DespawnOrUnsummon(1000);
-                            break;
-                    }
-                }
-                else
-                    uiEventTimer -= diff;
             }
+
+            InstanceScript* instance;
+            uint32 uiEventTimer;
+            uint8 uiPhase;
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (uiPhase != AUGH_PHASE_DESPAWNED)
+                {
+                    if (uiEventTimer <= diff)
+                    {
+                        switch (uiPhase)
+                        {
+                            case AUGH_PHASE_ACTIVE:
+                                me->SetControlled(true, UNIT_STATE_ROOT);
+                                me->CastSpell(me->GetVictim(), SPELL_PARALYTIC_BLOW_DART, false);
+                                me->CastSpell(me, SPELL_SMOKE_BOMB, false);
+                                uiPhase = AUGH_PHASE_STEALTHED;
+                                uiEventTimer = 1500;
+                                break;
+                            case AUGH_PHASE_STEALTHED:
+                                me->AddAura(SPELL_STEALTHED, me);
+                                uiPhase = AUGH_PHASE_DESPAWNED;
+                                me->DespawnOrUnsummon(1000);
+                                break;
+                        }
+                    }
+                    else
+                        uiEventTimer -= diff;
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_augh_blow_dartAI>(creature);
         }
-    };
 };
 
 class npc_augh_whirlwind : public CreatureScript
 {
-public:
-    npc_augh_whirlwind() : CreatureScript("npc_augh_whirlwind") { }
+    public:
+        npc_augh_whirlwind() : CreatureScript("npc_augh_whirlwind") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_augh_whirlwindAI (creature);
-    }
-
-    struct npc_augh_whirlwindAI : public ScriptedAI
-    {
-        npc_augh_whirlwindAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_augh_whirlwindAI : public ScriptedAI
         {
-            me->AddAura(SPELL_STEALTHED, me);
-            me->SetInCombatWithZone();
-            uiEventTimer = 2000;
-            uiPhase = AUGH_PHASE_NONE;
-            instance = creature->GetInstanceScript();
-
-            if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+            npc_augh_whirlwindAI(Creature* creature) : ScriptedAI(creature)
             {
-                AttackStart(target);
-                me->CastSpell(target, 50231, false);
-            }
+                me->AddAura(SPELL_STEALTHED, me);
+                me->SetInCombatWithZone();
+                uiEventTimer = 2000;
+                uiPhase = AUGH_PHASE_NONE;
+                instance = creature->GetInstanceScript();
 
-            if (instance)
+                if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+                {
+                    AttackStart(target);
+                    me->CastSpell(target, 50231, false);
+                }
+
                 if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
                     lockmaw->AI()->JustSummoned(me);
-        }
-
-        InstanceScript* instance;
-        uint32 uiEventTimer;
-        uint8 uiPhase;
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (uiPhase != AUGH_PHASE_DESPAWNED)
-            {
-                if (uiEventTimer <= diff)
-                {
-                    switch (uiPhase)
-                    {
-                        case AUGH_PHASE_NONE:
-                            uiPhase = AUGH_PHASE_ACTIVE;
-                            me->RemoveAura(SPELL_STEALTHED);
-                            me->AddAura(SPELL_WHITLWIND, me);
-                            uiEventTimer = 20000;
-                            break;
-                        case AUGH_PHASE_ACTIVE:
-                            {
-                                uiPhase = AUGH_PHASE_DESPAWNED;
-                                me->SetReactState(REACT_PASSIVE);
-                                me->AttackStop();
-                                me->DespawnOrUnsummon(2000);
-
-                                if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
-                                    me->GetMotionMaster()->MoveChase(stalker);
-                            }
-                            break;
-                    }
-                }
-                else
-                    uiEventTimer -= diff;
             }
+
+            InstanceScript* instance;
+            uint32 uiEventTimer;
+            uint8 uiPhase;
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (uiPhase != AUGH_PHASE_DESPAWNED)
+                {
+                    if (uiEventTimer <= diff)
+                    {
+                        switch (uiPhase)
+                        {
+                            case AUGH_PHASE_NONE:
+                                uiPhase = AUGH_PHASE_ACTIVE;
+                                me->RemoveAura(SPELL_STEALTHED);
+                                me->AddAura(SPELL_WHITLWIND, me);
+                                uiEventTimer = 20000;
+                                break;
+                            case AUGH_PHASE_ACTIVE:
+                                {
+                                    uiPhase = AUGH_PHASE_DESPAWNED;
+                                    me->SetReactState(REACT_PASSIVE);
+                                    me->AttackStop();
+                                    me->DespawnOrUnsummon(2000);
+
+                                    if (Creature* stalker = me->FindNearestCreature(45124, 50.0f))
+                                        me->GetMotionMaster()->MoveChase(stalker);
+                                }
+                                break;
+                        }
+                    }
+                    else
+                        uiEventTimer -= diff;
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_augh_whirlwindAI>(creature);
         }
-    };
 };
 
 class npc_augh_dragons_breath : public CreatureScript
 {
-public:
-    npc_augh_dragons_breath() : CreatureScript("npc_augh_dragons_breath") { }
+    public:
+        npc_augh_dragons_breath() : CreatureScript("npc_augh_dragons_breath") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_augh_dragons_breathAI (creature);
-    }
-
-    struct npc_augh_dragons_breathAI : public ScriptedAI
-    {
-        npc_augh_dragons_breathAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_augh_dragons_breathAI : public ScriptedAI
         {
-            uiEventTimer = 300;
-            uiPhase = AUGH_PHASE_NONE;
-            me->SetInCombatWithZone();
-            instance = creature->GetInstanceScript();
+            npc_augh_dragons_breathAI(Creature* creature) : ScriptedAI(creature)
+            {
+                uiEventTimer = 300;
+                uiPhase = AUGH_PHASE_NONE;
+                instance = creature->GetInstanceScript();
 
-            if (instance)
                 if (Creature* lockmaw = Unit::GetCreature(*me, instance->GetData64(DATA_LOCKMAW)))
                 {
                     lockmaw->AI()->JustSummoned(me);
@@ -558,102 +533,101 @@ public:
                             if (Creature* crock = summoner->ToCreature())
                                 lockmaw->AI()->JustSummoned(crock);
                 }
-
-        }
-
-        InstanceScript* instance;
-        uint32 uiEventTimer;
-        uint8 uiPhase;
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            if (uiEventTimer <= diff)
-            {
-                switch(uiPhase)
-                {
-                    case AUGH_PHASE_NONE:
-                        {
-                            uiEventTimer = 5000;
-                            uiPhase = AUGH_PHASE_ACTIVE;
-
-                            if (Creature* crock = me->GetVehicleCreatureBase())
-                                if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
-                                {
-                                    AttackStart(target);
-                                    crock->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
-                                }
-                        }
-                        break;
-                    case AUGH_PHASE_ACTIVE:
-                        {
-                            if (Creature* crock = me->GetVehicleCreatureBase())
-                            {
-                                crock->DespawnOrUnsummon(500);
-                                me->ExitVehicle();
-                            }
-
-                            uiPhase = AUGH_PHASE_DISMOUNTED;
-                            uiEventTimer = 2000;
-                        }
-                        break;
-                    case AUGH_PHASE_DISMOUNTED:
-                        uiPhase = AUGH_PHASE_DESPAWNED;
-                        uiEventTimer = 2500;
-                        me->CastSpell(me->getVictim(), 83776, false);
-                        me->CastSpell(me, SPELL_SMOKE_BOMB, false);
-                        break;
-                    case AUGH_PHASE_DESPAWNED:
-                        me->DespawnOrUnsummon();
-                        break;
-                }
             }
-            else
-                uiEventTimer -= diff;
+
+            InstanceScript* instance;
+            uint32 uiEventTimer;
+            uint8 uiPhase;
+
+            void Reset() override
+            {
+                me->SetInCombatWithZone();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (uiEventTimer <= diff)
+                {
+                    switch (uiPhase)
+                    {
+                        case AUGH_PHASE_NONE:
+                            {
+                                uiEventTimer = 5000;
+                                uiPhase = AUGH_PHASE_ACTIVE;
+
+                                if (Creature* crock = me->GetVehicleCreatureBase())
+                                    if (Unit* target = SelectTarget(SELECT_TARGET_NEAREST, 0, 100.0f, true))
+                                    {
+                                        AttackStart(target);
+                                        crock->GetMotionMaster()->MoveFollow(target, 0.0f, 0.0f);
+                                    }
+                            }
+                            break;
+                        case AUGH_PHASE_ACTIVE:
+                            {
+                                if (Creature* crock = me->GetVehicleCreatureBase())
+                                {
+                                    crock->DespawnOrUnsummon(500);
+                                    me->ExitVehicle();
+                                }
+
+                                uiPhase = AUGH_PHASE_DISMOUNTED;
+                                uiEventTimer = 2000;
+                            }
+                            break;
+                        case AUGH_PHASE_DISMOUNTED:
+                            uiPhase = AUGH_PHASE_DESPAWNED;
+                            uiEventTimer = 2500;
+                            me->CastSpell(me->GetVictim(), 83776, false);
+                            me->CastSpell(me, SPELL_SMOKE_BOMB, false);
+                            break;
+                        case AUGH_PHASE_DESPAWNED:
+                            me->DespawnOrUnsummon();
+                            break;
+                    }
+                }
+                else
+                    uiEventTimer -= diff;
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_augh_dragons_breathAI>(creature);
         }
-    };
 };
 
 class boss_augh : public CreatureScript
 {
-public:
-    boss_augh() : CreatureScript("boss_augh") { }
+    public:
+        boss_augh() : CreatureScript("boss_augh") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_aughAI (creature);
-    }
-
-    struct boss_aughAI : public ScriptedAI
-    {
-        boss_aughAI(Creature* creature) : ScriptedAI(creature)
+        struct boss_aughAI : public BossAI
         {
-            instance = creature->GetInstanceScript();
-            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-            me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-        }
-
-        InstanceScript* instance;
-        EventMap events;
-        uint32 uiIntroTimer;
-        uint8 uiIntroPhase;
-        bool Intro;
-
-        void Reset()
-        {
-            events.Reset();
-            uiIntroTimer = 1000;
-            uiIntroPhase = 1;
-            me->SetReactState(REACT_PASSIVE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-
-            if (instance)
+            boss_aughAI(Creature* creature) : BossAI(creature, DATA_AUGH)
             {
-                instance->SetData(DATA_AUGH, NOT_STARTED);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->setActive(true);
+            }
 
-                if (instance->GetData(DATA_LOCKMAW) == DONE)
+            uint32 uiIntroTimer;
+            uint8 uiIntroPhase;
+            bool Intro;
+
+            void Reset() override
+            {
+                _Reset();
+                events.Reset();
+                uiIntroTimer = 1000;
+                uiIntroPhase = 1;
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+
+                if (instance->GetBossState(DATA_LOCKMAW) == DONE)
                 {
                     me->SetVisible(true);
                     Intro = true;
@@ -664,136 +638,136 @@ public:
                     Intro = false;
                 }
             }
-        }
 
-        void DoAction(const int32 action)
-        {
-            if (action == ACTION_LOCKMAW_IS_DONE)
+            void DoAction(int32 action) override
             {
-                uiIntroPhase = 0;
-                Intro = true;
-                DoScriptText(AUGH_EMOTE_KILL_CROCK, me);
-                me->SetUInt32Value(UNIT_NPC_EMOTESTATE, 0);
-                me->SetVisible(true);
-                me->SetHomePosition(AughPos);
-                me->GetMotionMaster()->MoveTargetedHome();
-            }
-        }
-
-        void JustDied(Unit* /*Killer*/)
-        {
-            events.Reset();
-
-            if (instance)
-                instance->SetData(DATA_AUGH, DONE);
-        }
-
-        void EnterCombat(Unit* /*pWho*/)
-        {
-            if (instance)
-                instance->SetData(DATA_AUGH, IN_PROGRESS);
-
-            Intro = false;
-            me->CastSpell(me, 91415, false);
-            events.ScheduleEvent(EVENT_WHITLWIND, urand(3000, 15000));
-            events.ScheduleEvent(EVENT_BLOW_DART, urand(3000, 10000));
-            events.ScheduleEvent(EVENT_DRAGONS_BREATH, urand(3000, 10000));
-            events.ScheduleEvent(EVENT_SMOKE_BOMB, urand(3000, 15000));
-            events.ScheduleEvent(EVENT_SAY_AAA, urand(15000, 35000));
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (Intro)
-            {
-                if (uiIntroTimer <= diff)
+                if (action == ACTION_LOCKMAW_IS_DONE)
                 {
-                    switch (uiIntroPhase)
-                    {
-                        case 0:
-                            uiIntroTimer = 5000;
-                            DoScriptText(AUGH_SAY_HOW_YOU_KILL_CROCK, me);
-                            break;
-                        case 1:
-                            DoScriptText(AUGH_SAY_AUGH_SMART, me);
-                            uiIntroTimer = 9000;
-                            break;
-                        case 2:
-                            {
-                                DoScriptText(AUGH_SAY_AUGH_BOSS, me);
-                                uiIntroTimer = 5000;
-
-                                if (IsHeroic())
-                                {
-                                    me->SetReactState(REACT_AGGRESSIVE);
-                                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                                }
-                            }
-                            break;
-                        case 3:
-                            DoScriptText(AUGH_SAY_AUGH_STEAL, me);
-                            uiIntroTimer = 7000;
-                            break;
-                        case 4:
-                            DoScriptText(AUGH_SAY_AUGH_BAD, me);
-                            Intro = false;
-                            break;
-                    }
-
-                    ++uiIntroPhase;
+                    uiIntroPhase = 0;
+                    Intro = true;
+                    me->HandleEmoteStateCommand(0);
+                    me->SetVisible(true);
+                    me->SetHomePosition(AughPos);
+                    me->GetMotionMaster()->MoveTargetedHome();
                 }
-                else
-                    uiIntroTimer -= diff;
             }
 
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            if (uint32 eventId = events.ExecuteEvent())
+            void JustDied(Unit* /*killer*/) override
             {
-                switch (eventId)
+                _JustDied();
+                events.Reset();
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                _EnterCombat();
+
+                Intro = false;
+                me->CastSpell(me, 91415, false);
+                events.ScheduleEvent(EVENT_WHITLWIND, urand(3000, 15000));
+                events.ScheduleEvent(EVENT_BLOW_DART, urand(3000, 10000));
+                events.ScheduleEvent(EVENT_DRAGONS_BREATH, urand(3000, 10000));
+                events.ScheduleEvent(EVENT_SMOKE_BOMB, urand(3000, 15000));
+                events.ScheduleEvent(EVENT_SAY_AAA, urand(15000, 35000));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (Intro)
                 {
-                    case EVENT_WHITLWIND:
+                    if (uiIntroTimer <= diff)
                     {
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                        switch (uiIntroPhase)
                         {
-                            AttackStart(target);
-                            me->CastSpell(target, 50231, false);
+                            case 0:
+                                uiIntroTimer = 5000;
+                                Talk(AUGH_SAY_HOW_YOU_KILL_CROCK);
+                                break;
+                            case 1:
+                                Talk(AUGH_SAY_AUGH_SMART);
+                                uiIntroTimer = 9000;
+                                break;
+                            case 2:
+                                {
+                                    Talk(AUGH_SAY_AUGH_BOSS);
+                                    uiIntroTimer = 5000;
+
+                                    if (IsHeroic())
+                                    {
+                                        me->SetReactState(REACT_AGGRESSIVE);
+                                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                                    }
+                                }
+                                break;
+                            case 3:
+                                Talk(AUGH_SAY_AUGH_STEAL);
+                                uiIntroTimer = 7000;
+                                break;
+                            case 4:
+                                Talk(AUGH_SAY_AUGH_BAD);
+                                Intro = false;
+                                break;
                         }
 
-                        me->AddAura(91408, me);
-                        events.ScheduleEvent(EVENT_WHITLWIND, urand(15000, 30000));
-                        break;
+                        ++uiIntroPhase;
                     }
-                    case EVENT_BLOW_DART:
-                        if (SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                            me->CastSpell(me->getVictim(), SPELL_PARALYTIC_BLOW_DART, false);
-
-                        events.ScheduleEvent(EVENT_BLOW_DART, urand(5000, 10000));
-                        break;
-                    case EVENT_DRAGONS_BREATH:
-                        me->CastSpell(me->getVictim(), 83776, false);
-                        events.ScheduleEvent(EVENT_DRAGONS_BREATH, urand(5000, 10000));
-                        break;
-                    case EVENT_SMOKE_BOMB:
-                        me->CastSpell(me, SPELL_SMOKE_BOMB, false);
-                        events.ScheduleEvent(EVENT_SMOKE_BOMB, urand(7000, 15000));
-                        break;
-                    case EVENT_SAY_AAA:
-                        DoScriptText(AUGH_SAY_AAA, me);
-                        events.ScheduleEvent(EVENT_SAY_AAA, urand(15000, 35000));
-                        break;
+                    else
+                        uiIntroTimer -= diff;
                 }
-            }
 
-            DoMeleeAttackIfReady();
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                if (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_WHITLWIND:
+                        {
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                            {
+                                AttackStart(target);
+                                me->CastSpell(target, 50231, false);
+                            }
+
+                            me->AddAura(91408, me);
+                            events.ScheduleEvent(EVENT_WHITLWIND, urand(15000, 30000));
+                            break;
+                        }
+                        case EVENT_BLOW_DART:
+                            if (SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                                me->CastSpell(me->GetVictim(), SPELL_PARALYTIC_BLOW_DART, false);
+
+                            events.ScheduleEvent(EVENT_BLOW_DART, urand(5000, 10000));
+                            break;
+                        case EVENT_DRAGONS_BREATH:
+                            me->CastSpell(me->GetVictim(), 83776, false);
+                            events.ScheduleEvent(EVENT_DRAGONS_BREATH, urand(5000, 10000));
+                            break;
+                        case EVENT_SMOKE_BOMB:
+                            me->CastSpell(me, SPELL_SMOKE_BOMB, false);
+                            events.ScheduleEvent(EVENT_SMOKE_BOMB, urand(7000, 15000));
+                            break;
+                        case EVENT_SAY_AAA:
+                            Talk(AUGH_SAY_AAA);
+                            events.ScheduleEvent(EVENT_SAY_AAA, urand(15000, 35000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_aughAI>(creature);
         }
-    };
 };
 
 class spell_dust_flail : public SpellScriptLoader
@@ -805,20 +779,20 @@ class spell_dust_flail : public SpellScriptLoader
         {
             PrepareAuraScript(spell_dust_flail_AuraScript)
 
-            void ExtraEffectRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void ExtraEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (Unit* caster = GetCaster())
                     if (Creature* lockmaw = caster->ToCreature())
                         lockmaw->SetReactState(REACT_AGGRESSIVE);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectRemove += AuraEffectRemoveFn(spell_dust_flail_AuraScript::ExtraEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_dust_flail_AuraScript();
         }

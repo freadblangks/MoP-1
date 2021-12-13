@@ -1,9 +1,12 @@
- /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+/*
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -18,11 +21,16 @@
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
 #include "zulfarrak.h"
+#include "Player.h"
+#include "TemporarySummon.h"
 
-#define NPC_GAHZRILLA 7273
-#define PATH_ADDS 81553
+enum Misc
+{
+    // Paths
+    PATH_ADDS           = 81553
+};
 
-int const pyramidSpawnTotal = 54;
+int const pyramidSpawnTotal = 52;
 /* list of wave spawns: 0 = wave ID, 1 = creature id, 2 = x, 3 = y
 no z coordinat b/c they're all the same */
 float pyramidSpawns [pyramidSpawnTotal][4] = {
@@ -78,8 +86,6 @@ float pyramidSpawns [pyramidSpawnTotal][4] = {
     {3, 7787, 1886.93f, 1221.4f},
     {3, 8876, 1883.76f, 1222.3f},
     {3, 7788, 1889.94f, 1212.21f},
-    {3, 7275, 1889.23f, 1207.72f},
-    {3, 7796, 1879.77f, 1207.96f}
 };
 
 float Spawnsway[2][3] =
@@ -93,70 +99,61 @@ class instance_zulfarrak : public InstanceMapScript
 public:
     instance_zulfarrak() : InstanceMapScript("instance_zulfarrak", 209) { }
 
-    InstanceScript* GetInstanceScript(InstanceMap* map) const
+    InstanceScript* GetInstanceScript(InstanceMap* map) const override
     {
         return new instance_zulfarrak_InstanceMapScript(map);
     }
 
     struct instance_zulfarrak_InstanceMapScript : public InstanceScript
     {
-        instance_zulfarrak_InstanceMapScript(Map* map) : InstanceScript(map) {}
+        instance_zulfarrak_InstanceMapScript(Map* map) : InstanceScript(map) { }
 
-        uint32 GahzRillaEncounter;
-        uint64 ZumrahGUID;
-        uint64 BlyGUID;
-        uint64 WeegliGUID;
-        uint64 OroGUID;
-        uint64 RavenGUID;
-        uint64 MurtaGUID;
-        uint64 EndDoorGUID;
-        uint32 PyramidPhase;
-        uint32 major_wave_Timer;
-        uint32 minor_wave_Timer;
-        uint32 addGroupSize;
-        uint32 waypoint;
+        uint64 ZumrahGUID, BlyGUID, WeegliGUID, OroGUID, RavenGUID, MurtaGUID, EndDoorGUID;
+        uint32 PyramidPhase, GahzRillaEncounter, major_wave_Timer, minor_wave_Timer, addGroupSize, waypoint;
+        std::vector<uint64> PyramideEncounters;
 
-        void Initialize()
+        void Initialize() override
         {
             GahzRillaEncounter = NOT_STARTED;
-            ZumrahGUID = 0;
-            BlyGUID = 0;
-            WeegliGUID = 0;
-            OroGUID = 0;
-            RavenGUID = 0;
-            MurtaGUID = 0;
-            EndDoorGUID = 0;
-            PyramidPhase = 0;
-            major_wave_Timer = 0;
-            minor_wave_Timer = 0;
-            addGroupSize = 0;
-            waypoint = 0;
+            ZumrahGUID         = 0;
+            BlyGUID            = 0;
+            WeegliGUID         = 0;
+            OroGUID            = 0;
+            RavenGUID          = 0;
+            MurtaGUID          = 0;
+            EndDoorGUID        = 0;
+            PyramidPhase       = 0;
+            major_wave_Timer   = 0;
+            minor_wave_Timer   = 0;
+            addGroupSize       = 0;
+            waypoint           = 0;
+            PyramideEncounters.clear();
         }
 
-        void OnCreatureCreate(Creature* creature)
+        void OnCreatureCreate(Creature* creature) override
         {
             switch (creature->GetEntry())
             {
-                case ENTRY_ZUMRAH:
+                case NPC_ZUM_RAH:
                     ZumrahGUID = creature->GetGUID();
                     break;
-                case ENTRY_BLY:
+                case NPC_BLY:
                     BlyGUID = creature->GetGUID();
                     creature->SetReactState(REACT_PASSIVE); // starts out passive (in a cage)
                     break;
-                case ENTRY_RAVEN:
+                case NPC_RAVEN:
                     RavenGUID = creature->GetGUID();
                     creature->SetReactState(REACT_PASSIVE);// starts out passive (in a cage)
                     break;
-                case ENTRY_ORO:
+                case NPC_ORO:
                     OroGUID = creature->GetGUID();
                     creature->SetReactState(REACT_PASSIVE);// starts out passive (in a cage)
                     break;
-                case ENTRY_WEEGLI:
+                case NPC_WEEGLI:
                     WeegliGUID = creature->GetGUID();
                     creature->SetReactState(REACT_PASSIVE);// starts out passive (in a cage)
                     break;
-                case ENTRY_MURTA:
+                case NPC_MURTA:
                     MurtaGUID = creature->GetGUID();
                     creature->SetReactState(REACT_PASSIVE);// starts out passive (in a cage)
                     break;
@@ -166,10 +163,23 @@ public:
                     else
                         GahzRillaEncounter = IN_PROGRESS;
                     break;
+                case NPC_NEKRUM:
+                case NPC_SEZZIZ:
+                    creature->SetVisible(false);
+                    creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
+                    PyramideEncounters.push_back(creature->GetGUID());
+                    break;
+                case NPC_DUSTWRAITH:
+                    if (!roll_chance_i(20))
+                    {
+                        creature->SetVisible(false); // spawn with 20% chance
+                        creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
+                    }
+                    break;
             }
         }
 
-        void OnGameObjectCreate(GameObject* go)
+        void OnGameObjectCreate(GameObject* go) override
         {
             switch (go->GetEntry())
             {
@@ -179,7 +189,7 @@ public:
             }
         }
 
-        uint32 GetData(uint32 type)
+        uint32 GetData(uint32 type) const override
         {
             switch (type)
             {
@@ -189,21 +199,21 @@ public:
             return 0;
         }
 
-        uint64 GetData64(uint32 data)
+        uint64 GetData64(uint32 data) const override
         {
             switch (data)
             {
-                case ENTRY_ZUMRAH:
+                case NPC_ZUM_RAH:
                     return ZumrahGUID;
-                case ENTRY_BLY:
+                case NPC_BLY:
                     return BlyGUID;
-                case ENTRY_RAVEN:
+                case NPC_RAVEN:
                     return RavenGUID;
-                case ENTRY_ORO:
+                case NPC_ORO:
                     return OroGUID;
-                case ENTRY_WEEGLI:
+                case NPC_WEEGLI:
                     return WeegliGUID;
-                case ENTRY_MURTA:
+                case NPC_MURTA:
                     return MurtaGUID;
                 case GO_END_DOOR:
                     return EndDoorGUID;
@@ -211,12 +221,12 @@ public:
             return 0;
         }
 
-        void SetData(uint32 type, uint32 data)
+        void SetData(uint32 type, uint32 data) override
         {
             switch (type)
             {
                 case EVENT_PYRAMID:
-                    PyramidPhase=data;
+                    PyramidPhase = data;
                     break;
             };
         }
@@ -282,12 +292,25 @@ public:
                     if (major_wave_Timer<diff)
                     {
                         // move NPCs to bottom of stair
-                        MoveNPCIfAlive(ENTRY_BLY, 1887.92f, 1228.179f, 9.98f, 4.78f);
-                        MoveNPCIfAlive(ENTRY_MURTA, 1891.57f, 1228.68f, 9.69f, 4.78f);
-                        MoveNPCIfAlive(ENTRY_ORO, 1897.23f, 1228.34f, 9.43f, 4.78f);
-                        MoveNPCIfAlive(ENTRY_RAVEN, 1883.68f, 1227.95f, 9.543f, 4.78f);
-                        MoveNPCIfAlive(ENTRY_WEEGLI, 1878.02f, 1227.65f, 9.485f, 4.78f);
+                        MoveNPCIfAlive(NPC_BLY, 1887.92f, 1228.179f, 9.98f, 4.78f);
+                        MoveNPCIfAlive(NPC_MURTA, 1891.57f, 1228.68f, 9.69f, 4.78f);
+                        MoveNPCIfAlive(NPC_ORO, 1897.23f, 1228.34f, 9.43f, 4.78f);
+                        MoveNPCIfAlive(NPC_RAVEN, 1883.68f, 1227.95f, 9.543f, 4.78f);
+                        MoveNPCIfAlive(NPC_WEEGLI, 1878.02f, 1227.65f, 9.485f, 4.78f);
                         SetData(EVENT_PYRAMID, PYRAMID_WAVE_3);
+
+                        // Spawn Nekrum and Sezziz
+                        if (!PyramideEncounters.empty())
+                        {
+                            for (auto pitr : PyramideEncounters)
+                            {
+                                if (Creature* NekrumOrSezziz = instance->GetCreature(pitr))
+                                {
+                                    NekrumOrSezziz->SetVisible(true);
+                                    NekrumOrSezziz->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
+                                }
+                            }
+                        }
                     }
                     else
                         major_wave_Timer -= diff;
@@ -296,11 +319,11 @@ public:
                     if (IsWaveAllDead()) // move NPCS to their final positions
                     {
                         SetData(EVENT_PYRAMID, PYRAMID_KILLED_ALL_TROLLS);
-                        MoveNPCIfAlive(ENTRY_BLY, 1883.82f, 1200.83f, 8.87f, 1.32f);
-                        MoveNPCIfAlive(ENTRY_MURTA, 1891.83f, 1201.45f, 8.87f, 1.32f);
-                        MoveNPCIfAlive(ENTRY_ORO, 1894.50f, 1204.40f, 8.87f, 1.32f);
-                        MoveNPCIfAlive(ENTRY_RAVEN, 1874.11f, 1206.17f, 8.87f, 1.32f);
-                        MoveNPCIfAlive(ENTRY_WEEGLI, 1877.52f, 1199.63f, 8.87f, 1.32f);
+                        MoveNPCIfAlive(NPC_BLY, 1883.82f, 1200.83f, 8.87f, 1.32f);
+                        MoveNPCIfAlive(NPC_MURTA, 1891.83f, 1201.45f, 8.87f, 1.32f);
+                        MoveNPCIfAlive(NPC_ORO, 1894.50f, 1204.40f, 8.87f, 1.32f);
+                        MoveNPCIfAlive(NPC_RAVEN, 1874.11f, 1206.17f, 8.87f, 1.32f);
+                        MoveNPCIfAlive(NPC_WEEGLI, 1877.52f, 1199.63f, 8.87f, 1.32f);
                     }
                     break;
             };
@@ -312,7 +335,7 @@ public:
         {
            if (Creature* npc = instance->GetCreature(GetData64(entry)))
            {
-               if (npc->isAlive())
+               if (npc->IsAlive())
                {
                     npc->SetWalk(true);
                     npc->GetMotionMaster()->MovePoint(1, x, y, z);
@@ -341,7 +364,7 @@ public:
             {
                 if (Creature* add = instance->GetCreature((*itr)))
                 {
-                    if (add->isAlive())
+                    if (add->IsAlive())
                         return false;
                 }
             }
@@ -349,7 +372,7 @@ public:
             {
                 if (Creature* add = instance->GetCreature(((*itr))))
                 {
-                    if (add->isAlive())
+                    if (add->IsAlive())
                         return false;
                 }
             }
@@ -363,7 +386,9 @@ public:
             {
                 if (Creature* add = instance->GetCreature(*addsAtBase.begin()))
                 {
-                    add->GetMotionMaster()->MovePath(PATH_ADDS, false);
+                    if (add->IsAlive())
+                        add->GetMotionMaster()->MovePath(PATH_ADDS, false);
+
                     movedadds.push_back(add->GetGUID());
                 }
                 addsAtBase.erase(addsAtBase.begin());

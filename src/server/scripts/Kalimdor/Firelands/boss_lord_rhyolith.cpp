@@ -28,7 +28,6 @@ enum Spells
     SPELL_MOLTEN_SPEW                       = 98043,
     SPELL_SUMMON_FRAGMENT_OF_RHYOLITH       = 98135,
     SPELL_SUMMON_FRAGMENT_OF_RHYOLITH_SUM   = 98136,
-    SPELL_SUMMON_FRAGMENT_OF_RHYOLITH_SUM_H = 100392,
     SPELL_SUMMON_SPARK_OF_RHYOLITH          = 98553,
     SPELL_SUMMON_SPARK_OF_RHYOLITH_SUM      = 98552,
     SPELL_IMMOLATION                        = 99846,
@@ -108,14 +107,11 @@ class boss_lord_rhyolith : public CreatureScript
     public:
         boss_lord_rhyolith() : CreatureScript("boss_lord_rhyolith") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_lord_rhyolithAI(pCreature);
-        }
-
         struct boss_lord_rhyolithAI : public BossAI
         {
-            boss_lord_rhyolithAI(Creature* pCreature) : BossAI(pCreature, DATA_RHYOLITH)
+            boss_lord_rhyolithAI(Creature* creature) : BossAI(creature, DATA_RHYOLITH) { }
+
+            void InitializeAI() override
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -136,19 +132,24 @@ class boss_lord_rhyolith : public CreatureScript
                 pRightFoot = NULL;
                 pLeftFoot = NULL;
                 curMove = 0;
-                bAchieve = true;
                 players_count = 0;
+                Reset();
+
+                if (Creature* leftFoot = me->FindNearestCreature(NPC_LEFT_FOOT, 20.0f, true))
+                    leftFoot->DespawnOrUnsummon();
+
+                if (Creature* rightFoot = me->FindNearestCreature(NPC_RIGHT_FOOT, 20.0f, true))
+                    rightFoot->DespawnOrUnsummon();
+
+                // Init Legs
+                uint32 delay = 0;
+                me->m_Events.Schedule(delay += 1500, 1, [this]()
+                {
+                    JustReachedHome();
+                });
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 
@@ -163,37 +164,36 @@ class boss_lord_rhyolith : public CreatureScript
                     me->DespawnOrUnsummon();
 
                 curMove = 0;
-                bAchieve = true;
                 players_count = 0;
                 phase = 0;
 
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BALANCE_BAR);
                 instance->SetData(DATA_RHYOLITH_HEALTH_SHARED, me->GetMaxHealth() / 2);
+                me->GetMap()->SetWorldState(WORLDSTATE_NOT_AN_AMBI_TURNER, 1);
             }
 
-            void EnterEvadeMode()
+            void EnterEvadeMode() override
             {
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BALANCE_BAR);
                 BossAI::EnterEvadeMode();
             }
 
-            void DamageTaken(Unit* /*who*/, uint32 &damage)
+            void DamageTaken(Unit* /*attacker*/, uint32 &damage) override
             {
                 damage = 0;
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 if (summon->GetEntry() != NPC_RHYOLITH_2)
                     BossAI::JustSummoned(summon);
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 
                 curMove = 0;
-                bAchieve = true;
                 phase = 0;
                 players_count = instance->instance->GetPlayers().getSize();
 
@@ -222,15 +222,15 @@ class boss_lord_rhyolith : public CreatureScript
                 instance->SetBossState(DATA_RHYOLITH, IN_PROGRESS);
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 me->GetVehicleKit()->InstallAllAccessories(false);
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BALANCE_BAR);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
-                switch(action)
+                switch (action)
                 {
                     case ACTION_ADD_MOLTEN_ARMOR:
                         me->CastSpell(me, SPELL_MOLTEN_ARMOR, true);
@@ -261,13 +261,13 @@ class boss_lord_rhyolith : public CreatureScript
                 }
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who->GetTypeId() == TYPEID_PLAYER)
+                if (victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -289,7 +289,6 @@ class boss_lord_rhyolith : public CreatureScript
                         pRhyolith->SetHealth(_health);
                         pRhyolith->LowerPlayerDamageReq(pRhyolith->GetMaxHealth());
                         pRhyolith->CastSpell(pRhyolith, SPELL_IMMOLATION, true);
-                        pRhyolith->AI()->SetData(DATA_ACHIEVE, uint32(bAchieve));
                     }
 
                     summons.DespawnEntry(NPC_VOLCANO);
@@ -354,14 +353,17 @@ class boss_lord_rhyolith : public CreatureScript
                                         pLeftFoot->RemoveAura(SPELL_BURNING_FEET);
                                     if (pRightFoot)
                                         pRightFoot->RemoveAura(SPELL_BURNING_FEET);
+
                                     instance->DoSetAlternatePowerOnPlayers(25);
+
+
                                     events.ScheduleEvent(EVENT_CHECK_MOVE, 1000);
                                     return;
                                 }
 
                                 int32 i = NormalizeMove(curMove, CalculateNextMove(curMove, l_dmg, r_dmg));
                                 if (i < 0)
-                                    bAchieve = false;
+                                    me->GetMap()->SetWorldState(WORLDSTATE_NOT_AN_AMBI_TURNER, 0);
 
                                 if (i != curMove)
                                 {
@@ -393,7 +395,7 @@ class boss_lord_rhyolith : public CreatureScript
                         case EVENT_ACTIVATE_VOLCANO:
                         {
                             std::list<Creature*> volcanos;
-                            Creature* pTarget = NULL;
+                            Creature* target = NULL;
                             me->GetCreatureListWithEntryInGrid(volcanos, NPC_VOLCANO, 300.0f);
                             
                             if (!volcanos.empty())
@@ -407,12 +409,12 @@ class boss_lord_rhyolith : public CreatureScript
                                     if (me->HasInArc(M_PI / 2, (*itr)))
                                         volcanos_1.push_back((*itr));
                                 }
-                                pTarget = JadeCore::Containers::SelectRandomContainerElement((volcanos_1.empty() ? volcanos : volcanos_1));
+                                target = Trinity::Containers::SelectRandomContainerElement((volcanos_1.empty() ? volcanos : volcanos_1));
                             }
-                            if (pTarget)
+                            if (target)
                             {
                                 Talk(SAY_LAVA);
-                                DoCast(pTarget, SPELL_HEATED_VOLCANO, true);
+                                DoCast(target, SPELL_HEATED_VOLCANO, true);
                             }
                             events.ScheduleEvent(EVENT_ACTIVATE_VOLCANO, urand(45000, 50000));
                             break;
@@ -449,7 +451,7 @@ class boss_lord_rhyolith : public CreatureScript
                             break;
                         case EVENT_START_MOVE:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             break;
                         default:
                             break;
@@ -458,12 +460,12 @@ class boss_lord_rhyolith : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
             Creature* pController;
             Creature* pRightFoot;
             Creature* pLeftFoot;
             int32 curMove;
-            bool bAchieve;
             uint8 players_count;
             uint8 phase;
 
@@ -511,16 +513,22 @@ class boss_lord_rhyolith : public CreatureScript
             class AuraCheck
             {
                 public:
-                    AuraCheck(uint32 spellId) : _spellId(spellId) {}
+                    AuraCheck(uint32 spellId) : _spellId(spellId) { }
         
                     bool operator()(Creature* volcano)
                     {
                        return (volcano->HasAura(_spellId));
                     }
+
                 private:
                     uint32 _spellId;
             };
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_lord_rhyolithAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_rhyolith : public CreatureScript
@@ -528,14 +536,9 @@ class npc_lord_rhyolith_rhyolith : public CreatureScript
     public:
         npc_lord_rhyolith_rhyolith() : CreatureScript("npc_lord_rhyolith_rhyolith") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_lord_rhyolith_rhyolithAI(pCreature);
-        }
-
         struct npc_lord_rhyolith_rhyolithAI : public ScriptedAI
         {
-            npc_lord_rhyolith_rhyolithAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_lord_rhyolith_rhyolithAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -550,66 +553,47 @@ class npc_lord_rhyolith_rhyolith : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
                 me->setActive(true);
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
             }
 
-            void InitializeAI()
-            {
-                if (!pInstance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterEvadeMode()
+            void EnterEvadeMode() override
             {
                 me->DespawnOrUnsummon();
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_CONCLUSIVE_STOMP, 10000);
 
                 DoZoneInCombat();
             }
 
-            void SetData(uint32 type, uint32 data)
+            void JustDied(Unit* killer) override
             {
-                if (type == DATA_ACHIEVE)
-                    bAchieve = data;
-            }
-
-            bool AllowAchieve()
-            {
-                return bAchieve;
-            }
-
-            void JustDied(Unit* killer)
-            {
-                if (pInstance)
+                if (instance)
                 {
-                    if (Creature* pRhyolith = ObjectAccessor::GetCreature(*me, pInstance->GetData64(DATA_RHYOLITH)))
+                    if (Creature* pRhyolith = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RHYOLITH)))
                         killer->Kill(pRhyolith);
-                    pInstance->SetBossState(DATA_RHYOLITH, DONE);
-                    pInstance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BALANCE_BAR);
+                    instance->SetBossState(DATA_RHYOLITH, DONE);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BALANCE_BAR);
                 }
                 Talk(SAY_DEATH);
 
                 AddSmoulderingAura(me);
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who->GetTypeId() == TYPEID_PLAYER)
+                if (victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -635,11 +619,16 @@ class npc_lord_rhyolith_rhyolith : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
-            bool bAchieve;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_rhyolithAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_right_foot : public CreatureScript
@@ -647,29 +636,27 @@ class npc_lord_rhyolith_right_foot : public CreatureScript
     public:
         npc_lord_rhyolith_right_foot() : CreatureScript("npc_lord_rhyolith_right_foot") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_lord_rhyolith_right_footAI : public ScriptedAI
         {
-            return new npc_lord_rhyolith_right_footAI(pCreature);
-        }
+            npc_lord_rhyolith_right_footAI(Creature* creature) : ScriptedAI(creature) { }
 
-        struct npc_lord_rhyolith_right_footAI : public Scripted_NoMovementAI
-        {
-            npc_lord_rhyolith_right_footAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            void InitializeAI() override
             {
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 me->SetReactState(REACT_PASSIVE);
                 me->CastCustomSpell(SPELL_OBSIDIAN_ARMOR, SPELLVALUE_AURA_STACK, 80, me, true);
                 memset(m_hits, 0, sizeof(m_hits));
+                SetCombatMovement(false);
                 hitsTimer = 1000;
             }
 
-            void Reset()
+            void Reset() override
             {
                 memset(m_hits, 0, sizeof(m_hits));
                 hitsTimer = 1000;
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (Creature* pRhyolith = me->FindNearestCreature(NPC_RHYOLITH, 300.0f))
                     DoZoneInCombat(pRhyolith);
@@ -677,28 +664,28 @@ class npc_lord_rhyolith_right_foot : public CreatureScript
                     DoZoneInCombat(pLeftFoot);
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 if (type == DATA_HITS)
                     return GetHits();
+
                 return 0;
             }
 
-            void DamageTaken(Unit* who, uint32 &damage)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (!me || !me->isAlive())
+                if (!me || !me->IsAlive())
                     return;
 
-                if (who->GetGUID() == me->GetGUID())
+                if (attacker->GetGUID() == me->GetGUID())
                     return;
 
                 m_hits[0]++;
 
-                if (pInstance)
-                    pInstance->SetData(DATA_RHYOLITH_HEALTH_SHARED, me->GetHealth() > damage ? me->GetHealth() - damage : 0);
+                instance->SetData(DATA_RHYOLITH_HEALTH_SHARED, me->GetHealth() > damage ? me->GetHealth() - damage : 0);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -711,12 +698,12 @@ class npc_lord_rhyolith_right_foot : public CreatureScript
                      hitsTimer = 1000;
                 }
 
-                if (pInstance)
-                    if (pInstance->GetData(DATA_RHYOLITH_HEALTH_SHARED) != 0)
-                        me->SetHealth(pInstance->GetData(DATA_RHYOLITH_HEALTH_SHARED));
+                if (instance->GetData(DATA_RHYOLITH_HEALTH_SHARED) != 0)
+                    me->SetHealth(instance->GetData(DATA_RHYOLITH_HEALTH_SHARED));
             }
+
         private:
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             uint32 m_hits[3];
             int32 hitsTimer;
 
@@ -728,19 +715,21 @@ class npc_lord_rhyolith_right_foot : public CreatureScript
                 m_hits[0] = 0;
             }
 
-            uint32 GetHits()
+            uint32 GetHits() const
             {
                 uint32 value = 0;
 
                 for (uint8 i = 0; i < 3; ++i)
                      value += m_hits[i];
 
-                if (value < 0)
-                    return 0;
-
                 return value;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_right_footAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_left_foot : public CreatureScript
@@ -748,29 +737,27 @@ class npc_lord_rhyolith_left_foot : public CreatureScript
     public:
         npc_lord_rhyolith_left_foot() : CreatureScript("npc_lord_rhyolith_left_foot") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_lord_rhyolith_left_footAI : public ScriptedAI
         {
-            return new npc_lord_rhyolith_left_footAI(pCreature);
-        }
+            npc_lord_rhyolith_left_footAI(Creature* creature) : ScriptedAI(creature) { }
 
-        struct npc_lord_rhyolith_left_footAI : public Scripted_NoMovementAI
-        {
-            npc_lord_rhyolith_left_footAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            void InitializeAI() override
             {
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 me->SetReactState(REACT_PASSIVE);
                 me->CastCustomSpell(SPELL_OBSIDIAN_ARMOR, SPELLVALUE_AURA_STACK, 80, me, true);
                 memset(m_hits, 0, sizeof(m_hits));
+                SetCombatMovement(false);
                 hitsTimer = 1000;
             }
 
-            void Reset()
+            void Reset() override
             {
                 memset(m_hits, 0, sizeof(m_hits));
                 hitsTimer = 1000;
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (Creature* pRhyolith = me->FindNearestCreature(NPC_RHYOLITH, 300.0f))
                     DoZoneInCombat(pRhyolith);
@@ -778,28 +765,28 @@ class npc_lord_rhyolith_left_foot : public CreatureScript
                     DoZoneInCombat(pRightFoot);
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 if (type == DATA_HITS)
                     return GetHits();
+
                 return 0;
             }
 
-            void DamageTaken(Unit* who, uint32 &damage)
+            void DamageTaken(Unit* attacker, uint32& damage) override
             {
-                if (!me || !me->isAlive())
+                if (!me || !me->IsAlive())
                     return;
 
-                if (who->GetGUID() == me->GetGUID())
+                if (attacker->GetGUID() == me->GetGUID())
                     return;
 
                 m_hits[0]++;
 
-                if (pInstance)
-                    pInstance->SetData(DATA_RHYOLITH_HEALTH_SHARED, me->GetHealth() > damage ? me->GetHealth() - damage : 0);
+                instance->SetData(DATA_RHYOLITH_HEALTH_SHARED, me->GetHealth() > damage ? me->GetHealth() - damage : 0);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -812,12 +799,12 @@ class npc_lord_rhyolith_left_foot : public CreatureScript
                      hitsTimer = 1000;
                 }
 
-                if (pInstance)
-                    if (pInstance->GetData(DATA_RHYOLITH_HEALTH_SHARED) != 0)
-                        me->SetHealth(pInstance->GetData(DATA_RHYOLITH_HEALTH_SHARED));
+                if (instance->GetData(DATA_RHYOLITH_HEALTH_SHARED) != 0)
+                    me->SetHealth(instance->GetData(DATA_RHYOLITH_HEALTH_SHARED));
             }
+
         private:
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             uint32 m_hits[3];
             int32 hitsTimer;
 
@@ -829,19 +816,21 @@ class npc_lord_rhyolith_left_foot : public CreatureScript
                 m_hits[0] = 0;
             }
 
-            uint32 GetHits()
+            uint32 GetHits() const
             {
                 uint32 value = 0;
 
                 for (uint8 i = 0; i < 3; ++i)
                      value += m_hits[i];
 
-                if (value < 0)
-                    return 0;
-
                 return value;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_left_footAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_volcano : public CreatureScript
@@ -849,40 +838,36 @@ class npc_lord_rhyolith_volcano : public CreatureScript
     public:
         npc_lord_rhyolith_volcano() : CreatureScript("npc_lord_rhyolith_volcano") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_lord_rhyolith_volcanoAI : public ScriptedAI
         {
-            return new npc_lord_rhyolith_volcanoAI(pCreature);
-        }
-
-        struct npc_lord_rhyolith_volcanoAI : public Scripted_NoMovementAI
-        {
-            npc_lord_rhyolith_volcanoAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_lord_rhyolith_volcanoAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 DoCast(me, SPELL_VOLCANO_SMOKE, true);
                 events.ScheduleEvent(EVENT_CHECK_RHYOLITH, 3000);       
             }
 
-            void SpellHit(Unit* /*who*/, const SpellInfo* spellInfo)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
-                if (spellInfo->Id == SPELL_HEATED_VOLCANO)
+                if (spell->Id == SPELL_HEATED_VOLCANO)
                 {
                     me->RemoveAura(SPELL_VOLCANO_SMOKE);
                     events.ScheduleEvent(EVENT_ERUPTION, 3000);
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -903,9 +888,9 @@ class npc_lord_rhyolith_volcano : public CreatureScript
                                     return;
 
                                 uint32 k = urand(0, _MAX_VOLCANO - 1);
-                                if (Unit* pTarget = pRhyolith->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 300.0f, true))
-                                    if (Player* pPlayer = pTarget->ToPlayer())
-                                        pPlayer->SummonGameObject(GO_RHYOLITH_FRAGMENT, volcanoPos[k].GetPositionX(), volcanoPos[k].GetPositionY(), volcanoPos[k].GetPositionZ(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, MINUTE * IN_MILLISECONDS);  
+                                if (Unit* target = pRhyolith->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 300.0f, true))
+                                    if (Player* player = target->ToPlayer())
+                                        player->SummonGameObject(GO_RHYOLITH_FRAGMENT, volcanoPos[k].GetPositionX(), volcanoPos[k].GetPositionY(), volcanoPos[k].GetPositionZ(), 0.0f, { }, MINUTE * IN_MILLISECONDS);
 
                                 pRhyolith->AI()->DoAction(ACTION_ADD_MOLTEN_ARMOR);
                                 pRhyolith->AI()->DoAction(ACTION_REMOVE_OBSIDIAN_ARMOR);
@@ -937,9 +922,15 @@ class npc_lord_rhyolith_volcano : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_volcanoAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_crater : public CreatureScript
@@ -947,32 +938,28 @@ class npc_lord_rhyolith_crater : public CreatureScript
     public:
         npc_lord_rhyolith_crater() : CreatureScript("npc_lord_rhyolith_crater") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_lord_rhyolith_craterAI : public ScriptedAI
         {
-            return new npc_lord_rhyolith_craterAI(pCreature);
-        }
-
-        struct npc_lord_rhyolith_craterAI : public Scripted_NoMovementAI
-        {
-            npc_lord_rhyolith_craterAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_lord_rhyolith_craterAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 DoCast(me, SPELL_EXPLODE, true);
                 DoCast(me, SPELL_MAGMA, true);
                 events.ScheduleEvent(EVENT_MAGMA_FLOW, 20000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -998,9 +985,15 @@ class npc_lord_rhyolith_crater : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_craterAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_liquid_obsidian : public CreatureScript
@@ -1008,31 +1001,26 @@ class npc_lord_rhyolith_liquid_obsidian : public CreatureScript
     public:
         npc_lord_rhyolith_liquid_obsidian() : CreatureScript("npc_lord_rhyolith_liquid_obsidian") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_lord_rhyolith_liquid_obsidianAI(pCreature);
-        }
-
         struct npc_lord_rhyolith_liquid_obsidianAI : public ScriptedAI
         {
-            npc_lord_rhyolith_liquid_obsidianAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_lord_rhyolith_liquid_obsidianAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetSpeed(MOVE_RUN, 0.3f, true);
                 me->SetSpeed(MOVE_WALK, 0.3f, true);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_START_MOVE, 2000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1059,9 +1047,15 @@ class npc_lord_rhyolith_liquid_obsidian : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_liquid_obsidianAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_spark_of_rhyolith : public CreatureScript
@@ -1069,29 +1063,24 @@ class npc_lord_rhyolith_spark_of_rhyolith : public CreatureScript
     public:
         npc_lord_rhyolith_spark_of_rhyolith() : CreatureScript("npc_lord_rhyolith_spark_of_rhyolith") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_lord_rhyolith_spark_of_rhyolithAI(pCreature);
-        }
-
         struct npc_lord_rhyolith_spark_of_rhyolithAI : public ScriptedAI
         {
-            npc_lord_rhyolith_spark_of_rhyolithAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_lord_rhyolith_spark_of_rhyolithAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_START_MOVE, 2000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1105,7 +1094,7 @@ class npc_lord_rhyolith_spark_of_rhyolith : public CreatureScript
                         case EVENT_START_MOVE:
                             DoCast(me, SPELL_IMMOLATION_SPARK, true);
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             events.ScheduleEvent(EVENT_INFERNAL_RAGE, 5000);
                             break;
                         case EVENT_INFERNAL_RAGE:
@@ -1115,9 +1104,15 @@ class npc_lord_rhyolith_spark_of_rhyolith : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_spark_of_rhyolithAI>(creature);
+        }
 };
 
 class npc_lord_rhyolith_fragment_of_rhyolith : public CreatureScript
@@ -1125,42 +1120,37 @@ class npc_lord_rhyolith_fragment_of_rhyolith : public CreatureScript
     public:
         npc_lord_rhyolith_fragment_of_rhyolith() : CreatureScript("npc_lord_rhyolith_fragment_of_rhyolith") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_lord_rhyolith_fragment_of_rhyolithAI(pCreature);
-        }
-
         struct npc_lord_rhyolith_fragment_of_rhyolithAI : public ScriptedAI
         {
-            npc_lord_rhyolith_fragment_of_rhyolithAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_lord_rhyolith_fragment_of_rhyolithAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 if (Creature* pRhyolith = me->FindNearestCreature(NPC_RHYOLITH, 5.0f))
                     pRhyolith->AI()->DoAction(ACTION_REMOVE_MOLTEN_ARMOR);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_START_MOVE, 2000);
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
-                    if (data == EVENT_CHARGE)
+                    if (pointId == EVENT_CHARGE)
                         me->Kill(me);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1174,14 +1164,20 @@ class npc_lord_rhyolith_fragment_of_rhyolith : public CreatureScript
                         case EVENT_START_MOVE:
                             DoCast(me, SPELL_MELTDOWN, true);
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             break;
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lord_rhyolith_fragment_of_rhyolithAI>(creature);
+        }
 };
 
 class spell_lord_rhyolith_conclusive_stomp : public SpellScriptLoader
@@ -1189,18 +1185,17 @@ class spell_lord_rhyolith_conclusive_stomp : public SpellScriptLoader
     public:
         spell_lord_rhyolith_conclusive_stomp() : SpellScriptLoader("spell_lord_rhyolith_conclusive_stomp") { }
 
-
         class spell_lord_rhyolith_conclusive_stomp_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_lord_rhyolith_conclusive_stomp_SpellScript);
 
-            void HandleDummy(SpellEffIndex effIndex)
+            void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 if (!GetCaster())
                     return;
 
-                if (Creature* pCreature = GetCaster()->ToCreature())
-                    if (pCreature->GetEntry() != NPC_RHYOLITH_2)
+                if (Creature* creature = GetCaster()->ToCreature())
+                    if (creature->GetEntry() != NPC_RHYOLITH_2)
                     {
                         std::set<uint8> posList;
                         uint8 max_size = urand(2, 3);
@@ -1234,21 +1229,21 @@ class spell_lord_rhyolith_conclusive_stomp : public SpellScriptLoader
                         if (Creature* pFocus = (*itr)->ToCreature())
                         {
                             pFocus->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                            pFocus->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            pFocus->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                             pFocus->CastSpell(pFocus, SPELL_TRANSFORM_CHARGED_RHYOLITH_FOCUS, true);
                         }
                     }
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_lord_rhyolith_conclusive_stomp_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
                 AfterCast += SpellCastFn(spell_lord_rhyolith_conclusive_stomp_SpellScript::HandleAfterCast);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_lord_rhyolith_conclusive_stomp_SpellScript();
         }
@@ -1263,14 +1258,14 @@ class spell_lord_rhyolith_magma_flow : public SpellScriptLoader
         {
             PrepareAuraScript(spell_lord_rhyolith_magma_flow_AuraScript);
             
-            bool Load()
+            bool Load() override
             {
                 count = 0;
                 add = true;
                 return true;
             }
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
@@ -1285,7 +1280,7 @@ class spell_lord_rhyolith_magma_flow : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_lord_rhyolith_magma_flow_AuraScript::PeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
             }
@@ -1295,7 +1290,7 @@ class spell_lord_rhyolith_magma_flow : public SpellScriptLoader
             bool add;
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_lord_rhyolith_magma_flow_AuraScript();
         }
@@ -1305,7 +1300,6 @@ class spell_lord_rhyolith_fuse : public SpellScriptLoader
 {
     public:
         spell_lord_rhyolith_fuse() : SpellScriptLoader("spell_lord_rhyolith_fuse") { }
-
 
         class spell_lord_rhyolith_fuse_SpellScript : public SpellScript
         {
@@ -1320,13 +1314,13 @@ class spell_lord_rhyolith_fuse : public SpellScriptLoader
                         pRhyolith->AI()->DoAction(ACTION_ADD_OBSIDIAN_ARMOR);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_lord_rhyolith_fuse_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_lord_rhyolith_fuse_SpellScript();
         }
@@ -1350,13 +1344,13 @@ class spell_lord_rhyolith_drink_magma : public SpellScriptLoader
                 GetCaster()->CastSpell(GetCaster(), SPELL_MOLTEN_SPEW, true);
             }
 
-            void Register()
+            void Register() override
             {
                 AfterCast += SpellCastFn(spell_lord_rhyolith_drink_magma_SpellScript::HandleDummy);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_lord_rhyolith_drink_magma_SpellScript();
         }
@@ -1366,7 +1360,6 @@ class spell_lord_rhyolith_lava_strike : public SpellScriptLoader
 {
     public:
         spell_lord_rhyolith_lava_strike() : SpellScriptLoader("spell_lord_rhyolith_lava_strike") { }
-
 
         class spell_lord_rhyolith_lava_strike_SpellScript : public SpellScript
         {
@@ -1379,7 +1372,7 @@ class spell_lord_rhyolith_lava_strike : public SpellScriptLoader
 
                 uint32 max_size = (GetCaster()->GetMap()->Is25ManRaid() ? 6 : 3);
                 if (!targets.empty())
-                    JadeCore::Containers::RandomResizeList(targets, max_size);
+                    Trinity::Containers::RandomResizeList(targets, max_size);
             }
 
             void HandleDummy(SpellEffIndex effIndex)
@@ -1390,33 +1383,16 @@ class spell_lord_rhyolith_lava_strike : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_LAVA_STRIKE, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lord_rhyolith_lava_strike_SpellScript::FilterTargets, EFFECT_0,TARGET_UNIT_DEST_AREA_ENEMY);
                 OnEffectHitTarget += SpellEffectFn(spell_lord_rhyolith_lava_strike_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_lord_rhyolith_lava_strike_SpellScript();
-        }
-};
-
-class achievement_not_an_ambi_turner : public AchievementCriteriaScript
-{
-    public:
-        achievement_not_an_ambi_turner() : AchievementCriteriaScript("achievement_not_an_ambi_turner") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (npc_lord_rhyolith_rhyolith::npc_lord_rhyolith_rhyolithAI* lord_rhyolithAI = CAST_AI(npc_lord_rhyolith_rhyolith::npc_lord_rhyolith_rhyolithAI, target->GetAI()))
-                return lord_rhyolithAI->AllowAchieve();
-
-            return false;
         }
 };
 
@@ -1436,5 +1412,4 @@ void AddSC_boss_lord_rhyolith()
     new spell_lord_rhyolith_fuse();
     new spell_lord_rhyolith_drink_magma();
     new spell_lord_rhyolith_lava_strike();
-    new achievement_not_an_ambi_turner();
 }

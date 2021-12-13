@@ -4,11 +4,11 @@
 enum ScriptTexts
 {
     // Nozdormu
-    SAY_INTRO_1 = 0, // Tyrande
-    SAY_INTRO_2 = 1, // Baine
-    SAY_INTRO_3 = 2, // Jaina
-    SAY_INTRO_4 = 3, // Sylvanas
-    SAY_INTRO_5 = 4, // Sylvanas
+    SAY_INTRO_1             = 0, // Tyrande
+    SAY_INTRO_2             = 1, // Baine
+    SAY_INTRO_3             = 2, // Jaina
+    SAY_INTRO_4             = 3, // Sylvanas
+    SAY_INTRO_5             = 4, // Sylvanas
 };
 
 enum Spells
@@ -104,30 +104,24 @@ enum Adds
 class npc_end_time_image_of_nozdormu : public CreatureScript
 {
     public:
-
         npc_end_time_image_of_nozdormu() : CreatureScript("npc_end_time_image_of_nozdormu") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_end_time_image_of_nozdormuAI(pCreature);
-        }
 
         struct npc_end_time_image_of_nozdormuAI : public ScriptedAI
         {
-            npc_end_time_image_of_nozdormuAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_end_time_image_of_nozdormuAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->setActive(true);
                 id = 0;
                 bTalk = false;
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -144,12 +138,12 @@ class npc_end_time_image_of_nozdormu : public CreatureScript
                         id = 3;
                         break;
                 }
-                if (pInstance)
+                if (instance)
                 {
-                    if (pInstance->GetData(11 + id) != IN_PROGRESS)
+                    if (instance->GetData(11 + id) != IN_PROGRESS)
                         return;
                     else
-                        pInstance->SetData(11 + id, DONE);
+                        instance->SetData(11 + id, DONE);
                 }
                 bTalk = true;
                 events.ScheduleEvent(EVENT_TALK, 15000);
@@ -157,7 +151,7 @@ class npc_end_time_image_of_nozdormu : public CreatureScript
                     events.ScheduleEvent(EVENT_TALK_1, 25000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!bTalk)
                     return;
@@ -169,12 +163,12 @@ class npc_end_time_image_of_nozdormu : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_TALK:
-                            Talk(id, 0, 3);
+                            Talk(id, 0);
                             if (id != 3)
                                 bTalk = false;
                             break;
                         case EVENT_TALK_1:
-                            Talk(SAY_INTRO_5, 0, 3);
+                            Talk(SAY_INTRO_5, 0);
                             bTalk = false;
                             break;
                     }
@@ -185,40 +179,39 @@ class npc_end_time_image_of_nozdormu : public CreatureScript
             bool bTalk;
             uint8 id;
             EventMap events;
-            InstanceScript* pInstance;
+            InstanceScript* instance;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_image_of_nozdormuAI>(creature);
+        }
 };
 
 class npc_end_time_infinite_warden : public CreatureScript
 {
     public:
-
         npc_end_time_infinite_warden() : CreatureScript("npc_end_time_infinite_warden") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_end_time_infinite_wardenAI(pCreature);
-        }
 
         struct npc_end_time_infinite_wardenAI : public ScriptedAI
         {
-            npc_end_time_infinite_wardenAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_end_time_infinite_wardenAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->setActive(true);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_VOID_SHIELD, urand(10000, 20000));
                 events.ScheduleEvent(EVENT_VOID_STRIKE, urand(5000, 10000));
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -236,7 +229,7 @@ class npc_end_time_infinite_warden : public CreatureScript
                             DoCast(me, SPELL_VOID_SHIELD);
                             break;
                         case EVENT_VOID_STRIKE:
-                            DoCast(me->getVictim(), SPELL_VOID_STRIKE);
+                            DoCast(me->GetVictim(), SPELL_VOID_STRIKE);
                             events.ScheduleEvent(EVENT_VOID_STRIKE, urand(8000, 15000));
                             break;
                         default:
@@ -246,61 +239,69 @@ class npc_end_time_infinite_warden : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_infinite_wardenAI>(creature);
+        }
 };
 
 class npc_end_time_infinite_suppressor : public CreatureScript
 {
     public:
-
         npc_end_time_infinite_suppressor() : CreatureScript("npc_end_time_infinite_suppressor") { }
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_end_time_infinite_suppressorAI(pCreature);
-        }
 
         struct npc_end_time_infinite_suppressorAI : public ScriptedAI
         {
-            npc_end_time_infinite_suppressorAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_end_time_infinite_suppressorAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->setActive(true);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
-
                 events.ScheduleEvent(EVENT_ARCANE_WAVE, 1000);
                 events.ScheduleEvent(EVENT_TEMPORAL_VORTEX, 5000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
 
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_ARCANE_WAVE:
-                            DoCast(me->getVictim(), SPELL_ARCANE_WAVE);
+                            if (me->HasUnitState(UNIT_STATE_CASTING) && me->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
+                            {
+                                events.RescheduleEvent(EVENT_ARCANE_WAVE, 5 * IN_MILLISECONDS);
+                                break;
+                            }
+
+                            if (Unit* vict = me->GetVictim())
+                                DoCast(vict, SPELL_ARCANE_WAVE);
+
                             events.ScheduleEvent(EVENT_ARCANE_WAVE, 3000);
                             break;
                         case EVENT_TEMPORAL_VORTEX:
-                            DoCast(me->getVictim(), SPELL_TEMPORAL_VORTEX);
+                            me->InterruptNonMeleeSpells(true);
+
+                            if (Unit* vict = me->GetVictim())
+                                DoCast(vict, SPELL_TEMPORAL_VORTEX);
+
                             events.ScheduleEvent(SPELL_TEMPORAL_VORTEX, urand(15000, 20000));
                             break;
                         default:
@@ -310,9 +311,375 @@ class npc_end_time_infinite_suppressor : public CreatureScript
 
                 DoMeleeAttackIfReady();
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_infinite_suppressorAI>(creature);
+        }
+};
+
+// Time-Twisted Rifleman 54693
+class npc_end_time_time_twisted_rifleman : public CreatureScript
+{
+    public:
+        npc_end_time_time_twisted_rifleman() : CreatureScript("npc_end_time_time_twisted_rifleman") { }
+
+        enum iSpells
+        {
+            SPELL_SHOT       = 102410,
+            SPELL_MULTY_SHOT = 102411,
+        };
+
+        enum iEvents
+        {
+            EVENT_MULTY_SHOT = 1,
+        };
+
+        struct npc_end_time_time_twisted_riflemanAI : public ScriptedAI
+        {
+            npc_end_time_time_twisted_riflemanAI(Creature* creature) : ScriptedAI(creature) { }
+
+            bool hasMelee;
+
+            void Reset() override
+            {
+                hasMelee = false;
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                events.Reset();
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                events.ScheduleEvent(EVENT_MULTY_SHOT, urand(5 * IN_MILLISECONDS, 8 * IN_MILLISECONDS));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    if (eventId == EVENT_MULTY_SHOT)
+                    {
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 120.0f, true))
+                            DoCast(target, SPELL_MULTY_SHOT);
+
+                        events.ScheduleEvent(EVENT_MULTY_SHOT, urand(12 * IN_MILLISECONDS, 20 * IN_MILLISECONDS));
+                    }
+                    break;
+                }
+
+                if (Unit* victim = me->GetVictim())
+                {
+                    if (!me->IsWithinMeleeRange(victim) && !me->HasUnitState(UNIT_STATE_CASTING))
+                        DoCast(victim, SPELL_SHOT);
+                    else if (!hasMelee)
+                    {
+                        me->InterruptNonMeleeSpells(true);
+                        hasMelee = true;
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                        me->AI()->AttackStart(victim);
+                        me->GetMotionMaster()->MoveChase(victim);
+                    }
+                }
+
+                if (hasMelee)
+                    DoMeleeAttackIfReady();
+            }
+
+        private:
+            EventMap events;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_time_twisted_riflemanAI>(creature);
+        }
+};
+
+// Time-Twisted Priest 54690
+class npc_end_time_time_twisted_priest : public CreatureScript
+{
+    public:
+        npc_end_time_time_twisted_priest() : CreatureScript("npc_end_time_time_twisted_priest") { }
+
+        enum iSpells
+        {
+            SPELL_POWER_WORD_SHIELD = 102409,
+            SPELL_LIGHTSPRING       = 102405,
+            SPELL_LIGHT_RAIN        = 102406,
+        };
+
+        enum iEvents
+        {
+            EVENT_SHIELD      = 1,
+            EVENT_LIGHTSPRING = 2,
+        };
+
+        struct npc_end_time_time_twisted_priestAI : public ScriptedAI
+        {
+            npc_end_time_time_twisted_priestAI(Creature* creature) : ScriptedAI(creature), summons(me) { }
+
+            SummonList summons;
+
+            void Reset() override
+            {
+                summons.DespawnAll();
+                events.Reset();
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                DoCast(me, SPELL_POWER_WORD_SHIELD);
+                events.ScheduleEvent(EVENT_SHIELD, urand(13 * IN_MILLISECONDS, 18 * IN_MILLISECONDS));
+                events.ScheduleEvent(EVENT_LIGHTSPRING, urand(12 * IN_MILLISECONDS, 26 * IN_MILLISECONDS));
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+                summon->SetInCombatWithZone();
+                summon->CastSpell(summon, SPELL_LIGHT_RAIN, false);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_SHIELD:
+                            DoCast(me, SPELL_POWER_WORD_SHIELD);
+                            events.ScheduleEvent(EVENT_SHIELD, urand(13 * IN_MILLISECONDS, 18 * IN_MILLISECONDS));
+                            break;
+                        case EVENT_LIGHTSPRING:
+                            DoCast(me, SPELL_LIGHTSPRING);
+                            events.ScheduleEvent(EVENT_LIGHTSPRING, urand(18 * IN_MILLISECONDS, 26 * IN_MILLISECONDS));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+
+        private:
+            EventMap events;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_time_twisted_priestAI>(creature);
+        }
+};
+
+// Time-Twisted Footman 54687
+class npc_end_time_time_twisted_footman : public CreatureScript
+{
+    public:
+        npc_end_time_time_twisted_footman() : CreatureScript("npc_end_time_time_twisted_footman") { }
+
+        enum iSpells
+        {
+            SPELL_THUNDERCLAP = 101820,
+            SPELL_SHIELD_WALL = 101811,
+            SPELL_SHIELD_BASH = 101817,
+        };
+
+        enum iEvents
+        {
+            EVENT_THUNDERCLAP = 1,
+            EVENT_SHIELD_BASH = 2,
+        };
+
+        struct npc_end_time_time_twisted_footmanAI : public ScriptedAI
+        {
+            npc_end_time_time_twisted_footmanAI(Creature* creature) : ScriptedAI(creature) { }
+
+            bool hasShieldWall;
+
+            void Reset() override
+            {
+                hasShieldWall = false;
+                events.Reset();
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                events.ScheduleEvent(EVENT_THUNDERCLAP, urand(3 * IN_MILLISECONDS, 6 * IN_MILLISECONDS));
+                events.ScheduleEvent(EVENT_SHIELD_BASH, urand(8 * IN_MILLISECONDS, 17.5 * IN_MILLISECONDS));
+            }
+
+            void DamageTaken(Unit* attacker, uint32& damage) override
+            {
+                if (HealthBelowPct(40) && !hasShieldWall)
+                {
+                    hasShieldWall = true;
+                    DoCast(me, SPELL_SHIELD_WALL);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_THUNDERCLAP:
+                            DoCast(me, SPELL_THUNDERCLAP);
+                            events.ScheduleEvent(EVENT_THUNDERCLAP, urand(10 * IN_MILLISECONDS, 14 * IN_MILLISECONDS));
+                            break;
+                        case EVENT_SHIELD_BASH:
+                            if (Unit* vict = me->GetVictim())
+                                DoCast(vict, SPELL_SHIELD_BASH);
+
+                            events.ScheduleEvent(EVENT_SHIELD_BASH, urand(8 * IN_MILLISECONDS, 17.5 * IN_MILLISECONDS));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+
+        private:
+            EventMap events;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_time_twisted_footmanAI>(creature);
+        }
+};
+
+// Time-Twisted Sorceress 54691
+class npc_end_time_time_twisted_sorceress : public CreatureScript
+{
+    public:
+        npc_end_time_time_twisted_sorceress() : CreatureScript("npc_end_time_time_twisted_sorceress") { }
+
+        enum iSpells
+        {
+            SPELL_ARCANE_BLAST     = 101816,
+            SPELL_ARCANE_BLAST_EFF = 102442,
+            SPELL_BLINK            = 101812,
+        };
+
+        enum iEvents
+        {
+            EVENT_BLINK = 1,
+        };
+
+        struct npc_end_time_time_twisted_sorceressAI : public ScriptedAI
+        {
+            npc_end_time_time_twisted_sorceressAI(Creature* creature) : ScriptedAI(creature) { }
+
+            void Reset() override
+            {
+                events.Reset();
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                events.ScheduleEvent(EVENT_BLINK, urand(8 * IN_MILLISECONDS, 39 * IN_MILLISECONDS));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    if (eventId == EVENT_BLINK)
+                    {
+                        me->InterruptNonMeleeSpells(true);
+                        DoCast(me, SPELL_BLINK);
+                        events.ScheduleEvent(EVENT_BLINK, urand(8 * IN_MILLISECONDS, 39 * IN_MILLISECONDS));
+                    }
+                    break;
+                }
+
+                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                    if (!me->IsWithinMeleeRange(target) && !me->HasUnitState(UNIT_STATE_CASTING))
+                        DoCast(target, SPELL_ARCANE_BLAST);
+            }
+
+        private:
+            EventMap events;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_end_time_time_twisted_sorceressAI>(creature);
+        }
+};
+
+class BlinkPredicate : public std::unary_function<Unit*, bool>
+{
+    public:
+        BlinkPredicate(Unit* const m_caster) : _caster(m_caster) { }
+
+        bool operator()(WorldObject* object)
+        {
+            return object && object->GetExactDist2d(_caster) < 6.0f;
+        }
+
+    private:
+        Unit const* _caster;
+};
+
+// Blink 101812
+class spell_end_time_blink : public SpellScriptLoader
+{
+    public:
+        spell_end_time_blink() : SpellScriptLoader("spell_end_time_blink") { }
+
+        class spell_end_time_blink_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_end_time_blink_AuraScript);
+
+            void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+            {
+                if (Unit* caster = GetOwner()->ToUnit())
+                {
+                    std::list<Creature*> blinkTargets;
+                    GetCreatureListWithEntryInGrid(blinkTargets, caster, NPC_BLINK_TARGET, 40.0f);
+                    blinkTargets.remove_if(BlinkPredicate(caster));
+
+                    if (!blinkTargets.empty())
+                        if (Creature* sTarget = Trinity::Containers::SelectRandomContainerElement(blinkTargets))
+                            caster->NearTeleportTo(sTarget->GetPositionX(), sTarget->GetPositionY(), sTarget->GetPositionZ(), sTarget->GetOrientation());
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectApply += AuraEffectApplyFn(spell_end_time_blink_AuraScript::OnAuraEffectApply, EFFECT_1, SPELL_AURA_MECHANIC_IMMUNITY, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_end_time_blink_AuraScript();
+        }
 };
 
 void AddSC_end_time()
@@ -320,4 +687,9 @@ void AddSC_end_time()
     new npc_end_time_image_of_nozdormu();
     new npc_end_time_infinite_warden();
     new npc_end_time_infinite_suppressor();
+    new npc_end_time_time_twisted_rifleman();
+    new npc_end_time_time_twisted_priest();
+    new npc_end_time_time_twisted_footman();
+    new npc_end_time_time_twisted_sorceress();
+    new spell_end_time_blink();
 }

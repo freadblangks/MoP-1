@@ -1,10 +1,10 @@
-#include "Battleground.h"
 #include "BattlegroundTTP.h"
 #include "Language.h"
 #include "Object.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "WorldPacket.h"
+#include "BattlegroundQueue.h"
 
 BattlegroundTTP::BattlegroundTTP()
 {
@@ -23,7 +23,6 @@ BattlegroundTTP::BattlegroundTTP()
 
 BattlegroundTTP::~BattlegroundTTP()
 {
-
 }
 
 void BattlegroundTTP::StartingEventCloseDoors()
@@ -44,16 +43,19 @@ void BattlegroundTTP::StartingEventOpenDoors()
 void BattlegroundTTP::AddPlayer(Player* player)
 {
     Battleground::AddPlayer(player);
-    //create score and add it to map, default values are set in constructor
-    BattlegroundTTPScore* sc = new BattlegroundTTPScore;
-
-    PlayerScores[player->GetGUID()] = sc;
-
     UpdateArenaWorldState();
 }
 
-void BattlegroundTTP::RemovePlayer(Player* /*player*/, uint64 /*guid*/, uint32 /*team*/)
+void BattlegroundTTP::OnInvite(Player* player, GroupQueueInfo const* ginfo)
 {
+    BattlegroundScore* sc = new BattlegroundScore{};
+    sc->Team = ginfo->Team;
+    PlayerScores[player->GetGUID()] = sc;
+}
+
+void BattlegroundTTP::RemovePlayer(Player* player, uint64 guid, uint32 team)
+{
+    Battleground::RemovePlayer(player, guid, team);
     if (GetStatus() == STATUS_WAIT_LEAVE)
         return;
 
@@ -68,7 +70,7 @@ void BattlegroundTTP::HandleKillPlayer(Player* player, Player* killer)
 
     if (!killer)
     {
-        sLog->outError(LOG_FILTER_BATTLEGROUND, "BattlegroundTV: Killer player not found");
+        TC_LOG_ERROR("bg.battleground", "BattlegroundTV: Killer player not found");
         return;
     }
 
@@ -99,16 +101,10 @@ void BattlegroundTTP::HandleAreaTrigger(Player* Source, uint32 Trigger)
     }
 }
 
-void BattlegroundTTP::FillInitialWorldStates(WorldPacket &data)
+void BattlegroundTTP::FillInitialWorldStates(WorldStateBuilder& builder)
 {
-    Player::AppendWorldState(data, uint32(0xE1A), uint32(1));
+    builder.AppendState(uint32(0xE1A), uint32(1));
     UpdateArenaWorldState();
-}
-
-void BattlegroundTTP::Reset()
-{
-    // Call parent's class reset
-    Battleground::Reset();
 }
 
 bool BattlegroundTTP::SetupBattleground()
@@ -120,7 +116,7 @@ bool BattlegroundTTP::SetupBattleground()
         || !AddObject(BG_TTP_OBJECT_BUFF_1, BG_TTP_OBJECT_TYPE_BUFF_1, 566.788f, 602.743f, 383.68f, 1.5724f, 0.0f, 0.0f, 0.707673f, 0.70654f, 120)
         || !AddObject(BG_TTP_OBJECT_BUFF_2, BG_TTP_OBJECT_TYPE_BUFF_2, 566.661f, 664.311f, 383.681f, 4.66374f, 0.0f, 0.0f, 0.724097f, -0.689698f, 120))
     {
-        sLog->outError(LOG_FILTER_SQL, "BattlegroundTTP: Failed to spawn some object!");
+        TC_LOG_ERROR("bg.battleground", "BattlegroundTTP: Failed to spawn some object!");
         return false;
     }
 

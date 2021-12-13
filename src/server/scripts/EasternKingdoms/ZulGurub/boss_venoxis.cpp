@@ -1,15 +1,14 @@
 #include "ScriptPCH.h"
-//#include "GridNotifiers.h"
 #include "zulgurub.h"
 
 enum ScriptTexts
 {
-    SAY_DEATH       = 0,
-    SAY_TRANSFORM   = 1,
-    SAY_BLOODVENOM  = 3, // ?
-    SAY_X           = 2, // ?
-    SAY_KILL        = 4,
-    SAY_AGGRO       = 5,
+    SAY_AGGRO               = 0,
+    SAY_TRANSFORM           = 1,
+    SAY_BLOODVENOM          = 3, 
+    SAY_WHISPER_OF_HETHISS  = 2, 
+    SAY_KILL                = 4,
+    SAY_DEATH               = 5,
 };
 
 enum Spells
@@ -97,16 +96,10 @@ class boss_venoxis : public CreatureScript
 {
     public:
         boss_venoxis() : CreatureScript("boss_venoxis") { }
-        
-
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_venoxisAI(pCreature);
-        }
 
         struct boss_venoxisAI : public BossAI
         {
-            boss_venoxisAI(Creature* pCreature) : BossAI(pCreature, DATA_VENOXIS)
+            boss_venoxisAI(Creature* creature) : BossAI(creature, DATA_VENOXIS)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -120,10 +113,10 @@ class boss_venoxis : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
             }
-            
+
             uint8 phase;
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -133,7 +126,7 @@ class boss_venoxis : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_ATTACK_ME, false);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 phase = 0;
@@ -145,9 +138,11 @@ class boss_venoxis : public CreatureScript
                 DoCastAOE(SPELL_WORD_OF_HETHISS);
                 DoZoneInCombat();
                 instance->SetBossState(DATA_VENOXIS, IN_PROGRESS);
+
+                instance->DoStartCriteria(CRITERIA_START_TYPE_EVENT, 28223);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
@@ -156,13 +151,9 @@ class boss_venoxis : public CreatureScript
             void MovementInform (uint32 type, uint32 id)
             {
                 if (id == POINT_DOWN && phase == 2)
-                {
                     events.ScheduleEvent(EVENT_MOVE_UP, 400);
-                }
                 else if (id == POINT_UP && phase == 2)
-                {
                     events.ScheduleEvent(EVENT_BLOODVENOM, 1000);
-                }
                 else if (id == POINT_WITHDRAWAL)
                 {
                     me->RemoveAura(SPELL_BLESSING_OF_THE_SNAKE_GOD);
@@ -176,7 +167,7 @@ class boss_venoxis : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -195,8 +186,9 @@ class boss_venoxis : public CreatureScript
                             events.ScheduleEvent(EVENT_TOXIC_LINK, urand(15000, 19000));
                             break;
                         case EVENT_WHISPER_OF_HETHISS:
-                            //if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                //DoCast(pTarget, SPELL_WHISPER_OF_HETHISS);
+                            Talk(SAY_WHISPER_OF_HETHISS);
+                            //if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                //DoCast(target, SPELL_WHISPER_OF_HETHISS);
                             events.ScheduleEvent(EVENT_WHISPER_OF_HETHISS, 10000);
                             break;
                         case EVENT_TRANSFORM:
@@ -214,8 +206,8 @@ class boss_venoxis : public CreatureScript
                             events.ScheduleEvent(EVENT_BREATH_OF_HETHISS, 10000);
                             break;
                         case EVENT_POOL_OF_ACID_TEARS:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_POOL_OF_ACID_TEARS);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_POOL_OF_ACID_TEARS);
                             events.ScheduleEvent(EVENT_POOL_OF_ACID_TEARS, 7000);
                             break;
                         case EVENT_MOVE_DOWN:
@@ -243,51 +235,51 @@ class boss_venoxis : public CreatureScript
                             break;
                     }
                 }
-            
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_venoxisAI>(creature);
+        }
 };
+
 class npc_venoxis_bloodvenom : public CreatureScript
 {
     public:
+        npc_venoxis_bloodvenom() : CreatureScript("npc_venoxis_bloodvenom") { }
 
-        npc_venoxis_bloodvenom() : CreatureScript("npc_venoxis_bloodvenom") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_venoxis_bloodvenomAI : public ScriptedAI
         {
-            return new npc_venoxis_bloodvenomAI(pCreature);
-        }
-
-        struct npc_venoxis_bloodvenomAI : public Scripted_NoMovementAI
-        {
-            npc_venoxis_bloodvenomAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_venoxis_bloodvenomAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetSpeed(MOVE_RUN, 0.3f);
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
                 DoCast(me, SPELL_BLOODVENOM_DUMMY, true);
+                SetCombatMovement(false);
             }
             
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             bool bMove;
             uint32 moveTimer;
 
-            void Reset()
+            void Reset() override
             {
                 bMove = false;
                 moveTimer = 1000;
             }
             
-            void IsSummonedBy(Unit* owner)
+            void IsSummonedBy(Unit* summoner) override
             {
                 if (Creature* pVenoxis = me->FindNearestCreature(NPC_VENOXIS, 120.0f))
                     DoCast(pVenoxis, SPELL_VENOM_TOTEM_BEAM_CENTER);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!pInstance || pInstance->GetBossState(DATA_VENOXIS) != IN_PROGRESS)
+                if (!instance || instance->GetBossState(DATA_VENOXIS) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
@@ -306,42 +298,42 @@ class npc_venoxis_bloodvenom : public CreatureScript
                     moveTimer -= diff;
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_venoxis_bloodvenomAI>(creature);
+        }
 };
 
 class npc_venoxis_venomous_effusion_stalker : public CreatureScript
 {
     public:
+        npc_venoxis_venomous_effusion_stalker() : CreatureScript("npc_venoxis_venomous_effusion_stalker") { }
 
-        npc_venoxis_venomous_effusion_stalker() : CreatureScript("npc_venoxis_venomous_effusion_stalker") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_venoxis_venomous_effusion_stalkerAI : public ScriptedAI
         {
-            return new npc_venoxis_venomous_effusion_stalkerAI(pCreature);
-        }
-
-        struct npc_venoxis_venomous_effusion_stalkerAI : public Scripted_NoMovementAI
-        {
-            npc_venoxis_venomous_effusion_stalkerAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_venoxis_venomous_effusion_stalkerAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetSpeed(MOVE_RUN, 0.3f);
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
                 DoCast(me, SPELL_VENOMOUS_EFFUSION, true);
+                SetCombatMovement(false);
             }
             
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             uint8 side;
             uint32 moveTimer;
             uint8 waypoint;
 
-            void Reset()
+            void Reset() override
             {
                 side = (me->GetPositionY() < -1690.0f)? 0: 1;
                 waypoint = 1;
                 moveTimer = 1;
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (waypoint == 18)
                     me->DespawnOrUnsummon();
@@ -349,20 +341,20 @@ class npc_venoxis_venomous_effusion_stalker : public CreatureScript
                     moveTimer = 1;
             }
             
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!pInstance || pInstance->GetBossState(DATA_VENOXIS) != IN_PROGRESS)
+                if (instance->GetBossState(DATA_VENOXIS) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
@@ -377,61 +369,66 @@ class npc_venoxis_venomous_effusion_stalker : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_venoxis_venomous_effusion_stalkerAI>(creature);
+        }
 };
 
 class npc_venoxis_venomous_effusion : public CreatureScript
 {
     public:
+        npc_venoxis_venomous_effusion() : CreatureScript("npc_venoxis_venomous_effusion") { }
 
-        npc_venoxis_venomous_effusion() : CreatureScript("npc_venoxis_venomous_effusion") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_venoxis_venomous_effusionAI : public ScriptedAI
         {
-            return new npc_venoxis_venomous_effusionAI(pCreature);
-        }
-
-        struct npc_venoxis_venomous_effusionAI : public Scripted_NoMovementAI
-        {
-            npc_venoxis_venomous_effusionAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_venoxis_venomous_effusionAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
                 //DoCast(me, SPELL_VENOMOUS_EFFUSION_DUMMY, true);
                 //DoCast(me, SPELL_VENOMOUS_EFFUSION_AURA, true);
+                SetCombatMovement(false);
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!pInstance || pInstance->GetBossState(DATA_VENOXIS) != IN_PROGRESS)
+                if (instance->GetBossState(DATA_VENOXIS) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_venoxis_venomous_effusionAI>(creature);
+        }
 };
 
 class npc_venoxis_venoxis_pool_of_acid_tears : public CreatureScript
 {
     public:
+        npc_venoxis_venoxis_pool_of_acid_tears() : CreatureScript("npc_venoxis_venoxis_pool_of_acid_tears") { }
 
-        npc_venoxis_venoxis_pool_of_acid_tears() : CreatureScript("npc_venoxis_venoxis_pool_of_acid_tears") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_venoxis_venoxis_pool_of_acid_tearsAI : public ScriptedAI
         {
-            return new npc_venoxis_venoxis_pool_of_acid_tearsAI(pCreature);
-        }
-
-        struct npc_venoxis_venoxis_pool_of_acid_tearsAI : public Scripted_NoMovementAI
-        {
-            npc_venoxis_venoxis_pool_of_acid_tearsAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_venoxis_venoxis_pool_of_acid_tearsAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetReactState(REACT_PASSIVE);
                 DoCast(me, SPELL_POOL_OF_ACID_TEARS_AURA, true);
+                SetCombatMovement(false);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_venoxis_venoxis_pool_of_acid_tearsAI>(creature);
+        }
 };
 
 class spell_venoxis_toxic_link : public SpellScriptLoader
@@ -443,7 +440,7 @@ class spell_venoxis_toxic_link : public SpellScriptLoader
         {
             PrepareSpellScript(spell_venoxis_toxic_link_SpellScript);
             
-            bool Load()
+            bool Load() override
             {
                 bCanLink = false;
                 target1 = NULL;
@@ -456,8 +453,8 @@ class spell_venoxis_toxic_link : public SpellScriptLoader
                 if (!GetCaster())
                     return;
 
-                if (bCanLink &&target1 && target1->isAlive() && target1->IsInWorld() &&
-                    target2 && target2->isAlive() && target2->IsInWorld())
+                if (bCanLink &&target1 && target1->IsAlive() && target1->IsInWorld() &&
+                    target2 && target2->IsAlive() && target2->IsInWorld())
                 {
                     GetCaster()->CastSpell(target1, SPELL_TOXIC_LINK_AURA, true);
                     GetCaster()->CastSpell(target2, SPELL_TOXIC_LINK_AURA, true);
@@ -478,7 +475,7 @@ class spell_venoxis_toxic_link : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_venoxis_toxic_link_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 AfterCast += SpellCastFn(spell_venoxis_toxic_link_SpellScript::HandleDummy);
@@ -490,7 +487,7 @@ class spell_venoxis_toxic_link : public SpellScriptLoader
             Unit* target2;
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_venoxis_toxic_link_SpellScript();
         }
@@ -505,20 +502,20 @@ class spell_venoxis_toxic_link_aura : public SpellScriptLoader
         {
             PrepareAuraScript(spell_venoxis_toxic_link_aura_AuraScript);
 
-            void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (GetCaster())
                     GetCaster()->CastSpell(GetCaster(), SPELL_TOXIC_EXPLOSION, true);
             }
             
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster() || !GetTarget())
                     return;
 
                  UnitList targets;
-                 JadeCore::AnyUnitHavingBuffInObjectRangeCheck u_check(GetCaster(), GetTarget(), 100, SPELL_TOXIC_LINK_AURA, true);
-                 JadeCore::UnitListSearcher<JadeCore::AnyUnitHavingBuffInObjectRangeCheck> searcher(GetTarget(), targets, u_check);
+                 Trinity::AnyUnitHavingBuffInObjectRangeCheck u_check(GetCaster(), GetTarget(), 100, SPELL_TOXIC_LINK_AURA, true);
+                 Trinity::UnitListSearcher<Trinity::AnyUnitHavingBuffInObjectRangeCheck> searcher(GetTarget(), targets, u_check);
                  GetTarget()->VisitNearbyObject(80, searcher);
 
                  if (targets.size() < 2)
@@ -538,14 +535,14 @@ class spell_venoxis_toxic_link_aura : public SpellScriptLoader
                  }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_venoxis_toxic_link_aura_AuraScript::PeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
                 AfterEffectRemove += AuraEffectRemoveFn(spell_venoxis_toxic_link_aura_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_venoxis_toxic_link_aura_AuraScript();
         }
@@ -554,7 +551,7 @@ class spell_venoxis_toxic_link_aura : public SpellScriptLoader
 class ExactDistanceCheck
 {
     public:
-        ExactDistanceCheck(Unit* source, float dist) : _source(source), _dist(dist) {}
+        ExactDistanceCheck(Unit* source, float dist) : _source(source), _dist(dist) { }
 
         bool operator()(WorldObject* unit)
         {
@@ -577,16 +574,16 @@ class spell_venoxis_pool_of_acid_tears_dmg : public SpellScriptLoader
 
             void CorrectRange(std::list<WorldObject*>& targets)
             {
-                targets.remove_if(ExactDistanceCheck(GetCaster(), 2.0f * GetCaster()->GetFloatValue(OBJECT_FIELD_SCALE_X)));
+                targets.remove_if(ExactDistanceCheck(GetCaster(), 2.0f * GetCaster()->GetFloatValue(OBJECT_FIELD_SCALE)));
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_venoxis_pool_of_acid_tears_dmg_SpellScript::CorrectRange, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_venoxis_pool_of_acid_tears_dmg_SpellScript();
         }

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2011-2021 Project SkyFire <https://www.projectskyfire.org/>
- * Copyright (C) 2008-2021 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2021 MaNGOS <https://www.getmangos.eu/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,14 +21,32 @@
 #include "BigNumber.h"
 #include "Common.h"
 
-HmacHash::HmacHash(uint32 len, uint8 *seed) : m_ctx(HMAC_CTX_new())
+
+#if defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x10100000L
+HMAC_CTX* HMAC_CTX_new()
 {
-    HMAC_Init_ex(m_ctx, seed, len, EVP_sha1(), NULL);
+	HMAC_CTX *ctx = new HMAC_CTX();
+	HMAC_CTX_init(ctx);
+	return ctx;
+}
+
+void HMAC_CTX_free(HMAC_CTX* ctx)
+{
+	HMAC_CTX_cleanup(ctx);
+	delete ctx;
+}
+
+#endif
+HmacHash::HmacHash(uint32 len, uint8 *seed)
+{
+	m_ctx = HMAC_CTX_new();
+	HMAC_Init_ex(m_ctx, seed, len, EVP_sha1(), nullptr);
+	memset(m_digest, 0, sizeof(m_digest));
 }
 
 HmacHash::~HmacHash()
 {
-    HMAC_CTX_free(m_ctx);
+	HMAC_CTX_free(m_ctx);
 }
 
 void HmacHash::UpdateData(const std::string &str)
@@ -50,7 +68,7 @@ void HmacHash::Finalize()
 
 uint8 *HmacHash::ComputeHash(BigNumber* bn)
 {
-    HMAC_Update(m_ctx, bn->AsByteArray(), bn->GetNumBytes());
+    HMAC_Update(m_ctx, bn->AsByteArray().get(), bn->GetNumBytes());
     Finalize();
     return (uint8*)m_digest;
 }

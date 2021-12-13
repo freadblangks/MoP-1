@@ -1,15 +1,11 @@
 #ifndef SC_ACMGR_H
 #define SC_ACMGR_H
 
-#include <ace/Singleton.h>
 #include "Common.h"
 #include "SharedDefines.h"
-#include "ScriptPCH.h"
-#include "AnticheatData.h"
-#include "Chat.h"
 
 class Player;
-class AnticheatData;
+class ChatHandler;
 
 enum ReportTypes
 {
@@ -19,8 +15,9 @@ enum ReportTypes
     JUMP_HACK_REPORT,
     TELEPORT_PLANE_HACK_REPORT,
     CLIMB_HACK_REPORT,
+    TIME_MANIPULATION_REPORT,
 
-    // MAX_REPORT_TYPES
+    MAX_REPORT_TYPES
 };
 
 enum DetectionTypes
@@ -33,51 +30,79 @@ enum DetectionTypes
     CLIMB_HACK_DETECTION            = 32
 };
 
+struct AnticheatData
+{
+    AnticheatData();
+
+    void SetPosition(float x, float y, float z, float o);
+    void Reset();
+
+    uint32 lastOpcode;
+    MovementInfo lastMovementInfo;
+    //bool disableACCheck;
+    //uint32 disableACCheckTimer;
+    uint32 totalReports;
+    float average;
+    uint32 creationTime;
+    bool hasDailyReport;
+
+    uint32 typeReports[MAX_REPORT_TYPES];
+    uint32 tempReports[MAX_REPORT_TYPES];
+    uint32 tempReportsTimer[MAX_REPORT_TYPES];
+
+    uint32 reportAnnounceCount[MAX_REPORT_TYPES];
+    time_t reportAnnounceCooldown[MAX_REPORT_TYPES];
+};
+
 // GUIDLow is the key.
-typedef std::map<uint32, AnticheatData> AnticheatPlayersDataMap;
+typedef std::unordered_map<uint32, AnticheatData> AnticheatPlayersDataMap;
 
 class AnticheatMgr
 {
-    friend class ACE_Singleton<AnticheatMgr, ACE_Null_Mutex>;
     AnticheatMgr();
     ~AnticheatMgr();
 
-public:
+    public:
+        static AnticheatMgr *instance()
+        {
+            static AnticheatMgr _instance;
+            return &_instance;
+        }
 
-    void StartHackDetection(Player* player, MovementInfo movementInfo, uint32 opcode);
-    void DeletePlayerReport(Player* player, bool login);
-    void DeletePlayerData(Player* player);
-    void CreatePlayerData(Player* player);
-    void SavePlayerData(Player* player);
+        void StartHackDetection(Player* player, MovementInfo &movementInfo, uint32 opcode);
+        void DeletePlayerReport(Player* player, bool login);
+        void DeletePlayerData(Player* player);
+        void CreatePlayerData(Player* player);
+        void SavePlayerData(Player* player);
 
-    void StartScripts();
+        void HandlePlayerLogin(Player* player);
+        void HandlePlayerLogout(Player* player);
 
-    void HandlePlayerLogin(Player* player);
-    void HandlePlayerLogout(Player* player);
+        uint32 GetTotalReports(uint32 lowGUID);
+        float GetAverage(uint32 lowGUID);
+        uint32 GetTypeReports(uint32 lowGUID, uint8 type);
+        AnticheatData* GetDataFor(Player* player);
 
-    uint32 GetTotalReports(uint32 lowGUID);
-    float GetAverage(uint32 lowGUID);
-    uint32 GetTypeReports(uint32 lowGUID, uint8 type);
+        void AnticheatGlobalCommand(ChatHandler* handler);
+        void AnticheatDeleteCommand(uint32 guid);
 
-    void AnticheatGlobalCommand(ChatHandler* handler);
-    void AnticheatDeleteCommand(uint32 guid);
+        void ResetDailyReportStates();
 
-    void ResetDailyReportStates();
-private:
-    void SpeedHackDetection(Player* player, MovementInfo movementInfo);
-    void FlyHackDetection(Player* player, MovementInfo movementInfo);
-    void WalkOnWaterHackDetection(Player* player, MovementInfo movementInfo);
-    void JumpHackDetection(Player* player, MovementInfo movementInfo,uint32 opcode);
-    void TeleportPlaneHackDetection(Player* player, MovementInfo);
-    void ClimbHackDetection(Player* player,MovementInfo movementInfo,uint32 opcode);
+    private:
+        void SpeedHackDetection(Player* player, MovementInfo &movementInfo, AnticheatData& data);
+        void FlyHackDetection(Player* player, MovementInfo &movementInfo, AnticheatData& data);
+        void WalkOnWaterHackDetection(Player* player, MovementInfo &movementInfo, AnticheatData& data);
+        void JumpHackDetection(Player* player, MovementInfo &movementInfo, AnticheatData& data, uint32 opcode);
+        void TeleportPlaneHackDetection(Player* player, MovementInfo &movementInfo, AnticheatData& data);
+        void ClimbHackDetection(Player* player, MovementInfo &movementInfo, AnticheatData& data, uint32 opcode);
 
-    void BuildReport(Player* player,uint8 reportType);
+        void BuildReport(Player* player, AnticheatData& data, uint8 reportType);
 
-    bool MustCheckTempReports(uint8 type);
+        bool MustCheckTempReports(uint8 type);
 
-    AnticheatPlayersDataMap m_Players;                        ///< Player data
+        AnticheatPlayersDataMap _players;
 };
 
-#define sAnticheatMgr ACE_Singleton<AnticheatMgr, ACE_Null_Mutex>::instance()
+#define sAnticheatMgr AnticheatMgr::instance()
 
 #endif

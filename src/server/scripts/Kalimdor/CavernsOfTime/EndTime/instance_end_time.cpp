@@ -3,21 +3,22 @@
 
 #define MAX_ENCOUNTER 5
 
+static std::vector<DoorData> doordata = 
+{
+    {GO_FIRE_WALL,  DATA_ECHO_OF_BAINE, DOOR_TYPE_ROOM, BOUNDARY_NONE},
+};
+
 class instance_end_time : public InstanceMapScript
 {
     public:
         instance_end_time() : InstanceMapScript("instance_end_time", 938) { }
-
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
-        {
-            return new instance_end_time_InstanceMapScript(map);
-        }
 
         struct instance_end_time_InstanceMapScript : public InstanceScript
         {
             instance_end_time_InstanceMapScript(Map* map) : InstanceScript(map)
             {
                 SetBossNumber(MAX_ENCOUNTER);
+                LoadDoorData(doordata);
                 uiTeamInInstance = 0;
                 uiFragmentsCollected = 0;
                 jaina_event = NOT_STARTED;
@@ -43,69 +44,72 @@ class instance_end_time : public InstanceMapScript
                 std::list<uint32> echo_list;
                 for (uint8 i = 0; i < 4; ++i)
                     echo_list.push_back(i);
-                first_echo = JadeCore::Containers::SelectRandomContainerElement(echo_list);
+                first_echo = Trinity::Containers::SelectRandomContainerElement(echo_list);
                 echo_list.remove(first_echo);
-                second_echo = JadeCore::Containers::SelectRandomContainerElement(echo_list);
+                second_echo = Trinity::Containers::SelectRandomContainerElement(echo_list);
             }
 
-            void OnPlayerEnter(Player* pPlayer)
+            void OnPlayerEnter(Player* player) override
             {
                 if (!uiTeamInInstance)
-				    uiTeamInInstance = pPlayer->GetTeam();
+                    uiTeamInInstance = player->GetTeam();
             }
 
-            void OnGameObjectCreate(GameObject* pGo)
+            void OnGameObjectCreate(GameObject* go) override
             {
-                switch (pGo->GetEntry())
+                switch (go->GetEntry())
                 {
                     case MUROZOND_CACHE:
-                        uiMurozondCacheGUID = pGo->GetGUID();
+                        uiMurozondCacheGUID = go->GetGUID();
                         break;
                     case GO_PLATFORM_1:
-                        uiPlatform1GUID = pGo->GetGUID();
+                        uiPlatform1GUID = go->GetGUID();
                         break;
                     case GO_PLATFORM_2:
-                        uiPlatform2GUID = pGo->GetGUID();
+                        uiPlatform2GUID = go->GetGUID();
                         break;
                     case GO_PLATFORM_3:
-                        uiPlatform3GUID = pGo->GetGUID();
+                        uiPlatform3GUID = go->GetGUID();
                         break;
                     case GO_PLATFORM_4:
-                        uiPlatform4GUID = pGo->GetGUID();
+                        uiPlatform4GUID = go->GetGUID();
                         break;
                     case HOURGLASS_OF_TIME:
-                        uiHourglassGUID = pGo->GetGUID();
+                        uiHourglassGUID = go->GetGUID();
+                        break;
+                    case GO_FIRE_WALL:
+                        AddDoor(go, true);
                         break;
                     default:
                         break;
                 }
-		    }
+            }
 
-            void OnCreatureCreate(Creature* pCreature)
+            void OnCreatureCreate(Creature* creature) override
             {
-                switch (pCreature->GetEntry())
+                switch (creature->GetEntry())
                 {
                     case NPC_ECHO_OF_TYRANDE:
-                        uiTyrandeGUID = pCreature->GetGUID();
+                        uiTyrandeGUID = creature->GetGUID();
                         break;
                     case NPC_ECHO_OF_JAINA:
-                        uiJainaGUID = pCreature->GetGUID();
+                        uiJainaGUID = creature->GetGUID();
                         break;
                     case NPC_IMAGE_OF_NOZDORMU:
-                        uiImageOfNozdormuGUID = pCreature->GetGUID();
+                        uiImageOfNozdormuGUID = creature->GetGUID();
                         break;
                     case NPC_MUROZOND:
-                        uiMurozondGUID = pCreature->GetGUID();
+                        uiMurozondGUID = creature->GetGUID();
                         break;
                     case NPC_NOZDORMU:
-                        uiNozdormuGUID = pCreature->GetGUID();
+                        uiNozdormuGUID = creature->GetGUID();
                         break;
                 }
             }
 
             void SetData(uint32 type,uint32 data)
             {
-                switch(type)
+                switch (type)
                 {
                     case DATA_JAINA_EVENT:
                         switch (data)
@@ -118,7 +122,7 @@ class instance_end_time : public InstanceMapScript
                                 break;
                         }
                         jaina_event = data;
-			            break;
+                        break;
                     case DATA_FRAGMENTS:
                         uiFragmentsCollected = data;
                         return; // Don't save instance if data equals 3
@@ -153,14 +157,14 @@ class instance_end_time : public InstanceMapScript
                     case DATA_PLATFORMS:
                         if (data == NOT_STARTED)
                         {
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform1GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform2GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform3GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
-                            if (GameObject* pGo = instance->GetGameObject(uiPlatform4GUID))
-                                pGo->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
+                            if (GameObject* go = instance->GetGameObject(uiPlatform1GUID))
+                                go->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
+                            if (GameObject* go = instance->GetGameObject(uiPlatform2GUID))
+                                go->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
+                            if (GameObject* go = instance->GetGameObject(uiPlatform3GUID))
+                                go->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
+                            if (GameObject* go = instance->GetGameObject(uiPlatform4GUID))
+                                go->SetDestructibleState(GO_DESTRUCTIBLE_INTACT, NULL, true);
                         }
                         break;
                 }
@@ -169,44 +173,62 @@ class instance_end_time : public InstanceMapScript
                     SaveToDB();
             }
 
-            uint32 GetData(uint32 type)
-            {
-                switch(type)
-                {
-                    case DATA_ECHO_1: return first_echo;
-                    case DATA_ECHO_2: return second_echo;
-                    case DATA_FIRST_ENCOUNTER: return first_encounter;
-                    case DATA_SECOND_ENCOUNTER: return second_encounter;
-                    case DATA_TYRANDE_EVENT: return tyrande_event;
-                    case DATA_JAINA_EVENT: return jaina_event;
-                    case DATA_FRAGMENTS: return uiFragmentsCollected; 
-                    case DATA_NOZDORMU_1: return nozdormu_dialog[0];
-                    case DATA_NOZDORMU_2: return nozdormu_dialog[1];
-                    case DATA_NOZDORMU_3: return nozdormu_dialog[2];
-                    case DATA_NOZDORMU_4: return nozdormu_dialog[3];
-                }
-                return 0;
-            }
-
-            uint64 GetData64(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 switch (type)
                 {
-                    case DATA_ECHO_OF_TYRANDE: return uiTyrandeGUID;
-                    case DATA_ECHO_OF_JAINA: return uiJainaGUID;
-                    case DATA_IMAGE_OF_NOZDORMU: return uiImageOfNozdormuGUID;
-                    case DATA_NOZDORMU: return uiNozdormuGUID;
-                    case DATA_MUROZOND: return uiMurozondGUID;
-                    case DATA_HOURGLASS: return uiHourglassGUID;
-                    default: return 0;
+                    case DATA_ECHO_1:
+                        return first_echo;
+                    case DATA_ECHO_2:
+                        return second_echo;
+                    case DATA_FIRST_ENCOUNTER:
+                        return first_encounter;
+                    case DATA_SECOND_ENCOUNTER:
+                        return second_encounter;
+                    case DATA_TYRANDE_EVENT:
+                        return tyrande_event;
+                    case DATA_JAINA_EVENT:
+                        return jaina_event;
+                    case DATA_FRAGMENTS:
+                        return uiFragmentsCollected; 
+                    case DATA_NOZDORMU_1:
+                        return nozdormu_dialog[0];
+                    case DATA_NOZDORMU_2:
+                        return nozdormu_dialog[1];
+                    case DATA_NOZDORMU_3: 
+                        return nozdormu_dialog[2];
+                    case DATA_NOZDORMU_4:
+                        return nozdormu_dialog[3];
                 }
                 return 0;
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            uint64 GetData64(uint32 type) const override
             {
-			    if (!InstanceScript::SetBossState(type, state))
-				    return false;
+                switch (type)
+                {
+                    case DATA_ECHO_OF_TYRANDE:
+                        return uiTyrandeGUID;
+                    case DATA_ECHO_OF_JAINA:
+                        return uiJainaGUID;
+                    case DATA_IMAGE_OF_NOZDORMU:
+                        return uiImageOfNozdormuGUID;
+                    case DATA_NOZDORMU:
+                        return uiNozdormuGUID;
+                    case DATA_MUROZOND:
+                        return uiMurozondGUID;
+                    case DATA_HOURGLASS:
+                        return uiHourglassGUID;
+                    default:
+                        return 0;
+                }
+                return 0;
+            }
+
+            bool SetBossState(uint32 type, EncounterState state) override
+            {
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
 
                 switch (type)
                 {
@@ -230,16 +252,16 @@ class instance_end_time : public InstanceMapScript
                         break;
                 }
 
-			    return true;
+                return true;
             }
 
-            void FillInitialWorldStates(WorldPacket& data)
+            void FillInitialWorldStates(WorldStateBuilder& data) override
             {
-                data << uint32(WORLDSTATE_SHOW_FRAGMENTS) << uint32(jaina_event == IN_PROGRESS);
-                data << uint32(WORLDSTATE_FRAGMENTS_COLLECTED) << uint32(uiFragmentsCollected);
+                data.AppendState(WORLDSTATE_SHOW_FRAGMENTS, jaina_event == IN_PROGRESS);
+                data.AppendState(WORLDSTATE_FRAGMENTS_COLLECTED, uiFragmentsCollected);
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
@@ -259,7 +281,7 @@ class instance_end_time : public InstanceMapScript
                 return str_data;
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -277,13 +299,13 @@ class instance_end_time : public InstanceMapScript
                 if (dataHead1 == 'E' && dataHead2 == 'T')
                 {
                     for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-				    {
-					    uint32 tmpState;
-					    loadStream >> tmpState;
-					    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-						    tmpState = NOT_STARTED;
-					    SetBossState(i, EncounterState(tmpState));
-				    }
+                    {
+                        uint32 tmpState;
+                        loadStream >> tmpState;
+                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
+                            tmpState = NOT_STARTED;
+                        SetBossState(i, EncounterState(tmpState));
+                    }
 
                     uint32 temp_echo1 = 0;
                     loadStream >> temp_echo1;
@@ -308,17 +330,17 @@ class instance_end_time : public InstanceMapScript
                     uint32 temp_event = 0;
                     loadStream >> temp_event;
                     if (temp_event == IN_PROGRESS || temp_event > SPECIAL)
-						temp_event = NOT_STARTED;
+                        temp_event = NOT_STARTED;
                     tyrande_event = temp_event;
 
                     for (uint8 i = 0; i < 4; ++i)
-				    {
-					    uint32 tmpDialog;
-					    loadStream >> tmpDialog;
-					    if (tmpDialog == IN_PROGRESS || tmpDialog > SPECIAL)
-						    tmpDialog = NOT_STARTED;
-					    nozdormu_dialog[i] = tmpDialog;
-				    }
+                    {
+                        uint32 tmpDialog;
+                        loadStream >> tmpDialog;
+                        if (tmpDialog == IN_PROGRESS || tmpDialog > SPECIAL)
+                            tmpDialog = NOT_STARTED;
+                        nozdormu_dialog[i] = tmpDialog;
+                    }
 
                 } else OUT_LOAD_INST_DATA_FAIL;
 
@@ -346,8 +368,12 @@ class instance_end_time : public InstanceMapScript
                 uint64 uiMurozondGUID;
                 uint64 uiHourglassGUID;
                 uint64 uiNozdormuGUID;
-               
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_end_time_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_end_time()

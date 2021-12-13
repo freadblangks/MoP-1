@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -24,10 +27,12 @@
 
 #define ICCScriptName "instance_icecrown_citadel"
 
-uint32 const EncounterCount = 13;
+uint32 const EncounterCount = 14;
 uint32 const WeeklyNPCs = 9;
 uint32 const MaxHeroicAttempts = 50;
 
+// Defined in boss_deathbringer_saurfang.cpp
+// add NPC after OUTRO
 // Defined in boss_valithria_dreamwalker.cpp
 extern Position const ValithriaSpawnPos;
 // Defined in boss_sindragosa.cpp
@@ -36,15 +41,17 @@ extern Position const SindragosaSpawnPos;
 extern Position const TerenasSpawn;
 extern Position const TerenasSpawnHeroic;
 extern Position const SpiritWardenSpawn;
+extern Position const JainaSpawnPos;
+extern Position const MuradinSpawnPos;
+extern Position const UtherSpawnPos;
+extern Position const SylvanasSpawnPos;
+extern Position const AlexandrosSpawnPos;
 
 // Shared spells used by more than one script
 enum SharedSpells
 {
     SPELL_BERSERK                       = 26662,
     SPELL_BERSERK2                      = 47008,
-
-    SPELL_HELLSCREAM_S_WARSONG          = 73822,
-    SPELL_STRENGTH_OF_WRYNN             = 73828,
 
     // Deathbound Ward
     SPELL_STONEFORM                     = 70733,
@@ -53,9 +60,30 @@ enum SharedSpells
     SPELL_ORANGE_BLIGHT_RESIDUE         = 72144,
     SPELL_GREEN_BLIGHT_RESIDUE          = 72145,
 
+    // The Crimson Halls
+    SPELL_EMPOWERED_BLOOD               = 70227,
+    SPELL_EMPOWERED_BLOOD_LINKED        = 70232,
+    SPELL_EMPOWERED_BLOOD_NPC           = 70304,
+    SPELL_EMPOWERED_BLOOD_NPC_LINKED    = 70320,
+    SPELL_REMOVE_EMPOWERED_BLOOD        = 72131,
+
     // The Lich King
     SPELL_ARTHAS_TELEPORTER_CEREMONY    = 72915,
     SPELL_FROSTMOURNE_TELEPORT_VISUAL   = 73078,
+
+    //Icc Buff
+    BUFF_5A                             = 73762,
+    BUFF_5H                             = 73816,
+    BUFF_10A                            = 73824,
+    BUFF_10H                            = 73818,
+    BUFF_15A                            = 73825,
+    BUFF_15H                            = 73819,
+    BUFF_20A                            = 73826,
+    BUFF_20H                            = 73820,
+    BUFF_25A                            = 73827,
+    BUFF_25H                            = 73821,
+    BUFF_30A                            = 73828,
+    BUFF_30H                            = 73822,
 };
 
 enum TeleporterSpells
@@ -69,6 +97,12 @@ enum TeleporterSpells
     SINDRAGOSA_S_LAIR_TELEPORT      = 70861,
 };
 
+enum ZoneBuffs
+{
+    AURA_ZONE_PCT_BUFF_A_10 = 73824,
+    AURA_ZONE_PCT_BUFF_H_10 = 73818,
+};
+        
 enum DataTypes
 {
     // Encounter States/Boss GUIDs
@@ -85,9 +119,9 @@ enum DataTypes
     DATA_VALITHRIA_DREAMWALKER      = 10,
     DATA_SINDRAGOSA                 = 11,
     DATA_THE_LICH_KING              = 12,
-
-    // Additional data
+    // Sindragosa gauntlet event
     DATA_SINDRAGOSA_GAUNTLET        = 13,
+    // Additional data
     DATA_SAURFANG_EVENT_NPC         = 14,
     DATA_BONED_ACHIEVEMENT          = 15,
     DATA_OOZE_DANCE_ACHIEVEMENT     = 16,
@@ -105,37 +139,60 @@ enum DataTypes
     DATA_TEAM_IN_INSTANCE           = 28,
     DATA_BLOOD_QUICKENING_STATE     = 29,
     DATA_HEROIC_ATTEMPTS            = 30,
+
     DATA_CROK_SCOURGEBANE           = 31,
     DATA_CAPTAIN_ARNATH             = 32,
     DATA_CAPTAIN_BRANDON            = 33,
     DATA_CAPTAIN_GRONDEL            = 34,
     DATA_CAPTAIN_RUPERT             = 35,
+    // Valithria Dreamwalker Data
     DATA_VALITHRIA_TRIGGER          = 36,
     DATA_VALITHRIA_LICH_KING        = 37,
-    DATA_HIGHLORD_TIRION_FORDRING   = 38,
-    DATA_ARTHAS_PLATFORM            = 39,
-    DATA_TERENAS_MENETHIL           = 40,
-    DATA_BUFF_REMOVED               = 41,
+    DATA_PORTAL_JOCKEY_ACHIEVEMENT  = 38,
+    DATA_HIGHLORD_TIRION_FORDRING   = 39,
+    DATA_ARTHAS_PLATFORM            = 40,
+    DATA_TERENAS_MENETHIL           = 41,
 
-    // Gunship: Data for achievements
-    DATA_BEEN_WAITING_ACHIEVEMENT   = 49,
-    DATA_NECK_DEEP_ACHIEVEMENT      = 50,
+    // Go Data
+    DATA_ICE_SHARD_1                = 44,
+    DATA_ICE_SHARD_2                = 45,
+    DATA_ICE_SHARD_3                = 46,
+    DATA_ICE_SHARD_4                = 47,
+    DATA_FROSTY_EDGE_OUTER          = 48,
+    DATA_FROSTY_EDGE_INNER          = 49,
+    DATA_EDGE_DESTROY_WARNING       = 50,
+    DATA_FROZEN_LAVAMAN             = 51,
+    DATA_LAVAMAN_PILLARS            = 52,
 
-    // Gunship: Data for the fight
-    // The numbering is very high for safety -- custom patch!
-    DATA_FIRST_SQUAD_STATE                  = 100,
-    DATA_SECOND_SQUAD_STATE                 = 101,
-    DATA_SPIRE_FROSTWYRM_STATE              = 102,
-    DATA_GB_HIGH_OVERLORD_SAURFANG          = 103,
-    DATA_GB_MURADIN_BRONZEBEARD             = 104,
-    DATA_HIGH_OVERLORD_SAURFANG_NOT_VISUAL  = 105,
-    DATA_GB_BATTLE_MAGE                     = 106,
-    DATA_SKYBREAKER_BOSS                    = 107,
-    DATA_ORGRIMMAR_HAMMER_BOSS              = 108,
-    DATA_MURADIN_BRONZEBEARD_NOT_VISUAL     = 109,
-    DATA_MURADIN_BRONZEBEARD                = 110,
-    DATA_GUNSHIP_BATTLE                     = 111,
-    GUID_PLAYER_LOCATION                    = 112,
+    DATA_GUNSHIP_BATTLE             = 67,
+    DATA_ZONE_BUFF_STATUS           = 68,
+    GUID_PLAYER_LOCATION            = 69,
+    DATA_ICC_BUFF                   = 70,
+
+    // For Gunship
+    DATA_FIRST_SQUAD_STATE          = 100,
+    DATA_SECOND_SQUAD_STATE         = 101,
+    DATA_SPIRE_FROSTWYRM_STATE      = 102,
+    DATA_GB_HIGH_OVERLORD_SAURFANG  = 103,
+    DATA_GB_MURADIN_BRONZEBEARD     = 104,
+    DATA_GB_PASSENGER_SPAWN_SLOT    = 105,
+    DATA_GB_BATTLE_MAGE             = 106,
+    DATA_SKYBREAKER_BOSS            = 107,
+    DATA_ORGRIMMAR_HAMMER_BOSS      = 108,
+
+    // For Professor Putricide
+    DATA_UNSTABLE_EXPERIMENT_STALKER_RED,
+    DATA_UNSTABLE_EXPERIMENT_STALKER_GREEN,
+
+    DATA_LIGHTS_HAMMER_NPCS_LEFT,
+    DATA_WEEKLY_QUEST_INDEX,
+    DATA_ROTTING_FROST_GIANT_STATE,
+
+    DATA_PUTRICIDE_TRAP,
+
+    DATA_CHECK_LICH_KING_AVAILABILITY,
+
+    DATA_BLOOD_QUEEN_LANA_THEL_COUNCIL,
 };
 
 enum CreaturesIds
@@ -161,6 +218,11 @@ enum CreaturesIds
     NPC_GARROSH_HELLSCREAM                      = 39372,
     NPC_KING_VARIAN_WRYNN                       = 39371,
     NPC_DEATHBOUND_WARD                         = 37007,
+    NPC_HIGHLORD_DARION_MOGRAINE_QUEST          = 37120,
+    NPC_LADY_JAINA_PROUDMOORE_QUEST             = 38606,
+    NPC_MURADIN_BRONZEBEARD_QUEST               = 38607,
+    NPC_UTHER_THE_LIGHTBRINGER_QUEST            = 38608,
+    NPC_LADY_SYLVANAS_WINDRUNNER_QUEST          = 38609,
 
     // Weekly quests
     NPC_INFILTRATOR_MINCHAR                     = 38471,
@@ -178,6 +240,8 @@ enum CreaturesIds
     NPC_LORD_MARROWGAR                          = 36612,
     NPC_COLDFLAME                               = 36672,
     NPC_BONE_SPIKE                              = 36619,
+    NPC_BONE_SPIKE_2                            = 38711,
+    NPC_BONE_SPIKE_3                            = 38712,
 
     // Lady Deathwhisper
     NPC_LADY_DEATHWHISPER                       = 36855,
@@ -189,6 +253,42 @@ enum CreaturesIds
     NPC_REANIMATED_ADHERENT                     = 38010,
     NPC_VENGEFUL_SHADE                          = 38222,
 
+    // Gunship Battle
+    NPC_GB_SKYBREAKER                           = 37540,
+    NPC_GB_SKYBREAKER10H                        = 38128,
+    NPC_GB_SKYBREAKER25                         = 38699,
+    NPC_GB_SKYBREAKER25H                        = 38700,
+    NPC_GB_ORGRIMS_HAMMER                       = 37215,
+    NPC_GB_ORGRIMS_HAMMER10H                    = 38129,
+    NPC_GB_ORGRIMS_HAMMER25                     = 38701,
+    NPC_GB_ORGRIMS_HAMMER25H                    = 38702,
+    NPC_GB_HIGH_OVERLORD_SAURFANG               = 36939,
+    NPC_GB_MURADIN_BRONZEBEARD                  = 36948,
+    NPC_GB_HIGH_CAPTAIN_JUSTIN_BARTLETT         = 37182,
+    NPC_GB_SKYBREAKER_SORCERERS                 = 37116,
+    NPC_GB_KORKRON_REAVER                       = 37920,
+    NPC_GB_KORKRON_REAVERS                      = 36957,
+    NPC_GB_KORKRON_SERGEANT                     = 36960,
+    NPC_GB_SKYBREAKER_SERGEANT                  = 36961,
+    NPC_GB_KORKRON_BATTLE_MAGE                  = 37117,
+    NPC_GB_SKYBREAKER_MARINE                    = 36950,
+    NPC_GB_KORKRON_ROCKETEER                    = 36982,
+    NPC_GB_SKYBREAKER_MORTAR_SOLDIER            = 36978,
+    NPC_GB_KORKRON_AXETHROWER                   = 36968,
+    NPC_GB_SKYBREAKER_RIFLEMAN                  = 36969,
+    NPC_GB_SKYBREAKER_DECKHAND                  = 36970,
+    NPC_GB_ORGRIMS_HAMMER_CREW                  = 36971,
+    NPC_GB_ZAFOD_BOOMBOX                        = 37184,
+    NPC_GB_ALLIANCE_CANNON                      = 36838,
+    NPC_GB_HORDE_CANNON                         = 36839,
+    NPC_GB_INVISIBLE_STALKER                    = 32780,
+    NPC_GB_TELEPORT_PORTAL                      = 37227,
+    NPC_GB_TELEPORT_EXIT                        = 37488,
+    NPC_GB_GUNSHIP_HULL                         = 37547,
+    NPC_GB_SAFE_AREA_IGB                        = 37519,
+    NPC_GB_SKY_REAVER_KORM_BLACKSCAR            = 37833,
+    NPC_GB_KORKRON_NECROLYTE                    = 37149,
+
     // Deathbringer Saurfang
     NPC_DEATHBRINGER_SAURFANG                   = 37813,
     NPC_BLOOD_BEAST                             = 38508,
@@ -198,18 +298,25 @@ enum CreaturesIds
     NPC_SE_HIGH_OVERLORD_SAURFANG               = 37187,
     NPC_SE_KOR_KRON_REAVER                      = 37920,
     NPC_SE_SKYBREAKER_MARINE                    = 37830,
+    NPC_SE_STORMWIND_PORTAL                     = 37880,
+    NPC_SE_ALLIANCE_MASON                       = 37902,
+    NPC_SE_SHELY_STEELBOWELS                    = 37903,
+    NPC_SE_BRAZIE_GETZ                          = 37904,
+    NPC_SE_HORDE_PEON                           = 37930,
+    NPC_SE_APOTHECARY_CANDITH_TOMAS             = 37935,
+    NPC_SE_MORGAN_DAYBLAZE                      = 37936,
     NPC_FROST_FREEZE_TRAP                       = 37744,
 
     // Festergut
     NPC_FESTERGUT                               = 36626,
     NPC_GAS_DUMMY                               = 36659,
-    NPC_MALLEABLE_GOO                           = 38556,
 
     // Rotface
     NPC_ROTFACE                                 = 36627,
     NPC_OOZE_SPRAY_STALKER                      = 37986,
     NPC_PUDDLE_STALKER                          = 37013,
     NPC_UNSTABLE_EXPLOSION_STALKER              = 38107,
+    NPC_VILE_GAS_STALKER                        = 38548,
 
     // Professor Putricide
     NPC_PROFESSOR_PUTRICIDE                     = 36678,
@@ -221,6 +328,7 @@ enum CreaturesIds
     NPC_TEAR_GAS_TARGET_STALKER                 = 38317,
     NPC_MUTATED_ABOMINATION_10                  = 37672,
     NPC_MUTATED_ABOMINATION_25                  = 38285,
+    NPC_PUTRICIDE_TRAP                          = 38879,
 
     // Blood Prince Council
     NPC_PRINCE_KELESETH                         = 37972,
@@ -234,6 +342,7 @@ enum CreaturesIds
     NPC_KINETIC_BOMB_TARGET                     = 38458,
     NPC_KINETIC_BOMB                            = 38454,
     NPC_SHOCK_VORTEX                            = 38422,
+    NPC_BLOOD_QUEEN_LANA_THEL_COUNCIL           = 38004,
 
     // Blood-Queen Lana'thel
     NPC_BLOOD_QUEEN_LANA_THEL                   = 37955,
@@ -283,6 +392,27 @@ enum CreaturesIds
     NPC_FROST_BOMB                              = 37186,
     NPC_ICE_TOMB                                = 36980,
 
+    // Ramparts of Skulls
+    NPC_KORKRON_PRIMALIST                       = 37030,
+    NPC_SKYBREAKER_HIEROPHANT                   = 37027,
+    NPC_KORKRON_DEFENDER                        = 37032,
+    NPC_SKYBREAKER_PROTECTOR                    = 36998,
+    NPC_KORKRON_NECROLYTE                       = 37149,
+    NPC_SKYBREAKER_SUMMONER                     = 37148,
+    NPC_KORKRON_ORACLE                          = 37031,
+    NPC_SKYBREAKER_LIGHT                        = 37016,
+    NPC_KORKRON_REAVER                          = 37029,
+    NPC_SKYBREAKER_DREADBLADE                   = 37004,
+    NPC_KORKRON_SNIPER                          = 37146,
+    NPC_SKYBREAKER_MARKSMAN                     = 37144,
+    NPC_KORKRON_TEMPLAR                         = 37034,
+    NPC_SKYBREAKER_VICAR                        = 37021,
+    NPC_KORKRON_VANQUISHER                      = 37035,
+    NPC_SKYBREAKER_VINDICATOR                   = 37003,
+    NPC_KORKRON_INVOKER                         = 37033,
+    NPC_SKYBREAKER_SORCERER                     = 37026,
+    NPC_SPIRE_FROSTWYRM                         = 37230,
+
     // The Lich King
     NPC_THE_LICH_KING                           = 36597,
     NPC_HIGHLORD_TIRION_FORDRING_LK             = 38995,
@@ -302,10 +432,11 @@ enum CreaturesIds
     NPC_WORLD_TRIGGER_INFINITE_AOI              = 36171,
     NPC_SPIRIT_BOMB                             = 39189,
     NPC_FROSTMOURNE_TRIGGER                     = 38584,
-    NPC_SHADOW_TRAP                             = 39137,
+    NPC_LICH_KING_CREDIT                        = 38153,
 
     // Generic
     NPC_INVISIBLE_STALKER                       = 30298,
+    NPC_VENGEFUL_FLESHREAPER                    = 37038,
 
     // Sindragosas Ward
     NPC_SINDRAGOSAS_WARD                        = 37503,
@@ -314,39 +445,6 @@ enum CreaturesIds
     NPC_NERUBAR_BROODLING                       = 37232,
     NPC_FROSTWARDEN_WARRIOR                     = 37228,
     NPC_FROSTWARDEN_SORCERESS                   = 37229,
-
-    // Gunship: Ids of NPCs
-    NPC_GB_SKYBREAKER                           = 37540,
-    NPC_GB_ORGRIMS_HAMMER                       = 37215,
-    NPC_GB_HIGH_OVERLORD_SAURFANG               = 36939,
-    NPC_GB_MURADIN_BRONZEBEARD                  = 36948,
-    NPC_GB_HIHG_CAPTAIN_JUSTIN_BARTLETT         = 37182,
-    NPC_GB_HIGH_OVERLORD_SAURFANG_NOT_VISUAL    = 300000,
-    NPC_GB_MURADIN_BRONZEBEARD_NOT_VISUAL       = 300001,
-    NPC_GB_SKYBREAKER_SORCERER                  = 37026,
-    NPC_GB_SKYBREAKER_SORCERERS                 = 37116,
-    NPC_GB_KORKRON_REAVER                       = 37920,
-    NPC_GB_KORKRON_REAVERS                      = 36957,
-    NPC_GB_KORKRON_SERGANTE                     = 36960,
-    NPC_GB_SKYBREAKER_SERGANTE                  = 36961,
-    NPC_GB_KORKRON_BATTLE_MAGE                  = 37117,
-    NPC_GB_SKYBREAKER_MARINE                    = 36950,
-    NPC_GB_KORKRON_ROCKETEER                    = 36982,
-    NPC_GB_SKYBREAKER_MORTAR_SOLDIER            = 36978,
-    NPC_GB_KORKRON_AXETHROWER                   = 36968,
-    NPC_GB_SKYBREAKER_RIFLEMAN                  = 36969,
-    NPC_GB_SKYBREAKER_DECKHAND                  = 36970,
-    NPC_GB_ZAFOD_BOOMBOX                        = 37184,
-    NPC_GB_ALLIANCE_CANON                       = 36838,
-    NPC_GB_HORDE_CANON                          = 36839,
-    NPC_GB_INVISIBLE_STALKER                    = 32780,
-    NPC_GB_PORTAL                               = 37227,
-    NPC_GB_GUNSHIP_HULL                         = 37547,
-
-    // Gunship: Ids missing from trash
-    NPC_KORKRON_INVOKER                         = 37033,
-    NPC_SPIRE_FROSTWYRM                         = 37230,
-    NPC_SKYBREAKER_SORCERER                     = 37026,
 };
 
 enum GameObjectsIds
@@ -366,20 +464,49 @@ enum GameObjectsIds
     GO_ORATORY_OF_THE_DAMNED_ENTRANCE       = 201563,
     GO_LADY_DEATHWHISPER_ELEVATOR           = 202220,
 
+    // Gunship Battle
+    GO_ORGRIM_S_HAMMER_HORDE_ICC            = 201812,
+    GO_ORGRIM_S_HAMMER_ALLIANCE_ICC         = 201581,
+    GO_THE_SKYBREAKER_HORDE_ICC             = 201811,
+    GO_THE_SKYBREAKER_ALLIANCE_ICC          = 201580,
+    GO_GUNSHIP_ARMORY_A_10N                 = 201872,
+    GO_GUNSHIP_ARMORY_A_25N                 = 201873,
+    GO_GUNSHIP_ARMORY_A_10H                 = 201874,
+    GO_GUNSHIP_ARMORY_A_25H                 = 201875,
+    GO_GUNSHIP_ARMORY_H_10N                 = 202177,
+    GO_GUNSHIP_ARMORY_H_25N                 = 202178,
+    GO_GUNSHIP_ARMORY_H_10H                 = 202179,
+    GO_GUNSHIP_ARMORY_H_25H                 = 202180,
+
     // Deathbringer Saurfang
     GO_SAURFANG_S_DOOR                      = 201825,
     GO_DEATHBRINGER_S_CACHE_10N             = 202239,
     GO_DEATHBRINGER_S_CACHE_25N             = 202240,
     GO_DEATHBRINGER_S_CACHE_10H             = 202238,
     GO_DEATHBRINGER_S_CACHE_25H             = 202241,
-    GO_SCOURGE_TRANSPORTER_SAURFANG         = 202245,
+    GO_ZEPPELIN_HORDE_THE_MIGHTY_WIND       = 201834,
+    GO_ALLIANCE_TELEPORTER                  = 201858,
+    GO_HORDE_TELEPORTER                     = 201880,
+    GO_ALLIANCE_TENT                        = 201868,
+    GO_BLACKSMITHS_ANVIL_A                  = 1684,
+    GO_FORGE_A                              = 1685,
+    GO_ALLIANCE_BANNER                      = 201869,
+    GO_HORDE_TENT_1                         = 201886,
+    GO_HORDE_TENT_2                         = 201887,
+    GO_BLACKSMITHS_ANVIL_H                  = 191345,
+    GO_FORGE_H                              = 191508,
+    GO_BONFIRE                              = 196417,
 
     // Professor Putricide
+    GO_GEIST_ALARM_1                        = 201888,
+    GO_GEIST_ALARM_2                        = 201889,
     GO_ORANGE_PLAGUE_MONSTER_ENTRANCE       = 201371,
     GO_GREEN_PLAGUE_MONSTER_ENTRANCE        = 201370,
     GO_SCIENTIST_AIRLOCK_DOOR_COLLISION     = 201612,
     GO_SCIENTIST_AIRLOCK_DOOR_ORANGE        = 201613,
     GO_SCIENTIST_AIRLOCK_DOOR_GREEN         = 201614,
+    GO_OOZE_RELEASE_VALVE                   = 201615,
+    GO_GAS_RELEASE_VALVE                    = 201616,
     GO_DOODAD_ICECROWN_ORANGETUBES02        = 201617,
     GO_DOODAD_ICECROWN_GREENTUBES02         = 201618,
     GO_SCIENTIST_ENTRANCE                   = 201372,
@@ -403,10 +530,11 @@ enum GameObjectsIds
     GO_DOODAD_ICECROWN_ROOSTPORTCULLIS_02   = 201381,
     GO_DOODAD_ICECROWN_ROOSTPORTCULLIS_03   = 201382,
     GO_DOODAD_ICECROWN_ROOSTPORTCULLIS_04   = 201383,
-    GO_CACHE_OF_THE_DREAMWALKER_10N         = 201959,
-    GO_CACHE_OF_THE_DREAMWALKER_25N         = 202339,
-    GO_CACHE_OF_THE_DREAMWALKER_10H         = 202338,
-    GO_CACHE_OF_THE_DREAMWALKER_25H         = 202340,
+    GO_VALITHRIA_ELEVATOR                   = 202234,
+    GO_DREAMWALKER_CACHE_10N                = 201959,
+    GO_DREAMWALKER_CACHE_25N                = 202339,
+    GO_DREAMWALKER_CACHE_10H                = 202338,
+    GO_DREAMWALKER_CACHE_25H                = 202340,
 
     // Sindragosa
     GO_SINDRAGOSA_ENTRANCE_DOOR             = 201373,
@@ -417,7 +545,6 @@ enum GameObjectsIds
     GO_SIGIL_OF_THE_FROSTWING               = 202181,
 
     // The Lich King
-    GO_SCOURGE_TRANSPORTER_LK               = 202223,
     GO_ARTHAS_PLATFORM                      = 202161,
     GO_ARTHAS_PRECIPICE                     = 202078,
     GO_DOODAD_ICECROWN_THRONEFROSTYWIND01   = 202188,
@@ -431,19 +558,18 @@ enum GameObjectsIds
     GO_LAVAMAN_PILLARS_CHAINED              = 202437,
     GO_LAVAMAN_PILLARS_UNCHAINED            = 202438,
 
-    // Gunship: Ids of GameObjects
-    GO_ORGRIM_S_HAMMER_HORDE_ICC            = 201812,
-    GO_ORGRIM_S_HAMMER_ALLIANCE_ICC         = 201581,
-    GO_THE_SKYBREAKER_HORDE_ICC             = 201811,
-    GO_THE_SKYBREAKER_ALLIANCE_ICC          = 201580,
-    GO_CAPITAN_CHEST_A_10N                  = 201872,
-    GO_CAPITAN_CHEST_A_25N                  = 201873,
-    GO_CAPITAN_CHEST_A_10H                  = 201874,
-    GO_CAPITAN_CHEST_A_25H                  = 201875,
-    GO_CAPITAN_CHEST_H_10N                  = 202177,
-    GO_CAPITAN_CHEST_H_25N                  = 202178,
-    GO_CAPITAN_CHEST_H_10H                  = 202179,
-    GO_CAPITAN_CHEST_H_25H                  = 202180,
+    // ICC Doors
+    GO_BLOODWING_DOOR                       = 201920,
+    GO_FROSTWING_DOOR                       = 201919,
+
+    // Scourge Teleporters
+    GO_SCOURGE_TRANSPORTER_LIGHTS_HAMMER    = 202242,
+    GO_SCOURGE_TRANSPORTER_ORATORY          = 202243,
+    GO_SCOURGE_TRANSPORTER_RAMPART          = 202244,
+    GO_SCOURGE_TRANSPORTER_UPPER_SPIRE      = 202235,
+    GO_SCOURGE_TRANSPORTER_DEATHBRINGERS    = 202245,
+    GO_SCOURGE_TRANSPORTER_SINDRAGOSAS_LAIR = 202246,
+    GO_SCOURGE_TRANSPORTER_LK               = 202223,
 };
 
 enum AchievementCriteriaIds
@@ -479,10 +605,25 @@ enum AchievementCriteriaIds
     CRITERIA_ONCE_BITTEN_TWICE_SHY_25N  = 13012,
     CRITERIA_ONCE_BITTEN_TWICE_SHY_10V  = 13011,
     CRITERIA_ONCE_BITTEN_TWICE_SHY_25V  = 13013,
+
+    // Lich King
+    CRITERIA_WAITING_A_LONG_TIME_25N    = 13244,
+    CRITERIA_WAITING_A_LONG_TIME_25H    = 13245,
+    CRITERIA_WAITING_A_LONG_TIME_10N    = 13246,
+    CRITERIA_WAITING_A_LONG_TIME_10H    = 13247,
+    CRITERIA_NECK_DEEP_IN_VILE_10N      = 12823,
+    CRITERIA_NECK_DEEP_IN_VILE_10H      = 13163,
+    CRITERIA_NECK_DEEP_IN_VILE_25H      = 13164,
+    CRITERIA_NECK_DEEP_IN_VILE_25N      = 13243,
+
 };
 
 enum SharedActions
 {
+    // Gunship Battle
+    ACTION_ENEMY_GUNSHIP_TALK   = -369390,
+    ACTION_EXIT_SHIP            = -369391,
+
     // Festergut
     ACTION_FESTERGUT_COMBAT     = -366260,
     ACTION_FESTERGUT_GAS        = -366261,
@@ -503,18 +644,22 @@ enum SharedActions
     // Sindragosa
     ACTION_START_FROSTWYRM      = -368530,
     ACTION_TRIGGER_ASPHYXIATION = -368531,
+    ACTION_BOMB_LANDED          = -368532,
 
     // The Lich King
     ACTION_RESTORE_LIGHT        = -72262,
     ACTION_FROSTMOURNE_INTRO    = -36823,
+    ACTION_REBUILD_PLATFORM     = -72259,
 };
 
 enum WeekliesICC
 {
     QUEST_DEPROGRAMMING_10                  = 24869,
     QUEST_DEPROGRAMMING_25                  = 24875,
-    QUEST_SECURING_THE_RAMPARTS_10          = 24870,
-    QUEST_SECURING_THE_RAMPARTS_25          = 24877,
+    QUEST_SECURING_THE_RAMPARTS_H_10        = 24870,
+    QUEST_SECURING_THE_RAMPARTS_H_25        = 24877,
+    QUEST_SECURING_THE_RAMPARTS_A_10        = 24871,
+    QUEST_SECURING_THE_RAMPARTS_A_25        = 24876,
     QUEST_RESIDUE_RENDEZVOUS_10             = 24873,
     QUEST_RESIDUE_RENDEZVOUS_25             = 24878,
     QUEST_BLOOD_QUICKENING_10               = 24874,
@@ -523,13 +668,40 @@ enum WeekliesICC
     QUEST_RESPITE_FOR_A_TORNMENTED_SOUL_25  = 24880,
 };
 
+enum class WeeklyIndexICC : uint32
+{
+    None = 0,
+    Deprogramming,
+    SecuringTheRamparts,
+    ResidueRendezvous,
+    BloodQuickening,
+    RespiteForATormentedSoul,
+};
+
 enum WorldStatesICC
 {
-    WORLDSTATE_SHOW_TIMER           = 4903,
-    WORLDSTATE_EXECUTION_TIME       = 4904,
-    WORLDSTATE_SHOW_ATTEMPTS        = 4940,
-    WORLDSTATE_ATTEMPTS_REMAINING   = 4941,
-    WORLDSTATE_ATTEMPTS_MAX         = 4942,
+    WORLDSTATE_SHOW_TIMER                  = 4903,
+    WORLDSTATE_EXECUTION_TIME              = 4904,
+    WORLDSTATE_SHOW_ATTEMPTS               = 4940,
+    WORLDSTATE_ATTEMPTS_REMAINING          = 4941,
+    WORLDSTATE_ATTEMPTS_MAX                = 4942,
+
+    // Pandaria
+    WORLDSTATE_DEFAULT_25_NORMAL           = 7198,
+    WORLDSTATE_DEFAULT_10_NORMAL           = 7199,
+    WORLDSTATE_BONED                       = 7704,
+    WORLDSTATE_FLU_SHOT_SHORTAGE           = 7824,
+    WORLDSTATE_IVE_GONE_AND_MADE_A_MESS_10 = 7869,
+    WORLDSTATE_IVE_GONE_AND_MADE_A_MESS_25 = 7895,
+    WORLDSTATE_DANCES_WITH_OOZES           = 7817,
+    WORLDSTATE_NOUSEA_HEARTBURN            = 7826,
+    WORLDSTATE_THE_ORB_WHISPERER           = 7867,
+    WORLDSTATE_ONCE_BITTEN_25              = 7454,
+    WORLDSTATE_ONCE_BITTEN_10              = 7453,
+    WORLDSTATE_PORTAL_JOKEY                = 7827,
+    WORLDSTATE_ALL_YOU_CAN_EAT             = 7834,
+    WORLDSTATE_NECK_DEEP_IN_VILE           = 7889,
+    WORLDSTATE_WAITING_LONG_TIME_FOR_THIS  = 7946,
 };
 
 enum AreaIds
@@ -549,7 +721,7 @@ class spell_trigger_spell_from_caster : public SpellScriptLoader
         public:
             spell_trigger_spell_from_caster_SpellScript(uint32 triggerId) : SpellScript(), _triggerId(triggerId) { }
 
-            bool Validate(SpellInfo const* /*spell*/)
+            bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 if (!sSpellMgr->GetSpellInfo(_triggerId))
                     return false;
@@ -561,7 +733,7 @@ class spell_trigger_spell_from_caster : public SpellScriptLoader
                 GetCaster()->CastSpell(GetHitUnit(), _triggerId, true);
             }
 
-            void Register()
+            void Register() override
             {
                 AfterHit += SpellHitFn(spell_trigger_spell_from_caster_SpellScript::HandleTrigger);
             }
@@ -569,7 +741,7 @@ class spell_trigger_spell_from_caster : public SpellScriptLoader
             uint32 _triggerId;
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_trigger_spell_from_caster_SpellScript(_triggerId);
         }
@@ -585,7 +757,7 @@ CreatureAI* GetIcecrownCitadelAI(Creature* creature)
         if (instance->GetInstanceScript())
             if (instance->GetScriptId() == sObjectMgr->GetScriptId(ICCScriptName))
                 return new AI(creature);
-    return NULL;
+    return nullptr;
 }
 
 #endif // ICECROWN_CITADEL_H_

@@ -1,8 +1,6 @@
 #ifndef DEF_BASTION_OF_TWILIGHT_H
 #define DEF_BASTION_OF_TWILIGHT_H
 
-#define BTScriptName "instance_bastion_of_twilight"
-
 enum Data
 {
     DATA_HALFUS                     = 0,
@@ -33,17 +31,37 @@ enum Data
 
 enum CreatureIds
 {
-    NPC_HALFUS_WYRMBREAKER  = 44600,
-    NPC_VALIONA             = 45992,
-    NPC_THERALION           = 45993,
-    NPC_FELUDIUS            = 43687,
-    NPC_IGNACIOUS           = 43686,
-    NPC_ARION               = 43688,
-    NPC_TERRASTRA           = 43689,
-    NPC_MONSTROSITY         = 43735,
-    NPC_CHOGALL             = 43324,
-    NPC_SINESTRA            = 45213,
-    NPC_CHOGALL_DLG         = 46965,    
+    NPC_HALFUS_WYRMBREAKER       = 44600,
+    NPC_VALIONA                  = 45992,
+    NPC_THERALION                = 45993,
+    NPC_FELUDIUS                 = 43687,
+    NPC_IGNACIOUS                = 43686,
+    NPC_ARION                    = 43688,
+    NPC_TERRASTRA                = 43689,
+    NPC_MONSTROSITY              = 43735,
+    NPC_CHOGALL                  = 43324,
+    NPC_SINESTRA                 = 45213,
+    NPC_CHOGALL_DLG              = 46965,
+                                 
+    //Misc                       
+    NPC_TWILIGHT_PORTAL_SHAPER   = 45700,
+    NPC_TWILIGHT_PORTAL          = 45885,
+    NPC_FACELESS_MINION          = 45703,
+    NPC_TWILIGHT_SHIFTER         = 45687,
+    NPC_TWILIGHT_SHADOW_MENDER   = 45699,
+    NPC_TWILIGHT_SOUL_BLADE      = 45265,
+    NPC_TWILIGHT_SHADOW_KNIGHT   = 45261,
+    NPC_TWILIGHT_DARK_MENDER     = 45266,
+    NPC_TWILIGHT_CROSSFIRE       = 45264,
+    NPC_CHOSEN_WARRIOR           = 46951,
+    NPC_CRIMSONBORNE_FIRESTARTER = 47086,
+    NPC_AZUREBORNE_DESTROYER     = 47087,
+    NPC_TWILIGHT_BRUTE           = 47161,
+    NPC_TWILIGHT_ELEMENTALIST    = 47152,
+    NPC_WIND_BREAKER             = 47151,
+    NPC_ELEMENTAL_FIRELORD       = 47081,
+    NPC_EARTH_RAVAGER            = 47150,
+    NPC_TWILIGHT_FIEND           = 49864,
 };
 
 enum GameObjects
@@ -74,6 +92,24 @@ enum ActionsDlg
     ACTION_AT_CHOGALL                   = 9, // 6444
 };
 
+enum Worldstates
+{
+    WORLDSTATE_ONLY_ESCAPE                   = 8661,
+    WORLDSTATE_ELEMENTARY                    = 8696,
+    WORLDSTATE_ABYSS_WILL_GAZE_BACK_INTO_YOU = 8811,
+};
+
 const Position enterPos = {-548.15f, -532.34f, 890.60f, 0.0f};
+const Position twilightFiendPos = { -740.17f, -685.23f, 831.89f, 5.81f };
+
+template<class AI>
+CreatureAI* GetInstanceAI(Creature* creature)
+{
+    if (InstanceMap* instance = creature->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptId("instance_bastion_of_twilight"))
+                return new AI(creature);
+    return NULL;
+}
 
 #endif

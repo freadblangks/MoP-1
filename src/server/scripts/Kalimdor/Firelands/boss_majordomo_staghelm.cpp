@@ -1,10 +1,3 @@
-
-// 570,227 -61,8299 90,4227
-/*
- * WowCircle 4.3.4
- * Dev: Ramusik
- */
-
 #include "ScriptPCH.h"
 #include "firelands.h"
 
@@ -87,11 +80,6 @@ class boss_majordomo_staghelm : public CreatureScript
     public:
         boss_majordomo_staghelm() : CreatureScript("boss_majordomo_staghelm") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_majordomo_staghelmAI(creature);
-        }
-
         struct boss_majordomo_staghelmAI : public BossAI
         {
             boss_majordomo_staghelmAI(Creature* creature) : BossAI(creature, DATA_STAGHELM)
@@ -111,15 +99,7 @@ class boss_majordomo_staghelm : public CreatureScript
                 me->setActive(true);
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 me->SetMaxPower(POWER_ENERGY, 100);
@@ -137,9 +117,9 @@ class boss_majordomo_staghelm : public CreatureScript
                 _changePhaseNum = 0;
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* who) override
             {
-                if (!instance->CheckRequiredBosses(DATA_STAGHELM, attacker->ToPlayer()))
+                if (!instance->CheckRequiredBosses(DATA_STAGHELM, who->ToPlayer()))
                 {
                     EnterEvadeMode();
                     instance->DoNearTeleportPlayers(FLEntrancePos);
@@ -162,7 +142,7 @@ class boss_majordomo_staghelm : public CreatureScript
                 DoZoneInCombat();
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CONCENTRATION_AURA);
                 instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_LEGENDARY_CONCENTRATION);
@@ -176,19 +156,19 @@ class boss_majordomo_staghelm : public CreatureScript
                 AddSmoulderingAura(me);
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
                 _JustReachedHome();
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* victim) override
             {
                 if (victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
                 switch (summon->GetEntry())
@@ -201,19 +181,17 @@ class boss_majordomo_staghelm : public CreatureScript
                         break;
                 }
 
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                if (data == EVENT_JUMP)
-                {
+                if (pointId == EVENT_JUMP)
                     me->CastSpell(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), SPELL_LEAPING_FLAMES_PERSISTENT, true);
-                }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim() || !CheckInArea(diff, 5769))
                     return;
@@ -250,11 +228,11 @@ class boss_majordomo_staghelm : public CreatureScript
                         case EVENT_CHECK_PHASE:
                         {
                             uint8 _phase = PHASE_CAT;
-                            if (Unit* target = me->getVictim())
+                            if (Unit* target = me->GetVictim())
                             {
                                 std::list<Player*> PlayerList;
-                                JadeCore::AnyPlayerInObjectRangeCheck checker(target, 10.0f);
-                                JadeCore::PlayerListSearcher<JadeCore::AnyPlayerInObjectRangeCheck> searcher(target, PlayerList, checker);
+                                Trinity::AnyPlayerInObjectRangeCheck checker(target, 10.0f);
+                                Trinity::PlayerListSearcher<Trinity::AnyPlayerInObjectRangeCheck> searcher(target, PlayerList, checker);
                                 target->VisitNearbyWorldObject(5.0f, searcher);
                                 uint8 const minTargets = Is25ManRaid() ? 18 : 7;
                                 if (PlayerList.size() >= minTargets)
@@ -331,6 +309,11 @@ class boss_majordomo_staghelm : public CreatureScript
                 uint8 _currentPhase;
                 uint32 _changePhaseNum;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_majordomo_staghelmAI>(creature);
+        }
 };
 
 class spell_staghelm_searing_seeds_aura : public SpellScriptLoader
@@ -342,27 +325,27 @@ class spell_staghelm_searing_seeds_aura : public SpellScriptLoader
         {
             PrepareAuraScript(spell_staghelm_searing_seeds_aura_AuraScript);
 
-            void OnApply(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
             {
-                AuraPtr aura = aurEff->GetBase();
+                Aura* aura = aurEff->GetBase();
                 uint32 duration = urand(3000, 45000);
                 aura->SetDuration(duration);
                 aura->SetMaxDuration(duration);
             }
 
-            void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 GetTarget()->CastSpell(GetTarget(), SPELL_SEARING_SEEDS_EXPLOSION, true);
             }
 
-            void Register()
+            void Register() override
             {
                 AfterEffectApply += AuraEffectApplyFn(spell_staghelm_searing_seeds_aura_AuraScript::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
                 AfterEffectRemove += AuraEffectRemoveFn(spell_staghelm_searing_seeds_aura_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_staghelm_searing_seeds_aura_AuraScript();
         }
@@ -380,18 +363,18 @@ class spell_staghelm_burning_orbs : public SpellScriptLoader
             void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 Unit* caster = GetCaster();
-                uint8 const orbsCount = (GetCaster()->GetMap()->GetSpawnMode() & 1) ? 5 : 2;
+                uint8 const orbsCount = GetCaster()->GetMap()->Is25ManRaid() ? 5 : 2;
                 for (uint8 i = 0; i < orbsCount; ++i)
                     caster->CastSpell(orbsPos[i].GetPositionX(), orbsPos[i].GetPositionY(), orbsPos[i].GetPositionZ(), SPELL_BURNING_ORBS_SUMMON, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_staghelm_burning_orbs_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_staghelm_burning_orbs_SpellScript();
         }
@@ -406,12 +389,12 @@ class spell_staghelm_concentration_aura : public SpellScriptLoader
         {
             PrepareAuraScript(spell_staghelm_concentration_aura_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr /*aurEff*/)
+            void HandlePeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetUnitOwner())
                     return;
 
-                if (AuraEffectPtr aurEff = GetAura()->GetEffect(EFFECT_0))
+                if (AuraEffect* aurEff = GetAura()->GetEffect(EFFECT_0))
                 {
                     int32 oldamount = GetUnitOwner()->GetPower(POWER_ALTERNATE_POWER);
                     int32 newamount = oldamount + 5;
@@ -450,13 +433,13 @@ class spell_staghelm_concentration_aura : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_staghelm_concentration_aura_AuraScript::HandlePeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_staghelm_concentration_aura_AuraScript();
         }

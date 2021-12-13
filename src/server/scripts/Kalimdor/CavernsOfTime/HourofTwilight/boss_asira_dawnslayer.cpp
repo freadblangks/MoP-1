@@ -3,13 +3,13 @@
 
 enum ScriptTexts
 {
-    SAY_AGGRO   = 0,
-    SAY_DEATH   = 1,
-    SAY_EVENT_1 = 2,
-    SAY_EVENT_2 = 3,
-    SAY_EVENT_3 = 4,
-    SAY_KILL    = 5,
-    SAY_SPELL   = 6,
+    SAY_AGGRO                       = 0,
+    SAY_DEATH                       = 1,
+    SAY_EVENT_1                     = 2,
+    SAY_EVENT_2                     = 3,
+    SAY_EVENT_3                     = 4,
+    SAY_KILL                        = 5,
+    SAY_SPELL                       = 6,
 };
 
 enum Spells
@@ -25,13 +25,9 @@ enum Spells
 
 enum Events
 {
-    EVENT_MARK_OF_SILENCE       = 1,
-    EVENT_CHOKING_SMOKE_BOMB    = 2,
-};
-
-enum Adds
-{
-
+    EVENT_MARK_OF_SILENCE           = 1,
+    EVENT_CHOKING_SMOKE_BOMB        = 2,
+    EVENT_JUMP_TO_HOME_POSITION     = 3
 };
 
 class boss_asira_dawnslayer : public CreatureScript
@@ -39,16 +35,11 @@ class boss_asira_dawnslayer : public CreatureScript
     public:
         boss_asira_dawnslayer() : CreatureScript("boss_asira_dawnslayer") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_asira_dawnslayerAI(creature);
-        }
-
         struct boss_asira_dawnslayerAI : public BossAI
         {
             boss_asira_dawnslayerAI(Creature* creature) : BossAI(creature, DATA_ASIRA)
             {
-				me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+                me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
@@ -64,7 +55,9 @@ class boss_asira_dawnslayer : public CreatureScript
                 bBarrier = false;
             }
 
-            void InitializeAI()
+            EventMap events, nonCombatEvents;
+
+            void InitializeAI() override
             {
                 if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HoTScriptName))
                     me->IsAIEnabled = false;
@@ -72,13 +65,41 @@ class boss_asira_dawnslayer : public CreatureScript
                     Reset();
             }
 
-            void Reset()
+            void IsSummonedBy(Unit* summoner) override
+            {
+                me->SetReactState(REACT_PASSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                Talk(SAY_EVENT_1);
+                SetEquipmentSlots(false, AsiraDaggers, AsiraDaggers, EQUIP_NO_CHANGE);
+            }
+
+
+            void Reset() override
             {
                 _Reset();
                 bBarrier = false;
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void DoAction(int32 action) override
+            {
+                if (action == ACTION_ASIRA_FALL)
+                {
+                    if (Creature* LifeWarden = GetClosestCreatureWithEntry(me, NPC_LIFE_WARDEN_1, 50.0f))
+                    {
+                        me->CastSpell(LifeWarden, 102924, true); // visual backstab
+                        LifeWarden->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        LifeWarden->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                        LifeWarden->SetStandState(UNIT_STAND_STATE_DEAD);
+                    }
+
+                    if (me->IsOnVehicle())
+                        me->ExitVehicle();
+                        
+                    nonCombatEvents.ScheduleEvent(EVENT_JUMP_TO_HOME_POSITION, 2000);
+                }
+            }
+
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
 
@@ -91,26 +112,50 @@ class boss_asira_dawnslayer : public CreatureScript
                 DoZoneInCombat();
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who && who->GetTypeId() == TYPEID_PLAYER)
+                if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
-
-                me->SummonCreature(NPC_LIFE_WARDEN_2, drakePos);
             }
 
-            void UpdateAI(const uint32 diff)
+            void CheckCast()
             {
-                if (!UpdateVictim())
+                std::list<Player*> Silenced;
+                GetPlayerListInGrid(Silenced, me, 150.0f);
+
+                if (Silenced.empty())
                     return;
 
+                for (auto itr : Silenced)
+                    if (itr->HasAura(SPELL_MARK_OF_SILENCE))
+                        if (itr->HasUnitState(UNIT_STATE_CASTING))
+                            me->CastSpell(itr, SPELL_THROW_KNIFE, true);
+                        
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
                 events.Update(diff);
+                nonCombatEvents.Update(diff);
+
+                if (uint32 eventId = nonCombatEvents.ExecuteEvent())
+                    if (eventId == EVENT_JUMP_TO_HOME_POSITION)
+                    {
+                        Talk(SAY_EVENT_2);
+                        me->SetHomePosition(AsiraHomePoint);
+                        me->GetMotionMaster()->MoveJump(AsiraHomePoint, 30.0f, 20.0f, EVENT_JUMP);
+                        me->SetReactState(REACT_AGGRESSIVE);
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                    }
+
+                if (!UpdateVictim())
+                    return;
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
@@ -121,6 +166,8 @@ class boss_asira_dawnslayer : public CreatureScript
                     DoCast(me, SPELL_BLADE_BARRIER);
                     return;
                 }
+
+                CheckCast();
 
                 if (uint32 eventId = events.ExecuteEvent())
                 {
@@ -145,7 +192,12 @@ class boss_asira_dawnslayer : public CreatureScript
 
         private:
             bool bBarrier;
-        };   
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_asira_dawnslayerAI(creature);
+        }
 };
 
 class spell_asira_dawnslayer_blade_barrier : public SpellScriptLoader
@@ -157,12 +209,12 @@ class spell_asira_dawnslayer_blade_barrier : public SpellScriptLoader
         {
             PrepareAuraScript(spell_asira_dawnslayer_blade_barrier_AuraScript);
 
-            void CalculateAmount(constAuraEffectPtr /*aurEff*/, int32 & amount, bool& /*canBeRecalculated*/)
+            void CalculateAmount(AuraEffect const* /*aurEff*/, float& amount, bool& /*canBeRecalculated*/)
             {
                 amount = -1;
             }
 
-            void Absorb(AuraEffectPtr aurEff, DamageInfo & dmgInfo, uint32 & absorbAmount)
+            void Absorb(AuraEffect* /*aurEff*/, DamageInfo& dmgInfo, uint32& absorbAmount)
             {
                 if (dmgInfo.GetDamage() < (uint32)GetSpellInfo()->Effects[EFFECT_0].BasePoints)
                     absorbAmount = dmgInfo.GetDamage() - 1;
@@ -170,13 +222,13 @@ class spell_asira_dawnslayer_blade_barrier : public SpellScriptLoader
                     GetAura()->Remove();
             }
 
-            void HandleAfterRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void HandleAfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (GetCaster())
                     GetCaster()->CastSpell(GetCaster(), SPELL_LESSER_BLADE_BARRIER, true);
             }
 
-            void Register()
+            void Register() override
             {
                  DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_asira_dawnslayer_blade_barrier_AuraScript::CalculateAmount, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB);
                  OnEffectAbsorb += AuraEffectAbsorbFn(spell_asira_dawnslayer_blade_barrier_AuraScript::Absorb, EFFECT_0);
@@ -185,7 +237,7 @@ class spell_asira_dawnslayer_blade_barrier : public SpellScriptLoader
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_asira_dawnslayer_blade_barrier_AuraScript();
         }
@@ -208,18 +260,18 @@ class spell_asira_dawnslayer_throw_knife : public SpellScriptLoader
                 if (targets.size() <= 1)
                     return;
 
-                Unit* pPlayer = GetExplTargetUnit();
-                if (!pPlayer)
+                Unit* player = GetExplTargetUnit();
+                if (!player)
                     return;
 
                 WorldObject* objTarget = NULL;
                 for (std::list<WorldObject*>::const_iterator itr = targets.begin(); itr != targets.end(); ++itr)
-                    if ((*itr)->IsInBetween(GetCaster(), pPlayer, 1.0f))
+                    if ((*itr)->IsInBetween(GetCaster(), player, 1.0f))
                         if (!objTarget || (GetCaster()->GetDistance(objTarget) > GetCaster()->GetDistance((*itr))))
                             objTarget = (*itr);
 
                 if (!objTarget)
-                    objTarget = pPlayer;
+                    objTarget = player;
 
                 targets.clear();
                 targets.push_back(objTarget);
@@ -234,14 +286,14 @@ class spell_asira_dawnslayer_throw_knife : public SpellScriptLoader
                     GetCaster()->CastSpell(GetHitUnit(), SPELL_SILENCE, true);
             }
         
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_asira_dawnslayer_throw_knife_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_CONE_ENEMY_24);
                 OnEffectHitTarget += SpellEffectFn(spell_asira_dawnslayer_throw_knife_SpellScript::HandleDamage, EFFECT_1, SPELL_EFFECT_SCHOOL_DAMAGE);
             }
         };
        
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_asira_dawnslayer_throw_knife_SpellScript();
         }
@@ -267,7 +319,7 @@ class spell_asira_dawnslayer_mark_of_silence : public SpellScriptLoader
                 targets.remove_if(CastersCheck());
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_asira_dawnslayer_mark_of_silence_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
@@ -292,11 +344,11 @@ class spell_asira_dawnslayer_mark_of_silence : public SpellScriptLoader
                             case CLASS_HUNTER:
                                 return true;
                             case CLASS_DRUID:
-                                if (unit->ToPlayer()->GetPrimaryTalentTree(unit->ToPlayer()->GetActiveSpec()) == TALENT_TREE_DRUID_FERAL_COMBAT)
+                                if (unit->ToPlayer()->GetTalentSpecialization() == SPEC_DRUID_FERAL)
                                     return true;
                                 return false;
                             case CLASS_PALADIN:
-                                if (unit->ToPlayer()->GetPrimaryTalentTree(unit->ToPlayer()->GetActiveSpec()) == TALENT_TREE_PALADIN_HOLY)
+                                if (unit->ToPlayer()->GetTalentSpecialization() == SPEC_PALADIN_HOLY)
                                     return false;
                                 return true;
                             default:
@@ -308,7 +360,7 @@ class spell_asira_dawnslayer_mark_of_silence : public SpellScriptLoader
             };
         };
        
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_asira_dawnslayer_mark_of_silence_SpellScript();
         }

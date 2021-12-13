@@ -1,10 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -26,61 +28,77 @@ EndScriptData */
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 
-#define SAY_SPAWN   "TIMMY!"
+enum Says
+{
+    SAY_SPAWN                   = 0
+};
 
-#define SPELL_RAVENOUSCLAW    17470
+enum Spells
+{
+    SPELL_RAVENOUSCLAW          = 17470,
+    SPELL_ENRAGE                = 8599,
+};
 
 class boss_timmy_the_cruel : public CreatureScript
 {
-public:
-    boss_timmy_the_cruel() : CreatureScript("boss_timmy_the_cruel") { }
+    public:
+        boss_timmy_the_cruel() : CreatureScript("boss_timmy_the_cruel") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_timmy_the_cruelAI (creature);
-    }
-
-    struct boss_timmy_the_cruelAI : public ScriptedAI
-    {
-        boss_timmy_the_cruelAI(Creature* creature) : ScriptedAI(creature) {}
-
-        uint32 RavenousClaw_Timer;
-        bool HasYelled;
-
-        void Reset()
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            RavenousClaw_Timer = 10000;
-            HasYelled = false;
+            return new boss_timmy_the_cruelAI(creature);
         }
 
-        void EnterCombat(Unit* /*who*/)
+        struct boss_timmy_the_cruelAI : public ScriptedAI
         {
-            if (!HasYelled)
+            boss_timmy_the_cruelAI(Creature* creature) : ScriptedAI(creature) { }
+
+            uint32 RavenousClaw_Timer;
+            bool HasYelled, hasEnrage;
+
+            void Reset() override
             {
-                me->MonsterYell(SAY_SPAWN, LANG_UNIVERSAL, 0);
-                HasYelled = true;
+                RavenousClaw_Timer = 10000;
+                HasYelled          = false;
+                hasEnrage          = false;
             }
-        }
 
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            //RavenousClaw
-            if (RavenousClaw_Timer <= diff)
+            void EnterCombat(Unit* /*who*/) override
             {
-                //Cast
-                DoCast(me->getVictim(), SPELL_RAVENOUSCLAW);
-                //15 seconds until we should cast this again
-                RavenousClaw_Timer = 15000;
-            } else RavenousClaw_Timer -= diff;
+                if (!HasYelled)
+                {
+                    Talk(SAY_SPAWN);
+                    HasYelled = true;
+                }
+            }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (HealthBelowPct(50) && !hasEnrage)
+                {
+                    hasEnrage = true;
+                    DoCast(me, SPELL_ENRAGE);
+                }
+            }
 
+            void UpdateAI(uint32 diff) override
+            {
+                //Return since we have no target
+                if (!UpdateVictim())
+                    return;
+
+                //RavenousClaw
+                if (RavenousClaw_Timer <= diff)
+                {
+                    //Cast
+                    DoCastVictim(SPELL_RAVENOUSCLAW);
+                    //15 seconds until we should cast this again
+                    RavenousClaw_Timer = 15000;
+                } else RavenousClaw_Timer -= diff;
+
+                DoMeleeAttackIfReady();
+            }
+        };
 };
 
 void AddSC_boss_timmy_the_cruel()

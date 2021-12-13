@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,32 +17,21 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef CONTAINERS_H
-#define CONTAINERS_H
+#ifndef TRINITY_CONTAINERS_H
+#define TRINITY_CONTAINERS_H
 
+#include "Define.h"
 #include <list>
+#include <random>
+#include "Util.h"
 
 //! Because circular includes are bad
 extern uint32 urand(uint32 min, uint32 max);
 
-namespace JadeCore
+namespace Trinity
 {
     namespace Containers
     {
-        template<class T>
-        void RandomResizeSet(std::set<T> &t_set, uint32 size)
-        {
-            size_t set_size = t_set.size();
-
-            while (set_size > size)
-            {
-                typename std::set<T>::iterator itr = t_set.begin();
-                std::advance(itr, urand(0, set_size - 1));
-                t_set.erase(itr);
-                --set_size;
-            }
-        }
-
         template<class T>
         void RandomResizeList(std::list<T> &list, uint32 size)
         {
@@ -77,9 +68,54 @@ namespace JadeCore
             std::advance(it, urand(0, container.size() - 1));
             return *it;
         }
+
+        /*
+         * Select a random element from a container where each element has a different chance to be selected.
+         *
+         * @param container Container to select an element from
+         * @param weights Chances of each element to be selected, must be in the same order as elements in container
+         *
+         * Note: container cannot be empty
+         */
+        template <class C>
+        typename C::const_iterator SelectRandomWeightedContainerElement(C const& container, std::vector<double> const& weights)
+        {
+            std::discrete_distribution<uint32>::param_type ddParam(weights.begin(), weights.end());
+            std::discrete_distribution<uint32> dd(ddParam);
+            typename C::const_iterator it = container.begin();
+            std::advance(it, dd(SFMTEngine::Instance()));
+            return it;
+        }
+
+        /*
+         * Select a random element from a container where each element has a different chance to be selected.
+         *
+         * @param container Container to select an element from
+         * @param weights Chances of each element to be selected, must be in the same order as elements in container.
+         *                Caller is responsible for checking that sum of all weights is greater than 0.
+         *
+         * Note: container cannot be empty
+         */
+        template <class C>
+        typename C::const_iterator SelectRandomWeightedContainerElement(C const& container, std::function<double(typename C::value_type const&)> const& weightExtractor)
+        {
+            std::vector<double> weights;
+            weights.reserve(container.size());
+            double weightSum = 0.0;
+            for (auto itr = container.begin(); itr != container.end(); ++itr)
+            {
+                double weight = weightExtractor(*itr);
+                weights.push_back(weight);
+                weightSum += weight;
+            }
+            if (weightSum <= 0.0)
+                weights.assign(container.size(), 1.0);
+
+            return SelectRandomWeightedContainerElement(container, weights);
+        }
     }
     //! namespace Containers
 }
-//! namespace JadeCore
+//! namespace Trinity
 
-#endif //! #ifdef CONTAINERS_H
+#endif //! #ifdef TRINITY_CONTAINERS_H

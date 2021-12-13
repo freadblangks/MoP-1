@@ -1,10 +1,9 @@
 #include "ScriptPCH.h"
-#include "dragon_soul.h"
 #include "MoveSplineInit.h"
+#include "CreatureTextMgr.h"
+#include "dragon_soul.h"
 #include "boss_warmaster_blackhorn.h"
 
-// СЛАВА И СПРАВЕДЛИВОСТЬ!
-// Начать бой?
 enum ScriptedTextBlackhorn
 {
     SAY_AGGRO       = 0,
@@ -14,9 +13,14 @@ enum ScriptedTextBlackhorn
     SAY_INTRO       = 4,
     SAY_KILL        = 5,
     SAY_GORIONA     = 6,
-    SAY_ROAR        = 7,
-    SAY_SHOCKWAVE   = 8,
-    SAY_SAPPER_YELL = 9,
+    SAY_SHOCKWAVE   = 7,
+    SAY_SAPPER_YELL = 8,
+    SAY_SKYFIRE_HP  = 9,
+
+    // Goriona
+    ANN_ONSLAUGHT   = 0,
+    ANN_BROADSIDE   = 1,
+    SAY_LOW_HP      = 2,
 };
 
 enum ScriptedTextSwayze
@@ -110,6 +114,13 @@ enum Adds
     NPC_SKYFIRE_HARPOON_GUN         = 56681,
     NPC_SKYFIRE_CANNON              = 57260,
     NPC_SKYFIRE_COMMANDO            = 57264,
+
+    NPC_BLADE_RUSH_TARGET           = 300000,
+};
+
+enum Menus
+{
+    GOSSIP_MENU_GUNSHIP = 13252
 };
 
 enum Events
@@ -150,6 +161,7 @@ enum Events
     EVENT_SECOND_PHASE_4        = 34, // Blackhorn appears
     EVENT_BERSERK               = 35,
     EVENT_SIPHON_VITALITY       = 36,
+    EVENT_GORIONA_MOVE          = 37,
 };
 
 enum Actions
@@ -157,13 +169,17 @@ enum Actions
     ACTION_START            = 1,
     ACTION_START_BATTLE     = 2,
     ACTION_END_BATTLE       = 3,
-    ACTION_GORIONA_MOVE     = 4,
-    ACTION_HARPOON          = 5,
-    ACTION_HARPOON_END      = 6,
-    ACTION_SAPPER           = 7,
-    ACTION_SECOND_PHASE     = 8,
-    ACTION_DECK             = 9,
-    ACTION_BLACKHORN_DIED   = 10,
+    ACTION_HARPOON          = 4,
+    ACTION_HARPOON_END      = 5,
+    ACTION_SAPPER           = 6,
+    ACTION_SECOND_PHASE     = 7,
+    ACTION_DECK             = 8,
+    ACTION_BLACKHORN_DIED   = 9,
+};
+
+enum Points
+{
+    POINT_SHOCKWAVE     = 1,
 };
 
 class boss_warmaster_blackhorn: public CreatureScript
@@ -171,14 +187,9 @@ class boss_warmaster_blackhorn: public CreatureScript
     public:
         boss_warmaster_blackhorn() : CreatureScript("boss_warmaster_blackhorn") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_warmaster_blackhornAI(pCreature);
-        }
-
         struct boss_warmaster_blackhornAI : public BossAI
         {
-            boss_warmaster_blackhornAI(Creature* pCreature) : BossAI(pCreature, DATA_BLACKHORN)
+            boss_warmaster_blackhornAI(Creature* creature) : BossAI(creature, DATA_BLACKHORN)
             {             
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -196,18 +207,11 @@ class boss_warmaster_blackhorn: public CreatureScript
                 uiWave = 0;
                 drakeDied = 0;
                 phase = 0;
-                deck = true;
+                shockwaveTarget = 0;
+                clearShockwaveTarget = false;
             }
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(DSScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -220,37 +224,35 @@ class boss_warmaster_blackhorn: public CreatureScript
                 uiWave = 0;
                 drakeDied = 0;
                 phase = 0;
-                deck = true;
+                me->GetMap()->SetWorldState(WORLDSTATE_DECK_DEFENDER, 1);
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 uiWave = 0;
                 drakeDied = 0;
                 phase = 0;
-                deck = true;
+                me->GetMap()->SetWorldState(WORLDSTATE_DECK_DEFENDER, 1);
 
                 DoZoneInCombat();
                 instance->SetBossState(DATA_BLACKHORN, IN_PROGRESS);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_START_BATTLE)
                 {
                     Talk(SAY_AGGRO);
                     DoZoneInCombat();
-                    if (Creature* pGoriona = me->FindNearestCreature(NPC_GORIONA, 300.0f))
-                    {
-                        DoZoneInCombat(pGoriona);
-                        pGoriona->AI()->DoAction(ACTION_GORIONA_MOVE);
-                    }
+                    me->SummonCreature(NPC_GORIONA, gorionaPos[0]);
                     if (Creature* pShip = me->FindNearestCreature(NPC_SKYFIRE, 300.0f))
                     {
                         pShip->SetInCombatWith(me);
                         pShip->AddThreat(me, 0.0f);
                         me->AddThreat(pShip, 0.0f);
                     }
+                    if (Creature* pGoriona = me->FindNearestCreature(NPC_GORIONA, 300.0f))
+                        DoZoneInCombat(pGoriona);
 
                     events.ScheduleEvent(EVENT_SUMMON_DRAKE, 10000);
                     events.ScheduleEvent(EVENT_HARPOON, 40000);
@@ -279,20 +281,40 @@ class boss_warmaster_blackhorn: public CreatureScript
                     me->GetCreatureListWithEntryInGrid(creatures, NPC_SKYFIRE_CANNON, 200.0f);
                     if (!creatures.empty())
                         for (std::list<Creature*>::const_iterator itr = creatures.begin(); itr != creatures.end(); ++itr)
-                            {
-                                (*itr)->InterruptNonMeleeSpells(false);
-                                (*itr)->AI()->EnterEvadeMode();
-                            }
+                        {
+                            (*itr)->InterruptNonMeleeSpells(false);
+                            (*itr)->AI()->EnterEvadeMode();
+                        }
 
                     instance->SetBossState(DATA_BLACKHORN, NOT_STARTED);
 
                     me->DespawnOrUnsummon(2000);
                 }
                 else if (action == ACTION_DECK)
-                    deck = false;
+                    me->GetMap()->SetWorldState(WORLDSTATE_DECK_DEFENDER, 0);
             }
 
-            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/)
+            void SetGUID(uint64 guid, int32 /*type*/) override
+            {
+                shockwaveTarget = guid;
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type == POINT_MOTION_TYPE && pointId == POINT_SHOCKWAVE && shockwaveTarget)
+                {
+                    me->AddUnitState(UNIT_STATE_CANNOT_TURN);
+                    if (Unit* target = ObjectAccessor::GetUnit(*me, shockwaveTarget))
+                    {
+                        me->SetOrientation(me->GetAngle(target));
+                        DoCast(target, SPELL_SHOCKWAVE);
+                        clearShockwaveTarget = true;
+                    }
+                    events.ScheduleEvent(EVENT_CONTINUE, 5000);
+                }
+            }
+
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
             {
                 if (summon->GetEntry() == NPC_TWILIGHT_ASSAULT_DRAKE_1 ||
                     summon->GetEntry() == NPC_TWILIGHT_ASSAULT_DRAKE_2)
@@ -319,12 +341,7 @@ class boss_warmaster_blackhorn: public CreatureScript
                 }
             }
 
-            bool AllowAchieve()
-            {
-                return deck;                
-            }
-
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 Talk(SAY_DEATH);
 
@@ -348,16 +365,22 @@ class boss_warmaster_blackhorn: public CreatureScript
                         }
 
                 if (Creature* pSwayze = me->FindNearestCreature(NPC_SKY_CAPTAIN_SWAYZE, 200.0f))
+                {
                     pSwayze->AI()->DoAction(ACTION_BLACKHORN_DIED);
+                    pSwayze->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                }
+                        
+                DespawnCreatures(NPC_GORIONA);
+                DespawnCreatures(NPC_TWILIGHT_FLAMES);
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* victim) override
             {
                 if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -365,7 +388,14 @@ class boss_warmaster_blackhorn: public CreatureScript
                 events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
+                {
+                    if (clearShockwaveTarget && me->GetUInt64Value(UNIT_FIELD_TARGET))
+                    {
+                        me->SetUInt64Value(UNIT_FIELD_TARGET, 0);
+                        clearShockwaveTarget = false;
+                    }
                     return;
+                }
 
                 if (uint32 eventId = events.ExecuteEvent())
                 {
@@ -449,7 +479,7 @@ class boss_warmaster_blackhorn: public CreatureScript
                             DoCast(me, SPELL_BERSERK);
                             break;
                         case EVENT_DISRUPTING_ROAR:
-                            Talk(SAY_ROAR);
+                            sCreatureTextMgr->SendSound(me, 26220, CHAT_MSG_MONSTER_YELL, 0, TEXT_RANGE_NORMAL, TEAM_OTHER, false);
                             DoCastAOE(SPELL_DISRUPTING_ROAR);
                             events.ScheduleEvent(EVENT_DISRUPTING_ROAR, urand(18500, 23000));
                             break;
@@ -458,18 +488,17 @@ class boss_warmaster_blackhorn: public CreatureScript
 
                             me->SetReactState(REACT_PASSIVE);
                             me->AttackStop();
-                            //me->SetControlled(true, UNIT_STATE_STUNNED);
-                            me->AddUnitState(UNIT_STATE_CANNOT_TURN);
                             
                             DoCastAOE(SPELL_SHOCKWAVE_AOE);
 
-                            events.ScheduleEvent(EVENT_CONTINUE, 4000);
                             events.ScheduleEvent(EVENT_SHOCKWAVE, 23000);
                             break;
                         case EVENT_CONTINUE:
+                            clearShockwaveTarget = false;
                             me->ClearUnitState(UNIT_STATE_CANNOT_TURN);
-                            //me->SetControlled(false, UNIT_STATE_STUNNED);
                             me->SetReactState(REACT_AGGRESSIVE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_TOPAGGRO))
+                                AttackStart(target);
                             break;
                         case EVENT_DEVASTATE:
                             DoCastVictim(SPELL_DEVASTATE);
@@ -496,7 +525,8 @@ class boss_warmaster_blackhorn: public CreatureScript
             uint8 uiWave;
             uint8 drakeDied;
             uint8 phase;
-            bool deck;
+            uint64 shockwaveTarget;
+            bool clearShockwaveTarget;
 
             void DespawnCreatures(uint32 entry)
             {
@@ -512,12 +542,17 @@ class boss_warmaster_blackhorn: public CreatureScript
 
             void CallAssaultDrakes(uint8 wave)
             {
-                if (Creature* pCreature = me->SummonCreature(NPC_TWILIGHT_ASSAULT_DRAKE_1, assaultdrakePos[0][0], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000))
-                    pCreature->AI()->SetData(DATA_WAVE, wave);
-                if (Creature* pCreature = me->SummonCreature(NPC_TWILIGHT_ASSAULT_DRAKE_2, assaultdrakePos[1][0], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000))
-                    pCreature->AI()->SetData(DATA_WAVE, wave);
+                if (Creature* creature = me->SummonCreature(NPC_TWILIGHT_ASSAULT_DRAKE_1, assaultdrakePos[0][0], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000))
+                    creature->AI()->SetData(DATA_WAVE, wave);
+                if (Creature* creature = me->SummonCreature(NPC_TWILIGHT_ASSAULT_DRAKE_2, assaultdrakePos[1][0], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 2000))
+                    creature->AI()->SetData(DATA_WAVE, wave);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_warmaster_blackhornAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_goriona: public CreatureScript
@@ -525,14 +560,9 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
     public:
         npc_warmaster_blackhorn_goriona() : CreatureScript("npc_warmaster_blackhorn_goriona") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_warmaster_blackhorn_gorionaAI(pCreature);
-        }
-
         struct npc_warmaster_blackhorn_gorionaAI : public ScriptedAI
         {
-            npc_warmaster_blackhorn_gorionaAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_warmaster_blackhorn_gorionaAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -549,20 +579,23 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                 me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
                 phase = 0;
+                instance = me->GetInstanceScript();
             }
 
-            void Reset()
+            void Reset() override
             {           
                 events.Reset();
                 me->SetReactState(REACT_PASSIVE);
                 me->setActive(true);
                 phase = 0;
+                if (instance->GetBossState(DATA_BLACKHORN) == IN_PROGRESS)
+                    events.ScheduleEvent(EVENT_GORIONA_MOVE, 100);
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
-                    if (data == POINT_LAND)
+                    if (pointId == POINT_LAND)
                     {
                         me->SetCanFly(false);
                         me->SetDisableGravity(false);
@@ -571,35 +604,15 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                     }
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
-                if (me->isInCombat())
+                if (me->IsInCombat())
                     DoZoneInCombat(summon);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
-                if (action == ACTION_GORIONA_MOVE)
-                {
-                    me->SetSpeed(MOVE_RUN, 2.0f, true);
-                    me->SetSpeed(MOVE_FLIGHT, 2.0f, true);
-                    Movement::MoveSplineInit init(*me);
-                    for (uint8 i = 1; i < 6; ++i)
-                    {
-                        G3D::Vector3 point;
-                        point.x = gorionaPos[i].GetPositionX();
-                        point.y = gorionaPos[i].GetPositionY();
-                        point.z = gorionaPos[i].GetPositionZ();
-                        init.Path().push_back(point);
-                    }
-                    init.SetWalk(false);
-                    init.Launch();
-                    
-                    events.ScheduleEvent(EVENT_TWILIGHT_ONSLAUGHT, 46000);
-                    if (IsHeroic())
-                        events.ScheduleEvent(EVENT_BROADSIDE, 57000);
-                }
-                else if (action == ACTION_SECOND_PHASE)
+                if (action == ACTION_SECOND_PHASE)
                 {
                     phase = 1;
 
@@ -608,7 +621,8 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                     events.CancelEvent(EVENT_TWILIGHT_ONSLAUGHT);
                     events.CancelEvent(EVENT_BROADSIDE);
 
-                    Movement::MoveSplineInit init(*me);
+                    Talk(SAY_GORIONA);
+                    Movement::MoveSplineInit init(me);
                     init.MoveTo(gorionaPos[6].GetPositionX(), gorionaPos[6].GetPositionY(), gorionaPos[6].GetPositionZ());
                     init.SetWalk(false);
                     init.Launch();
@@ -619,7 +633,7 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -648,6 +662,7 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                     events.CancelEvent(EVENT_TWILIGHT_BREATH);
                     events.CancelEvent(EVENT_CONSUMING_SHROUD);
 
+                    Talk(SAY_LOW_HP);
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
                     me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
@@ -656,7 +671,7 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                     me->SetCanFly(true);
                     me->SetDisableGravity(true);
 
-                    Movement::MoveSplineInit init(*me);
+                    Movement::MoveSplineInit init(me);
                     init.MoveTo(gorionaPos[4].GetPositionX(), gorionaPos[4].GetPositionY(), gorionaPos[4].GetPositionZ());
                     init.SetWalk(false);
                     init.Launch();
@@ -669,21 +684,43 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                 {
                     switch (eventId)
                     {
+                        case EVENT_GORIONA_MOVE:
+                        {
+                            me->SetSpeed(MOVE_RUN, 2.0f, true);
+                            me->SetSpeed(MOVE_FLIGHT, 2.0f, true);
+                            Movement::MoveSplineInit init(me);
+                            for (uint8 i = 1; i < 6; ++i)
+                            {
+                                G3D::Vector3 point;
+                                point.x = gorionaPos[i].GetPositionX();
+                                point.y = gorionaPos[i].GetPositionY();
+                                point.z = gorionaPos[i].GetPositionZ();
+                                init.Path().push_back(point);
+                            }
+                            init.SetWalk(false);
+                            init.Launch();
+                    
+                            events.ScheduleEvent(EVENT_TWILIGHT_ONSLAUGHT, 46000);
+                            if (IsHeroic())
+                                events.ScheduleEvent(EVENT_BROADSIDE, 57000);
+                            break;
+                        }
                         case EVENT_TWILIGHT_ONSLAUGHT:
                         {
+                            Talk(ANN_ONSLAUGHT);
                             std::list<Creature*> creatures;
                             me->GetCreatureListWithEntryInGrid(creatures, NPC_ONSLAUGHT_TARGET, 300.0f);
                             if (!creatures.empty())
-                                if (Unit* pTarget = JadeCore::Containers::SelectRandomContainerElement(creatures))
+                                if (Unit* target = Trinity::Containers::SelectRandomContainerElement(creatures))
                                 {
-                                    pTarget->CastSpell(pTarget, SPELL_TWILIGHT_ONSLAUGHT_DUMMY_1, true);
-                                    me->CastSpell(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ(), SPELL_TWILIGHT_ONSLAUGHT, false);
+                                    target->CastSpell(target, SPELL_TWILIGHT_ONSLAUGHT_DUMMY_1, true);
+                                    me->CastSpell(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), SPELL_TWILIGHT_ONSLAUGHT, false);
                                 }
-
                             events.ScheduleEvent(EVENT_TWILIGHT_ONSLAUGHT, 35000);
                             break;
                         }
                         case EVENT_BROADSIDE:
+                            Talk(ANN_BROADSIDE);
                             DoCastAOE(SPELL_BROADSIDE_AOE);
                             events.ScheduleEvent(EVENT_BROADSIDE, 90000);
                             break;
@@ -696,13 +733,13 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                             break;
                         case EVENT_TWILIGHT_FLAMES:
                         {
-                            Unit* pTarget = NULL;
-                            pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, TwilightFlamesSelector());
-                            if (!pTarget)
-                                pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true);
+                            Unit* target = NULL;
+                            target = SelectTarget(SELECT_TARGET_RANDOM, 0, TwilightFlamesSelector());
+                            if (!target)
+                                target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true);
                             
-                            if (pTarget)
-                                me->CastSpell(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ(), SPELL_TWILIGHT_FLAMES, true);                            
+                            if (target)
+                                me->CastSpell(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), SPELL_TWILIGHT_FLAMES, true);                            
                             events.ScheduleEvent(EVENT_TWILIGHT_FLAMES, 9000);
                             break;
                         }
@@ -720,12 +757,13 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
         private:
             EventMap events;
             uint8 phase;
+            InstanceScript* instance;
 
             struct TwilightFlamesSelector : public std::unary_function<Unit*, bool>
             {
                 public:
                     
-                    TwilightFlamesSelector() {}
+                    TwilightFlamesSelector() { }
 
                     bool operator()(Unit const* target) const
                     {
@@ -737,6 +775,11 @@ class npc_warmaster_blackhorn_goriona: public CreatureScript
                     }
             };
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_gorionaAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
@@ -744,14 +787,9 @@ class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
     public:
         npc_warmaster_blackhorn_twilight_assault_drake() : CreatureScript("npc_warmaster_blackhorn_twilight_assault_drake") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_warmaster_blackhorn_twilight_assault_drakeAI(pCreature);
-        }
-
         struct npc_warmaster_blackhorn_twilight_assault_drakeAI : public ScriptedAI
         {
-            npc_warmaster_blackhorn_twilight_assault_drakeAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_warmaster_blackhorn_twilight_assault_drakeAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -772,7 +810,7 @@ class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
                 bReady = false;
             }
 
-            void Reset()
+            void Reset() override
             {           
                 me->SetReactState(REACT_PASSIVE);
                 me->setActive(true);
@@ -780,19 +818,19 @@ class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
                 wave = 0;
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 events.ScheduleEvent(EVENT_SUMMON_ADDS, 9000);
                 events.ScheduleEvent(EVENT_TWILIGHT_BARRAGE, urand(23000, 28000));
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_HARPOON_END)
                 {
                     me->InterruptNonMeleeSpells(false);
                     me->RemoveAura(SPELL_HARPOON);
-                    Movement::MoveSplineInit init(*me);
+                    Movement::MoveSplineInit init(me);
                     G3D::Vector3 point;
                     switch (wave)
                     {
@@ -823,26 +861,26 @@ class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
                 return bReady;
             }
 
-            void SpellHit(Unit* /*who*/, const SpellInfo* spellInfo)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
-                if (spellInfo->Id == SPELL_HARPOON)
+                if (spell->Id == SPELL_HARPOON)
                 {
                     me->InterruptNonMeleeSpells(false);
-                    Movement::MoveSplineInit init(*me);
+                    Movement::MoveSplineInit init(me);
                     init.MoveTo(harpoonPos[side].GetPositionX(), harpoonPos[side].GetPositionY(), harpoonPos[side].GetPositionZ());
                     init.SetWalk(false);
                     init.Launch();
                 }
             }
 
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
                 if (type == DATA_WAVE)
                 {
                     wave = data;
                     me->SetSpeed(MOVE_RUN, 2.0f, true);
                     me->SetSpeed(MOVE_FLIGHT, 2.0f, true);
-                    Movement::MoveSplineInit init(*me);
+                    Movement::MoveSplineInit init(me);
                     for (uint8 i = 1; i < 8; ++i)
                     {
                         G3D::Vector3 point;
@@ -880,7 +918,7 @@ class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -920,6 +958,11 @@ class npc_warmaster_blackhorn_twilight_assault_drake: public CreatureScript
             uint8 wave;
             bool bReady;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_twilight_assault_drakeAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer: public CreatureScript
@@ -927,14 +970,9 @@ class npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer: public CreatureS
     public:
         npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer() : CreatureScript("npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_warmaster_blackhorn_twilight_elite_dreadblade_slayerAI(pCreature);
-        }
-
         struct npc_warmaster_blackhorn_twilight_elite_dreadblade_slayerAI : public ScriptedAI
         {
-            npc_warmaster_blackhorn_twilight_elite_dreadblade_slayerAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_warmaster_blackhorn_twilight_elite_dreadblade_slayerAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -952,24 +990,25 @@ class npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer: public CreatureS
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 events.ScheduleEvent(EVENT_CONTINUE, 1500);
                 events.ScheduleEvent(((me->GetEntry() == NPC_TWILIGHT_ELITE_DREADBLADE) ? EVENT_DEGENERATION : EVENT_BRUTAL_STRIKE), urand(8500, 9500));
+                events.ScheduleEvent(EVENT_BLADE_RUSH, urand(8500, 9500));
             }
 
-            bool IsBladeRushAffected(WorldObject* pTarget)
+            bool IsBladeRushAffected(WorldObject* target)
             {
-                float dist = pTarget->GetExactDist2d(startPos.GetPositionX(), startPos.GetPositionY());
+                float dist = target->GetExactDist2d(startPos.GetPositionX(), startPos.GetPositionY());
                 if ((dist * dist) >= startPos.GetExactDist2dSq(endPos.GetPositionX(), endPos.GetPositionY()))
                     return false;
 
-                float size = pTarget->GetObjectSize() / 2;
+                float size = target->GetObjectSize() / 2;
                 float angle = startPos.GetAngle(&endPos);
-                return (size * size) >= pTarget->GetExactDist2dSq(startPos.GetPositionX() + std::cos(angle) * dist, startPos.GetPositionY() + std::sin(angle) * dist);
+                return (size * size) >= target->GetExactDist2dSq(startPos.GetPositionX() + std::cos(angle) * dist, startPos.GetPositionY() + std::sin(angle) * dist);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -984,17 +1023,32 @@ class npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer: public CreatureS
                     switch (eventId)
                     {
                         case EVENT_BLADE_RUSH:
+                        {
                             me->GetPosition(&startPos);
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, -18.0f, true))
+                            Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, NonTankTargetSelector(me));
+                            if (!target)
+                                target = me->GetVictim();
+                            if (target)
                             {
-                                pTarget->GetPosition(&endPos);
-                                DoCast(pTarget, SPELL_BLADE_RUSH);
+                                target->GetPosition(&endPos);
+                                endPos.SetOrientation(0);
+                                if (Unit* rushTarget = me->SummonCreature(NPC_BLADE_RUSH_TARGET, endPos, TEMPSUMMON_TIMED_DESPAWN, 3000))
+                                {
+                                    me->SetTarget(rushTarget->GetGUID());
+                                    me->SetFacingToObject(rushTarget);
+                                    DoCast(target, SPELL_BLADE_RUSH);
+                                    float angle = rushTarget->GetAngle(me);
+                                    for (float dist = 3; dist < rushTarget->GetExactDist2d(me); dist += 3)
+                                        me->SummonCreature(NPC_BLADE_RUSH_TARGET, endPos.GetPositionX() + cosf(angle) * dist, endPos.GetPositionY() + sinf(angle) * dist, endPos.GetPositionZ(), 0, TEMPSUMMON_TIMED_DESPAWN, 3000);
+                                }
                             }
+                            events.ScheduleEvent(EVENT_BLADE_RUSH, urand(8500, 9500));
                             break;
+                        }
                         case EVENT_CONTINUE:
                             me->SetReactState(REACT_AGGRESSIVE);
-                            //me->GetMotionMaster()->MoveChase(me->getVictim());
-                            //me->Attack(me->getVictim(), true);
+                            //me->GetMotionMaster()->MoveChase(me->GetVictim());
+                            //me->Attack(me->GetVictim(), true);
                             break;
                         case EVENT_DEGENERATION:
                             DoCastVictim(SPELL_DEGENERATION);
@@ -1010,10 +1064,16 @@ class npc_warmaster_blackhorn_twilight_elite_dreadblade_slayer: public CreatureS
                 }
                 DoMeleeAttackIfReady();
             }
+
         private:
             EventMap events;
             Position startPos, endPos;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_twilight_elite_dreadblade_slayerAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_skyfire_harpoon_gun: public CreatureScript
@@ -1021,25 +1081,21 @@ class npc_warmaster_blackhorn_skyfire_harpoon_gun: public CreatureScript
     public:
         npc_warmaster_blackhorn_skyfire_harpoon_gun() : CreatureScript("npc_warmaster_blackhorn_skyfire_harpoon_gun") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_warmaster_blackhorn_skyfire_harpoon_gunAI : public  ScriptedAI
         {
-            return new npc_warmaster_blackhorn_skyfire_harpoon_gunAI(pCreature);
-        }
-
-        struct npc_warmaster_blackhorn_skyfire_harpoon_gunAI : public  Scripted_NoMovementAI
-        {
-            npc_warmaster_blackhorn_skyfire_harpoon_gunAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_warmaster_blackhorn_skyfire_harpoon_gunAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->SetReactState(REACT_PASSIVE);
                 drakeEntry = 0;
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 drakeEntry = ((me->GetPositionY() < -12130.f) ? NPC_TWILIGHT_ASSAULT_DRAKE_1 : NPC_TWILIGHT_ASSAULT_DRAKE_2);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_HARPOON)
                 {
@@ -1056,7 +1112,7 @@ class npc_warmaster_blackhorn_skyfire_harpoon_gun: public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
@@ -1078,7 +1134,7 @@ class npc_warmaster_blackhorn_skyfire_harpoon_gun: public CreatureScript
                 if (!creatures.empty())
                     for (std::list<Creature*>::const_iterator itr = creatures.begin(); itr != creatures.end(); ++itr)
                         if (npc_warmaster_blackhorn_twilight_assault_drake::npc_warmaster_blackhorn_twilight_assault_drakeAI* drakeAI = CAST_AI(npc_warmaster_blackhorn_twilight_assault_drake::npc_warmaster_blackhorn_twilight_assault_drakeAI, (*itr)->GetAI()))
-                            if (drakeAI->IsReady() && (*itr)->isAlive())
+                            if (drakeAI->IsReady() && (*itr)->IsAlive())
                                 return (*itr);
 
                 return NULL;
@@ -1094,6 +1150,11 @@ class npc_warmaster_blackhorn_skyfire_harpoon_gun: public CreatureScript
                             (*itr)->AI()->DoAction(ACTION_HARPOON_END);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_skyfire_harpoon_gunAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_twilight_infiltrator: public CreatureScript
@@ -1101,14 +1162,9 @@ class npc_warmaster_blackhorn_twilight_infiltrator: public CreatureScript
     public:
         npc_warmaster_blackhorn_twilight_infiltrator() : CreatureScript("npc_warmaster_blackhorn_twilight_infiltrator") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_warmaster_blackhorn_twilight_infiltratorAI(pCreature);
-        }
-
         struct npc_warmaster_blackhorn_twilight_infiltratorAI : public ScriptedAI
         {
-            npc_warmaster_blackhorn_twilight_infiltratorAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_warmaster_blackhorn_twilight_infiltratorAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -1126,11 +1182,11 @@ class npc_warmaster_blackhorn_twilight_infiltrator: public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 me->SetSpeed(MOVE_RUN, 2.0f, true);
                 me->SetSpeed(MOVE_FLIGHT, 2.0f, true);
-                Movement::MoveSplineInit init(*me);
+                Movement::MoveSplineInit init(me);
                 for (uint8 i = 1; i < 12; ++i)
                 {
                     G3D::Vector3 point;
@@ -1147,7 +1203,7 @@ class npc_warmaster_blackhorn_twilight_infiltrator: public CreatureScript
                 events.ScheduleEvent(EVENT_DESPAWN_INFILTRATOR, 19000);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1173,9 +1229,15 @@ class npc_warmaster_blackhorn_twilight_infiltrator: public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_twilight_infiltratorAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_twilight_sapper: public CreatureScript
@@ -1183,14 +1245,9 @@ class npc_warmaster_blackhorn_twilight_sapper: public CreatureScript
     public:
         npc_warmaster_blackhorn_twilight_sapper() : CreatureScript("npc_warmaster_blackhorn_twilight_sapper") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_warmaster_blackhorn_twilight_sapperAI(pCreature);
-        }
-
         struct npc_warmaster_blackhorn_twilight_sapperAI : public ScriptedAI
         {
-            npc_warmaster_blackhorn_twilight_sapperAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_warmaster_blackhorn_twilight_sapperAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
@@ -1205,13 +1262,13 @@ class npc_warmaster_blackhorn_twilight_sapper: public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void IsSummonedBy(Unit* /*owner*/)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 events.ScheduleEvent(EVENT_SMOKE_BOMB, 500);
                 events.ScheduleEvent(EVENT_CONTINUE, 1500);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -1257,9 +1314,15 @@ class npc_warmaster_blackhorn_twilight_sapper: public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_twilight_sapperAI>(creature);
+        }
 };
 
 class npc_warmaster_blackhorn_skyfire: public CreatureScript
@@ -1267,23 +1330,20 @@ class npc_warmaster_blackhorn_skyfire: public CreatureScript
     public:
         npc_warmaster_blackhorn_skyfire() : CreatureScript("npc_warmaster_blackhorn_skyfire") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_warmaster_blackhorn_skyfireAI : public  ScriptedAI
         {
-            return new npc_warmaster_blackhorn_skyfireAI(pCreature);
-        }
-
-        struct npc_warmaster_blackhorn_skyfireAI : public  Scripted_NoMovementAI
-        {
-            npc_warmaster_blackhorn_skyfireAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_warmaster_blackhorn_skyfireAI(Creature* creature) : ScriptedAI(creature)
             {             
                 me->SetReactState(REACT_PASSIVE);
-                pInstance = me->GetInstanceScript();
+                instance = me->GetInstanceScript();
                 bLowHealth = false;
+                bHealth = false;
                 me->SetMaxHealth(RAID_MODE(4000000, 10000000, 6000000, 15000000));
                 me->SetHealth(RAID_MODE(4000000, 10000000, 6000000, 15000000));
+                SetCombatMovement(false);
             }
 
-            void DamageTaken(Unit* /*owner*/, uint32 &damage)
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
             {
                 if (!bLowHealth)
                     if (me->HealthBelowPctDamaged(30, damage))
@@ -1292,6 +1352,13 @@ class npc_warmaster_blackhorn_skyfire: public CreatureScript
                         if (Creature* pSwayze = me->FindNearestCreature(NPC_SKY_CAPTAIN_SWAYZE, 200.0f))
                             pSwayze->AI()->Talk(SAY_SWAYZE_EVENT_5);
                     }
+                if (!bHealth)
+                    if (me->HealthBelowPctDamaged(70, damage))
+                        {
+                            bHealth = true;
+                            if (Creature* pBlackhon = me->FindNearestCreature(NPC_BLACKHORN, 200.0f))
+                                pBlackhon->AI()->Talk(SAY_SKYFIRE_HP);
+                        }
             }
 
             void JustDied(Unit* /*owner*/)
@@ -1299,20 +1366,24 @@ class npc_warmaster_blackhorn_skyfire: public CreatureScript
                 if (Creature* pSwayze = me->FindNearestCreature(NPC_SKY_CAPTAIN_SWAYZE, 200.0f))
                     pSwayze->AI()->DoAction(ACTION_END_BATTLE);
 
-                if (pInstance)
-                    pInstance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
-                if (pInstance)
-                    pInstance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+                instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
             }
             
         private:
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             bool bLowHealth;
+            bool bHealth;
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_warmaster_blackhorn_skyfireAI>(creature);
+        }
 };
 
 class npc_dragon_soul_sky_captain_swayze : public CreatureScript
@@ -1320,178 +1391,101 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
     public:
         npc_dragon_soul_sky_captain_swayze() : CreatureScript("npc_dragon_soul_sky_captain_swayze") { }
 
-        bool OnGossipHello(Player* pPlayer, Creature* pCreature)
+        bool OnGossipHello(Player* player, Creature* creature) override
         {
-            if (pPlayer->isInCombat())
+            if (player->IsInCombat())
                 return true;
 
-            if (InstanceScript* pInstance = pCreature->GetInstanceScript())
+            if (InstanceScript* instance = creature->GetInstanceScript())
             {
-                if (pInstance->IsEncounterInProgress())
+                if (instance->IsEncounterInProgress())
                     return true;
 
-                if (pInstance->GetBossState(DATA_ULTRAXION) != DONE)
+                if (instance->GetBossState(DATA_ULTRAXION) != DONE)
                     return true;
 
-                if (pInstance->instance->IsHeroic() && !pInstance->GetData(DATA_ALL_HEROIC))
+                if (instance->GetBossState(DATA_ULTRAXION) == DONE)
                 {
-                    //pPlayer->GetSession()->SendNotification(LANG_DS_HEROIC_MODE);
+                    if (creature->GetPositionZ() > 200.0f && player->GetTeam() == HORDE)
+                        player->ADD_GOSSIP_ITEM_DB(player->GetDefaultGossipMenuForSource(creature), 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                    else if (creature->GetPositionZ() > 200.0f && player->GetTeam() == ALLIANCE)
+                        player->ADD_GOSSIP_ITEM_DB(player->GetDefaultGossipMenuForSource(creature), 1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                    else if (creature->GetPositionZ() < 200.0f && instance->GetBossState(DATA_BLACKHORN) != DONE)
+                        player->ADD_GOSSIP_ITEM_DB(player->GetDefaultGossipMenuForSource(creature), 2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+                    else if (creature->GetPositionZ() < 200.0f && player->GetTeam() == HORDE && instance->GetBossState(DATA_SPINE) != DONE)
+                        player->ADD_GOSSIP_ITEM_DB(player->GetDefaultGossipMenuForSource(creature), 3, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+                    else if (creature->GetPositionZ() < 200.0f && player->GetTeam() == ALLIANCE && instance->GetBossState(DATA_SPINE) != DONE)
+                        player->ADD_GOSSIP_ITEM_DB(player->GetDefaultGossipMenuForSource(creature), 4, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+
+                    player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+
                     return true;
-                }
-
-                if (pInstance->GetBossState(DATA_BLACKHORN) != DONE &&
-                    !pInstance->GetData64(DATA_BLACKHORN))
-                {
-                    if (pCreature->GetPositionZ() > 200.0f)
-                        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_OPTION_1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-                    else
-                        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_OPTION_2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-                    
-                    pPlayer->SEND_GOSSIP_MENU(1, pCreature->GetGUID());
-
-                    return true;
-                }
-                else if (pInstance->GetBossState(DATA_BLACKHORN) == DONE &&
-                    pInstance->GetBossState(DATA_SPINE) != DONE)
-                {
-                    if (pCreature->GetPositionZ() > 200.0f)
-                        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_OPTION_1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-                    else
-                        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_OPTION_1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-                    
-                    pPlayer->SEND_GOSSIP_MENU(1, pCreature->GetGUID());
-
-                    return true;                    
-                }
-                else if (pInstance->GetBossState(DATA_SPINE) == DONE)
-                {
-                    if (pCreature->GetPositionZ() > 200.0f)
-                        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_OPTION_1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-                    else
-                        pPlayer->ADD_GOSSIP_ITEM(0, GOSSIP_OPTION_1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-                    
-                    pPlayer->SEND_GOSSIP_MENU(1, pCreature->GetGUID());
-
-                    return true;                    
                 }
             }
-            return false;
+
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+            return true;
         }
 
-        bool OnGossipSelect(Player* pPlayer, Creature* pCreature, uint32 /*sender*/, uint32 action)
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
         {
-            pPlayer->PlayerTalkClass->SendCloseGossip();
+            player->PlayerTalkClass->SendCloseGossip();
 
-            if (pPlayer->isInCombat())
+            if (player->IsInCombat())
                 return true;
 
-            if (InstanceScript* pInstance = pCreature->GetInstanceScript())
+            if (InstanceScript* instance = creature->GetInstanceScript())
             {
-
-                if (pInstance->IsEncounterInProgress())
+                if (instance->IsEncounterInProgress())
                     return true;
 
-                if (pInstance->GetBossState(DATA_ULTRAXION) != DONE)
-                    return true;
-
-                if (pInstance->instance->IsHeroic() && !pInstance->GetData(DATA_ALL_HEROIC))
-                {
-                    //pPlayer->GetSession()->SendNotification(LANG_DS_HEROIC_MODE);
-                    return true;
-                }
-
-                if (pInstance->GetBossState(DATA_BLACKHORN) != DONE &&
-                    !pInstance->GetData64(DATA_BLACKHORN))
+                if (instance->GetBossState(DATA_ULTRAXION) == DONE)
                 {
                     if (action == GOSSIP_ACTION_INFO_DEF + 1)
                     {
-                        Map::PlayerList const &plrList = pInstance->instance->GetPlayers();
-
+                        Map::PlayerList const &plrList = instance->instance->GetPlayers();
                         if (!plrList.isEmpty())
                             for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
-                                if (Player* pPlayer = i->getSource())
-                                    if (pCreature->GetDistance(pPlayer) <= 100.0f)
-                                        pPlayer->NearTeleportTo(skyfirePos.GetPositionX(), skyfirePos.GetPositionY(), skyfirePos.GetPositionZ(), skyfirePos.GetOrientation());
-
+                                if (Player* player = i->GetSource())
+                                    if (creature->GetDistance(player) <= 100.0f)
+                                        player->NearTeleportTo(customPos[0].GetPositionX(), customPos[0].GetPositionY(), customPos[0].GetPositionZ(), customPos[0].GetOrientation());
                     }
                     else if (action == GOSSIP_ACTION_INFO_DEF + 2)
                     {
-                        pCreature->SummonCreature(NPC_GORIONA, gorionaPos[0]);
-                        pCreature->SummonCreature(NPC_BLACKHORN, blackhornPos);
-                        pCreature->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-                        pCreature->AI()->DoAction(ACTION_START);
-                    }
-                }
-                else if (pInstance->GetBossState(DATA_BLACKHORN) == DONE &&
-                    pInstance->GetBossState(DATA_SPINE) != DONE)
-                {
-                    if (action == GOSSIP_ACTION_INFO_DEF + 1)
-                    {
-                        Map::PlayerList const &plrList = pInstance->instance->GetPlayers();
-
-                        if (!plrList.isEmpty())
-                            for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
-                                if (Player* pPlayer = i->getSource())
-                                    if (pCreature->GetDistance(pPlayer) <= 100.0f)
-                                        pPlayer->NearTeleportTo(skyfirePos.GetPositionX(), skyfirePos.GetPositionY(), skyfirePos.GetPositionZ(), skyfirePos.GetOrientation());
-
+                        creature->SummonCreature(NPC_BLACKHORN, blackhornPos);
+                        creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                        creature->AI()->DoAction(ACTION_START);
                     }
                     else if (action == GOSSIP_ACTION_INFO_DEF + 3)
                     {
-                        pInstance->SetBossState(DATA_SPINE, IN_PROGRESS);
-
-                        if (Creature* pDeathwing = pCreature->SummonCreature(NPC_SPINE_OF_DEATHWING, spinedeathwingPos))
+                        instance->SetBossState(DATA_SPINE, IN_PROGRESS);
+                        if (Creature* pDeathwing = creature->SummonCreature(NPC_SPINE_OF_DEATHWING, customPos[3]))
                             pDeathwing->AI()->DoAction(1); // ACTION_START_BATTLE
-
-                        //pInstance->DoStartMovie(74);
-
-                        Map::PlayerList const &plrList = pInstance->instance->GetPlayers();
+                        instance->DoStartMovie(74);
+                        Map::PlayerList const &plrList = instance->instance->GetPlayers();
                         if (!plrList.isEmpty())
                             for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
-                                if (Player* pPlayer = i->getSource())
-                                    if (pCreature->GetDistance(pPlayer) <= 100.0f)
+                                if (Player* player = i->GetSource())
+                                    if (creature->GetDistance(player) <= 100.0f)
                                     {
-                                        pPlayer->CastSpell(pPlayer, SPELL_PARACHUTE, true);
-                                        pPlayer->NearTeleportTo(teleportPos[5].GetPositionX() + frand(-2.f, 2.f), teleportPos[5].GetPositionY() + frand(-2.f, 2.f), teleportPos[5].GetPositionZ(), teleportPos[5].GetOrientation());
+                                        player->CastSpell(player, SPELL_PARACHUTE, true);
+                                        player->NearTeleportTo(customPos[3].GetPositionX() + frand(-2.f, 2.f), customPos[3].GetPositionY() + frand(-2.f, 2.f), customPos[3].GetPositionZ(), customPos[3].GetOrientation());
                                     }
-                    }
-                }
-                else if (pInstance->GetBossState(DATA_SPINE) == DONE)
-                {
-                    if (action == GOSSIP_ACTION_INFO_DEF + 1)
-                    {
-                        Map::PlayerList const &plrList = pInstance->instance->GetPlayers();
-
-                        if (!plrList.isEmpty())
-                            for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
-                                if (Player* pPlayer = i->getSource())
-                                    if (pCreature->GetDistance(pPlayer) <= 100.0f)
-                                        pPlayer->NearTeleportTo(skyfirePos.GetPositionX(), skyfirePos.GetPositionY(), skyfirePos.GetPositionZ(), skyfirePos.GetOrientation());
-
-                    }
-                    else if (action == GOSSIP_ACTION_INFO_DEF + 4)
-                    {
-                        pInstance->DoNearTeleportPlayers(madnessdeathwingPos);
                     }
                 }
             }
             return true;
         }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_dragon_soul_sky_captain_swayzeAI(pCreature);
-        }
-
         struct npc_dragon_soul_sky_captain_swayzeAI : public ScriptedAI
         {
-            npc_dragon_soul_sky_captain_swayzeAI(Creature* pCreature) : ScriptedAI(pCreature), summons(me)
+            npc_dragon_soul_sky_captain_swayzeAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {             
                 me->setActive(true);
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {           
                 events.Reset();
                 me->SetReactState(REACT_PASSIVE);
@@ -1499,17 +1493,17 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                 bSapper = false;
             }
 
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 summons.Summon(summon);
             }
 
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 summons.Despawn(summon);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_START)
                 {
@@ -1533,11 +1527,10 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                 {
                     events.Reset();
                     summons.DespawnEntry(NPC_ENGINE_STALKER);
-                    me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
@@ -1546,10 +1539,10 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_END_BATTLE:
-                            if (Creature* pTrigger = me->SummonCreature(NPC_MASSIVE_EXPLOSION, skyfirePos, TEMPSUMMON_TIMED_DESPAWN, 5000))
+                            if (Creature* pTrigger = me->SummonCreature(NPC_MASSIVE_EXPLOSION, customPos[0], TEMPSUMMON_TIMED_DESPAWN, 5000))
                                 pTrigger->CastSpell(pTrigger, SPELL_MASSIVE_EXPLOSION);
                             events.Reset();
-                            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                             if (Creature* pBlackhorn = me->FindNearestCreature(NPC_BLACKHORN, 300.0f))
                                 pBlackhorn->AI()->DoAction(ACTION_END_BATTLE);
                             summons.DespawnEntry(NPC_ENGINE_STALKER);
@@ -1561,7 +1554,7 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                             if (!CheckPlayers())
                             {
                                 events.Reset();
-                                me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                                 if (Creature* pBlackhorn = me->FindNearestCreature(NPC_BLACKHORN, 300.0f))
                                     pBlackhorn->AI()->DoAction(ACTION_END_BATTLE);
                                 summons.DespawnEntry(NPC_ENGINE_STALKER);
@@ -1573,7 +1566,7 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                             break;
                         }
                         case EVENT_INTRO_1:
-                            me->SummonCreature(NPC_SKYFIRE, skyfirePos);
+                            me->SummonCreature(NPC_SKYFIRE, customPos[0]);
                             Talk(SAY_SWAYZE_EVENT_1);
                             events.ScheduleEvent(EVENT_INTRO_2, 7000);
                             break;
@@ -1601,6 +1594,7 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                     }
                 }
             }
+
         private:
             EventMap events;
             SummonList summons;
@@ -1610,7 +1604,7 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
             {
                 Player* player = NULL;
                 AnyLivePlayerNoGmCheck check(me, 200.0f);
-                JadeCore::PlayerSearcher<AnyLivePlayerNoGmCheck> searcher(me, player, check);
+                Trinity::PlayerSearcher<AnyLivePlayerNoGmCheck> searcher(me, player, check);
                 me->VisitNearbyWorldObject(200.0f, searcher);
                 return (player ? true : false);
             }
@@ -1618,16 +1612,16 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
             class AnyLivePlayerNoGmCheck
             {
                 public:
-                    AnyLivePlayerNoGmCheck(WorldObject const* obj, float range) : _obj(obj), _range(range) {}
+                    AnyLivePlayerNoGmCheck(WorldObject const* obj, float range) : _obj(obj), _range(range) { }
                     bool operator()(Player* u)
                     {
-                        if (!u->isAlive())
+                        if (!u->IsAlive())
                             return false;
 
                         if (!_obj->IsWithinDistInMap(u, _range))
                             return false;
 
-                        if (u->isGameMaster())
+                        if (u->IsGameMaster())
                             return false;
 
                         return true;
@@ -1638,6 +1632,51 @@ class npc_dragon_soul_sky_captain_swayze : public CreatureScript
                     float _range;
             };
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_dragon_soul_sky_captain_swayzeAI>(creature);
+        }
+};
+
+class npc_blade_rush_target : public CreatureScript
+{
+    public:
+        npc_blade_rush_target() : CreatureScript("npc_blade_rush_target") { }
+
+        struct npc_blade_rush_targetAI : public ScriptedAI
+        {
+            npc_blade_rush_targetAI(Creature* creature) : ScriptedAI(creature) { }
+
+            void Reset() override
+            {
+                me->SetReactState(REACT_PASSIVE);
+                visualTimer = 0;
+                firstTime = true;
+                SetCombatMovement(false);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (visualTimer <= diff)
+                {
+                    me->SendPlaySpellVisualKit(firstTime ? 23400 : 752, 0, 0);
+                    firstTime = false;
+                    visualTimer = 1500;
+                }
+                else
+                    visualTimer -= diff;
+            }
+            
+        private:
+            uint32 visualTimer;
+            bool firstTime;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_blade_rush_targetAI>(creature);
+        }
 };
 
 class spell_warmaster_blackhorn_twilight_barrage_dmg : public SpellScriptLoader
@@ -1671,13 +1710,13 @@ class spell_warmaster_blackhorn_twilight_barrage_dmg : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_warmaster_blackhorn_twilight_barrage_dmg_SpellScript::FilterTargetsDamage, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_warmaster_blackhorn_twilight_barrage_dmg_SpellScript();
         }
@@ -1705,13 +1744,13 @@ class spell_warmaster_blackhorn_twilight_onslaught_dmg : public SpellScriptLoade
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_warmaster_blackhorn_twilight_onslaught_dmg_SpellScript::FilterTargetsDamage, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_warmaster_blackhorn_twilight_onslaught_dmg_SpellScript();
         }
@@ -1736,7 +1775,7 @@ class spell_warmaster_blackhorn_blade_rush_dmg : public SpellScriptLoader
 
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_warmaster_blackhorn_blade_rush_dmg_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
@@ -1744,7 +1783,7 @@ class spell_warmaster_blackhorn_blade_rush_dmg : public SpellScriptLoader
             class TargetCheck
             {
                 public:
-                    TargetCheck(Creature* owner) : _owner(owner) {}
+                    TargetCheck(Creature* owner) : _owner(owner) { }
             
                     bool operator()(WorldObject* unit)
                     {
@@ -1763,7 +1802,7 @@ class spell_warmaster_blackhorn_blade_rush_dmg : public SpellScriptLoader
             };
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_warmaster_blackhorn_blade_rush_dmg_SpellScript();
         }
@@ -1786,19 +1825,19 @@ class spell_warmaster_blackhorn_consuming_shroud : public SpellScriptLoader
                 if (targets.size() > 2)
                 {
                     if (Creature* pBlackhorn = GetCaster()->FindNearestCreature(NPC_BLACKHORN, 300.0f))
-                        if (Unit* victim = pBlackhorn->getVictim())
+                        if (Unit* victim = pBlackhorn->GetVictim())
                             targets.remove(victim);
 
                     if (Creature* pGoriona = GetCaster()->ToCreature())
-                        if (Unit* victim = pGoriona->getVictim())
+                        if (Unit* victim = pGoriona->GetVictim())
                             targets.remove(victim);
                 }
 
                 if (targets.size() > 1)
-                    JadeCore::Containers::RandomResizeList(targets, 1);
+                    Trinity::Containers::RandomResizeList(targets, 1);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_warmaster_blackhorn_consuming_shroud_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
             }
@@ -1808,7 +1847,7 @@ class spell_warmaster_blackhorn_consuming_shroud : public SpellScriptLoader
         {
             PrepareAuraScript(spell_warmaster_blackhorn_consuming_shroud_AuraScript);
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
             {
                 AuraRemoveMode removeMode = GetTargetApplication()->GetRemoveMode();
                 if (removeMode == AURA_REMOVE_BY_DEATH)
@@ -1819,18 +1858,18 @@ class spell_warmaster_blackhorn_consuming_shroud : public SpellScriptLoader
                     }
             }
 
-            void Register()
+            void Register() override
             {
                 AfterEffectRemove += AuraEffectRemoveFn(spell_warmaster_blackhorn_consuming_shroud_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_SCHOOL_HEAL_ABSORB, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_warmaster_blackhorn_consuming_shroud_SpellScript();
         }
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_warmaster_blackhorn_consuming_shroud_AuraScript();
         }
@@ -1845,24 +1884,24 @@ class spell_warmaster_blackhorn_vengeance : public SpellScriptLoader
         {
             PrepareAuraScript(spell_warmaster_blackhorn_vengeance_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr /*aurEff*/)
+            void HandlePeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetUnitOwner())
                     return;
 
                 uint32 val = int32(100.0f - GetUnitOwner()->GetHealthPct());
 
-                if (AuraEffectPtr aurEff = GetAura()->GetEffect(EFFECT_0))
+                if (AuraEffect* aurEff = GetAura()->GetEffect(EFFECT_0))
                     aurEff->SetAmount(val);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_warmaster_blackhorn_vengeance_AuraScript::HandlePeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_warmaster_blackhorn_vengeance_AuraScript();
         }
@@ -1890,10 +1929,10 @@ class spell_warmaster_blackhorn_shockwave_aoe : public SpellScriptLoader
                 if (new_targets.size() >=2)
                 {
                     targets.clear();
-                    targets.push_back(JadeCore::Containers::SelectRandomContainerElement(new_targets));
+                    targets.push_back(Trinity::Containers::SelectRandomContainerElement(new_targets));
                 }
                 else
-                    JadeCore::Containers::RandomResizeList(targets, 1);
+                    Trinity::Containers::RandomResizeList(targets, 1);
             }
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
@@ -1901,17 +1940,21 @@ class spell_warmaster_blackhorn_shockwave_aoe : public SpellScriptLoader
                 if (!GetCaster() || !GetHitUnit())
                     return;
 
-                GetCaster()->CastSpell(GetHitUnit(), SPELL_SHOCKWAVE);
+                GetCaster()->SetTarget(0);
+                GetCaster()->GetAI()->SetGUID(GetHitUnit()->GetGUID());
+                Position pos;
+                GetCaster()->GetNearPosition(pos, 1, GetCaster()->GetRelativeAngle(GetHitUnit()));
+                GetCaster()->GetMotionMaster()->MovePoint(POINT_SHOCKWAVE, pos);
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_warmaster_blackhorn_shockwave_aoe_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
                 OnEffectHitTarget += SpellEffectFn(spell_warmaster_blackhorn_shockwave_aoe_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_warmaster_blackhorn_shockwave_aoe_SpellScript();
         }
@@ -1938,34 +1981,15 @@ class spell_warmaster_blackhorn_broadside : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 AfterCast += SpellCastFn(spell_warmaster_blackhorn_broadside_SpellScript::HandleAfterCast);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_warmaster_blackhorn_broadside_SpellScript();
-        }
-};
-
-typedef boss_warmaster_blackhorn::boss_warmaster_blackhornAI BlackhornAI;
-
-class achievement_deck_defender : public AchievementCriteriaScript
-{
-    public:
-        achievement_deck_defender() : AchievementCriteriaScript("achievement_deck_defender") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (BlackhornAI* blackhornAI = CAST_AI(BlackhornAI, target->GetAI()))
-                return blackhornAI->AllowAchieve();
-
-            return false;
         }
 };
 
@@ -1980,6 +2004,7 @@ void AddSC_boss_warmaster_blackhorn()
     new npc_warmaster_blackhorn_twilight_sapper();
     new npc_warmaster_blackhorn_skyfire();
     new npc_dragon_soul_sky_captain_swayze();
+    new npc_blade_rush_target();
     new spell_warmaster_blackhorn_twilight_barrage_dmg();
     new spell_warmaster_blackhorn_twilight_onslaught_dmg();
     new spell_warmaster_blackhorn_blade_rush_dmg();
@@ -1987,5 +2012,4 @@ void AddSC_boss_warmaster_blackhorn()
     new spell_warmaster_blackhorn_vengeance();
     new spell_warmaster_blackhorn_shockwave_aoe();
     new spell_warmaster_blackhorn_broadside();
-    new achievement_deck_defender();
 };

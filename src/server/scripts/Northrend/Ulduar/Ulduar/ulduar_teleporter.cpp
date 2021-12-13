@@ -1,10 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -23,41 +25,44 @@
 #include "Spell.h"
 
 #define GOSSIP_SENDER_ULDUAR_PORT 603
+#define GOSSIP_MENU_ULDUAR_TELEPORT 10389
 
-class ulduar_teleporter : public GameObjectScript
+class go_ulduar_teleporter : public GameObjectScript
 {
     public:
-        ulduar_teleporter() : GameObjectScript("ulduar_teleporter") { }
+        go_ulduar_teleporter() : GameObjectScript("go_ulduar_teleporter") { }
 
-        bool OnGossipHello(Player* player, GameObject* gameObject)
+        bool OnGossipHello(Player* player, GameObject* gameObject) override
         {
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_BASE_CAMP), GOSSIP_SENDER_ULDUAR_PORT, SPELL_BASE_CAMP_TELEPORT);
+            bool ru = player->GetSession()->GetSessionDbLocaleIndex() == LOCALE_ruRU;
+
+            player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в Главный лагерь экспедиции." : "Teleport to the Expedition Base Camp.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_BASE_CAMP_TELEPORT);
             if (InstanceScript* instance = gameObject->GetInstanceScript())
             {
                 if (instance->GetData(DATA_COLOSSUS) == 2) //count of 2 collossus death
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_FORM_GROUNDS), GOSSIP_SENDER_ULDUAR_PORT, SPELL_FORMATION_GROUNDS_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись на Плац." : "Teleport to the Formation Grounds.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_FORMATION_GROUNDS_TELEPORT);
                 if (instance->GetBossState(BOSS_LEVIATHAN) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_COLOS_FORGE), GOSSIP_SENDER_ULDUAR_PORT, SPELL_COLOSSAL_FORGE_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в Гигантскую кузню." : "Teleport to the Colossal Forge.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_COLOSSAL_FORGE_TELEPORT);
                 if (instance->GetBossState(BOSS_XT002) == DONE)
                 {
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_SCRAPYARD), GOSSIP_SENDER_ULDUAR_PORT, SPELL_SCRAPYARD_TELEPORT);
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_ANTCHAMBER), GOSSIP_SENDER_ULDUAR_PORT, SPELL_ANTECHAMBER_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись на Мусорную свалку." : "Teleport to the Scrapyard.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_SCRAPYARD_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в Вестибюль.": "Teleport to the Antechamber of Ulduar.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_ANTECHAMBER_TELEPORT);
                 }
                 if (instance->GetBossState(BOSS_KOLOGARN) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_SHATTERED), GOSSIP_SENDER_ULDUAR_PORT, SPELL_SHATTERED_WALKWAY_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в Обвалившуюся галерею.": "Teleport to the Shattered Walkway.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_SHATTERED_WALKWAY_TELEPORT);
                 if (instance->GetBossState(BOSS_AURIAYA) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_CONSERVATORY), GOSSIP_SENDER_ULDUAR_PORT, SPELL_CONSERVATORY_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в Оранжерею Жизни." : "Teleport to the Conservatory of Life.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_CONSERVATORY_TELEPORT);
                 if (instance->GetData(DATA_TRAM) == DONE || instance->GetBossState(BOSS_MIMIRON) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_IMAGINATION), GOSSIP_SENDER_ULDUAR_PORT, SPELL_SPARK_OF_IMAGINATION_TELEPORT);
-                /*if (instance->GetBossState(BOSS_VEZAX) == DONE)
-                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_TEL_DESCENT), GOSSIP_SENDER_ULDUAR_PORT, SPELL_DESCENT_INTO_MADNESS_TELEPORT);*/
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в Искру Воображения.": "Teleport to the Spark of Imagination.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_SPARK_OF_IMAGINATION_TELEPORT);
+                if (instance->GetBossState(BOSS_VEZAX) == DONE)
+                    player->ADD_GOSSIP_ITEM(0, ru ? "Перенестись в темницу Йогг-Сарона." : "Teleport to the Prison of Yogg-Saron.", GOSSIP_SENDER_ULDUAR_PORT, SPELL_DESCENT_INTO_MADNESS_TELEPORT);
             }
 
             player->SEND_GOSSIP_MENU(player->GetGossipTextId(gameObject), gameObject->GetGUID());
             return true;
         }
 
-        bool OnGossipSelect(Player* player, GameObject* gameObject, uint32 sender, uint32 action)
+        bool OnGossipSelect(Player* player, GameObject* gameObject, uint32 sender, uint32 action) override
         {
             player->PlayerTalkClass->ClearMenus();
             player->CLOSE_GOSSIP_MENU();
@@ -65,9 +70,9 @@ class ulduar_teleporter : public GameObjectScript
             if (!spell)
                 return false;
 
-            if (player->isInCombat())
+            if (player->IsInCombat())
             {
-                Spell::SendCastResult(player, spell, NULL, 0, SPELL_FAILED_AFFECTING_COMBAT);
+                Spell::SendCastResult(player, spell, 0, SPELL_FAILED_AFFECTING_COMBAT);
                 return true;
             }
 
@@ -89,5 +94,5 @@ class ulduar_teleporter : public GameObjectScript
 
 void AddSC_ulduar_teleporter()
 {
-    new ulduar_teleporter();
+    new go_ulduar_teleporter();
 }

@@ -3,127 +3,194 @@
 
 #define MAX_ENCOUNTER 6
 
-static const DoorData doordata[] = 
+static std::vector<DoorData> const doordata =
 {
     {GO_FACTORY_DOOR,   DATA_GLUBTOK,   DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
     {GO_MAST_ROOM_DOOR, DATA_HELIX,     DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
-    {GO_FOUNDRY_DOOR,   DATA_FOEREAPER, DOOR_TYPE_PASSAGE,    BOUNDARY_NONE}
+    {GO_HEAVY_DOOR,     DATA_HELIX,     DOOR_TYPE_ROOM,       BOUNDARY_NONE},
+    {GO_FOUNDRY_DOOR,   DATA_FOEREAPER, DOOR_TYPE_PASSAGE,    BOUNDARY_NONE},
+    {GO_HEAVY_DOOR_2,   DATA_FOEREAPER, DOOR_TYPE_ROOM,       BOUNDARY_NONE},
 };
 
 class instance_deadmines : public InstanceMapScript
 {
     public:
-        instance_deadmines() : InstanceMapScript("instance_deadmines", 36) {}
-        
-        InstanceScript* GetInstanceScript(InstanceMap* pMap) const
-        {
-            return new instance_deadmines_InstanceMapScript(pMap);
-        }
+        instance_deadmines() : InstanceMapScript("instance_deadmines", 36) { }
 
         struct instance_deadmines_InstanceMapScript : public InstanceScript
         {
-            instance_deadmines_InstanceMapScript(Map* pMap) : InstanceScript(pMap) 
+            instance_deadmines_InstanceMapScript(Map* map) : InstanceScript(map) 
             {
                 SetBossNumber(MAX_ENCOUNTER);
                 LoadDoorData(doordata);
                 
-                uiGlubtokGUID = 0;
-                uiHelixGUID = 0;
-                uiOafGUID = 0;
-                uiFoereaperGUID = 0;
-                uiAdmiralGUID = 0;
-                uiCaptainGUID = 0;
+                uiGlubtokGUID        = 0;
+                uiHelixGUID          = 0;
+                uiOafGUID            = 0;
+                uiFoereaperGUID      = 0;
+                uiAdmiralGUID        = 0;
+                uiCaptainGUID        = 0;
 
-                IronCladDoorGUID = 0;
-                DefiasCannonGUID = 0;
-                DoorLeverGUID = 0;
-
-                State = CANNON_NOT_USED;
-                uiVanessaEvent = 0;
+                GoblinTeleporterGUID = 0;
+                HeavyDoorGUID        = 0;
+                HeavyDoor2GUID       = 0;
+                IronCladDoorGUID     = 0;
+                DefiasCannonGUID     = 0;
+                DoorLeverGUID        = 0;
+                TeamInInstance       = 0;
+                uiVanessaEvent       = 0;
+                OverchargeCount      = 0;
+                State                = CANNON_NOT_USED;
+                instance->SetWorldState(WORLDSTATE_PROTOTYPE_PRODIGY, 1);
             };
 
-            void OnCreatureCreate(Creature *pCreature)
+            void OnPlayerEnter(Player* player) override
             {
-                switch (pCreature->GetEntry())
+                if (!TeamInInstance)
+                    TeamInInstance = player->GetTeam();
+            }
+
+            void OnCreatureCreate(Creature* creature) override
+            {
+                if (!TeamInInstance)
+                {
+                    Map::PlayerList const &players = instance->GetPlayers();
+                    if (!players.isEmpty())
+                        if (Player* player = players.begin()->GetSource())
+                            TeamInInstance = player->GetTeam();
+                }
+
+                switch (creature->GetEntry())
                 {
                     case NPC_GLUBTOK:
-                        uiGlubtokGUID = pCreature->GetGUID();
+                        uiGlubtokGUID = creature->GetGUID();
                         break;
-                    case NPC_HELIX:
-                        uiHelixGUID = pCreature->GetGUID();
+                    case NPC_HELIX_GEARBREAKER:
+                        uiHelixGUID = creature->GetGUID();
                         break;
-                    case NPC_OAF:
-                        uiOafGUID = pCreature->GetGUID();
+                    case NPC_LUMBERING_OAF:
+                        uiOafGUID = creature->GetGUID();
                         break;
-                    case NPC_FOEREAPER:
-                        uiFoereaperGUID = pCreature->GetGUID();
+                    case NPC_FOE_REAPER_5000:
+                        uiFoereaperGUID = creature->GetGUID();
                         break;
-                    case NPC_ADMIRAL:
-                        uiAdmiralGUID = pCreature->GetGUID();
+                    case NPC_ADMIRAL_RIPSNARL:
+                        uiAdmiralGUID = creature->GetGUID();
                         break;
-                    case NPC_CAPTAIN:
-                        uiCaptainGUID = pCreature->GetGUID();
-                       break;
+                    case NPC_CAPTAIN_COOKIE:
+                        uiCaptainGUID = creature->GetGUID();
+                        break;
+                    case NPC_KAGTHA:
+                        if (TeamInInstance == ALLIANCE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_SLINKY_SHARPSHIV:
+                        if (TeamInInstance == ALLIANCE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_MISS_MAYHEM:
+                        if (TeamInInstance == ALLIANCE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_MAYHEM_REAPER:
+                        if (TeamInInstance == ALLIANCE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_HAND_ASSASIN:
+                        if (TeamInInstance == ALLIANCE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_HORATIO_LAINE:
+                        if (TeamInInstance == HORDE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_DEFENDER:
+                        if (TeamInInstance == HORDE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_INVESTIGATOR:
+                        if (TeamInInstance == HORDE)
+                            creature->SetVisible(false);
+                        break;
+                    case NPC_CRIME_SCENE_BOT:
+                        if (TeamInInstance == HORDE)
+                            creature->SetVisible(false);
+                        break;
                 }
             }
 
-            void OnGameObjectCreate(GameObject* pGo)
+            void OnUnitDeath(Unit* unit) override
             {
-                switch(pGo->GetEntry())
+                if (unit->ToCreature())
                 {
-                    case GO_FACTORY_DOOR:
-                    case GO_MAST_ROOM_DOOR:   
-                    case GO_FOUNDRY_DOOR:   
-                        AddDoor(pGo, true);
+                    switch (unit->GetEntry())
+                    {
+                        case NPC_MINING_POWDER:
+                            unit->CastSpell(unit, SPELL_EXPLODE_MINE, false);
+                            break;
+                        case NPC_DEFIAS_WATCHER:
+                        case NPC_DEFIAS_REAPER:
+                            OverchargeCount++;
+
+                            if (OverchargeCount >= 4)
+                                if (Creature* FoeReaper = instance->GetCreature(GetData64(DATA_FOEREAPER)))
+                                    FoeReaper->RemoveAurasDueToSpell(SPELL_OFF_LINE);
+                            break;
+                    }
+                }
+            }
+
+            void OnGameObjectCreate(GameObject* go) override
+            {
+                switch (go->GetEntry())
+                {
+                    case GO_HEAVY_DOOR:
+                        HeavyDoorGUID = go->GetGUID();
+                        AddDoor(go, true);
                         break;
-                    case GO_IRONCLAD_DOOR:  IronCladDoorGUID = pGo->GetGUID();  break;
-                    case GO_DEFIAS_CANNON:  DefiasCannonGUID = pGo->GetGUID();  break;
-                    case GO_DOOR_LEVER:     DoorLeverGUID = pGo->GetGUID();     break;
+                    case GO_HEAVY_DOOR_2:
+                        HeavyDoor2GUID = go->GetGUID();
+                        AddDoor(go, true);
+                        break;
+                    case GO_FACTORY_DOOR:
+                    case GO_MAST_ROOM_DOOR:
+                    case GO_FOUNDRY_DOOR:
+                        AddDoor(go, true);
+                        break;
+                    case GO_GOBLIN_TELEPORTER:
+                        GoblinTeleporterGUID = go->GetGUID();
+                        break;
+                    case GO_IRONCLAD_DOOR:
+                        IronCladDoorGUID = go->GetGUID();
+                        break;
+                    case GO_DEFIAS_CANNON:
+                        DefiasCannonGUID = go->GetGUID();
+                        break;
+                    case GO_DOOR_LEVER:
+                        DoorLeverGUID = go->GetGUID();
+                        break;
                 }
             }
 
             void ShootCannon()
             {
-                if (GameObject *pDefiasCannon = instance->GetGameObject(DefiasCannonGUID))
+                if (GameObject* pDefiasCannon = instance->GetGameObject(DefiasCannonGUID))
                 {
                     pDefiasCannon->SetGoState(GO_STATE_ACTIVE);
-                    DoPlaySound(pDefiasCannon, SOUND_CANNONFIRE);
+                    pDefiasCannon->PlayDirectSound(SOUND_CANNONFIRE);
                 }
             }
 
             void BlastOutDoor()
             {
-                if (GameObject *pIronCladDoor = instance->GetGameObject(IronCladDoorGUID))
+                if (GameObject* pIronCladDoor = instance->GetGameObject(IronCladDoorGUID))
                 {
                     pIronCladDoor->SetGoState(GO_STATE_ACTIVE_ALTERNATIVE);
-                    DoPlaySound(pIronCladDoor, SOUND_DESTROYDOOR);
+                    pIronCladDoor->PlayDirectSound(SOUND_DESTROYDOOR);
                 }
             }
 
-            void DoPlaySound(GameObject* unit, uint32 sound)
-            {
-                WorldPacket data(SMSG_PLAY_SOUND, 4);
-                
-                ObjectGuid guid = unit->GetGUID();
-
-                uint8 bitsOrder[8] = { 1, 6, 7, 5, 4, 3, 0, 2 };
-                data.WriteBitInOrder(guid, bitsOrder);
-                data.FlushBits();
-
-                data.WriteByteSeq(guid[3]);
-                data.WriteByteSeq(guid[6]);
-                data.WriteByteSeq(guid[5]);
-                data.WriteByteSeq(guid[4]);
-                data << uint32(sound);
-                data.WriteByteSeq(guid[1]);
-                data.WriteByteSeq(guid[2]);
-                data.WriteByteSeq(guid[0]);
-                data.WriteByteSeq(guid[7]);
-
-                unit->SendMessageToSet(&data, false);
-            }
-
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
                 switch (type)
                 {
@@ -143,16 +210,16 @@ class instance_deadmines : public InstanceMapScript
                 }
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 if (type == DATA_VANESSA_EVENT)
                     return uiVanessaEvent;
                 return 0;
             }
 
-            uint64 GetData64(uint32 data)
+            uint64 GetData64(uint32 type) const override
             {
-                switch (data)
+                switch (type)
                 {
                     case DATA_GLUBTOK:
                         return uiGlubtokGUID;
@@ -164,11 +231,45 @@ class instance_deadmines : public InstanceMapScript
                         return uiFoereaperGUID;
                     case DATA_ADMIRAL:
                         return uiAdmiralGUID;
+                    case DATA_TEAM_IN_INSTANCE:     
+                        return TeamInInstance;
                 }
                 return 0;
             }
+            
+            bool SetBossState(uint32 type, EncounterState state) override
+            {
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
+                    
+                switch (type)
+                {
+                    case DATA_HELIX:
+                        if (state == IN_PROGRESS)
+                        {
+                            if (GameObject* go = instance->GetGameObject(HeavyDoorGUID))
+                                go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        }
+                        else if (state == DONE)
+                            if (GameObject* go = instance->GetGameObject(HeavyDoorGUID))
+                                go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        break;
+                    case DATA_FOEREAPER:
+                        if (state == IN_PROGRESS)
+                        {
+                            if (GameObject* go = instance->GetGameObject(HeavyDoor2GUID))
+                                go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        }
+                        else if (state == DONE)
+                            if (GameObject* go = instance->GetGameObject(HeavyDoor2GUID))
+                                go->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                        break;
+                }
 
-            std::string GetSaveData()
+                return true;
+            }
+
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
@@ -181,7 +282,7 @@ class instance_deadmines : public InstanceMapScript
                 return str_data;
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -204,7 +305,7 @@ class instance_deadmines : public InstanceMapScript
                         uint32 tmpState;
                         loadStream >> tmpState;
                         if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                            tmpState = NOT_STARTED;
+                        tmpState = NOT_STARTED;
                         SetBossState(i, EncounterState(tmpState));
                     }
 
@@ -235,6 +336,9 @@ class instance_deadmines : public InstanceMapScript
             uint64 FactoryDoorGUID;
             uint64 FoundryDoorGUID;
             uint64 MastRoomDoorGUID;
+            uint64 GoblinTeleporterGUID;
+            uint64 HeavyDoorGUID;
+            uint64 HeavyDoor2GUID;
             uint64 IronCladDoorGUID;
             uint64 DefiasCannonGUID;
             uint64 DoorLeverGUID;
@@ -244,8 +348,15 @@ class instance_deadmines : public InstanceMapScript
 
             uint32 State;
             uint32 uiVanessaEvent;
+            uint32 OverchargeCount;
 
+            uint32 TeamInInstance;
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_deadmines_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_deadmines()

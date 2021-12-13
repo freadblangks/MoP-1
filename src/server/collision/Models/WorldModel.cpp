@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -143,6 +144,8 @@ namespace VMAP
         }
         else
             iFlags = 0;
+        iLiquidVertices = other.iLiquidVertices;
+        iLiquidTriangles = other.iLiquidTriangles;
         return *this;
     }
 
@@ -243,11 +246,64 @@ namespace VMAP
         }
 
         if (!result)
+        {
             delete liquid;
-        else
-            out = liquid;
-
+            return false;
+        }
+        out = liquid;
+        out->BuildGeometry();
         return result;
+    }
+
+
+    void WmoLiquid::BuildGeometry()
+    {
+        uint32 offset = iLiquidVertices.size();
+
+        // Copy from mmaps_generator/TerrainBuilder.cpp
+        uint32 vertsX = iTilesX + 1;
+        uint32 vertsY = iTilesY + 1;
+
+        G3D::Vector3 vert;
+        for (uint32 x = 0; x < vertsX; ++x)
+            for (uint32 y = 0; y < vertsY; ++y)
+            {
+                vert = G3D::Vector3(iCorner.x + x * LIQUID_TILE_SIZE, iCorner.y + y * LIQUID_TILE_SIZE, iHeight[y*vertsX + x]);
+                vert.x *= -1.f;
+                vert.y *= -1.f;
+                iLiquidVertices.push_back(vert);
+            }
+
+        uint32 idx1, idx2, idx3, idx4;
+        uint32 square;
+        for (uint32 x = 0; x < iTilesX; ++x)
+            for (uint32 y = 0; y < iTilesY; ++y)
+                if ((iFlags[x + y*iTilesX] & 0x0f) != 0x0f)
+                {
+                    square = offset + x * iTilesY + y;
+                    idx1 = square + x;
+                    idx2 = square + 1 + x;
+                    idx3 = square + iTilesY + 1 + 1 + x;
+                    idx4 = square + iTilesY + 1 + x;
+
+                    iLiquidTriangles.emplace_back(idx3, idx2, idx1); // top triangle
+                    iLiquidTriangles.emplace_back(idx4, idx3, idx1); // bottom triangle
+                }
+    }
+
+    bool WmoLiquid::IntersectRay(G3D::Ray const& ray, float& distance) const
+    {
+        // It would be cool to late-initialize geometry this way, but it might cause race conditions
+        //if (iLiquidVertices.empty())
+        //    BuildGeometry();
+
+        auto verts = iLiquidVertices.begin();
+
+        bool hit = false;
+        for (auto&& triangle : iLiquidTriangles)
+            hit |= IntersectTriangle(triangle, verts, ray, distance);
+
+        return hit;
     }
 
     // ===================== GroupModel ==================================
@@ -400,6 +456,13 @@ namespace VMAP
     {
         if (iLiquid)
             return iLiquid->GetLiquidHeight(pos, liqHeight);
+        return false;
+    }
+
+    bool GroupModel::GetLiquidLevel(G3D::Ray const& ray, float& liqHeight) const
+    {
+        if (iLiquid)
+            return iLiquid->IntersectRay(ray, liqHeight);
         return false;
     }
 

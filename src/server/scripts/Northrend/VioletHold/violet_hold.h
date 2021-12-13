@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -20,21 +23,22 @@
 
 enum Creatures
 {
-    CREATURE_TELEPORTATION_PORTAL                   = 31011,
-    CREATURE_PORTAL_GUARDIAN                        = 30660,
-    CREATURE_PORTAL_KEEPER                          = 30695,
-    CREATURE_XEVOZZ                                 = 29266,
-    CREATURE_LAVANTHOR                              = 29312,
-    CREATURE_ICHORON                                = 29313,
-    CREATURE_ZURAMAT                                = 29314,
-    CREATURE_EREKEM                                 = 29315,
-    CREATURE_EREKEM_GUARD                           = 29395,
-    CREATURE_MORAGG                                 = 29316,
-    CREATURE_CYANIGOSA                              = 31134,
-    CREATURE_SINCLARI                               = 30658,
-    CREATURE_SABOTEOUR                              = 31079,
+    NPC_TELEPORTATION_PORTAL                        = 31011,
+    NPC_PORTAL_GUARDIAN                             = 30660,
+    NPC_PORTAL_KEEPER                               = 30695,
+    NPC_XEVOZZ                                      = 29266,
+    NPC_LAVANTHOR                                   = 29312,
+    NPC_ICHORON                                     = 29313,
+    NPC_ZURAMAT                                     = 29314,
+    NPC_EREKEM                                      = 29315,
+    NPC_EREKEM_GUARD                                = 29395,
+    NPC_MORAGG                                      = 29316,
+    NPC_CYANIGOSA                                   = 31134,
+    NPC_SINCLARI                                    = 30658,
+    NPC_SINCLARI_TRIGGER                            = 32204,
+    NPC_SABOTEOUR                                   = 31079,
     NPC_VIOLET_HOLD_GUARD                           = 30659,
-    CREATURE_DEFENSE_SYSTEM                         = 30837
+    NPC_DEFENSE_SYSTEM                              = 30837,
 };
 
 enum Data
@@ -55,6 +59,7 @@ enum Data
     DATA_ACTIVATE_CRYSTAL,
     DATA_MAIN_EVENT_PHASE,
     DATA_DEFENSELESS,
+    DATA_WIPE,
 };
 
 enum Data64
@@ -78,6 +83,7 @@ enum Data64
     DATA_ZURAMAT_CELL,
     DATA_MAIN_DOOR,
     DATA_SINCLARI,
+    DATA_SINCLARI_TRIGGER,
     DATA_TELEPORTATION_PORTAL,
     DATA_SABOTEUR_PORTAL,
 };
@@ -99,6 +105,11 @@ enum VHWorldStates
     WORLD_STATE_VH              = 3816,
     WORLD_STATE_VH_PRISON_STATE = 3815,
     WORLD_STATE_VH_WAVE_COUNT   = 3810,
+
+    // Achievements
+    WORLDSTATE_A_VOID_DANCE = 6424,
+    WORLDSTATE_DEHYDRATION  = 6331,
+    WORLDSTATE_DEFENSELESS  = 6230,
 };
 
 #endif

@@ -6,27 +6,21 @@
 
 enum Spells
 {
-    //Rajh
+    // Rajh
     SPELL_SUN_STRIKE                    = 73872, 
-    SPELL_SUN_STRIKE_H                  = 89887,
     SPELL_SUN_STRIKE_DMG                = 73874,
-    SPELL_SUN_STRIKE_DMG_H              = 90009,
-    //SPELL_INFERNO_LEAP                = 87647, //Value: 32375 to 37625
-    //SPELL_INFERNO_LEAP_2              = 89876, //Value: 120250 to 139750
+    //SPELL_INFERNO_LEAP                = 87647, // Value: 32375 to 37625
+    //SPELL_INFERNO_LEAP_2              = 89876, // Value: 120250 to 139750
     //SPELL_SUMMON_SUN_ORB              = 80352,
     SPELL_BLESSING_OF_THE_SUN           = 76352,
     SPELL_BLESSING_OF_THE_SUN_AURA      = 76355,
-    SPELL_BLESSING_OF_THE_SUN_AURA_H    = 89879,
     SPELL_ZERO_POWER                    = 72242,
     SPELL_SUMMON_SOLAR_WINDS            = 74104,
     SPELL_SOLAR_WINDS_AURA              = 74107,
-    SPELL_SOLAR_WINDS_AURA_H            = 90917,
     SPELL_SOLAR_WINDS_DMG               = 74108,
-    SPELL_SOLAR_WINDS_DMG_H             = 89130,
     SPELL_SOLAR_WINDS_VISUAL            = 74109,
     SPELL_SOLAR_FIRE                    = 89131,
     SPELL_SOLAR_FIRE_DMG                = 89133,
-    SPELL_SOLAR_FIRE_DMG_H              = 89878,
 };
 
 enum Texts
@@ -62,104 +56,94 @@ class boss_rajh : public CreatureScript
     public:
         boss_rajh() : CreatureScript("boss_rajh") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_rajhAI(pCreature);
-        }
-
         struct boss_rajhAI : public BossAI
         {
-            boss_rajhAI(Creature* pCreature) : BossAI(pCreature, DATA_RAJH)
+            boss_rajhAI(Creature* creature) : BossAI(creature, DATA_RAJH)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
             uint8 phase;
-            bool achieve;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(HOScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
-                bool achieve = false;
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                me->GetMap()->SetWorldState(WORLDSTATE_SUN_OF_A, 1);
 
                 phase = 0;
 
                 SetEquipmentSlots(false, 1728, 0, 0);
 
                 DoCast(me, SPELL_ZERO_POWER, true);
-                me->setPowerType(POWER_ENERGY);
+                me->SetPowerType(POWER_ENERGY);
                 me->SetMaxPower(POWER_ENERGY, 100);
                 me->SetPower(POWER_ENERGY, 100);
             }
 
-            void KilledUnit(Unit* /*Killed*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* /*Kill*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 Talk(SAY_DEATH);
             }
 
-            bool HasAchieved()
+            void EnterCombat(Unit* /*who*/) override
             {
-                return achieve;
-            }
+                _EnterCombat();
 
-            void EnterCombat(Unit* /*Ent*/)
-            {
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 Talk(SAY_AGGRO);
-                
                 events.ScheduleEvent(EVENT_SUN_STRIKE, urand(5000, 10000));
                 events.ScheduleEvent(EVENT_SUMMON_SOLAR_WINDS, urand(10000, 15000));
 
-                achieve = true;
                 DoZoneInCombat();
-                instance->SetBossState(DATA_RAJH, IN_PROGRESS);
             }
 
-            void JustReachedHome()
-		    {
-			    _JustReachedHome();
-		    }
+            void JustReachedHome() override
+            {
+                _JustReachedHome();
+            }
 
-            void MovementInform(uint32 type, uint32 id)
-		    {
-			    if (type == POINT_MOTION_TYPE)
-			    {
-				    switch (id)
-				    {
-				        case 1:
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type == POINT_MOTION_TYPE)
+                {
+                    switch (pointId)
+                    {
+                        case 1:
                             Talk(SAY_ENERGIZE);
                             DoCastAOE(SPELL_BLESSING_OF_THE_SUN);
-					        break;
-				    }
-			    }
-		    }
+                            break;
+                    }
+                }
+            }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -167,7 +151,7 @@ class boss_rajh : public CreatureScript
                 events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
-				    return;
+                    return;
 
                 if (me->GetPower(POWER_ENERGY) < 1 && phase == 0)
                 {
@@ -181,26 +165,26 @@ class boss_rajh : public CreatureScript
                 else if (me->GetPower(POWER_ENERGY) > 99 && phase == 1)
                 {
                     phase = 0;
-                    achieve = false;
+                    me->GetMap()->SetWorldState(WORLDSTATE_SUN_OF_A, 0);
                     me->SetReactState(REACT_AGGRESSIVE);
                     events.ScheduleEvent(EVENT_SUN_STRIKE, urand(5000, 10000));
                     events.ScheduleEvent(EVENT_SUMMON_SOLAR_WINDS, urand(6000, 11000));
-                    me->GetMotionMaster()->MoveChase(me->getVictim());
+                    me->GetMotionMaster()->MoveChase(me->GetVictim());
                     return;
                 }
 
-			    while (uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
                     switch (eventId)
                     {
                         case EVENT_SUN_STRIKE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_SUN_STRIKE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                DoCast(target, SPELL_SUN_STRIKE);
                             events.ScheduleEvent(EVENT_SUN_STRIKE, urand(20000, 25000));
                             break;
                         case EVENT_SUMMON_SOLAR_WINDS:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_SUMMON_SOLAR_WINDS);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                DoCast(target, SPELL_SUMMON_SOLAR_WINDS);
                             events.ScheduleEvent(EVENT_SUMMON_SOLAR_WINDS, urand(20000, 25000));
                             break;
                     }
@@ -209,6 +193,11 @@ class boss_rajh : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_rajhAI>(creature);
+        }
 };
 
 class npc_rajh_solar_wind : public CreatureScript
@@ -216,41 +205,23 @@ class npc_rajh_solar_wind : public CreatureScript
     public:
         npc_rajh_solar_wind() : CreatureScript("npc_rajh_solar_wind") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_rajh_solar_windAI(creature);
-        }
-
         struct npc_rajh_solar_windAI : public ScriptedAI
         {
-            npc_rajh_solar_windAI(Creature* pCreature) : ScriptedAI(pCreature)
+            npc_rajh_solar_windAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 DoCast(me, SPELL_SOLAR_WINDS_VISUAL, true);
                 DoCast(me, SPELL_SOLAR_WINDS_AURA, true);
             }
         };
-};
 
-typedef boss_rajh::boss_rajhAI RajhAI;
-
-class achievement_sun_of_a : public AchievementCriteriaScript
-{
-    public:
-        achievement_sun_of_a() : AchievementCriteriaScript("achievement_sun_of_a") { }
-
-        bool OnCheck(Player* source, Unit* target)
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (!target)
-                return false;
-            if (RajhAI* rajhAI = CAST_AI(RajhAI, target->GetAI()))
-                return rajhAI->HasAchieved();
-
-            return false;
+            return GetInstanceAI<npc_rajh_solar_windAI>(creature);
         }
 };
 
@@ -258,5 +229,4 @@ void AddSC_boss_rajh()
 {
     new boss_rajh();
     new npc_rajh_solar_wind();
-    new achievement_sun_of_a();
 }

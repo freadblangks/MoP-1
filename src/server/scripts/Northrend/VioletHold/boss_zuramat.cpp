@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -20,210 +23,266 @@
 
 enum Spells
 {
-    SPELL_SHROUD_OF_DARKNESS                    = 54524,
-    H_SPELL_SHROUD_OF_DARKNESS                  = 59745,
-    SPELL_SUMMON_VOID_SENTRY                    = 54369,
     SPELL_VOID_SHIFT                            = 54361,
-    H_SPELL_VOID_SHIFT                          = 59743,
+    SPELL_VOID_SHIFT_H                          = 59743,
+    SPELL_SHROUD_OF_DARKNESS                    = 54524,
+    SPELL_SHROUD_OF_DARKNESS_H                  = 59745,
+    SPELL_SUMMON_VOID_SENTRY                    = 54369,
+    SPELL_SUMMON_VOID_SENTRY_BALL               = 58650,
 
+    SPELL_EXHAUSTION                            = 44867,
+    SPELL_VOID_SHIFTED                          = 54343,
     SPELL_ZURAMAT_ADD_2                         = 54342,
-    H_SPELL_ZURAMAT_ADD_2                       = 59747
+    SPELL_ZURAMAT_ADD_2_H                       = 59747,
+    SPELL_SHADOW_BOLT_VOLLEY                    = 57942,
+
 };
 
 enum ZuramatCreatures
 {
-    CREATURE_VOID_SENTRY                        = 29364
+    NPC_VOID_SENTRY                             = 29364
 };
 
 enum Yells
 {
-    SAY_AGGRO                                   = -1608037,
-    SAY_SLAY_1                                  = -1608038,
-    SAY_SLAY_2                                  = -1608039,
-    SAY_SLAY_3                                  = -1608040,
-    SAY_DEATH                                   = -1608041,
-    SAY_SPAWN                                   = -1608042,
-    SAY_SHIELD                                  = -1608043,
-    SAY_WHISPER                                 = -1608044
+    SAY_AGGRO                                   = 0,
+    SAY_SLAY                                    = 1,
+    SAY_DEATH                                   = 2,
+    SAY_SHIELD                                  = 4, // unused
+    SAY_WHISPER                                 = 5, // unused
 };
 
-#define DATA_VOID_DANCE                         2153
+enum eActions
+{
+    ACTION_VOID_DEAD,
+};
 
 class boss_zuramat : public CreatureScript
 {
-public:
-    boss_zuramat() : CreatureScript("boss_zuramat") { }
+    public:
+        boss_zuramat() : CreatureScript("boss_zuramat") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_zuramatAI (creature);
-    }
-
-    struct boss_zuramatAI : public ScriptedAI
-    {
-        boss_zuramatAI(Creature* creature) : ScriptedAI(creature)
+        struct boss_zuramatAI : public ScriptedAI
         {
-            instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* instance;
-
-        uint32 SpellVoidShiftTimer;
-        uint32 SpellSummonVoidTimer;
-        uint32 SpellShroudOfDarknessTimer;
-        bool voidDance;
-
-        void Reset()
-        {
-            if (instance)
+            boss_zuramatAI(Creature* creature) : ScriptedAI(creature), Summons(me)
             {
-                if (instance->GetData(DATA_WAVE_COUNT) == 6)
-                    instance->SetData(DATA_1ST_BOSS_EVENT, NOT_STARTED);
-                else if (instance->GetData(DATA_WAVE_COUNT) == 12)
-                    instance->SetData(DATA_2ND_BOSS_EVENT, NOT_STARTED);
+                instance = creature->GetInstanceScript();
             }
 
-            SpellShroudOfDarknessTimer = 22000;
-            SpellVoidShiftTimer = 15000;
-            SpellSummonVoidTimer = 12000;
-            voidDance = true;
-        }
+            InstanceScript* instance;
+            SummonList Summons;
 
-        void AttackStart(Unit* who)
-        {
-            if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC) || me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE))
-                return;
+            uint32 SpellVoidShiftTimer;
+            uint32 SpellSummonVoidTimer;
+            uint32 SpellShroudOfDarknessTimer;
 
-            if (me->Attack(who, true))
+            void Reset() override
             {
-                me->AddThreat(who, 0.0f);
-                me->SetInCombatWith(who);
-                who->SetInCombatWith(me);
-                DoStartMovement(who);
+                Summons.DespawnAll();
+                if (instance)
+                {
+                    if (instance->GetData(DATA_WAVE_COUNT) == 6)
+                        instance->SetData(DATA_1ST_BOSS_EVENT, NOT_STARTED);
+                    else if (instance->GetData(DATA_WAVE_COUNT) == 12)
+                        instance->SetData(DATA_2ND_BOSS_EVENT, NOT_STARTED);
+                }
+
+                SpellShroudOfDarknessTimer = 22000;
+                SpellVoidShiftTimer = 15000;
+                SpellSummonVoidTimer = 12000;
+                me->GetMap()->SetWorldState(WORLDSTATE_A_VOID_DANCE, 1);
             }
-        }
 
-        void EnterCombat(Unit* /*who*/)
-        {
-            DoScriptText(SAY_AGGRO, me);
-            if (instance)
+            void AttackStart(Unit* who) override
             {
-                if (GameObject* pDoor = instance->instance->GetGameObject(instance->GetData64(DATA_ZURAMAT_CELL)))
-                    if (pDoor->GetGoState() == GO_STATE_READY)
+                if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC) || me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE))
+                    return;
+
+                if (me->Attack(who, true))
+                {
+                    me->AddThreat(who, 0.0f);
+                    me->SetInCombatWith(who);
+                    who->SetInCombatWith(me);
+                    DoStartMovement(who);
+                }
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                Talk(SAY_AGGRO);
+
+                if (instance)
+                {
+                    if (GameObject* pDoor = instance->instance->GetGameObject(instance->GetData64(DATA_ZURAMAT_CELL)))
+                        if (pDoor->GetGoState() == GO_STATE_READY)
+                        {
+                            EnterEvadeMode();
+                            return;
+                        }
+                    if (instance->GetData(DATA_WAVE_COUNT) == 6)
+                        instance->SetData(DATA_1ST_BOSS_EVENT, IN_PROGRESS);
+                    else if (instance->GetData(DATA_WAVE_COUNT) == 12)
+                        instance->SetData(DATA_2ND_BOSS_EVENT, IN_PROGRESS);
+                }
+            }
+
+            void EnterEvadeMode() override
+            {
+                ScriptedAI::EnterEvadeMode();
+                if (instance)
+                    instance->SetData(DATA_WIPE, 1);
+            }
+
+            void MoveInLineOfSight(Unit* /*who*/) override { }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                if (SpellSummonVoidTimer <= diff)
+                {
+                    DoCast(me->GetVictim(), SPELL_SUMMON_VOID_SENTRY, false);
+                    SpellSummonVoidTimer = 20000;
+                } else SpellSummonVoidTimer -=diff;
+
+                if (SpellVoidShiftTimer <= diff)
+                {
+                     if (Unit* pUnit = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                        DoCast(pUnit, SPELL_VOID_SHIFT);
+                    SpellVoidShiftTimer = 20000;
+                } else SpellVoidShiftTimer -=diff;
+
+                if (SpellShroudOfDarknessTimer <= diff)
+                {
+                    DoCast(me->GetVictim(), SPELL_SHROUD_OF_DARKNESS);
+                    SpellShroudOfDarknessTimer = 20000;
+                } else SpellShroudOfDarknessTimer -=diff;
+
+                DoMeleeAttackIfReady();
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                Talk(SAY_DEATH);
+
+                if (instance)
+                {
+                    if (instance->GetData(DATA_WAVE_COUNT) == 6)
                     {
-                        EnterEvadeMode();
-                        return;
+                        if (IsHeroic() && instance->GetData(DATA_1ST_BOSS_EVENT) == DONE)
+                            me->RemoveFlag(OBJECT_FIELD_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE);
+
+                        instance->SetData(DATA_1ST_BOSS_EVENT, DONE);
+                        instance->SetData(DATA_WAVE_COUNT, 7);
                     }
-                if (instance->GetData(DATA_WAVE_COUNT) == 6)
-                    instance->SetData(DATA_1ST_BOSS_EVENT, IN_PROGRESS);
-                else if (instance->GetData(DATA_WAVE_COUNT) == 12)
-                    instance->SetData(DATA_2ND_BOSS_EVENT, IN_PROGRESS);
-            }
-        }
+                    else if (instance->GetData(DATA_WAVE_COUNT) == 12)
+                    {
+                        if (IsHeroic() && instance->GetData(DATA_2ND_BOSS_EVENT) == DONE)
+                            me->RemoveFlag(OBJECT_FIELD_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE);
 
-        void MoveInLineOfSight(Unit* /*who*/) {}
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            if (SpellSummonVoidTimer <= diff)
-            {
-                DoCast(me->getVictim(), SPELL_SUMMON_VOID_SENTRY, false);
-                SpellSummonVoidTimer = 20000;
-            } else SpellSummonVoidTimer -=diff;
-
-            if (SpellVoidShiftTimer <= diff)
-            {
-                 if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                    DoCast(unit, SPELL_VOID_SHIFT);
-                SpellVoidShiftTimer = 20000;
-            } else SpellVoidShiftTimer -=diff;
-
-            if (SpellShroudOfDarknessTimer <= diff)
-            {
-                DoCast(me->getVictim(), SPELL_SHROUD_OF_DARKNESS);
-                SpellShroudOfDarknessTimer = 20000;
-            } else SpellShroudOfDarknessTimer -=diff;
-
-            DoMeleeAttackIfReady();
-        }
-
-        void SummonedCreatureDies(Creature* summoned, Unit* /*who*/)
-        {
-            if (summoned->GetEntry() == CREATURE_VOID_SENTRY)
-                voidDance = false;
-        }
-
-        uint32 GetData(uint32 type)
-        {
-            if (type == DATA_VOID_DANCE)
-                return voidDance ? 1 : 0;
-
-            return 0;
-        }
-
-        void JustDied(Unit* /*killer*/)
-        {
-            DoScriptText(SAY_DEATH, me);
-
-            if (instance)
-            {
-                if (instance->GetData(DATA_WAVE_COUNT) == 6)
-                {
-                    instance->SetData(DATA_1ST_BOSS_EVENT, DONE);
-                    instance->SetData(DATA_WAVE_COUNT, 7);
+                        instance->SetData(DATA_2ND_BOSS_EVENT, DONE);
+                        instance->SetData(DATA_WAVE_COUNT, 13);
+                    }
                 }
-                else if (instance->GetData(DATA_WAVE_COUNT) == 12)
-                {
-                    instance->SetData(DATA_2ND_BOSS_EVENT, DONE);
-                    instance->SetData(DATA_WAVE_COUNT, 13);
-                }
+
+                Summons.DespawnAll();
             }
-        }
 
-        void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* victim) override
+            {
+                if (victim->GetTypeId() != TYPEID_PLAYER)
+                    return;
+
+                Talk(SAY_SLAY);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                Summons.Summon(summon);
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (victim == me)
-                return;
-
-            DoScriptText(RAND(SAY_SLAY_1, SAY_SLAY_2, SAY_SLAY_3), me);
+            return new boss_zuramatAI(creature);
         }
-
-        void JustSummoned(Creature* summon)
-        {
-            summon->AI()->AttackStart(me->getVictim());
-            summon->AI()->DoCastAOE(SPELL_ZURAMAT_ADD_2);
-            summon->SetPhaseMask(17, true);
-        }
-    };
-
 };
 
-class achievement_void_dance : public AchievementCriteriaScript
+class npc_void_sentry : public CreatureScript
 {
     public:
-        achievement_void_dance() : AchievementCriteriaScript("achievement_void_dance")
+        npc_void_sentry() : CreatureScript("npc_void_sentry") { }
+
+        struct npc_void_sentryAI : public ScriptedAI
         {
+            npc_void_sentryAI(Creature* creature) : ScriptedAI(creature), summons(me) { }
+
+            void Reset() override
+            {
+                me->SetReactState(REACT_PASSIVE);
+                DoCast(me, SPELL_SUMMON_VOID_SENTRY_BALL, true);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+            }
+
+            void JustDied(Unit* killer) override
+            {
+                me->GetMap()->SetWorldState(WORLDSTATE_A_VOID_DANCE, 0);
+                summons.DespawnAll();
+            }
+
+            void Unsummoned() override
+            {
+                summons.DespawnAll();
+            }
+
+            void UpdateAI(uint32 /*diff*/) override { }
+
+        private:
+            SummonList summons;
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_void_sentryAI(creature);
         }
+};
 
-        bool OnCheck(Player* /*player*/, Unit* target)
+class npc_void_sentry_ball : public CreatureScript
+{
+    public:
+        npc_void_sentry_ball() : CreatureScript("npc_void_sentry_ball") { }
+
+        struct npc_void_sentry_ballAI : public ScriptedAI
         {
-            if (!target)
-                return false;
+            npc_void_sentry_ballAI(Creature* creature) : ScriptedAI(creature) { }
 
-            if (Creature* Zuramat = target->ToCreature())
-                if (Zuramat->AI()->GetData(DATA_VOID_DANCE))
-                    return true;
+            void Reset() override
+            {
+                me->SetReactState(REACT_PASSIVE);
+            }
 
-            return false;
+            void DamageTaken(Unit* attacker, uint32& damage) override
+            {
+                damage = 0;
+            }
+
+            void UpdateAI(uint32 /*diff*/) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_void_sentry_ballAI(creature);
         }
 };
 
 void AddSC_boss_zuramat()
 {
     new boss_zuramat();
-    new achievement_void_dance();
+    new npc_void_sentry();
+    new npc_void_sentry_ball();
 }

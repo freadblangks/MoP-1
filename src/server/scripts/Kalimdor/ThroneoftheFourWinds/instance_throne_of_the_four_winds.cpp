@@ -1,118 +1,159 @@
-#include "ScriptPCH.h"
 #include "throne_of_the_four_winds.h"
 
 #define MAX_ENCOUNTER 2
-
-static const DoorData doordata[] = 
-{
-    {0, 0, DOOR_TYPE_ROOM, BOUNDARY_NONE},
-};
 
 class instance_throne_of_the_four_winds : public InstanceMapScript
 {
     public:
         instance_throne_of_the_four_winds() : InstanceMapScript("instance_throne_of_the_four_winds", 754) { }
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
+        struct instance_throne_of_the_four_winds_InstanceMapScript: public InstanceScript
         {
-            return new instance_throne_of_the_four_winds_InstanceMapScript(map);
-        }
-
-        struct instance_throne_of_the_four_winds_InstanceMapScript : public InstanceScript
-        {
-            instance_throne_of_the_four_winds_InstanceMapScript(Map* map) : InstanceScript(map)
+            instance_throne_of_the_four_winds_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
                 SetBossNumber(MAX_ENCOUNTER);
-                LoadDoorData(doordata);
 
-                uiAnshalGUID = 0;
-                uiNezirGUID = 0;
-                uiRohashGUID = 0;
-                uiAlakirGUID = 0;
-
-                playerTimer = 2000;
+                uiConclaveofWind    = 0;
+                uiAnshal            = 0;
+                uiNezir             = 0;
+                uiRohash            = 0;
+                uiAlakir            = 0;
+                memset(uiHeartOfWind, 0, sizeof(uiHeartOfWind));
+                bSlipstreamsSpawned = false;
             }
 
-            void BeforePlayerEnter(Player* pPlayer)
+            void Update(uint32 /*diff*/) override
             {
-                if (!uiTeamInInstance)
-				    uiTeamInInstance = pPlayer->GetTeam();
-            }
-
-            void OnCreatureCreate(Creature* pCreature)
-            {
-                switch (pCreature->GetEntry())
+                if (GetBossState(DATA_ALAKIR) == DONE)
                 {
-                    case NPC_ANSHAL:
-                        uiAnshalGUID = pCreature->GetGUID();
+                    Map::PlayerList const& players = instance->GetPlayers();
+                    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                        if (Player* player = itr->GetSource())
+                            if (player->IsAlive() && player->GetExactDist2d(&conclaveHomePositions[4]) < 100 && !player->HasAura(SPELL_EYE_OF_THE_STORM))
+                                player->CastSpell(player, SPELL_EYE_OF_THE_STORM, true);
+                }
+            }
+
+            void OnPlayerEnter(Player* /*player*/) override
+            {
+                if (!bSlipstreamsSpawned && GetBossState(DATA_CONCLAVE_OF_WIND) == DONE)
+                {
+                    bSlipstreamsSpawned = true;
+                    for (uint32 i = 0; i < 4; ++i)
+                        instance->SummonCreature(NPC_SLIPSTREAM, conclaveHomePositions[i]);
+                }
+            }
+
+            void OnCreatureCreate(Creature* creature) override
+            {
+                switch (creature->GetEntry())
+                {
+                    case BOSS_ANSHAL:
+                        uiAnshal = creature->GetGUID();
                         break;
-                    case NPC_NEZIR:
-                        uiNezirGUID = pCreature->GetGUID();
+                    case BOSS_NEZIR:
+                        uiNezir = creature->GetGUID();
                         break;
-                    case NPC_ROHASH:
-                        uiRohashGUID = pCreature->GetGUID();
+                    case BOSS_ROHASH:
+                        uiRohash = creature->GetGUID();
                         break;
-                    case NPC_ALAKIR:
-                        uiAlakirGUID = pCreature->GetGUID();
+                    case BOSS_ALAKIR:
+                        uiAlakir = creature->GetGUID();
+                        if (GetBossState(DATA_CONCLAVE_OF_WIND) == DONE)
+                            creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC);
+                        break;
+                }
+            }
+
+            void OnGameObjectCreate(GameObject* go) override
+            {
+                switch (go->GetEntry())
+                {
+                    case GO_WIND_DRAFTEFFECT_CENTER:
+                        if (GetBossState(DATA_ALAKIR) == DONE)
+                            go->SetGoState(GO_STATE_ACTIVE);
+                        break;
+                    case GO_FLOOR_ALAKIR:
+                        if (GetBossState(DATA_ALAKIR) == DONE)
+                            go->SetDestructibleState(GO_DESTRUCTIBLE_DESTROYED);
+                        break;
+                    case GO_HEART_OF_WIND_10N:
+                        uiHeartOfWind[0] = go->GetGUID();
+                        break;
+                    case GO_HEART_OF_WIND_25N:
+                        uiHeartOfWind[1] = go->GetGUID();
+                        break;
+                    case GO_HEART_OF_WIND_10H:
+                        uiHeartOfWind[2] = go->GetGUID();
+                        break;
+                    case GO_HEART_OF_WIND_25H:
+                        uiHeartOfWind[3] = go->GetGUID();
                         break;
                     default:
                         break;
                 }
-		    }
-
-            void OnGameObjectCreate(GameObject* pGo)
-            {
-		    }
-
-            void OnGameObjectRemove(GameObject* pGo)
-		    {
-		    }
-
-            void SetData(uint32 type, uint32 data)
-            {
-		    }
-
-            uint32 GetData(uint32 type)
-            {
-			    return 0;
             }
 
-            uint64 GetData64(uint32 type)
+            uint64 GetData64(uint32 type) const override
             {
                 switch (type)
                 {
-                    case DATA_ANSHAL: return uiAnshalGUID;
-                    case DATA_NEZIR: return uiNezirGUID;
-                    case DATA_ROHASH: return uiRohashGUID;
-                    case DATA_ALAKIR: return uiAlakirGUID;
+                    case DATA_CONCLAVE_OF_WIND:
+                        return uiConclaveofWind;
+                    case DATA_ALAKIR:
+                        return uiAlakir;
+                    case DATA_HEART_OF_WIND_10N:
+                        return uiHeartOfWind[0];
+                    case DATA_HEART_OF_WIND_25N:
+                        return uiHeartOfWind[1];
+                    case DATA_HEART_OF_WIND_10H:
+                        return uiHeartOfWind[2];
+                    case DATA_HEART_OF_WIND_25H:
+                        return uiHeartOfWind[3];
+                    default:
+                        return 0;
                 }
                 return 0;
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
-			    if (!InstanceScript::SetBossState(type, state))
-				    return false;
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
 
-			    return true;
+                if (type == DATA_CONCLAVE_OF_WIND && state == DONE)
+                {
+                    bSlipstreamsSpawned = true;
+                    for (uint32 i = 0; i < 4; ++i)
+                        instance->SummonCreature(NPC_SLIPSTREAM, conclaveHomePositions[i]);
+                }
+
+                return true;
             }
 
-            std::string GetSaveData()
+            bool CheckRequiredBosses(uint32 bossId, Player const* player = NULL) const override
+            {
+                if (player && player->IsGameMaster())
+                    return true;
+
+                if (bossId == DATA_ALAKIR)
+                    return GetBossState(DATA_CONCLAVE_OF_WIND) == DONE;
+
+                return true;
+            }
+
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
-                std::string str_data;
-
                 std::ostringstream saveStream;
-                saveStream << "T o t F W " << GetBossSaveData();
-
-                str_data = saveStream.str();
+                saveStream << "T W " << GetBossSaveData();
 
                 OUT_SAVE_INST_DATA_COMPLETE;
-                return str_data;
+                return saveStream.str();
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -122,54 +163,41 @@ class instance_throne_of_the_four_winds : public InstanceMapScript
 
                 OUT_LOAD_INST_DATA(in);
 
-                char dataHead1, dataHead2, dataHead3, dataHead4, dataHead5;
+                char dataHead1, dataHead2;
 
                 std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2 >> dataHead3 >> dataHead4 >> dataHead5;
+                loadStream >> dataHead1 >> dataHead2;
 
-                if (dataHead1 == 'T' && dataHead2 == 'o' && dataHead2 == 't' && dataHead2 == 'F' && dataHead2 == 'W')
+                if (dataHead1 == 'T' && dataHead2 == 'W')
                 {
                     for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-				    {
-					    uint32 tmpState;
-					    loadStream >> tmpState;
-					    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-						    tmpState = NOT_STARTED;
-					    SetBossState(i, EncounterState(tmpState));
-				    }} else OUT_LOAD_INST_DATA_FAIL;
+                    {
+                        uint32 tmpState;
+                        loadStream >> tmpState;
+                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
+                            tmpState = NOT_STARTED;
+                        SetBossState(i, EncounterState(tmpState));
+                    }
+                }
+                else OUT_LOAD_INST_DATA_FAIL;
 
                 OUT_LOAD_INST_DATA_COMPLETE;
             }
 
-            void Update(uint32 diff)
-            {
-                if (playerTimer <=diff)
-                {
-                    Map::PlayerList const &plrList = instance->GetPlayers();
-
-                    if (!plrList.isEmpty())
-                        for (Map::PlayerList::const_iterator i = plrList.begin(); i != plrList.end(); ++i)
-                            if (Player* pPlayer = i->getSource())
-                                if (pPlayer->GetPositionZ() < 160.0f && !pPlayer->IsBeingTeleported())
-                                    pPlayer->NearTeleportTo(startPos.GetPositionX(), startPos.GetPositionY(), startPos.GetPositionZ(), startPos.GetOrientation());
-
-                    playerTimer = 2000;
-                }
-                else
-                    playerTimer -= diff;
-            }
-
             private:
-                uint32 uiTeamInInstance;
-
-                uint64 uiAnshalGUID;
-                uint64 uiNezirGUID;
-                uint64 uiRohashGUID;
-                uint64 uiAlakirGUID;
-
-                uint32 playerTimer;
-               
+                uint64 uiConclaveofWind;
+                uint64 uiAnshal;
+                uint64 uiNezir;
+                uint64 uiRohash;
+                uint64 uiAlakir;
+                uint64 uiHeartOfWind[MAX_DIFFICULTY];
+                bool bSlipstreamsSpawned;
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_throne_of_the_four_winds_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_throne_of_the_four_winds()

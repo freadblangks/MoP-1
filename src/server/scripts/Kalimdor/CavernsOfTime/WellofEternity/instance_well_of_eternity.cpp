@@ -4,21 +4,15 @@
 
 #define MAX_ENCOUNTER 3
 
-static const DoorData doordata[] = 
+static std::vector<DoorData> const doordata =
 {
     {GO_INVISIBLE_FIREWALL_DOOR, DATA_PEROTHARN, DOOR_TYPE_PASSAGE, BOUNDARY_NONE},
-    {0,                          0,              DOOR_TYPE_ROOM,    BOUNDARY_NONE},
 };
 
 class instance_well_of_eternity : public InstanceMapScript
 {
     public:
         instance_well_of_eternity() : InstanceMapScript("instance_well_of_eternity", 939) { }
-
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
-        {
-            return new instance_well_of_eternity_InstanceMapScript(map);
-        }
 
         struct instance_well_of_eternity_InstanceMapScript : public InstanceScript
         {
@@ -29,98 +23,118 @@ class instance_well_of_eternity : public InstanceMapScript
 
                 uiEventNozdormu = 0;
                 uiEventDemon = 0;
+                uiEventDemon2 = 0;
                 uiEventIllidan1 = 0;
 
+                uiIllidan1GUID = 0;
                 uiPerotharnGUID = 0;
                 uiIllidan2GUID = 0;
                 uiVarothenGUID = 0;
                 uiMannorothGUID = 0;
-                
+                uiFireWallStalker = 0;
+
                 uiRoyalCacheGUID = 0;
                 uiMinorCacheGUID = 0;
                 uiCourtyardDoor1GUID = 0;
-                uiLargeFirewallDoorGUID = 0;
+                uiLargeFirewallDoor1GUID = 0;
+                uiSecondDemonDoors.clear();
                 uiPerotharnDoors.clear();
                 uiAfterPerotharnDoors.clear();
+
+                uiBlockedPathLeft = false;
+                uiBlockedPathRight = false;
+                uiBlockedPathForward = false;
             }
 
-            void OnCreatureCreate(Creature* pCreature)
+            void OnPlayerEnter(Player* player) override
             {
-                switch (pCreature->GetEntry())
+                if (uiEventIllidan1 == IN_PROGRESS)
+                    player->CastSpell(player, 102994);
+            }
+
+            void OnCreatureCreate(Creature* creature) override
+            {
+                switch (creature->GetEntry())
                 {
+                    case NPC_ILLIDAN_1:
+                        uiIllidan1GUID = creature->GetGUID();
+                        break;
                     case NPC_PEROTHARN:
-                        uiPerotharnGUID = pCreature->GetGUID();
+                        uiPerotharnGUID = creature->GetGUID();
+                        if (GetData(DATA_EVENT_DEMON) == DONE)
+                            creature->NearTeleportTo(perotharnPosCenter.GetPositionX(), perotharnPosCenter.GetPositionY(), perotharnPosCenter.GetPositionZ(), perotharnPosCenter.GetOrientation());
+                        else
+                            creature->NearTeleportTo(perotharnPosIntro.GetPositionX(), perotharnPosIntro.GetPositionY(), perotharnPosIntro.GetPositionZ(), perotharnPosIntro.GetOrientation());
+                        creature->SetHomePosition(perotharnPosCenter);
                         break;
                     case NPC_ILLIDAN_2:
-                        uiIllidan2GUID = pCreature->GetGUID();
+                        uiIllidan2GUID = creature->GetGUID();
                         break;
                     case NPC_VAROTHEN:
-                        uiVarothenGUID = pCreature->GetGUID();
+                        uiVarothenGUID = creature->GetGUID();
                         break;
                     case NPC_MANNOROTH:
-                        uiMannorothGUID = pCreature->GetGUID();
+                        uiMannorothGUID = creature->GetGUID();
+                        break;
+                    case NPC_FIRE_WALL_STALKER:
+                        uiFireWallStalker = creature->GetGUID();
                         break;
                     default:
                         break;
                 }                
-		    }
+            }
 
-            void OnGameObjectCreate(GameObject* pGo)
+            void OnGameObjectCreate(GameObject* go) override
             {
-                switch (pGo->GetEntry())
+                switch (go->GetEntry())
                 {
                     case GO_ROYAL_CACHE:
-                        uiRoyalCacheGUID = pGo->GetGUID();
+                        uiRoyalCacheGUID = go->GetGUID();
                         break;
                     case GO_MINOR_CACHE:
-                        uiMinorCacheGUID = pGo->GetGUID();
+                        uiMinorCacheGUID = go->GetGUID();
                         break;
                     case GO_INVISIBLE_FIREWALL_DOOR:
-                        AddDoor(pGo, true);
+                        AddDoor(go, true);
                         break;
                     case GO_COURTYARD_DOOR_1:
-                        uiCourtyardDoor1GUID = pGo->GetGUID();
+                        uiCourtyardDoor1GUID = go->GetGUID();
                         if (uiEventDemon == DONE)
-                            HandleGameObject(uiCourtyardDoor1GUID, true, pGo);
+                            HandleGameObject(uiCourtyardDoor1GUID, true, go);
                         break;
                     case GO_LARGE_FIREWALL_DOOR:
-                        if (pGo->GetPositionX() <= 3200.0f)
+                        if (go->GetPositionX() >= 3425.0f)
                         {
-                            uiLargeFirewallDoorGUID = pGo->GetGUID();
-                            if (uiEventDemon == DONE)
-                                HandleGameObject(uiLargeFirewallDoorGUID, true, pGo);
+                            uiSecondDemonDoors.push_back(go->GetGUID());
+                            HandleGameObject(go->GetGUID(), uiEventDemon2 == DONE, go);
+                        }
+                        else if (go->GetPositionX() <= 3200.0f)
+                        {
+                            uiLargeFirewallDoor1GUID = go->GetGUID();
+                            HandleGameObject(uiLargeFirewallDoor1GUID, uiEventDemon == DONE || uiEventDemon == NOT_STARTED, go);
                         }
                         else
                         {
-                            uiPerotharnDoors.push_back(pGo->GetGUID());
-                            if (GetBossState(DATA_PEROTHARN) == IN_PROGRESS)
-                                HandleGameObject(pGo->GetGUID(), false, pGo);
-                            else
-                                HandleGameObject(pGo->GetGUID(), true, pGo);
+                            uiPerotharnDoors.push_back(go->GetGUID());
+                            HandleGameObject(go->GetGUID(), GetBossState(DATA_PEROTHARN) != IN_PROGRESS, go);
                         }
                         break;
                     case GO_SMALL_FIREWALL_DOOR:
-                        if (pGo->GetPositionX() <= 3340.0f)
+                        if (go->GetPositionX() <= 3340.0f)
                         {
-                            uiPerotharnDoors.push_back(pGo->GetGUID());
-                            if (GetBossState(DATA_PEROTHARN) == IN_PROGRESS)
-                                HandleGameObject(pGo->GetGUID(), false, pGo);
-                            else
-                                HandleGameObject(pGo->GetGUID(), true, pGo);
+                            uiPerotharnDoors.push_back(go->GetGUID());
+                            HandleGameObject(go->GetGUID(), GetBossState(DATA_PEROTHARN) != IN_PROGRESS, go);
                         }
                         else
                         {
-                            uiAfterPerotharnDoors.push_back(pGo->GetGUID());
-                            if (GetBossState(DATA_PEROTHARN) == DONE)
-                                HandleGameObject(pGo->GetGUID(), true, pGo);
-                            else
-                                HandleGameObject(pGo->GetGUID(), false, pGo);
+                            uiAfterPerotharnDoors.push_back(go->GetGUID());
+                            HandleGameObject(go->GetGUID(), GetData(DATA_EVENT_ILLIDAN_1) != DONE || GetBossState(DATA_PEROTHARN) == DONE, go);
                         }
                         break;
                 }
-		    }
+            }
 
-            void SetData(uint32 type, uint32 data)
+            void SetData(uint32 type, uint32 data) override
             {
                 switch (type)
                 {
@@ -134,85 +148,117 @@ class instance_well_of_eternity : public InstanceMapScript
                         if (data == DONE)
                         {
                             HandleGameObject(uiCourtyardDoor1GUID, true);
-                            HandleGameObject(uiLargeFirewallDoorGUID, true);
+                            HandleGameObject(uiLargeFirewallDoor1GUID, true);
+                            SaveToDB();
+                        }
+                        else if (data == IN_PROGRESS)
+                            HandleGameObject(uiLargeFirewallDoor1GUID, false);
+                        else if (data == SPECIAL)
+                            if (Creature* stalker = instance->GetCreature(uiFireWallStalker))
+                                stalker->AI()->DoAction(1);
+                        break;
+                    case DATA_EVENT_DEMON_2:
+                        uiEventDemon2 = data;
+                        if (data == DONE)
+                        {
+                            if (!uiSecondDemonDoors.empty())
+                                for (std::vector<uint64>::const_iterator itr = uiSecondDemonDoors.begin(); itr != uiSecondDemonDoors.end(); ++itr)
+                                    HandleGameObject((*itr), true);
                             SaveToDB();
                         }
                         break;
                     case DATA_EVENT_ILLIDAN_1:
                         uiEventIllidan1 = data;
                         if (data == DONE)
+                        {
+                            if (!uiAfterPerotharnDoors.empty())
+                                for (std::vector<uint64>::const_iterator itr = uiAfterPerotharnDoors.begin(); itr != uiAfterPerotharnDoors.end(); ++itr)
+                                    HandleGameObject((*itr), false);
                             SaveToDB();
+                        }
+                        break;
+                    case DATA_LEGION_DEMON_BLOCKED_PATH_LEFT:
+                        uiBlockedPathLeft = data;
+                        break;
+                    case DATA_LEGION_DEMON_BLOCKED_PATH_RIGHT:
+                        uiBlockedPathRight = data;
+                        break;
+                    case DATA_LEGION_DEMON_BLOCKED_PATH_FORWARD:
+                        uiBlockedPathForward = data;
                         break;
                     default:
                         break;
                 }
-		    }
-
-            uint32 GetData(uint32 type)
-            {
-                switch (type)
-                {
-                    case DATA_EVENT_NOZDORMU: return uiEventNozdormu;
-                    case DATA_EVENT_DEMON: return uiEventDemon;
-                    case DATA_EVENT_ILLIDAN_1: return uiEventIllidan1;
-                    default: return 0;
-                }
-			    return 0;
             }
 
-            uint64 GetData64(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 switch (type)
                 {
-                    case DATA_PEROTHARN: return uiPerotharnGUID;
-                    case DATA_ROYAL_CACHE: return uiRoyalCacheGUID;
-                    case DATA_MINOR_CACHE: return uiMinorCacheGUID;
-                    case DATA_EVENT_ILLIDAN_2: return uiIllidan2GUID;
-                    case DATA_VAROTHEN: return uiVarothenGUID;
-                    case DATA_MANNOROTH: return uiMannorothGUID;
-                    default: return 0;
+                    case DATA_EVENT_NOZDORMU:
+                        return uiEventNozdormu;
+                    case DATA_EVENT_DEMON:
+                        return uiEventDemon;
+                    case DATA_EVENT_DEMON_2:
+                        return uiEventDemon2;
+                    case DATA_EVENT_ILLIDAN_1:
+                        return uiEventIllidan1;
+                    case DATA_LEGION_DEMON_BLOCKED_PATH_LEFT:
+                        return uiBlockedPathLeft;
+                    case DATA_LEGION_DEMON_BLOCKED_PATH_RIGHT:
+                        return uiBlockedPathRight;
+                    case DATA_LEGION_DEMON_BLOCKED_PATH_FORWARD:
+                        return uiBlockedPathForward;
+                    default:
+                        return 0;
+                }
+                return 0;
+            }
+
+            uint64 GetData64(uint32 type) const override
+            {
+                switch (type)
+                {
+                    case DATA_EVENT_ILLIDAN_1:
+                        return uiIllidan1GUID;
+                    case DATA_PEROTHARN:
+                        return uiPerotharnGUID;
+                    case DATA_ROYAL_CACHE:
+                        return uiRoyalCacheGUID;
+                    case DATA_MINOR_CACHE:
+                        return uiMinorCacheGUID;
+                    case DATA_EVENT_ILLIDAN_2:
+                        return uiIllidan2GUID;
+                    case DATA_VAROTHEN:
+                        return uiVarothenGUID;
+                    case DATA_MANNOROTH:
+                        return uiMannorothGUID;
+                    default:
+                        return 0;
                 }
 
                 return 0;
             }
 
-            bool SetBossState(uint32 type, EncounterState state)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
-			    if (!InstanceScript::SetBossState(type, state))
-				    return false;
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
 
                 if (type == DATA_PEROTHARN)
                 {
-                    if (state == IN_PROGRESS)
-                    {
-                        if (!uiPerotharnDoors.empty())
-                            for (std::vector<uint64>::const_iterator itr = uiPerotharnDoors.begin(); itr != uiPerotharnDoors.end(); ++itr)
-                                HandleGameObject((*itr), false);
-                    }
-                    else
-                    {
-                        if (!uiPerotharnDoors.empty())
-                            for (std::vector<uint64>::const_iterator itr = uiPerotharnDoors.begin(); itr != uiPerotharnDoors.end(); ++itr)
-                                HandleGameObject((*itr), true);
-                    }
-                    if (state == DONE)
-                    {
-                        if (!uiAfterPerotharnDoors.empty())
-                            for (std::vector<uint64>::const_iterator itr = uiAfterPerotharnDoors.begin(); itr != uiAfterPerotharnDoors.end(); ++itr)
-                                HandleGameObject((*itr), true);
-                    }
-                    else
-                    {
-                        if (!uiAfterPerotharnDoors.empty())
-                            for (std::vector<uint64>::const_iterator itr = uiAfterPerotharnDoors.begin(); itr != uiAfterPerotharnDoors.end(); ++itr)
-                                HandleGameObject((*itr), false);
-                    }
+                    if (!uiPerotharnDoors.empty())
+                        for (std::vector<uint64>::const_iterator itr = uiPerotharnDoors.begin(); itr != uiPerotharnDoors.end(); ++itr)
+                            HandleGameObject((*itr), state != IN_PROGRESS);
+                    if (!uiAfterPerotharnDoors.empty())
+                        for (std::vector<uint64>::const_iterator itr = uiAfterPerotharnDoors.begin(); itr != uiAfterPerotharnDoors.end(); ++itr)
+                            HandleGameObject((*itr), state == DONE);
                 }
 
-			    return true;
+                return true;
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
@@ -220,7 +266,7 @@ class instance_well_of_eternity : public InstanceMapScript
 
                 std::ostringstream saveStream;
                 saveStream << "W o E " << GetBossSaveData() 
-                    << uiEventNozdormu << " " << uiEventDemon << " " << uiEventIllidan1 << " ";
+                    << uiEventNozdormu << " " << uiEventDemon << " " << uiEventIllidan1 << " " << uiEventDemon2 << " ";
 
                 str_data = saveStream.str();
 
@@ -228,7 +274,7 @@ class instance_well_of_eternity : public InstanceMapScript
                 return str_data;
             }
 
-            void Load(const char* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -246,13 +292,13 @@ class instance_well_of_eternity : public InstanceMapScript
                 if (dataHead1 == 'W' && dataHead2 == 'o' && dataHead3 == 'E')
                 {
                     for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-				    {
-					    uint32 tmpState;
-					    loadStream >> tmpState;
-					    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-						    tmpState = NOT_STARTED;
-					    SetBossState(i, EncounterState(tmpState));
-				    }
+                    {
+                        uint32 tmpState;
+                        loadStream >> tmpState;
+                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
+                            tmpState = NOT_STARTED;
+                        SetBossState(i, EncounterState(tmpState));
+                    }
 
                     uint32 tmpEvent1;
                     loadStream >> tmpEvent1;
@@ -265,8 +311,10 @@ class instance_well_of_eternity : public InstanceMapScript
                     uint32 tmpEvent3;
                     loadStream >> tmpEvent3;
                     uiEventIllidan1 = ((tmpEvent3 != DONE) ? NOT_STARTED : DONE);
-
-
+                    
+                    uint32 tmpEvent4;
+                    loadStream >> tmpEvent4;
+                    uiEventDemon2 = ((tmpEvent4 != DONE) ? NOT_STARTED : DONE);
                 } else OUT_LOAD_INST_DATA_FAIL;
 
                 OUT_LOAD_INST_DATA_COMPLETE;
@@ -275,21 +323,33 @@ class instance_well_of_eternity : public InstanceMapScript
             private:
                 uint32 uiEventNozdormu;
                 uint32 uiEventDemon;
+                uint32 uiEventDemon2;
                 uint32 uiEventIllidan1;
 
+                uint64 uiIllidan1GUID;
                 uint64 uiPerotharnGUID;
                 uint64 uiIllidan2GUID;
                 uint64 uiVarothenGUID;
                 uint64 uiMannorothGUID;
+                uint64 uiFireWallStalker;
                 
                 uint64 uiRoyalCacheGUID;
                 uint64 uiMinorCacheGUID;
                 uint64 uiCourtyardDoor1GUID;
-                uint64 uiLargeFirewallDoorGUID;
+                uint64 uiLargeFirewallDoor1GUID;
+                std::vector<uint64> uiSecondDemonDoors;
                 std::vector<uint64> uiAfterPerotharnDoors;
                 std::vector<uint64> uiPerotharnDoors;
                
+                bool uiBlockedPathLeft;
+                bool uiBlockedPathRight;
+                bool uiBlockedPathForward;
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_well_of_eternity_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_well_of_eternity()

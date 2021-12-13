@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -21,36 +22,37 @@
 
 class Unit;
 class AuraEffect;
+class IAreaTrigger;
 class Aura;
 
 #include "SpellAuras.h"
-#include <mutex>
+#include "SpellMgr.h"
 
 typedef void(AuraEffect::*pAuraEffectHandler)(AuraApplication const* aurApp, uint8 mode, bool apply) const;
 
-class AuraEffect : public std::enable_shared_from_this<AuraEffect>
+class AuraEffect
 {
     friend void Aura::_InitEffects(uint32 effMask, Unit* caster, int32 *baseAmount);
-    friend AuraPtr Unit::_TryStackingOrRefreshingExistingAura(SpellInfo const* newAura, uint32 effMask, Unit* caster, int32* baseAmount, Item* castItem, uint64 casterGUID);
+    friend Aura* Unit::_TryStackingOrRefreshingExistingAura(SpellInfo const* newAura, uint32 effMask, Unit* caster, int32* baseAmount, Item* castItem, uint64 casterGUID);
     friend Aura::~Aura();
+    friend Aura::Aura(SpellInfo const*, WorldObject*, Unit*, Item*, uint64, uint32, int32*);
+    friend void Aura::RemoveEffect(uint8 effIndex);
+
     private:
-        explicit AuraEffect(AuraPtr base, uint8 effIndex, int32 *baseAmount, Unit* caster);
-    public:
         ~AuraEffect();
-        Unit* GetCaster() const { return GetBase() ? GetBase()->GetCaster() : NULL; }
+        explicit AuraEffect(Aura* base, uint8 effIndex, int32 *baseAmount, Unit* caster);
+        void InitAmount(Unit* caster);
+
+    public:
+        Unit* GetCaster() const { return GetBase()->GetCaster(); }
         uint64 GetCasterGUID() const { return GetBase()->GetCasterGUID(); }
-
-        AuraPtr GetBase() const
-        {
-            std::lock_guard<std::mutex> lk(m_base_mutex);
-            return m_base;
-        }
-
+        Aura* GetBase() const { return m_base; }
         void GetTargetList(std::list<Unit*> & targetList) const;
         void GetApplicationList(std::list<AuraApplication*> & applicationList) const;
         SpellModifier* GetSpellModifier() const { return m_spellmod; }
 
         SpellInfo const* GetSpellInfo() const { return m_spellInfo; }
+        SpellEffectInfo const& GetSpellEffectInfo() const { return m_spellInfo->Effects[m_effIndex]; }
         uint32 GetId() const { return m_spellInfo->Id; }
         uint32 GetEffIndex() const { return m_effIndex; }
         int32 GetBaseAmount() const { return m_baseAmount; }
@@ -61,24 +63,24 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         int32 GetMiscValue() const { return m_spellInfo->Effects[m_effIndex].MiscValue; }
         AuraType GetAuraType() const { return (AuraType)m_spellInfo->Effects[m_effIndex].ApplyAuraName; }
         int32 GetAmount() const { return m_amount; }
-        void SetAmount(int32 amount)
-        {
-            if (m_amount != amount)
-            {
-                m_amount = amount;
-                GetBase()->SetNeedClientUpdateForTargets();
-            }
-            m_canBeRecalculated = false;
-        }
+        float GetFloatAmount() const { return m_floatAmount; }
+        void SetAmount(int32 amount);
+        void SetFloatAmount(float amount);
+
+        template <class T>
+        T GetUserData() const { return m_userData.Get<T>(); }
+        template <class T>
+        void SetUserData(T data) { m_userData.Set(data); }
 
         int32 GetPeriodicTimer() const { return m_periodicTimer; }
         void SetPeriodicTimer(int32 periodicTimer) { m_periodicTimer = periodicTimer; }
 
-        int32 CalculateAmount(Unit* caster);
+        float CalculateAmount(Unit* caster, bool recalculate = false);
         void CalculatePeriodic(Unit* caster, bool resetPeriodicTimer = true, bool load = false);
         void CalculateSpellMod();
-        void ChangeAmount(int32 newAmount, bool mark = true, bool onStackOrReapply = false);
-        void RecalculateAmount(bool reapplyingEffects = false) { if (!CanBeRecalculated()) return; ChangeAmount(CalculateAmount(GetCaster()), false, reapplyingEffects); }
+        void RecalculateSpellMod();
+        void ChangeAmount(float newAmount, bool mark = true, bool onStackOrReapply = false);
+        void RecalculateAmount() { if (!CanBeRecalculated()) return; ChangeAmount(CalculateAmount(GetCaster()), false); }
         void RecalculateAmount(Unit* caster) { if (!CanBeRecalculated()) return; ChangeAmount(CalculateAmount(caster), false); }
         bool CanBeRecalculated() const { return m_canBeRecalculated; }
         void SetCanBeRecalculated(bool val) { m_canBeRecalculated = val; }
@@ -90,6 +92,7 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void UpdatePeriodic(Unit* caster);
 
         uint32 GetTickNumber() const { return m_tickNumber; }
+        void SetTickNumber(uint32 tick) { m_tickNumber = tick; }
         int32 GetTotalTicks() const { return m_amplitude ? (GetBase()->GetMaxDuration() / m_amplitude) : 1;}
         void ResetPeriodic(bool resetPeriodicTimer = false) { if (resetPeriodicTimer) m_periodicTimer = m_amplitude; m_tickNumber = 0;}
 
@@ -108,47 +111,45 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         // add/remove SPELL_AURA_MOD_SHAPESHIFT (36) linked auras
         void HandleShapeshiftBoosts(Unit* target, bool apply) const;
 
-        struct FixedPeriodic
-        {
-            float fx_crit_chance;
-            int32 fx_fixed_damage;
-            int32 fx_fixed_total_damage;
-            bool bCrit;
-            bool bDamage;
+        static std::set<AuraType> const& WeaponDependingEffects();
 
-            void Clear()
-            {
-                fx_crit_chance = 0.0f;
-                fx_fixed_damage = 0;
-                fx_fixed_total_damage = 0;
-                bCrit = false;
-                bDamage = false;
-            }
+        float GetPeriodicCrit() const { return m_periodicCrit; }
+        void SetPeriodicCrit(float val) { m_periodicCrit = val; }
 
-            void SetCriticalChance(float value) { bCrit = true; fx_crit_chance = value; }
-            float GetCriticalChance() const { return fx_crit_chance; }
-            bool HasCritChance() const { return bCrit; }
+		struct FixedPeriodic
+		{
+			void SetCriticalChance(float value) { bCrit = true; fx_crit_chance = value; }
+			float GetCriticalChance() const { return fx_crit_chance; }
+			bool HasCritChance() const { return bCrit; }
 
-            void SetFixedDamage(int32 value) { bDamage = true; fx_fixed_damage = value; }
-            void SetFixedTotalDamage(int32 value) { fx_fixed_total_damage = value; }
-            int32 GetFixedDamage() const { return fx_fixed_damage; }
-            int32 GetFixedTotalDamage() const { return fx_fixed_total_damage; }
-            bool HasDamage() const { return bDamage; }
-        };
+			void SetFixedDamage(int32 value) { bDamage = true; fx_fixed_damage = value; }
+			void SetFixedTotalDamage(int32 value) { fx_fixed_total_damage = value; }
+			int32 GetFixedDamage() const { return fx_fixed_damage; }
+			int32 GetFixedTotalDamage() const { return fx_fixed_total_damage; }
+			bool HasDamage() const { return bDamage; }
 
-        bool HasFixedDamageInfo() { return hasFixedPeriodic; }
-        FixedPeriodic& GetFixedDamageInfo() { return m_fixed_periodic; }
+		private:
+			float fx_crit_chance = 0.0f;
+			int32 fx_fixed_damage = 0;
+			int32 fx_fixed_total_damage = 0;
+			bool bCrit = false;
+			bool bDamage = false;
+		};
 
-        FixedPeriodic m_fixed_periodic;
-        bool hasFixedPeriodic;
+		bool HasFixedDamageInfo() { return hasFixedPeriodic; }
+		FixedPeriodic& GetFixedDamageInfo() { return m_fixed_periodic; }
+
+		FixedPeriodic m_fixed_periodic;
+		bool hasFixedPeriodic;
 
     private:
-        AuraPtr m_base;
+        Aura* const m_base;
 
         SpellInfo const* const m_spellInfo;
         int32 const m_baseAmount;
 
-        int32 m_amount;
+        int32 m_amount = 0;
+        float m_floatAmount = 0.0f;
 
         SpellModifier* m_spellmod;
 
@@ -156,11 +157,13 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         int32 m_amplitude;
         uint32 m_tickNumber;
 
+        AnyValue m_userData;
+
         uint8 const m_effIndex;
         bool m_canBeRecalculated;
         bool m_isPeriodic;
-
-        mutable std::mutex m_base_mutex;
+        bool m_isFixedPeriodic = false;
+        float m_periodicCrit = 0.0f;
 
     private:
         bool IsPeriodicTickCrit(Unit* target, Unit const* caster) const;
@@ -182,7 +185,6 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         //  visibility & phases
         void HandleModInvisibilityDetect(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModInvisibility(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleModCamouflage(AuraApplication const * aurApp, uint8 mode, bool apply) const;
         void HandleModStealth(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModStealthLevel(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModStealthDetect(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -194,7 +196,6 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleAuraTransform(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModScale(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraCloneCaster(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAuraInitializeImages(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //  fight
         void HandleFeignDeath(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModUnattackable(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -203,6 +204,7 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleAuraModPacify(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModPacifyAndSilence(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraAllowOnlyAbility(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAuraModResiliencePercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //  tracking
         void HandleAuraTrackResources(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraTrackCreatures(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -212,7 +214,6 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         //  skills & talents
         void HandleAuraModPetTalentsPoints(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModSkill(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAuraModSkillValue(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //  movement
         void HandleAuraMounted(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraAllowFlight(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -221,7 +222,7 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleAuraHover(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleWaterBreathing(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleForceMoveForward(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAllowTurnWhileFalling(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleTurnWhileFalling(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //  threat
         void HandleModThreat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModTotalThreat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -232,9 +233,10 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleAuraModStun(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModRoot(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandlePreventFleeing(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleStrangulate(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //  charm
         void HandleModPossess(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleModPossessPet(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleModFixateTarget(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModCharm(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleCharmConvert(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraControlVehicle(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -268,21 +270,23 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleModSpellHealingPercentFromStat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModSpellDamagePercentFromAttackPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModSpellHealingPercentFromAttackPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAuraModSpellPowerPercent(AuraApplication const * aurApp, uint8 mode, bool apply) const;
         void HandleModHealingDone(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleOverrideSpellPowerByAttackPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleOverrideAttackPowerBySpellPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModTotalPercentStat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModResistenceOfStatPercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModExpertise(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleOverrideSpellPowerByAttackPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleIncreaseHasteFromItemsByPct(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleModManaRegenByHaste(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAuraModSpellPowerPercent(AuraApplication const * aurApp, uint8 mode, bool apply) const;
+        void HandleAuraModHasteRatingPct(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAuraModPetStat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //   heal and energize
         void HandleModPowerRegen(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModPowerRegenPCT(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModManaRegen(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModIncreaseHealth(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAuraModIncreaseHealth2(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModIncreaseMaxHealth(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAuraModIncreaseEnergy(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAuraModIncreaseMaxPowerFlat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModIncreaseEnergyPercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModIncreaseHealthPercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraIncreaseBaseHealthPercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -297,7 +301,6 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleModSpellCritChance(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModSpellCritChanceShool(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModCritPct(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAuraModResiliencePct(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //   attack speed
         void HandleModCastingSpeed(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModMeleeRangedSpeedPct(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -305,6 +308,7 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleModAttackSpeed(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModMeleeSpeedPct(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModRangedHaste(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleSpellSlow(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //   combat rating
         void HandleModRating(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModRatingFromStat(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -314,12 +318,12 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleAuraModAttackPowerPercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModRangedAttackPowerPercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModAttackPowerOfArmor(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleOverrideAttackPowerBySpellPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //   damage bonus
         void HandleModDamageDone(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModDamagePercentDone(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModOffhandDamagePercent(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleShieldBlockValue(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleModAutoAttackDamage(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         //  power cost
         void HandleModPowerCostPCT(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleModPowerCost(AuraApplication const* aurApp, uint8 mode, bool apply) const;
@@ -337,14 +341,16 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleAuraConvertRune(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraLinked(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraOpenStable(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleAuraStrangulate(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraModFakeInebriation(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraOverrideSpells(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraSetVehicle(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandlePreventResurrection(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleMastery(AuraApplication const* aurApp, uint8 mode, bool apply) const;
         void HandleAuraForceWeather(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleModCategoryCooldown(AuraApplication const* aurApp, uint8 mode, bool apply) const;
-        void HandleProgressBar(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleEnableAltPower(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAuraOverrideAutoattackWithSpell(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandlePlayScene(AuraApplication const* aurApp, uint8 mode, bool apply) const;
+        void HandleAreaTrigger(AuraApplication const* aurApp, uint8 mode, bool apply) const;
 
         // aura effect periodic tick handlers
         void HandlePeriodicDummyAuraTick(Unit* target, Unit* caster) const;
@@ -365,17 +371,16 @@ class AuraEffect : public std::enable_shared_from_this<AuraEffect>
         void HandleProcTriggerDamageAuraProc(AuraApplication* aurApp, ProcEventInfo& eventInfo);
         void HandleRaidProcFromChargeAuraProc(AuraApplication* aurApp, ProcEventInfo& eventInfo);
         void HandleRaidProcFromChargeWithValueAuraProc(AuraApplication* aurApp, ProcEventInfo& eventInfo);
-        void HandleChangeSpellVisualEffect(AuraApplication const* aurApp, uint8 mode, bool apply) const;
 };
 
-namespace JadeCore
+namespace Trinity
 {
     // Binary predicate for sorting the priority of absorption aura effects
     class AbsorbAuraOrderPred
     {
         public:
             AbsorbAuraOrderPred() { }
-            bool operator() (AuraEffectPtr aurEffA, AuraEffectPtr aurEffB) const
+            bool operator() (AuraEffect* aurEffA, AuraEffect* aurEffB) const
             {
                 SpellInfo const* spellProtoA = aurEffA->GetSpellInfo();
                 SpellInfo const* spellProtoB = aurEffB->GetSpellInfo();
@@ -383,12 +388,50 @@ namespace JadeCore
                 // Wards
                 if ((spellProtoA->SpellFamilyName == SPELLFAMILY_MAGE) ||
                     (spellProtoA->SpellFamilyName == SPELLFAMILY_WARLOCK))
-                    if (spellProtoA->Category == 56)
+                    if (spellProtoA->GetCategory() == 56)
                         return true;
                 if ((spellProtoB->SpellFamilyName == SPELLFAMILY_MAGE) ||
                     (spellProtoB->SpellFamilyName == SPELLFAMILY_WARLOCK))
-                    if (spellProtoB->Category == 56)
+                    if (spellProtoB->GetCategory() == 56)
                         return false;
+
+                // Endurance of Niuzao (Legendary cloak)
+                if (spellProtoA->Id == 146193)
+                    return true;
+                if (spellProtoB->Id == 146193)
+                    return false;
+
+                for (auto&& itr : { spellProtoA, spellProtoB })
+                {
+                    switch (itr->Id)
+                    {
+                        case 20711:  // Spirit of Redemption
+                        case 31230:  // Cheat Death
+                        case 31850:  // Ardent Defender
+                        case 47788:  // Guardian Spirit
+                        case 86949:  // Cauterize
+                        case 114556: // Purgatory
+                            return itr == spellProtoB;
+                    }
+                }
+
+                // Maddening Shout
+                if (spellProtoA->Id == 117708)
+                    return true;
+                if (spellProtoB->Id == 117708)
+                    return false;
+
+                // Stagger
+                if (spellProtoA->Id == 115069)
+                    return true;
+                if (spellProtoB->Id == 115069)
+                    return false;
+
+                // Incanter's Ward
+                if (spellProtoA->Id == 1463)
+                    return true;
+                if (spellProtoB->Id == 1463)
+                    return false;
 
                 // Sacred Shield
                 if (spellProtoA->Id == 58597)
@@ -409,9 +452,9 @@ namespace JadeCore
                     return false;
 
                 // Ice Barrier
-                if (spellProtoA->Category == 471)
+                if (spellProtoA->GetCategory() == 471)
                     return true;
-                if (spellProtoB->Category == 471)
+                if (spellProtoB->GetCategory() == 471)
                     return false;
 
                 // Sacrifice
@@ -425,19 +468,84 @@ namespace JadeCore
                 return false;
             }
     };
-
-    class DurationOrderPred
-    {
-        public:
-            DurationOrderPred(bool ascending = true) : m_ascending(ascending) {}
-            bool operator() (constAuraPtr a, constAuraPtr b) const
-            {
-                uint32 rA = a->GetDuration();
-                uint32 rB = b->GetDuration();
-                return m_ascending ? rA < rB : rA > rB;
-            }
-        private:
-            const bool m_ascending;
-    };
 }
+
+struct MiscMask
+{
+    MiscMask(int32 mask) : _mask(mask) { }
+    bool operator()(AuraEffect const* eff) const { return eff->GetMiscValue() & _mask; }
+private:
+    int32 _mask;
+};
+
+struct MiscMaskB 
+{
+    MiscMaskB(int32 mask) : _mask(mask) { }
+    bool operator()(AuraEffect const* eff) const { return eff->GetMiscValueB() & _mask; }
+private:
+    int32 _mask;
+};
+
+struct PetStatMod
+{
+    PetStatMod(Unit* pet, uint32 stat) : m_stat(stat), m_entry(pet->GetEntry()) { }
+
+    bool operator()(AuraEffect const* eff) const
+    {
+        if (eff->GetMiscValueB() && eff->GetMiscValueB() != m_entry)
+            return false;
+        return m_stat == eff->GetMiscValue();
+    }
+
+private:
+    uint32 m_stat, m_entry;
+};
+
+template <class Cond>
+float Unit::GetTotalAuraMultiplier(AuraType auraType, Cond cond) const
+{
+    std::map<SpellGroup, int32> sameEffectSpellGroup;
+    float multiplier = 1.0f;
+
+    for (auto&& aurEff : GetAuraEffectsByType(auraType))
+    {
+        if (cond(aurEff))
+        {
+            // Check if the Aura Effect has a the Same Effect Stack Rule and if so, use the highest amount of that SpellGroup
+            // If the Aura Effect does not have this Stack Rule, it returns false so we can add to the multiplier as usual
+            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), aurEff->GetAmount(), sameEffectSpellGroup))
+                AddPct(multiplier, aurEff->GetAmount());
+        }
+    }
+    // Add the highest of the Same Effect Stack Rule SpellGroups to the multiplier
+    for (auto&& it : sameEffectSpellGroup)
+        AddPct(multiplier, it.second);
+
+    return multiplier;
+}
+
+template <class Cond>
+int32 Unit::GetTotalAuraModifier(AuraType auraType, Cond cond) const
+{
+    std::map<SpellGroup, int32> sameEffectSpellGroup;
+    float modifier = 0.0f;
+
+    for (auto&& aurEff : GetAuraEffectsByType(auraType))
+    {
+        if (cond(aurEff))
+        {
+            // Check if the Aura Effect has a the Same Effect Stack Rule and if so, use the highest amount of that SpellGroup
+            // If the Aura Effect does not have this Stack Rule, it returns false so we can add to the multiplier as usual
+            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), aurEff->GetAmount(), sameEffectSpellGroup))
+                modifier += aurEff->GetAmount();
+        }
+    }
+    // Add the highest of the Same Effect Stack Rule SpellGroups to the multiplier
+    for (auto&& it : sameEffectSpellGroup)
+        modifier += it.second;
+
+    return modifier;
+}
+
+
 #endif

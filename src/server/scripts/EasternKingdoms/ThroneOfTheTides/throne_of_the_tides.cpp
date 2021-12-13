@@ -49,77 +49,72 @@ const Position eventPos[7] =
 };
 
 /*
-intro 1 1 1st floor
-5806,643,-463.23f, 804.91f, 250.27f
-intro 2 1
-5834,643,-148.63f, 802.23f, 796.47f
-intro gulthok
-5873,643,99.62f, 803.47f, 807.60f
-intro right
-6017,643,-310.11f, 775.83f, 261.34f
-intro left
-6018,643,-310.354003906,839.882019043,258.59f
-intro 0
-6073,643,-651.87f, 807.44f, 270.0f
-intro 0 0
-6197,643,-660.95f, 807.43f, 244.75f
-ozumat 1
-6646,643,-198.41f, 981.96f, 230.59f
+    intro 1 1 1st floor
+    5806,643,-463.23f, 804.91f, 250.27f
+    intro 2 1
+    5834,643,-148.63f, 802.23f, 796.47f
+    intro gulthok
+    5873,643,99.62f, 803.47f, 807.60f
+    intro right
+    6017,643,-310.11f, 775.83f, 261.34f
+    intro left
+    6018,643,-310.354003906,839.882019043,258.59f
+    intro 0
+    6073,643,-651.87f, 807.44f, 270.0f
+    intro 0 0
+    6197,643,-660.95f, 807.43f, 244.75f
+    ozumat 1
+    6646,643,-198.41f, 981.96f, 230.59f
 */
 
 class at_tott_lady_nazjar_event : public AreaTriggerScript
 {
-public:
-    at_tott_lady_nazjar_event() : AreaTriggerScript("at_tott_lady_nazjar_event") { }
+    public:
+        at_tott_lady_nazjar_event() : AreaTriggerScript("at_tott_lady_nazjar_event") { }
 
-    bool OnTrigger(Player* pPlayer, const AreaTriggerEntry* /*pAt*/)
-    {
-		if (InstanceScript* pInstance = pPlayer->GetInstanceScript())
-		{
-			if (pInstance->GetData(DATA_LADY_NAZJAR_EVENT) != DONE
-                && pInstance->GetBossState(DATA_COMMANDER_ULTHOK) != DONE)
-			{
-                pInstance->SetData(DATA_LADY_NAZJAR_EVENT, DONE);
-                if (Creature* pLadyNazjarEvent = ObjectAccessor::GetCreature(*pPlayer, pInstance->GetData64(DATA_LADY_NAZJAR_EVENT)))
-                    pLadyNazjarEvent->AI()->DoAction(ACTION_LADY_NAZJAR_START_EVENT);
-			}
-		}
-        return true;
-    }
+        bool OnTrigger(Player* player, const AreaTriggerEntry* /*trigger*/) override
+        {
+            if (InstanceScript* instance = player->GetInstanceScript())
+            {
+                if (instance->GetData(DATA_LADY_NAZJAR_EVENT) != DONE
+                    && instance->GetBossState(DATA_COMMANDER_ULTHOK) != DONE)
+                {
+                    instance->SetData(DATA_LADY_NAZJAR_EVENT, DONE);
+                    if (Creature* pLadyNazjarEvent = ObjectAccessor::GetCreature(*player, instance->GetData64(DATA_LADY_NAZJAR_EVENT)))
+                        pLadyNazjarEvent->AI()->DoAction(ACTION_LADY_NAZJAR_START_EVENT);
+                }
+            }
+            return true;
+        }
 };
 
-const Position teleporterPos[2] = 
-{
-    {-560.25f, 819.19f, 245.28f, 5.20f}, // entrance;
-    {-14.72f, 796.57f, 808.12f, 1.99f}, // upper
-};
-
-class npc_throne_of_the_tides_teleporter : public CreatureScript
+class npc_throne_of_the_tides_teleporter: public CreatureScript
 {
     public:
-        npc_throne_of_the_tides_teleporter() : CreatureScript("npc_throne_of_the_tides_teleporter"){}
+        npc_throne_of_the_tides_teleporter() : CreatureScript("npc_throne_of_the_tides_teleporter") { }
 
-        bool OnGossipHello(Player* pPlayer, Creature* pCreature)
+        struct npc_throne_of_the_tides_teleporter_AI : public CreatureAI
         {
-            if (pPlayer->isInCombat())
-                return false;
-            switch (pCreature->GetEntry())
+           npc_throne_of_the_tides_teleporter_AI(Creature* creature) : CreatureAI(creature) { }
+
+            void OnSpellClick(Unit* clicker, bool& /*result*/) override
             {
-            case NPC_THRONE_OF_THE_TIDES_TELEPORTER_1:
-                    pPlayer->NearTeleportTo(teleporterPos[1].GetPositionX(),
-                        teleporterPos[1].GetPositionY(),
-                        teleporterPos[1].GetPositionZ(),
-                        teleporterPos[1].GetOrientation());
-                    return false;
-                break;
-            case NPC_THRONE_OF_THE_TIDES_TELEPORTER_2:
-                pPlayer->NearTeleportTo(teleporterPos[0].GetPositionX(),
-                    teleporterPos[0].GetPositionY(),
-                    teleporterPos[0].GetPositionZ(),
-                    teleporterPos[0].GetOrientation());
-                break;
+                if (InstanceScript* instance = me->GetInstanceScript())
+                    if (instance->GetBossState(DATA_LADY_NAZJAR) != DONE)
+                        return;
+
+                if (me->GetEntry() == 51391)
+                    clicker->NearTeleportTo(-14.72f, 796.57f, 808.12f, 1.99f, false);
+                else if (me->GetEntry() == 51395)
+                    clicker->NearTeleportTo(-560.25f, 819.19f, 245.28f, 5.20f, false);
             }
-            return false;
+
+            void UpdateAI(uint32 /*diff*/) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_throne_of_the_tides_teleporter_AI>(creature);
         }
 };
 
@@ -128,28 +123,20 @@ class npc_lady_nazjar_event : public CreatureScript
     public:
         npc_lady_nazjar_event() : CreatureScript("npc_lady_nazjar_event") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_lady_nazjar_eventAI (creature);
-        }
-
         struct npc_lady_nazjar_eventAI : public ScriptedAI
         {
             npc_lady_nazjar_eventAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
             bool bEvade;
 
-            void Reset()
+            void Reset() override
             {
-                if (!pInstance)
-                    return;
-
-                if(pInstance->GetData(DATA_LADY_NAZJAR_EVENT) == DONE)
+                if (instance->GetData(DATA_LADY_NAZJAR_EVENT) == DONE)
                     me->DespawnOrUnsummon();
 
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
@@ -159,16 +146,16 @@ class npc_lady_nazjar_event : public CreatureScript
                 events.Reset();
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
                 {
-                    if (id == POINT_EVADE)
+                    if (pointId == POINT_EVADE)
                         me->DespawnOrUnsummon();
                 }
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_LADY_NAZJAR_START_EVENT)
                 {
@@ -182,11 +169,8 @@ class npc_lady_nazjar_event : public CreatureScript
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 /*diff*/) override
             {
-                if(!pInstance)
-                    return;
-
                 if (me->SelectNearestTarget(50.0f) && !bEvade)
                 {
                     bEvade = true;
@@ -195,25 +179,30 @@ class npc_lady_nazjar_event : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_lady_nazjar_eventAI>(creature);
+        }
 };
 
 class go_totd_defense_system : public GameObjectScript
 {
-public:
-    go_totd_defense_system() : GameObjectScript("go_totd_defense_system") { }
+    public:
+        go_totd_defense_system() : GameObjectScript("go_totd_defense_system") { }
 
-    bool OnGossipHello(Player* /*player*/, GameObject* go)
-    {
-        if(InstanceScript* instance = go->GetInstanceScript())
+        bool OnGossipHello(Player* /*player*/, GameObject* go) override
         {
-            Map::PlayerList const &PlayerList = go->GetMap()->GetPlayers();
+            if (InstanceScript* instance = go->GetInstanceScript())
+            {
+                Map::PlayerList const &PlayerList = go->GetMap()->GetPlayers();
 
-            if (!PlayerList.isEmpty())
-                for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                    i->getSource()->SendCinematicStart(169);
+                if (!PlayerList.isEmpty())
+                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                        i->GetSource()->SendCinematicStart(169);
+            }
+            return false;
         }
-        return false;
-    }
 };
 
 void AddSC_throne_of_the_tides()

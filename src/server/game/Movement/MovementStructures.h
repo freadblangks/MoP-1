@@ -1,33 +1,35 @@
 /*
-* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
-* Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of the GNU General Public License as published by the
-* Free Software Foundation; either version 2 of the License, or (at your
-* option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along
-* with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
-#ifndef _MOVEMENT_STRUCTURES_H
-#define _MOVEMENT_STRUCTURES_H
+#ifndef SF_MOVEMENT_STRUCTURES_H
+#define SF_MOVEMENT_STRUCTURES_H
 
-#include "ByteBuffer.h"
-#include "WorldPacket.h"
-//#include "Object.h"
+#include "Opcodes.h"
+#include "Object.h"
 
 class ByteBuffer;
 class Unit;
 
 enum MovementStatusElements
 {
+    MSEForcesCount,
+    MSEHasCounter,
     MSEHasGuidByte0,
     MSEHasGuidByte1,
     MSEHasGuidByte2,
@@ -36,6 +38,7 @@ enum MovementStatusElements
     MSEHasGuidByte5,
     MSEHasGuidByte6,
     MSEHasGuidByte7,
+    MSEHasMountDisplayId,
     MSEHasMovementFlags,
     MSEHasMovementFlags2,
     MSEHasTimestamp,
@@ -51,13 +54,16 @@ enum MovementStatusElements
     MSEHasTransportGuidByte7,
     MSEHasTransportTime2,
     MSEHasTransportTime3,
+    MSEHasTransportVehicleId,
     MSEHasPitch,
     MSEHasFallData,
     MSEHasFallDirection,
     MSEHasSplineElevation,
     MSEHasSpline,
-    MSEHasUnkTime,
 
+    MSEForces,
+    MSECount,
+    MSECounter,
     MSEGuidByte0,
     MSEGuidByte1,
     MSEGuidByte2,
@@ -66,6 +72,8 @@ enum MovementStatusElements
     MSEGuidByte5,
     MSEGuidByte6,
     MSEGuidByte7,
+    MSEMountDisplayIdWithCheck,
+    MSEMountDisplayIdWithoutCheck,
     MSEMovementFlags,
     MSEMovementFlags2,
     MSETimestamp,
@@ -73,6 +81,7 @@ enum MovementStatusElements
     MSEPositionY,
     MSEPositionZ,
     MSEOrientation,
+    MSEOrientationWithoutCheck,
     MSETransportGuidByte0,
     MSETransportGuidByte1,
     MSETransportGuidByte2,
@@ -89,6 +98,7 @@ enum MovementStatusElements
     MSETransportTime,
     MSETransportTime2,
     MSETransportTime3,
+    MSETransportVehicleId,
     MSEPitch,
     MSEFallTime,
     MSEFallVerticalSpeed,
@@ -96,32 +106,30 @@ enum MovementStatusElements
     MSEFallSinAngle,
     MSEFallHorizontalSpeed,
     MSESplineElevation,
-    MSEUnkUIntCount,
-    MSEUnkUIntLoop,
-    MSEUnkTime,
-    MSECounter,
-    MSEGenericDword0,
-    MSEGenericDword1,
-    MSEGenericDword2,
-    MSEGenericDword3,
-    MSEGenericDword4,
-    MSEGenericDword5,
-    MSEGenericDword6,
-    MSEGenericDword7,
-    MSEGeneric2bits0,
+
+    MSEUintCount,
+
     // Special
-    MSEFlushBits,   //FlushBits()
-    MSEZeroBit, // writes bit value 1 or skips read bit
-    MSEOneBit,  // writes bit value 0 or skips read bit
-    MSEEnd,     // marks end of parsing
+    MSEZeroBit,         // writes bit value 1 or skips read bit
+    MSEOneBit,          // writes bit value 0 or skips read bit
+    MSEEnd,             // marks end of parsing
     MSEExtraElement,    // Used to signalize reading into ExtraMovementStatusElement, element sequence inside it is declared as separate array
                         // Allowed internal elements are: GUID markers (not transport), MSEExtraFloat, MSEExtraInt8
     MSEExtraFloat,
+    MSEExtraFloat2,
     MSEExtraInt8,
+    MSEExtraInt32,
+    MSEExtra2Bits,
 };
+
+namespace Movement
+{
+    class PacketSender;
 
     class ExtraMovementStatusElement
     {
+        friend class PacketSender;
+
     public:
         ExtraMovementStatusElement(MovementStatusElements const* elements) : _elements(elements), _index(0) { }
 
@@ -131,10 +139,14 @@ enum MovementStatusElements
         struct
         {
             ObjectGuid guid;
-            float floatData;
             int8  byteData;
+            int32 extraInt32Data;
+            uint32 extra2BitsData;
+            float floatData;
+            float floatData2;
         } Data;
 
+    protected:
         void ResetIndex() { _index = 0; }
 
     private:
@@ -145,7 +157,7 @@ enum MovementStatusElements
     class PacketSender
     {
     public:
-        PacketSender(Unit* unit, Opcodes serverControl, Opcodes playerControl, Opcodes broadcast = SMSG_MOVE_UPDATE, ExtraMovementStatusElement* extras = NULL);
+        PacketSender(Unit* unit, Opcodes serverControl, Opcodes playerControl, Opcodes broadcast = SMSG_PLAYER_MOVE, ExtraMovementStatusElement* extras = NULL);
 
         void Send() const;
 
@@ -157,6 +169,7 @@ enum MovementStatusElements
     };
 
     bool PrintInvalidSequenceElement(MovementStatusElements element, char const* function);
+}
 
 MovementStatusElements const* GetMovementStatusElementsSequence(Opcodes opcode);
 

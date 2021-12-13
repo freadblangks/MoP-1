@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,38 +24,33 @@ Comment: All wp related commands
 Category: commandscripts
 EndScriptData */
 
-#include "ScriptMgr.h"
-#include "ObjectMgr.h"
-#include "WaypointManager.h"
 #include "Chat.h"
+#include "Language.h"
+#include "ObjectMgr.h"
+#include "Player.h"
+#include "ScriptMgr.h"
+#include "WaypointManager.h"
 
 class wp_commandscript : public CommandScript
 {
 public:
     wp_commandscript() : CommandScript("wp_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand wpCommandTable[] =
+        static std::vector<ChatCommand> wpCommandTable =
         {
-            { "add",            SEC_GAMEMASTER,     false, &HandleWpAddCommand,                "", NULL },
-            { "event",          SEC_GAMEMASTER,     false, &HandleWpEventCommand,              "", NULL },
-            { "load",           SEC_GAMEMASTER,     false, &HandleWpLoadCommand,               "", NULL },
-            { "modify",         SEC_GAMEMASTER,     false, &HandleWpModifyCommand,             "", NULL },
-            { "unload",         SEC_GAMEMASTER,     false, &HandleWpUnLoadCommand,             "", NULL },
-            { "reload",         SEC_ADMINISTRATOR,  false, &HandleWpReloadCommand,             "", NULL },
-            { "show",           SEC_GAMEMASTER,     false, &HandleWpShowCommand,               "", NULL },
-            { NULL,             0,                  false, NULL,                               "", NULL }
+            { "add",    SEC_ADMINISTRATOR,  false,  &HandleWpAddCommand,    },
+            { "event",  SEC_ADMINISTRATOR,  false,  &HandleWpEventCommand,  },
+            { "load",   SEC_ADMINISTRATOR,  false,  &HandleWpLoadCommand,   },
+            { "modify", SEC_ADMINISTRATOR,  false,  &HandleWpModifyCommand, },
+            { "unload", SEC_ADMINISTRATOR,  false,  &HandleWpUnLoadCommand, },
+            { "reload", SEC_ADMINISTRATOR,  false,  &HandleWpReloadCommand, },
+            { "show",   SEC_ADMINISTRATOR,  false,  &HandleWpShowCommand,   },
         };
-        static ChatCommand scriptWpCommandTable[] =
+        static std::vector<ChatCommand> commandTable =
         {
-            { "add",            SEC_GAMEMASTER,     false, &HandleScriptWpAddCommand,          "", NULL },
-        };
-        static ChatCommand commandTable[] =
-        {
-            { "wp",             SEC_GAMEMASTER,     false, NULL,               "",       wpCommandTable },
-            { "script_wp",      SEC_GAMEMASTER,     false, NULL,               "", scriptWpCommandTable },
-            { NULL,             0,                  false, NULL,                               "", NULL }
+            { "wp",     SEC_ADMINISTRATOR,  false,  wpCommandTable          },
         };
         return commandTable;
     }
@@ -217,7 +214,7 @@ public:
         target->LoadPath(pathid);
         target->SetDefaultMovementType(WAYPOINT_MOTION_TYPE);
         target->GetMotionMaster()->Initialize();
-        target->MonsterSay("Path loaded.", 0, 0);
+        target->MonsterSay("Path loaded.", LANG_UNIVERSAL, NULL);
 
         return true;
     }
@@ -244,40 +241,44 @@ public:
 
         if (!target)
         {
-            handler->PSendSysMessage("%s%s|r", "|cff33ffff", "You must select target.");
+            handler->PSendSysMessage("%s%s|r", "|cff33ffff", "You must select a target.");
             return true;
         }
 
-        uint32 guildLow = target->GetDBTableGUIDLow();
-
-        if (target->GetCreatureAddon())
+        uint32 guidLow = target->GetDBTableGUIDLow();
+        if (guidLow == 0)
         {
-            if (target->GetCreatureAddon()->path_id != 0)
-            {
-                PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_ADDON);
-
-                stmt->setUInt32(0, guildLow);
-
-                WorldDatabase.Execute(stmt);
-
-                target->UpdateWaypointID(0);
-
-                stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_MOVEMENT_TYPE);
-
-                stmt->setUInt8(0, uint8(IDLE_MOTION_TYPE));
-                stmt->setUInt32(1, guildLow);
-
-                WorldDatabase.Execute(stmt);
-
-                target->LoadPath(0);
-                target->SetDefaultMovementType(IDLE_MOTION_TYPE);
-                target->GetMotionMaster()->MoveTargetedHome();
-                target->GetMotionMaster()->Initialize();
-                target->MonsterSay("Path unloaded.", 0, 0);
-                return true;
-            }
-            handler->PSendSysMessage("%s%s|r", "|cffff33ff", "Target have no loaded path.");
+            handler->PSendSysMessage("%s%s|r", "|cffff33ff", "Target is not saved to DB.");
+            return true;
         }
+
+        CreatureAddon const* addon = sObjectMgr->GetCreatureAddon(guidLow);
+        if (!addon || addon->path_id == 0)
+        {
+            handler->PSendSysMessage("%s%s|r", "|cffff33ff", "Target does not have a loaded path.");
+            return true;
+        }
+
+        PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_ADDON);
+
+        stmt->setUInt32(0, guidLow);
+
+        WorldDatabase.Execute(stmt);
+
+        target->UpdateWaypointID(0);
+
+        stmt = WorldDatabase.GetPreparedStatement(WORLD_UPD_CREATURE_MOVEMENT_TYPE);
+
+        stmt->setUInt8(0, uint8(IDLE_MOTION_TYPE));
+        stmt->setUInt32(1, guidLow);
+
+        WorldDatabase.Execute(stmt);
+
+        target->LoadPath(0);
+        target->SetDefaultMovementType(IDLE_MOTION_TYPE);
+        target->GetMotionMaster()->MoveTargetedHome();
+        target->GetMotionMaster()->Initialize();
+        target->MonsterSay("Path unloaded.", 0, 0);
         return true;
     }
 
@@ -648,14 +649,12 @@ public:
             handler->PSendSysMessage("|cff00ff00DEBUG: wp modify del, PathID: |r|cff00ffff%u|r", pathid);
 
             if (wpGuid != 0)
-
                 if (Creature* wpCreature = handler->GetSession()->GetPlayer()->GetMap()->GetCreature(MAKE_NEW_GUID(wpGuid, VISUAL_WAYPOINT, HIGHGUID_UNIT)))
                 {
                     wpCreature->CombatStop();
                     wpCreature->DeleteFromDB();
                     wpCreature->AddObjectToRemoveList();
                 }
-
 
             PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_WAYPOINT_DATA);
 
@@ -705,7 +704,7 @@ public:
 
                     wpCreature2->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), chr->GetPhaseMgr().GetPhaseMaskForSpawn());
                     // To call _LoadGoods(); _LoadQuests(); CreateTrainerSpells();
-                    //TODO: Should we first use "Create" then use "LoadFromDB"?
+                    /// @todo Should we first use "Create" then use "LoadFromDB"?
                     if (!wpCreature2->LoadCreatureFromDB(wpCreature2->GetDBTableGUIDLow(), map))
                     {
                         handler->PSendSysMessage(LANG_WAYPOINT_VP_NOTCREATED, VISUAL_WAYPOINT);
@@ -801,7 +800,7 @@ public:
         if (show == "info")
         {
             // Check if the user did specify a visual waypoint
-            if (target->GetEntry() != VISUAL_WAYPOINT)
+            if (!target || target->GetEntry() != VISUAL_WAYPOINT)
             {
                 handler->PSendSysMessage(LANG_WAYPOINT_VP_SELECT);
                 handler->SetSentErrorMessage(true);
@@ -948,7 +947,7 @@ public:
                 {
                     wpCreature->SetDisplayId(target->GetDisplayId());
                     wpCreature->SetObjectScale(0.5f);
-                    wpCreature->SetLevel(point > STRONG_MAX_LEVEL ? STRONG_MAX_LEVEL : point);
+                    wpCreature->SetLevel(std::min<uint32>(point, STRONG_MAX_LEVEL));
                 }
             }
             while (result->NextRow());
@@ -1111,54 +1110,6 @@ public:
         }
 
         handler->PSendSysMessage("|cffff33ffDEBUG: wpshow - no valid command found|r");
-        return true;
-    }
-
-    static bool HandleScriptWpAddCommand(ChatHandler* handler, const char* args)
-    {
-        // optional
-        char* c_entry = NULL;
-        uint32 entry = 0;
-        uint32 oldMax = 0;
-        uint32 waitTime = 0;
-
-        if (*args)
-        {
-            c_entry = strtok((char*)args, " ");
-
-            if (char* arg_waitTime = strtok(NULL, " "))
-                waitTime = atoi(arg_waitTime);
-        }
-
-        Creature* target = handler->getSelectedCreature();
-
-        if (!c_entry)
-        {
-            if (target)
-                entry = target->GetEntry();
-            else
-                return false;
-        }
-        else
-            entry = atoi(c_entry);
-
-        if (!entry)
-        {
-            handler->PSendSysMessage("Mauvais id");
-            return true;
-        }
-
-        QueryResult maxPointIdQuery = WorldDatabase.PQuery("SELECT MAX(pointId) AS maxPointId FROM script_waypoint WHERE entry = %u;", entry);
-
-        if (maxPointIdQuery)
-            oldMax = (maxPointIdQuery->Fetch())[0].GetUInt32();
-
-        Player* player = handler->GetSession()->GetPlayer();
-
-        WorldDatabase.PExecute("INSERT INTO script_waypoint VALUES (%u, %u, %f, %f, %f, %u, '');", entry, oldMax + 1, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), waitTime);
-
-        handler->PSendSysMessage("Point %u de l'entry %u ajoute aux coordonnee %f %f %f avec un temps d'attente de %u",
-                                  entry, oldMax + 1, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), waitTime);
         return true;
     }
 };

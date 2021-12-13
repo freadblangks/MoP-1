@@ -1,4 +1,5 @@
-# Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+# Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/
+# Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
 #
 # This file is free software; as a special exception the author gives
 # unlimited permission to copy and/or distribute it, with or without
@@ -10,7 +11,8 @@
 
 set(scripts_STAT_SRCS
   ${scripts_STAT_SRCS}
-  Pet/pet_dk.cpp
+  Pet/pet_generic.cpp
+  Pet/pet_priest.cpp
 )
 
 message("  -> Prepared: Pet")

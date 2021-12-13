@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,8 +17,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __TRINITY_SOCIALMGR_H
-#define __TRINITY_SOCIALMGR_H
+#ifndef SF_SOCIALMGR_H
+#define SF_SOCIALMGR_H
 
 #include <ace/Singleton.h>
 #include "DatabaseEnv.h"
@@ -55,14 +56,10 @@ struct FriendInfo
     std::string Note;
 
     FriendInfo() : Status(FRIEND_STATUS_OFFLINE), Flags(0), Area(0), Level(0), Class(0), Note()
-    {
+    { }
 
-    }
-
-    FriendInfo(uint8 flags, const std::string& note) : Status(FRIEND_STATUS_OFFLINE), Flags(flags), Area(0), Level(0), Class(0), Note(note)
-    {
-
-    }
+    FriendInfo(uint8 flags, std::string const& note) : Status(FRIEND_STATUS_OFFLINE), Flags(flags), Area(0), Level(0), Class(0), Note(note)
+    { }
 };
 
 typedef std::map<uint32, FriendInfo> PlayerSocialMap;
@@ -100,7 +97,7 @@ enum FriendsResult
     FRIEND_UNKNOWN          = 0x1A                          // Unknown friend response from server
 };
 
-#define SOCIALMGR_FRIEND_LIMIT  50
+#define SOCIALMGR_FRIEND_LIMIT  100
 #define SOCIALMGR_IGNORE_LIMIT  50
 
 class PlayerSocial
@@ -108,7 +105,6 @@ class PlayerSocial
     friend class SocialMgr;
     public:
         PlayerSocial();
-        ~PlayerSocial();
         // adding/removing
         bool AddToSocialList(uint32 friend_guid, bool ignore);
         void RemoveFromSocialList(uint32 friend_guid, bool ignore);
@@ -121,6 +117,7 @@ class PlayerSocial
         uint32 GetPlayerGUID() const { return m_playerGUID; }
         void SetPlayerGUID(uint32 guid) { m_playerGUID = guid; }
         uint32 GetNumberOfSocialsWithFlag(SocialFlag flag);
+        PlayerSocialMap const& GetSocialMap() const { return m_playerSocialMap; }
     private:
         PlayerSocialMap m_playerSocialMap;
         uint32 m_playerGUID;
@@ -128,27 +125,30 @@ class PlayerSocial
 
 class SocialMgr
 {
-    friend class ACE_Singleton<SocialMgr, ACE_Null_Mutex>;
-
-    private:
         SocialMgr();
         ~SocialMgr();
 
     public:
+
+        static SocialMgr* instance()
+        {
+            static SocialMgr _instance;
+            return &_instance;
+        }
+
         // Misc
         void RemovePlayerSocial(uint32 guid) { m_socialMap.erase(guid); }
 
-        void GetFriendInfo(Player* player, uint32 friendGUID, FriendInfo &friendInfo);
+        void GetFriendInfo(Player* player, uint64 friendGUID, FriendInfo& friendInfo);
         // Packet management
-        void MakeFriendStatusPacket(FriendsResult result, uint32 friend_guid, WorldPacket* data);
-        void SendFriendStatus(Player* player, FriendsResult result, uint32 friend_guid, bool broadcast);
+        void MakeFriendStatusPacket(FriendsResult result, uint64 friendGuid, WorldPacket* data);
+        void SendFriendStatus(Player* player, FriendsResult result, uint64 friendGuid, bool broadcast);
         void BroadcastToFriendListers(Player* player, WorldPacket* packet);
         // Loading
-        PlayerSocial *LoadFromDB(PreparedQueryResult result, uint32 guid);
+        PlayerSocial* LoadFromDB(PreparedQueryResult result, uint32 guid);
     private:
         SocialMap m_socialMap;
 };
 
-#define sSocialMgr ACE_Singleton<SocialMgr, ACE_Null_Mutex>::instance()
+#define sSocialMgr SocialMgr::instance()
 #endif
-

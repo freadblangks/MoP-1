@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,32 +24,41 @@ Comment: All reset related commands
 Category: commandscripts
 EndScriptData */
 
-#include "ScriptMgr.h"
+#include "AchievementMgr.h"
 #include "Chat.h"
+#include "Language.h"
 #include "ObjectAccessor.h"
+#include "Player.h"
+#include "Pet.h"
+#include "ScriptMgr.h"
+#include "RatedPvp.h"
+#include <boost/algorithm/string.hpp> 
 
 class reset_commandscript : public CommandScript
 {
 public:
     reset_commandscript() : CommandScript("reset_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand resetCommandTable[] =
+        static std::vector<ChatCommand> resetCommandTable =
         {
-            { "achievements",   SEC_ADMINISTRATOR,  true,  &HandleResetAchievementsCommand,     "", NULL },
-            { "honor",          SEC_ADMINISTRATOR,  true,  &HandleResetHonorCommand,            "", NULL },
-            { "spells",         SEC_ADMINISTRATOR,  true,  &HandleResetSpellsCommand,           "", NULL },
-            { "stats",          SEC_ADMINISTRATOR,  true,  &HandleResetStatsCommand,            "", NULL },
-            { "talents",        SEC_ADMINISTRATOR,  true,  &HandleResetTalentsCommand,          "", NULL },
-            { "spec",           SEC_ADMINISTRATOR,  true,  &HandleResetSpecializationCommand,   "", NULL },
-            { "all",            SEC_ADMINISTRATOR,  true,  &HandleResetAllCommand,              "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "achievements",   SEC_GAMEMASTER, true,   &HandleResetAchievementsCommand,    },
+            { "honor",          SEC_GAMEMASTER, true,   &HandleResetHonorCommand,           },
+            { "level",          SEC_GAMEMASTER, true,   &HandleResetLevelCommand,           },
+            { "spells",         SEC_GAMEMASTER, true,   &HandleResetSpellsCommand,          },
+            { "stats",          SEC_GAMEMASTER, true,   &HandleResetStatsCommand,           },
+            { "talents",        SEC_GAMEMASTER, true,   &HandleResetTalentsCommand,         },
+            { "all",            SEC_GAMEMASTER, true,   &HandleResetAllCommand,             },
+            { "pvpstat",        SEC_GAMEMASTER,  false,  &HandleResetPvpStat                 },
         };
-        static ChatCommand commandTable[] =
+        static std::vector<ChatCommand> commandTable =
         {
-            { "reset",          SEC_ADMINISTRATOR,  true, NULL,                                 "", resetCommandTable },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "reset",          SEC_GAMEMASTER, true,   resetCommandTable },
+            { "arena",          SEC_CONSOLE,    true,
+            {
+                { "disband",    SEC_CONSOLE,    true,   &HandleArenaDisband                 },
+            } },
         };
         return commandTable;
     }
@@ -60,9 +71,9 @@ public:
             return false;
 
         if (target)
-            target->GetAchievementMgr().Reset();
+            target->ResetAchievements();
         else
-            AchievementMgr<Player>::DeleteFromDB(GUID_LOPART(targetGuid));
+            PlayerAchievementMgr::DeleteFromDB(GUID_LOPART(targetGuid));
 
         return true;
     }
@@ -73,7 +84,7 @@ public:
         if (!handler->extractPlayerTarget((char*)args, &target))
             return false;
 
-        target->SetUInt32Value(PLAYER_FIELD_KILLS, 0);
+        target->SetUInt32Value(PLAYER_FIELD_YESTERDAY_HONORABLE_KILLS, 0);
         target->SetUInt32Value(PLAYER_FIELD_LIFETIME_HONORABLE_KILLS, 0);
         target->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_EARN_HONORABLE_KILL);
 
@@ -84,7 +95,10 @@ public:
     {
         ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(player->getClass());
         if (!classEntry)
+        {
+            TC_LOG_ERROR("misc", "Class %u not found in DBC (Wrong DBC files?)", player->getClass());
             return false;
+        }
 
         uint8 powerType = classEntry->powerType;
 
@@ -92,26 +106,60 @@ public:
         if (!player->HasAuraType(SPELL_AURA_MOD_SHAPESHIFT))
             player->SetShapeshiftForm(FORM_NONE);
 
-        player->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, DEFAULT_WORLD_OBJECT_SIZE);
-        player->SetFloatValue(UNIT_FIELD_COMBATREACH, DEFAULT_COMBAT_REACH);
-
         player->setFactionForRace(player->getRace());
 
-        player->SetUInt32Value(UNIT_FIELD_BYTES_0, ((player->getRace()) | (player->getClass() << 8) | (powerType << 16) | (player->getGender() << 24)));
-        player->SetUInt32Value(UNIT_FIELD_DISPLAY_POWER, powerType);
+        player->SetRace(player->getRace());
+        player->SetClass(player->getClass());
+        player->SetGender(player->getGender());
+
+        player->SetFieldPowerType(powerType);
 
         // reset only if player not in some form;
         if (player->GetShapeshiftForm() == FORM_NONE)
             player->InitDisplayIds();
 
-        player->SetByteValue(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_PVP);
+        player->SetByteValue(UNIT_FIELD_SHAPESHIFT_FORM, 1, UNIT_BYTE2_FLAG_PVP);
 
         player->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_PVP_ATTACKABLE);
 
         //-1 is default value
         player->SetUInt32Value(PLAYER_FIELD_WATCHED_FACTION_INDEX, uint32(-1));
+        return true;
+    }
 
-        //player->SetUInt32Value(PLAYER_FIELD_BYTES, 0xEEE00000);
+    static bool HandleResetLevelCommand(ChatHandler* handler, char const* args)
+    {
+        Player* target;
+        if (!handler->extractPlayerTarget((char*)args, &target))
+            return false;
+
+        if (!HandleResetStatsOrLevelHelper(target))
+            return false;
+
+        uint8 oldLevel = target->getLevel();
+
+        // set starting level
+        uint32 startLevel = target->getClass() != CLASS_DEATH_KNIGHT
+            ? sWorld->getIntConfig(CONFIG_START_PLAYER_LEVEL)
+            : sWorld->getIntConfig(CONFIG_START_HEROIC_PLAYER_LEVEL);
+
+        target->_ApplyAllLevelScaleItemMods(false);
+        target->SetLevel(startLevel);
+        target->InitRunes();
+        target->InitStatsForLevel(true);
+        target->InitTaxiNodesForLevel();
+        target->InitGlyphsForLevel();
+        target->InitTalentForLevel();
+        target->SetUInt32Value(PLAYER_FIELD_XP, 0);
+
+        target->_ApplyAllLevelScaleItemMods(true);
+
+        // reset level for pet
+        if (Pet* pet = target->GetPet())
+            pet->SynchronizeLevelWithOwner();
+
+        sScriptMgr->OnPlayerLevelChanged(target, oldLevel);
+
         return true;
     }
 
@@ -125,9 +173,9 @@ public:
 
         if (target)
         {
-            target->resetSpells(/* bool myClassOnly */);
+            target->ResetSpells(/* bool myClassOnly */);
 
-            ChatHandler(target).SendSysMessage(LANG_RESET_SPELLS);
+            ChatHandler(target->GetSession()).SendSysMessage(LANG_RESET_SPELLS);
             if (!handler->GetSession() || handler->GetSession()->GetPlayer() != target)
                 handler->PSendSysMessage(LANG_RESET_SPELLS_ONLINE, handler->GetNameLink(target).c_str());
         }
@@ -169,6 +217,20 @@ public:
         std::string targetName;
         if (!handler->extractPlayerTarget((char*)args, &target, &targetGuid, &targetName))
         {
+            // Try reset talents as Hunter Pet
+            Creature* creature = handler->getSelectedCreature();
+            if (!*args && creature && creature->IsPet())
+            {
+                Unit* owner = creature->GetOwner();
+                if (owner && owner->GetTypeId() == TYPEID_PLAYER && creature->ToPet()->IsPermanentPetFor(owner->ToPlayer()))
+                {
+                    ChatHandler(owner->ToPlayer()->GetSession()).SendSysMessage(LANG_RESET_PET_TALENTS);
+                    if (!handler->GetSession() || handler->GetSession()->GetPlayer() != owner->ToPlayer())
+                        handler->PSendSysMessage(LANG_RESET_PET_TALENTS_ONLINE, handler->GetNameLink(owner->ToPlayer()).c_str());
+                }
+                return true;
+            }
+
             handler->SendSysMessage(LANG_NO_CHAR_SELECTED);
             handler->SetSentErrorMessage(true);
             return false;
@@ -177,14 +239,11 @@ public:
         if (target)
         {
             target->ResetTalents(true);
-            target->SendTalentsInfoData(false);
-            ChatHandler(target).SendSysMessage(LANG_RESET_TALENTS);
+            target->SendTalentsInfoData();
+            ChatHandler(target->GetSession()).SendSysMessage(LANG_RESET_TALENTS);
             if (!handler->GetSession() || handler->GetSession()->GetPlayer() != target)
                 handler->PSendSysMessage(LANG_RESET_TALENTS_ONLINE, handler->GetNameLink(target).c_str());
 
-            Pet* pet = target->GetPet();
-            if (pet)
-                target->SendTalentsInfoData(true);
             return true;
         }
         else if (targetGuid)
@@ -202,17 +261,6 @@ public:
         handler->SendSysMessage(LANG_NO_CHAR_SELECTED);
         handler->SetSentErrorMessage(true);
         return false;
-    }
-
-    static bool HandleResetSpecializationCommand(ChatHandler* handler, char const* args)
-    {
-        Player* target;
-        if (!handler->extractPlayerTarget((char*)args, &target))
-            return false;
-
-        target->ResetSpec();
-
-        return true;
     }
 
     static bool HandleResetAllCommand(ChatHandler* handler, char const* args)
@@ -255,6 +303,80 @@ public:
         for (HashMapHolder<Player>::MapType::const_iterator itr = plist.begin(); itr != plist.end(); ++itr)
             itr->second->SetAtLoginFlag(atLogin);
 
+        return true;
+    }
+
+    static bool HandleResetPvpStat(ChatHandler* handler, char const* args)
+    {
+        std::string str = args;
+        Tokenizer toks{ str, ' ' };
+        if (toks.size() < 2)
+            return false;
+
+        uint64 guid;
+        std::string name;
+        if (!handler->extractPlayerTarget((char*)toks[0], nullptr, &guid, &name))
+            return false;
+
+        uint32 type = atol(toks[1]);
+        RatedPvpSlot slot;
+        switch (type)
+        {
+            case 2: slot = RatedPvpSlot::PVP_SLOT_ARENA_2v2; break;
+            case 3: slot = RatedPvpSlot::PVP_SLOT_ARENA_3v3; break;
+            case 5: slot = RatedPvpSlot::PVP_SLOT_ARENA_5v5; break;
+            case 10:slot = RatedPvpSlot::PVP_SLOT_RATED_BG;  break;
+            default:
+                return handler->SendError("Invalid value, use 2, 3, 5 for arenas or 10 for rated BG");
+        }
+
+        ResetPvpStat(handler, guid, slot);
+        handler->PSendSysMessage("Pvp stat (type %u) for player %s was reseted", type, handler->playerLink(name).c_str());
+        return true;
+    }
+
+    static void ResetPvpStat(ChatHandler* handler, uint64 guid, RatedPvpSlot slot)
+    {
+        auto info = sRatedPvpMgr->GetInfo(slot, guid);
+        if (info)
+        {
+            if (handler->GetSession())
+                sLog->outCommand(handler->GetSession()->GetAccountId(), "Pvp stat (slot: %u) for %u: Rating %u, MatchmakerRating %u, SeasonGames %u, SeasonWins %u, SeasonBest %u, WeekGames %u, WeekWins %u, WeekBest %u",
+                    uint32(slot), GUID_LOPART(guid), info->Rating, info->MatchmakerRating, info->SeasonGames, info->SeasonWins, info->SeasonBest, info->WeekGames, info->WeekWins, info->WeekBest);
+
+            info->Rating = 0;
+            info->MatchmakerRating = sWorld->getIntConfig(CONFIG_ARENA_START_MATCHMAKER_RATING);
+            info->SeasonGames = 0;
+            info->SeasonWins = 0;
+            info->SeasonBest = 0;
+            info->WeekGames = 0;
+            info->WeekWins = 0;
+            info->WeekBest = 0;
+            info->LastWeekBest = 0;
+            RatedPvpMgr::SaveToDB(info);
+        }
+    }
+
+    static bool HandleArenaDisband(ChatHandler* handler, char const* args)
+    {
+        uint64 teamId = std::strtoull(args, nullptr, 10);
+        uint64 slot = teamId / 100000000000 - 1;
+        uint64 guid = teamId - 100000000000 * (slot + 1);
+        guid = MAKE_NEW_GUID(guid, 0, HIGHGUID_PLAYER);
+
+        std::string name;
+        std::string msg;
+        if (!sObjectMgr->GetPlayerNameByGUID(guid, name) || slot > 2)
+        {
+            std::string msg = sObjectMgr->GetTrinityString(LANG_ARENA_ERROR_NOT_FOUND, LocaleConstant(handler->GetSessionDbLocaleIndex()));
+            boost::replace_all(msg, "%u", UI64FMTD);
+            return handler->SendError(msg.c_str(), teamId);
+        }
+
+        ResetPvpStat(handler, guid, RatedPvpSlot(slot));
+        msg = sObjectMgr->GetTrinityString(LANG_ARENA_DISBAND, LocaleConstant(handler->GetSessionDbLocaleIndex()));
+        boost::replace_all(msg, "%u", UI64FMTD);
+        handler->PSendSysMessage(msg.c_str(), name.c_str(), teamId);
         return true;
     }
 };

@@ -1,3023 +1,3777 @@
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "siege_of_orgrimmar.h"
+#include "PlayerAI.h"
+#include "TargetedMovementGenerator.h"
 
-////////////////////////////////////////////////////////////////////////////////
-///
-///  Davethebrave - Daniel.E.
-///  Global Game Developement 2015 - 2020
-///  All Rights Reserved.
-///
-////////////////////////////////////////////////////////////////////////////////
+// Todo: find berserk info.
 
-/*
-Normal: 85%
-Heroic: 70%
-*/
-
-#include "siege_of_orgrimmar.h"   
-#include "AreaTrigger.h"
-#include "Player.h"
-#include "Pet.h"
-#include "boss_garrosh_hellscream.h"
-
-static void DespawnCreaturesInArea(uint32 entry, WorldObject* object)
+enum Yells
 {
-    std::list<Creature*> creatures;
-    GetCreatureListWithEntryInGrid(creatures, object, entry, 1500.0f);
-    if (creatures.empty())
-        return;
+    TALK_AGGRO,
+    TALK_SIEGE_ENGINEERS,
+    TALK_WARSONG,
+    TALK_FARSEERS,
+    TALK_SWITCH_PHASE_2,
+    TALK_PHASE_2_TRANSFORM,
+    TALK_REALM,
+    TALK_WHIRLWIND,
+    TALK_WHIRLWIND_ANN,
+    TALK_WHIRLWIND_EMP_ANN,
+    TALK_WHIRLWIND_EMP,
+    TALK_SWITCH_PHASE_3,
 
-    for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-        (*iter)->DespawnOrUnsummon();
-}
+    // Heart Whispers
+    TALK_HEART_WHISPER     = 0,
 
-static void RespawnCreatures(uint32 entry, WorldObject* object)
-{
-    std::list<Creature*> creatures;
-    GetCreatureListWithEntryInGrid(creatures, object, entry, 1500.0f);
-    if (creatures.empty())
-        return;
-
-    for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-        (*iter)->Respawn();
-}
-
-static void AttackStop(uint32 entry, WorldObject* object)
-{
-    std::list<Creature*> creatures;
-    GetCreatureListWithEntryInGrid(creatures, object, entry, 1500.0f);
-    if (creatures.empty())
-        return;
-
-    for (std::list<Creature*>::iterator iter = creatures.begin(); iter != creatures.end(); ++iter)
-    {
-        if ((*iter)->isAlive() && (*iter)->isInCombat())
-        {
-            (*iter)->AttackStop();
-            (*iter)->CombatStop();
-        }
-    }
-}
-/*
-static class MostCreatureHPMissingInRange
-{
-public:
-    MostCreatureHPMissingInRange(Unit const* obj, float range, uint32 hp) : i_obj(obj), i_range(range), i_hp(hp) {}
-
-    bool operator()(Unit* u)
-    {
-        if (u->isAlive() && u->isInCombat() && !i_obj->IsHostileTo(u) && i_obj->IsWithinDistInMap(u, i_range) && u->GetMaxHealth() - u->GetHealth() > i_hp && u->GetTypeId() != TYPEID_PLAYER && u->GetEntry() != BOSS_GARROSH_HELLSCREAM)
-        {
-            i_hp = u->GetMaxHealth() - u->GetHealth();
-            return true;
-        }
-        return false;
-    }
-
-private:
-    Unit const* i_obj;
-    float i_range;
-    uint32 i_hp;
-};
-*/
-
-class CheckIfPlayerOrGarroshAndRemove
-{
-public:
-    CheckIfPlayerOrGarroshAndRemove() {}
-    bool operator()(WorldObject* object)
-    {
-        if (object->GetTypeId() == TYPEID_PLAYER || object->GetEntry() != BOSS_GARROSH_HELLSCREAM)
-            return true;
-        else
-            return false;
-    }
+    // Heroic
+    TALK_PHASE_4_BEGUN = 17,
+    TALK_PHASE_4_PUSH,
+    TALK_MALICE_ANN,
+    TALK_BOMBARDMENT,
+    TALK_IRON_STAR_LAUNCH_ANN,
+    TALK_BOMBARDMENT_ANN,
+    TALK_MANIFEST_RAGE, // only on cast success
 };
 
-class CheckIfGarroshAndRemove
+enum Spells
 {
-public:
-    CheckIfGarroshAndRemove() {}
-    bool operator()(WorldObject* object)
-    {
-        if (object->GetEntry() == BOSS_GARROSH_HELLSCREAM)
-            return true;
-        else
-            return false;
-    }
+    SPELL_BERSERK_RAID_FINDER             = 64238,
+    SPELL_WEAK_MINDED                     = 145331,
+
+    SPELL_DESECRATED                      = 144762, // periodic damage
+    SPELL_DESECRATE_SELECTOR              = 144745,
+    SPELL_DESECRATED_EMPOWER              = 144817,
+    SPELL_DESECRATED_WEAPON_AREATRIGGER   = 144760,
+    SPELL_EMPOWERED_DESECRATED_WEAPON_AT  = 144818,
+    SPELL_DESECRATE_MISSLE                = 144748,
+    SPELL_DESECRATE_EMPOWER_MISSLE        = 144749,
+    SPELL_IRON_STAR_VISUAL                = 144645,
+    SPELL_HELLSCREAMS_WARSONG             = 144821,
+    SPELL_POWER_IRON_STAR                 = 144616,
+    SPELL_IRON_STAR_IMPACT_EFF            = 144650,
+    SPELL_IRON_STAR_IMPACT_EFF_2          = 144653,
+    SPELL_ENTER_REALM_OF_YSHAARJ          = 144867,
+    SPELL_REALM_OF_YSHAARJ                = 144954,
+    SPELL_SHAARJS_PROTECTION              = 144945,
+    SPELL_SHAARJS_PROTECTION_AURA         = 144920,
+    SPELL_ANNIHILATE                      = 144969,
+    SPELL_GRIPPING_DESPAIR                = 145183,
+    SPELL_WHIRLING_CORRUPTION             = 144985,
+    SPELL_EMPOWERED_WHIRLING_CORRUPTION   = 145037,
+    SPELL_WHIRLING_CORRUPTION_VISUAL      = 144994,
+    SPELL_TOUCH_OH_YSHAARJ                = 145065,
+    SPELL_EMPOWERED_WHIRLING_MISSLE       = 145023, // summon minion of Yshaarj
+    SPELL_EMPOWERED_GRIPPING_DESPAIR      = 145195,
+    SPELL_EXPLOSIVE_DESPAIR               = 145199,
+    SPELL_EXPLOSIVE_DESPAIR_AURA          = 145213,
+    SPELL_EMPOWERED_TOUCH_OF_YSHAARJ      = 145171,
+    SPELL_EMPOWERED_PROC                  = 145050, // death proc for minions of Y`shaarj
+    SPELL_EMPOWERING_CORRUPTION           = 145043,
+    SPELL_EMPOWERING_CORRUPTION_2         = 149536,
+    SPELL_TOUCH_OF_YSHAARJ_TARGET_CHARM   = 145071,
+
+    // Garrosh Misc
+    SPELL_DESECRATED_EMPOWERED            = 145829, // at gain 75
+    SPELL_WHIRLWIND_EMPOWERED             = 145833, // at gain 25
+    SPELL_TOUCH_EMPOWERED                 = 145832, // at gain 50
+    SPELL_GRIPPING_EMPOWERED              = 145831, // at gain 100
+    SPELL_PHASE_THIRD_TRANSFORM           = 145598,
+    SPELL_PHASE_THIRD_DE_TRANSFORM        = 146966,
+    SPELL_TRANSITION_VISUAL               = 144852, // 8s timer on garrosh at phase change to 2td
+    SPELL_TRANSITION_EFFECT               = 144842,
+    SPELL_TANSITION_VISUAL_THIRD          = 145222, // same but for third phase
+    SPELL_TRANSITION_THIRD_EFFECT         = 145246,
+    SPELL_VISUAL_FLEE_SECOND_PHASE        = 146756,
+    SPELL_VISUAL_FLEE_THIRD_PHASE         = 146845,
+    SPELL_NON_REGENERATE_POWER            = 72242,
+    SPELL_SUMMON_FADING_BREATH            = 147296,
+    SPELL_HOPE_MISSLE                     = 149002,
+    SPELL_COURAGE_AURA                    = 148983,
+    SPELL_FAITH_AURA                      = 148994,
+    SPELL_HOPE_AURA                       = 149004,
+    SPELL_TOUCH_OF_YSHAARJ_PLAYER         = 145599, // Periodical cast
+    SPELL_EMP_TOUCH_OF_YSHAARJ_PLAYER_EFF = 145175,
+    SPELL_TOUCH_OF_YSHAARJ_PLAYER_EFF     = 145071,
+    SPELL_FINAL_HORDE                     = 149978, // for HC 
+    SPELL_FINALE_ALLIANCE                 = 149979,
+    SPELL_FINALE_HORDE_SHARED             = 147301, // for another difficulty
+    SPELL_FINALE_ALLIANCE_SHARED          = 147302,
+    SPELL_ENTER_REALM_OF_YSHAARJ_UNK      = 144878, // by garrosh at teleport to realm
+    SPELL_TELEPORT_TO_REALM_SERPENT       = 144880,
+    SPELL_TELEPORT_TO_SERPENT             = 144881,
+    SPELL_TELEPORT_TO_REALM_CRANE         = 144883,
+    SPELL_TELEPORT_TO_CRANE               = 144884,
+    SPELL_TELEPORT_TO_REALM_SPRING        = 144885,
+    SPELL_TELEPORT_TO_SPRING              = 144886,
+    SPELL_COSMETIC_CHANNEL                = 145431,
+    SPELL_ABSORB_ENERGY                   = 144946,
+    SPELL_GROWING_POWER                   = 144947,
+    SPELL_HEARTBEAT_SOUND                 = 148574,
+    SPELL_THROW_AXE_AT_HEART              = 145235,
+    SPELL_REALM_OF_YSHAARJ_REMOVE         = 145647,
+    SPELL_CONSUMED_COURAGE                = 149011,
+    SPELL_CONSUMED_HOPE                   = 149032,
+    SPELL_CONSUMED_FAITH                  = 149033,
+    SPELL_GARROSH_ENERGY                  = 145801,
+    SPELL_ZEN                             = 131221, // wrong id, no data in sniffs about prevent falling damage
+    SPELL_JUMP_TO_GROUND                  = 144956,
+    SPELL_JUMO_TO_GROUND_EFF              = 145231,
+
+    // Yshaarj Realm Minions
+    SPELL_CRUSHING_FEAR_EFF               = 147324,
+    SPELL_CRUSHING_FEAR                   = 147320,
+    SPELL_CRUSHING_FEAR_LAUNCHER          = 147327,
+    SPELL_CRUSHING_FEAR_SELECTOR          = 147325,
+    SPELL_EMBODIED_DOUBT                  = 149347,
+    SPELL_ULTIMATE_DESPAIR                = 147341,
+    SPELL_EMBODIED_DESPAIR                = 145276,
+
+    // Heroic
+    SPELL_CALL_BOMBARDEMENT_25            = 147120,
+    SPELL_MALEFICE_25                     = 147209,
+    SPELL_MANIFEST_RAGE_25                = 147011,
+
+    // Minions
+    SPELL_HAMSTRING                     = 144582,
+    SPELL_CHAIN_LIGHTNING               = 144584,
+    SPELL_ANCENTRAL_CHAIN_HEAL          = 144583,
+    SPELL_FURY                          = 144588,
+    SPELL_EXPLODING_IRON_STAR           = 144798,
+
+    // Anim
+    ANIM_AI_KIT_AROUND_HEART_TALK       = 4448,
+    ANIM_AI_KIT_TRANSITION              = 4210,
+
+    // Heroic
+    SPELL_MALICE                        = 147209,
+    SPELL_MALICE_EFF                    = 147229,
+    SPELL_MALICIOUS_BLAST               = 147235,
+    SPELL_MALICIOUS_ENERGY              = 147236, // in case if malice not affect 2(5) players - gain power for garrosh + aoe
+    SPELL_MALICIOUS_ENERGY_EXPLOSION    = 147733,
+    SPELL_CALL_BOMBARDMENT              = 147120,
+    SPELL_BOMBARDMENT_SELECTOR_GUNSHIP  = 147131, // seems like should select any npc for next spell
+    SPELL_BOMBARDMENT_SELECTOR          = 147132,
+    SPELL_BOMBARDMENT_MISSLE_1          = 147133,
+    SPELL_BOMBARDMENT_AT                = 147135,
+    SPELL_CLUMP_CHECK                   = 147126,
+    SPELL_CLUMP_CHECK_EFF               = 147130,
+    SPELL_NAPALM                        = 147136,
+    SPELL_IRON_STAR_FIXATE              = 147665,
+    SPELL_IRON_STAR_FIXATE_SELECTOR     = 147712,
+    SPELL_MANIFEST_RAGE                 = 147011,
+    SPELL_MANIFESTATION_RAGE            = 147035,
+    SPELL_MANIFESTATION_RAGE_EFF        = 147013,
+    SPELL_UNSTABLE_IRON_STAR_EXPLOSION  = 147173,
+    SPELL_FIRE_IRON_STAR                = 147053,
+    SPELL_FIRE_UNSTABLE_IRON_STAR       = 147047,
+    SPELL_IRON_STAR_CRATER              = 147048,
+    SPELL_UNSTABLE_IRON_STAR_AT         = 147148,
+    SPELL_UNSTABLE_IRON_STAR_AT_EFF     = 147179,
+    SPELL_UNSTABLE_IRON_STAR_GARROSH    = 147177, // stun him
+    SPELL_PHASE_FOUR_TRANSFORM          = 146987,
+    SPELL_ENTER_REALM_OF_GARROSH        = 146984,
+    SPELL_ENTER_REALM_OF_GARROSH_EFF    = 146985,
+    SPELL_TELEPORT_TO_GARROSH_REALM     = 146986,
+    SPELL_GARROSH_WEAK_MINDED           = 148440,
+    SPELL_BLOOD_FRENZIED                = 147300,
+    SPELL_BLOOD_FRENZIED_SELECTOR       = 149336,
+
+    // Misc
+    SPELL_WEAKENED_BLOWS                = 115798,
+    SPELL_MORTAL_WOUNDS                 = 115804,
+    SPELL_MASTER_POISONER               = 93068,
+    SPELL_SUMMON_FADING_BREATH_MISSLE   = 147296,
+    SPELL_SUMMON_FADING_BREATH_EFF      = 147295,
 };
 
-class CheckIfPlayerAndRemove
+enum Events
 {
-public:
-    CheckIfPlayerAndRemove() {}
-    bool operator()(WorldObject* object)
-    {
-        if (object->GetTypeId() == TYPEID_PLAYER || object->GetEntry() != CREATURE_KORKRON_WARBRINGER && object->GetEntry() != CREATURE_FARSEER_WOLF_RIDER && object->GetEntry() != BOSS_GARROSH_HELLSCREAM)
-            return true;
-        else
-            return false;
-    }
+    EVENT_DESECRATED = 1,
+    EVENT_WARSONG,
+    EVENT_ENGINEERS,
+    EVENT_WOLF_RIDER,
+    EVENT_WARBRINGER,
+    EVENT_TRANSFORM_PHASE_SECOND,
+    EVENT_ENTER_ANOTHER_REALM,
+    EVENT_LEAVE_ANOTHER_REALM,
+    EVENT_GAIN_ENERGY,
+    EVENT_ANNIHILATE,
+    EVENT_RETURN,
+    EVENT_WHIRLWIND,
+    EVENT_TOUCH,
+    EVENT_GRIPPING,
+    EVENT_TRANSFORM_PHASE_THIRD,
+    EVENT_PREPUSH_4TD,
+    EVENT_PHASE_FOUR,
+    EVENT_MALICE,
+    EVENT_BOMBARDMENT,
+    EVENT_GAIN_POWER,
+    EVENT_MANIFEST_RAGE,
+
+    // misc
+    EVENT_MOVE,
+    EVENT_POWER_IRON_STAR,
+    EVENT_HAMSTRING,
+    EVENT_CHAIN_LIGHTNING,
+    EVENT_CHAIN_HEAL,
+    EVENT_COLLISION,
+    EVENT_CRUSHING_FEAR,
+    EVENT_EMBODIED_DOUBT,
+    EVENT_EMBODIED_DESPAIR,
+    EVENT_ALT_WORLD,
+    EVENT_EVADE_CHECK,
+    EVENT_TOUCH_OF_YSHAARJ_PLAYER,
 };
 
-void ModifyGarroshPride(uint32 p_BaseValue, Player* player)
+enum GuardsType
 {
-    if (!player->HasAura(Spells::SPELL_GARROSH_POWER))
-        return;
-
-    if (AuraPtr l_Aura = player->GetAura(Spells::SPELL_GARROSH_POWER))
-    {
-        if (l_Aura->GetEffect(0)->GetMiscValue() == 263)
-        {
-            player->SetPower(Powers(POWER_ALTERNATE_POWER), p_BaseValue);
-        }
-    }
-}
-
-#define l_IntermissionMaxTime 60200
-#define l_MaxIntermissionPhases 3
-
-// Introduction basicevent
-class garrosh_intermission_introduction : public BasicEvent
-{
-public:
-    explicit garrosh_intermission_introduction(Unit* unit, int value) : obj(unit), modifier(value)
-    {
-    }
-
-    bool Execute(uint64 /*currTiobj*/, uint32 /*diff*/)
-    {
-        if (obj)
-        {
-            if (InstanceScript* m_Instance = obj->GetInstanceScript())
-            {
-                if (Creature* l_Heart = m_Instance->instance->GetCreature(m_Instance->GetData64(DATA_GARROSH_HEART_OF_YSHAARAJ)))
-                {
-                    if (Creature* l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(DATA_GARROSH_HELLSCREAM)))
-                    {
-                        if (l_Heart->AI() && l_Garrosh->AI())
-                        {
-                            switch (modifier)
-                            {
-                            case 0:
-                                l_Garrosh->GetMotionMaster()->MovePoint(Movements::MOVEMENT_PHASE_2_ACTIVATION, l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionX(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionY(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionZ());
-
-                                obj->m_Events.AddEvent(new garrosh_intermission_introduction(obj, 1), obj->m_Events.CalculateTime(8000));
-                                break;
-                            case 1:
-                                l_Garrosh->AI()->Talk(Talks::TALK_GARROSH_SPELL08);
-                                l_Garrosh->CastSpell(l_Garrosh, Spells::SPELL_TEMPORARY_STRANGULATED_COSMETIC);
-                                l_Heart->CastSpell(l_Garrosh, Spells::SPELL_PHASE_TWO_TRANSITION_PURPLE_SHIT);
-
-                                l_Garrosh->SetDisableGravity(true);
-                                l_Garrosh->SetCanFly(true);
-
-                                obj->m_Events.AddEvent(new garrosh_intermission_introduction(obj, 2), obj->m_Events.CalculateTime(8000));
-                                break;
-                            case 2:
-                                l_Garrosh->RemoveFlag(UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_NON_ATTACKABLE | UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC);
-                                l_Garrosh->RemoveAura(Spells::SPELL_TEMPORARY_STRANGULATED_COSMETIC);
-                                l_Garrosh->SetReactState(REACT_DEFENSIVE);
-                            
-                                // Hack fixing garrosh health to prevent maxed health and death state
-                                l_Garrosh->SetHealth(l_Garrosh->GetMaxHealth());
-
-                                l_Garrosh->setFaction(16);
-
-                                obj->m_Events.AddEvent(new garrosh_intermission_introduction(obj, 3), obj->m_Events.CalculateTime(12000));
-                                break;
-                            case 3:
-                            {
-                                std::list<Player*> l_ListPlayers;
-                                l_Garrosh->GetPlayerListInGrid(l_ListPlayers, 300.0f);
-
-                                if (l_ListPlayers.empty())
-                                    return false;
-
-                                Position pos;
-                                l_Heart->GetPosition(&pos);
-                                l_Heart->CastSpell(l_Garrosh, Spells::SPELL_ENTER_THE_REALM_OF_YSHAARAJ_PURPLE_BEAM);
-                      
-                                l_Garrosh->GetMotionMaster()->MoveJump(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), 18.0f, 10.0f);
-
-                                for (auto itr : l_ListPlayers)
-                                {
-                                    itr->AddAura(Spells::SPELL_ENTER_THE_REALM_OF_YSHAARAJ_SCREEN_EFFECT, itr);
-                                    itr->GetMotionMaster()->MoveJump(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), 18.0f, 10.0f);
-                                }
-
-                                obj->m_Events.AddEvent(new garrosh_intermission_introduction(obj, 4), obj->m_Events.CalculateTime(3500));
-                                break;
-                            }
-                            case 4:
-                            {
-                                if (l_Garrosh->GetAI())
-                                    l_Garrosh->GetAI()->DoAction(Actions::ACTION_TELEPORT);
-                                break;
-                            }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-private:
-    Creature* storm;
-    Unit* obj;
-    int modifier;
-    int Event;
+    GUARD_TYPE_WOLF_RIDER,
+    GUARD_TYPE_WARBRINGER,
+    GUARD_TYPE_ENGINEER,
 };
 
-// Introduction basicevent
-class garrosh_fight_introduction : public BasicEvent
+enum Phases
 {
-public:
-    explicit garrosh_fight_introduction(Unit* unit, int value) : obj(unit), modifier(value)
-    {
-    }
-
-    bool Execute(uint64 /*currTiobj*/, uint32 /*diff*/)
-    {
-        if (obj)
-        {
-            if (InstanceScript* l_Instance = obj->GetInstanceScript())
-            {
-                if (Creature* l_Thrall = l_Instance->instance->GetCreature(l_Instance->GetData64(DATA_THRALL)))
-                {
-                    if (Creature* l_Garrosh = l_Instance->instance->GetCreature(l_Instance->GetData64(DATA_GARROSH_HELLSCREAM)))
-                    {
-                        if (l_Thrall->AI() && l_Garrosh->AI())
-                        {
-                            switch (modifier)
-                            {
-                            case 0:
-                                l_Thrall->AI()->Talk(Talks::TALK_THRALL_INTRO01);
-
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 1), obj->m_Events.CalculateTime(12000));
-                                break;
-                            case 1:
-                                l_Garrosh->AI()->Talk(Talks::TALK_INTRO01);
-
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 2), obj->m_Events.CalculateTime(12000));
-                                break;
-                            case 2:
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 3), obj->m_Events.CalculateTime(9000));
-                                break;
-                            case 3:
-                                l_Garrosh->AI()->Talk(Talks::TALK_INTRO02);
-
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 4), obj->m_Events.CalculateTime(13000));
-                                break;
-                            case 4:
-                                l_Garrosh->AI()->Talk(Talks::TALK_INTRO03);
-                      
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 5), obj->m_Events.CalculateTime(23000));
-                                break;
-                            case 5:
-                                l_Thrall->AI()->Talk(Talks::TALK_THRALL_INTRO02);
-                                l_Thrall->CastSpell(l_Thrall, Spells::SPELL_CALL_OF_THE_ELEMENTS);
-
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 6), obj->m_Events.CalculateTime(10000));
-                                break;
-                            case 6:
-                                l_Garrosh->AI()->Talk(Talks::TALK_INTRO04);
-
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 7), obj->m_Events.CalculateTime(16500));
-                                break;
-                                // Missing gripped aura -- Temporary
-                            case 7:
-                                l_Thrall->RemoveAllAuras(); // -- needs to be tiobjd.
-                                l_Thrall->AI()->Talk(Talks::TALK_THRALL_INTRO03);
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 8), obj->m_Events.CalculateTime(4500));
-                                break;
-                            case 8:
-                                l_Thrall->GetMotionMaster()->MovePoint(0, l_PositionThrallMovementPreFightWithGarrosh);
-                                l_Garrosh->GetMotionMaster()->MovePoint(0, l_PositionTGarroshMovementPreFightWithGarrosh);
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 9), obj->m_Events.CalculateTime(9000));
-                                break;
-                            case 9:
-                                l_Thrall->CastSpell(l_Thrall, Spells::SPELL_GARROSH_THRALL_SPARRING);
-                                l_Garrosh->CastSpell(l_Garrosh, Spells::SPELL_DEFEND_AGAINST_THRALL);
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 10), obj->m_Events.CalculateTime(4000));
-                                break;
-                            case 10:
-                                //l_Garrosh->CastSpell(l_Thrall, Spells::SPELL_CAST_THRALL_AWAY);
-                                l_Thrall->SetUInt32Value(UNIT_NPC_EMOTESTATE, 444);
-                                l_Garrosh->CastSpell(l_Thrall, 17748);
-
-                                l_Thrall->GetMotionMaster()->MoveKnockbackFrom(l_Garrosh->GetPositionX(), l_Garrosh->GetPositionY(), 30.0f, 10.0f);
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 11), obj->m_Events.CalculateTime(4000));
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 900), obj->m_Events.CalculateTime(3000));
-                                break;
-                            case 11:
-                                l_Garrosh->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE);
-                                l_Garrosh->SetReactState(REACT_AGGRESSIVE);
-
-                                l_Thrall->CastSpell(l_Thrall, Spells::SPELL_THRALL_STUNNED_FROM_HIT);
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 12), obj->m_Events.CalculateTime(25000));
-                                break;
-                                // This where Thralls escape to the upper platform.
-                            case 12:
-                                l_Thrall->CastSpell(l_PositionThrall.GetPositionX(), l_PositionThrall.GetPositionY(), l_PositionThrall.GetPositionZ(), Spells::SPELL_ASTRAL_RECALL, false);
-                                obj->m_Events.AddEvent(new garrosh_fight_introduction(obj, 13), obj->m_Events.CalculateTime(3000));
-                                break;
-                            case 13:
-                                l_Thrall->NearTeleportTo(l_PositionThrall.GetPositionX(), l_PositionThrall.GetPositionY(), l_PositionThrall.GetPositionZ(), l_Thrall->GetOrientation());
-                                break;
-                            case 900: // Removes thrall's strangulate emote / temporary
-                                l_Thrall->SetUInt32Value(UNIT_NPC_EMOTESTATE, 1);
-                                l_Thrall->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC);
-                                break;
-                            }
-
-                            return true;
-                        }       
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-private:
-    Creature* storm;
-    Unit* obj;
-    int modifier;
-    int Event;
+    PHASE_FIRST  = 1,
+    PHASE_SECOND,
+    PHASE_THIRD,
+    PHASE_MY_WORLD,
+    PHASE_ALT,
 };
 
-class garrosh_spell_self_event : public BasicEvent
+enum Realms
 {
-public:
-    explicit garrosh_spell_self_event(Unit* unit, int SpellId) : obj(unit), modifier(SpellId)
-    {
-    }
-
-    bool Execute(uint64 /*currTime*/, uint32 /*diff*/)
-    {
-        if (obj->GetTypeId() == TYPEID_PLAYER)
-            return false;
-
-        if (obj)
-        {
-            if (InstanceScript* l_Instance = obj->GetInstanceScript())
-            {
-                obj->CastSpell(obj, modifier);
-            }
-        }
-        return true;
-    }
-private:
-    Unit* obj;
-    int modifier;
-    int Event;
+    REALM_TERRACE_OF_THE_ENDLESS_SPRING = 1,
+    REALM_TEMPLE_OF_THE_JADE_SERPENT,
+    REALM_TEMPLE_OF_THE_RED_CRANE,
 };
 
-class garrosh_close_doors : public BasicEvent
+const std::map<uint32, std::array<uint32, 3>> invGarroshRealmsType =
 {
-public:
-    explicit garrosh_close_doors(GameObject* _obj) : obj(_obj)
-    {
-    }
-
-    bool Execute(uint64 /*currTime*/, uint32 /*diff*/)
-    {
-        if (!obj)
-            return false;
-
-        if (obj->GetTypeId() != TYPEID_GAMEOBJECT)
-            return false;
-
-        if (InstanceScript* m_Instance = obj->GetInstanceScript())
-        {
-            if (GameObject* l_GameObject = obj->ToGameObject())
-            {
-                // Yshaaraj Poop
-                if (Creature * l_GarroshHellScream = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HEART_OF_YSHAARAJ)))
-                {
-                    l_GameObject->SetLootState(GO_READY);
-                    l_GameObject->UseDoorOrButton(10000, false, l_GarroshHellScream);
-                }
-            }
-        }
-        return true;
-    }
-private:
-    GameObject* obj;
-    int Event;
+    { REALM_TERRACE_OF_THE_ENDLESS_SPRING, { SPELL_TELEPORT_TO_REALM_SPRING,  2, NPC_EMBODIED_FEAR      } },
+    { REALM_TEMPLE_OF_THE_JADE_SERPENT,    { SPELL_TELEPORT_TO_REALM_SERPENT, 1, NPC_EMBODIED_DOUBT     } },
+    { REALM_TEMPLE_OF_THE_RED_CRANE,       { SPELL_TELEPORT_TO_REALM_CRANE,   0, NPC_EMBODIED_DESPAIR_G } },
 };
 
-class garrosh_change_react_state : public BasicEvent
+class TouchYshaarjAI : public PlayerAI
 {
-public:
-    explicit garrosh_change_react_state(Unit* unit, int SpellId) : obj(unit), modifier(SpellId)
-    {
-    }
+    public:
+        TouchYshaarjAI(Player* player) : PlayerAI(player) { }
 
-    bool Execute(uint64 /*currTime*/, uint32 /*diff*/)
-    {
-        if (obj->GetTypeId() == TYPEID_PLAYER)
-            return false;
+        EventMap playerEvents;
+        int32 amount;
 
-        if (obj)
+        void OnCharmed(bool apply) override
         {
-            if (InstanceScript* l_Instance = obj->GetInstanceScript())
+            if (apply)
             {
-                obj->ToCreature()->SetReactState(REACT_DEFENSIVE);
-                obj->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                    
-                obj->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
-                obj->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-                if (obj->ToCreature()->AI())
-                    obj->ToCreature()->AI()->Talk(Talks::TALK_GARROSH_SPELL09);
-            }
-        }
-        return true;
-    }
-private:
-    Unit* obj;
-    int modifier;
-    int Event;
-};
-
-// Garrosh Hellscream - 
-class boss_garrosh_hellscream : public CreatureScript
-{
-public:
-    boss_garrosh_hellscream() : CreatureScript("boss_garrosh_hellscream") { }
-
-    struct boss_garrosh_hellscreamAI : public BossAI
-    {
-        boss_garrosh_hellscreamAI(Creature* creature) : BossAI(creature, eData::DATA_GARROSH_HELLSCREAM)
-        {
-            m_Instance = creature->GetInstanceScript();
-
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-            me->SetReactState(REACT_PASSIVE);
-
-            HandleHallsDoorsAcitvation();
-        }
-
-        InstanceScript* m_Instance;
-        uint32 m_embodiedCounter;
-        uint32 i_Location;
-        uint32 m_RandomIntermissionTalk;
-        uint32 m_IntermissionOccured;
-        uint16 m_GateIndentifier;
-
-        uint8 m_PhaseCounter;
-       
-        std::list<uint64> l_ListPlayers;
-        std::list<uint64> l_ListPlayersGarroshPower;
-        bool m_Intro;
-        bool m_IntermissionActive;
-        bool m_NullDamage;
-        bool m_ArsenalComment;
-
-        void Reset() override
-        {
-            _Reset();
-            events.Reset();
-
-            l_ListPlayersGarroshPower.clear();
-
-            m_NullDamage = false;
-            m_ArsenalComment = false;
-            m_IntermissionActive = false;
-            m_GateIndentifier = 0;
-            m_IntermissionOccured = 0;
-            i_Location = 1;
-            m_embodiedCounter = 0;
-            m_RandomIntermissionTalk = 4000;
-            m_PhaseCounter = Phases::PHASE_THE_TRUE_HORDE;
-        }
-
-        void JustReachedHome() override
-        {
-            _JustReachedHome();
-            summons.DespawnAll();
-
-            // Activate doors
-            HandleHallsDoorsAcitvation();
-
-            uint32 l_Entry[7] = { Creatures::CREATURE_ANNHLIATE_TRIGGER, Creatures::CREATURE_DESECRATED_WERAPON_TRIGGER, Creatures::CREATURE_FARSEER_WOLF_RIDER, Creatures::CREATURE_VICIOUS_WAR_WOLF, Creatures::CREATURE_KORKRON_WARBRINGER, Creatures::CREATURE_SIEGE_ENGINEER, Creatures::CREATURE_MINION_YSHAARJ };
-
-            for (auto itr : l_Entry)
-            {
-                DespawnCreaturesInArea(itr, me);
-            }
-
-            me->SetObjectScale(1.0);
-
-            // Teleports players back incase a wipe.
-            if (m_PhaseCounter >= Phases::PHASE_REALM_OF_YSHAARJ)
-            {
-                std::list<Player*> l_ListPlayers;
-                me->GetPlayerListInGrid(l_ListPlayers, 500.0f);
-
-                if (l_ListPlayers.empty())
-                    return;
-
-                for (auto itr : l_ListPlayers)
+                // Handle set health pct inc depend of mind control type (seems like spell for this doesn`t exist)
+                if (Creature* garrosh = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
                 {
-                    itr->NearTeleportTo(l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionX(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionY(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionZ(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetOrientation());
-                }
-            }
+                    float percent = me->GetHealthPct();
+                    amount = garrosh->HasAura(SPELL_TOUCH_EMPOWERED) ? 150 : 50;
 
-            if (m_Instance)
-            {
-                m_Instance->SetBossState(eData::DATA_GARROSH_HELLSCREAM, EncounterState::FAIL);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(Spells::SPELL_GARROSH_POWER);
-                m_Instance->DoRemoveAuraFromStackOnPlayers(Spells::SPELL_ENTER_THE_REALM_OF_YSHAARAJ_SCREEN_EFFECT);
+                    if (me->GetMap()->IsHeroic())
+                        amount += 150;
 
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            }
-        }
-
-        void SpellHitTarget(Unit* target, SpellInfo const* spell) override
-        {
-            if ((spell->Id == 144989 || spell->Id == 145033) && target && target->IsInWorld())
-            me->CastSpell(target, Spells::SPELL_EMPOWERED_WHIRLING_CORRUPTION_TRIGGER_MISSILE, true);
-        }
-
-        // Upon combat, close doors, upon reset open doors
-        void HandleHallsDoorsAcitvation()
-        {
-            std::list<GameObject*> l_ListGameObjects;
-            me->GetGameObjectListWithEntryInGrid(l_ListGameObjects, GameObjects::GAMEOBJECT_ENTRANCE, 1000.0f);
-
-            if (l_ListGameObjects.empty())
-                return;
-
-            for (auto itr : l_ListGameObjects)
-            {
-                itr->SetLootState(GO_READY);
-                itr->UseDoorOrButton(10000, false, me);
-            }
-        }
-
-        void EnterCombat(Unit* attacker) override
-        {
-            if (m_Instance)
-            {
-                m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_ENGAGE, me);
-                DoZoneInCombat();
-            }
-
-            HandleHallsDoorsAcitvation();
-
-            Talk(Talks::TALK_AGGRO);
-
-            events.ScheduleEvent(Events::EVENT_ENGINEERS, 50 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(Events::EVENT_HELLSCREAMS_WARSONG, 25 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(Events::EVENT_DESECRATE, 10 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(Events::EVENT_KORKRON_WARBRINGERS, 30 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(Events::EVENT_FARSEER, 45 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void JustSummoned(Creature* summon) override
-        {
-            summons.Summon(summon);
-        }
-
-        void SummonedCreatureDespawn(Creature* summon) override
-        {
-            summons.Despawn(summon);
-        }
-
-        void KilledUnit(Unit* who) override
-        {
-            if (who->GetTypeId() == TypeID::TYPEID_PLAYER)
-            {
-                switch (urand(0, 2 ? m_PhaseCounter > 3 : 1))
-                {
-                case 0:
-                    Talk(Talks::TALK_GARROSH_KILL01);
-                    break;
-                case 1:
-                    Talk(Talks::TALK_GARROSH_KILL02);
-                    break;
-                case 2:
-                    Talk(Talks::TALK_GARROSH_KILL03);
-                    break;
-                }
-            }
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            if (m_Instance)
-            {
-                m_Instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-                m_Instance->SetBossState(DATA_GARROSH_HELLSCREAM, DONE);
-            }
-
-            me->RemoveAllAuras();
-
-            HandleHallsDoorsAcitvation();
-
-            _JustDied();
-            Talk(Talks::TALK_DEATH01);
-        }
-
-        void DoAction(const int32 action) override
-        {
-            switch (action)
-            {
-            case Actions::ACTION_TELEPORT:
-            {
-                if (Creature* l_Heart = m_Instance->instance->GetCreature(m_Instance->GetData64(DATA_GARROSH_HEART_OF_YSHAARAJ)))
-                {
-                    if (l_Heart->AI())
-                    {
-                            std::list <Player*> l_ListPlayers;
-                            std::list<Creature*> m_ListCreatures;
-                            me->GetPlayerListInGrid(l_ListPlayers, 500.0f);
-
-                            DespawnCreaturesInArea(Creatures::CREATURE_KORKRON_IRON_STAR, me);
-                            DespawnCreaturesInArea(Creatures::CREATURE_FARSEER_WOLF_RIDER, me);
-                            DespawnCreaturesInArea(Creatures::CREATURE_KORKRON_WARBRINGER, me);
-
-                            RespawnCreatures(Creatures::CREATURE_EMBODIED_FEAR, me);
-                            RespawnCreatures(Creatures::CREATURE_EMBODIED_DOUBT, me);
-                            RespawnCreatures(Creatures::CREATURE_EMBODIED_DESPAIR, me);
-                        
-                            m_IntermissionActive = true;
-
-                            if (l_ListPlayers.empty())
-                                return;
-
-                            if (!me->GetMap()->IsHeroic())
-                            {
-                                i_Location = urand(1, 3);
-                            }
-
-                            if (m_Instance != nullptr)
-                            {
-                                UnitList targets;
-                                JadeCore::AnyUnitHavingBuffInObjectRangeCheck u_check(me, me, 100, Spells::SPELL_HELLSCREAMS_WARSONG, true);
-                                JadeCore::UnitListSearcher<JadeCore::AnyUnitHavingBuffInObjectRangeCheck> searcher(me, targets, u_check);
-                                me->VisitNearbyObject(100, searcher);
-
-                                for (UnitList::const_iterator it = targets.begin(); it != targets.end(); ++it)
-                                {
-                                    if (!(*it) || !(*it)->HasAura(Spells::SPELL_HELLSCREAMS_WARSONG))
-                                        return;
-
-                                    (*it)->RemoveAura(Spells::SPELL_HELLSCREAMS_WARSONG);
-                                }
-                            }
-
-                            // Garrosh react passive untill all adds dies.                       
-                            me->SetReactState(ReactStates::REACT_PASSIVE);
-                            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_IMMUNE_TO_PC);
-                            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                            me->AttackStop();
-                            me->AddAura(Spells::SPELL_TEMPORARY_STRANGULATED_COSMETIC, me);
-                            me->SummonCreature(Creatures::CREATURE_AURA_OF_YSHAARAJ, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                            me->SetCanFly(false);
-                            me->SetDisableGravity(false);
-
-                            switch (i_Location)
-                            {
-                            case Locations::LOCATION_TERRACE_OF_ENDLESS_SPRINGS:
-                                m_embodiedCounter = 30;
-
-                                me->NearTeleportTo(l_PositionTerraceOfEndlessSpringsGarrosh.GetPositionX(), l_PositionTerraceOfEndlessSpringsGarrosh.GetPositionY(), l_PositionTerraceOfEndlessSpringsGarrosh.GetPositionZ(), l_PositionJadeTempleGarrosh.GetOrientation());
-                                me->GetCreatureListWithEntryInGrid(m_ListCreatures, Creatures::CREATURE_EMBODIED_DOUBT, 1000.0f);
-                                break;
-                            case Locations::LOCATION_JADE_TEMPLE:
-                                m_embodiedCounter = 12;
-
-                                me->NearTeleportTo(l_PositionJadeTempleGarrosh.GetPositionX(), l_PositionJadeTempleGarrosh.GetPositionY(), l_PositionJadeTempleGarrosh.GetPositionZ(), l_PositionJadeTempleGarrosh.GetOrientation());
-                                me->GetCreatureListWithEntryInGrid(m_ListCreatures, Creatures::CREATURE_EMBODIED_DOUBT, 1000.0f);
-                                break;
-                            case Locations::LOCATION_RED_CRANE:
-                                m_embodiedCounter = 2;
-
-                                me->NearTeleportTo(l_PositionRedCraneGarrosh.GetPositionX(), l_PositionRedCraneGarrosh.GetPositionY(), l_PositionRedCraneGarrosh.GetPositionZ(), l_PositionRedCraneGarrosh.GetOrientation());
-                                me->GetCreatureListWithEntryInGrid(m_ListCreatures, Creatures::CREATURE_EMBODIED_DESPAIR, 1000.0f);
-                                break;
-                            }
-
-                            events.Reset();
-
-                            if (!m_ListCreatures.empty())
-                            {
-                                for (auto itr : m_ListCreatures)
-                                {
-                                    itr->Respawn();
-                                }
-                            }
-
-                            // Reset Walls
-                            std::list<GameObject*> l_ListGameObjects;
-                            me->GetGameObjectListWithEntryInGrid(l_ListGameObjects, GameObjects::GAMEOBJECT_GARROSH_ENCOUNTER_SHA_VORTEX_COLLISION, 1000.0f);
-
-                            if (!l_ListGameObjects.empty())
-                            {
-                                for (auto itr : l_ListGameObjects)
-                                {
-                                    itr->SetLootState(GO_READY);
-                                    itr->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                                }
-                            }
-
-                            m_IntermissionOccured++;
-
-                            for (auto itr : l_ListPlayers)
-                            {
-                                itr->CastSpell(itr, Spells::SPELL_GARROSH_POWER);
-                                itr->AddAura(144954, itr); // Buff
-
-                                switch (i_Location)
-                                {
-                                case Locations::LOCATION_TERRACE_OF_ENDLESS_SPRINGS:
-                                    itr->NearTeleportTo(l_PositionTerraceOfEndlessSpringsPlayers.GetPositionX(), l_PositionTerraceOfEndlessSpringsPlayers.GetPositionY(), l_PositionTerraceOfEndlessSpringsPlayers.GetPositionZ(), l_PositionTerraceOfEndlessSpringsPlayers.GetOrientation());
-                                    break;
-                                case Locations::LOCATION_JADE_TEMPLE:
-                                    itr->NearTeleportTo(l_PositionJadeTemplePlayers.GetPositionX(), l_PositionJadeTemplePlayers.GetPositionY(), l_PositionJadeTemplePlayers.GetPositionZ(), l_PositionJadeTemplePlayers.GetOrientation());
-                                    break;
-                                case Locations::LOCATION_RED_CRANE:
-                                    itr->NearTeleportTo(l_PositionRedCranePlayers.GetPositionX(), l_PositionRedCranePlayers.GetPositionY(), l_PositionRedCranePlayers.GetPositionZ(), l_PositionRedCranePlayers.GetOrientation());
-                                    break;
-                                }
-                            }
-                        }
-                    break;
-                }
-            }
-            case Actions::ACTION_RESET_COUNTER_DEAD_EMBODIEDS:
-            {
-                me->CastSpell(me, Spells::SPELL_YSHAARJ_PROTECTION_AURA);
-                std::list<Player*> l_ListPlayers;
-                me->GetPlayerListInGrid(l_ListPlayers, 2.0f);
-
-                if (l_ListPlayers.empty())
-                    return;
-
-                for (auto itr : l_ListPlayers)
-                {
-                    if (itr->HasAura(Spells::SPELL_GARROSH_POWER))
-                    {
-                        if (AuraPtr l_Aura = itr->GetAura(Spells::SPELL_GARROSH_POWER))
-                        {
-                            // Resets Garrosh Power
-                            ModifyGarroshPride(0, itr);
-                        }
-                    }
+                    me->HandleStatModifier(UNIT_MOD_HEALTH, TOTAL_PCT, float(amount), true);
+                    if (me->IsAlive())
+                        me->SetHealth(std::max(uint32(me->GetMaxHealth() * percent / 100.f), uint32(1)));
                 }
 
-                break;
-            }
-            case Actions::ACTION_EMBODIED_COUNT_DEATH:
-            {
-                if (m_embodiedCounter >= 1)
-                {
-                    m_embodiedCounter--;
-                }
-
-                if (m_embodiedCounter <= 0)
-                {
-                    // Yshaaraj Poop
-                    if (Creature * l_HeartOfYshaarajTrigger = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HEART_OF_YSHAARAJ)))
-                    {
-                        l_HeartOfYshaarajTrigger->CastStop();
-                        l_HeartOfYshaarajTrigger->RemoveAllAuras();
-                    }
-
-                    uint32 l_SpellIds[4] = { Spells::SPELL_TEMPORARY_STRANGULATED_COSMETIC, Spells::SPELL_YSHAARJ_PROTECTION, Spells::SPELL_YSHAARJ_PROTECTION_AURA, Spells::SPELL_SHA_CHANNEL_2ND_PHASE };
-                    // Remove all 2nd phase auras
-                    for (uint32 i = 0; i <= 3; i++)
-                    {
-                        me->RemoveAura(l_SpellIds[i]);
-                    }
-
-                    if (m_IntermissionOccured <= 3)
-                        me->m_Events.AddEvent(new garrosh_intermission_introduction(me, 3), me->m_Events.CalculateTime(irand(80000, 100000)));
-
-                    me->SetReactState(ReactStates::REACT_DEFENSIVE);
-                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC);
-                    me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                    me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                    me->SetSpeed(MOVE_RUN, 0.0f, true);
-                   
-                    DespawnCreaturesInArea(Creatures::CREATURE_AURA_OF_YSHAARAJ, me);
-
-                    events.RescheduleEvent(Events::EVENT_ANNHILIATE, 5 * TimeConstants::IN_MILLISECONDS);
-                    events.RescheduleEvent(Events::EVENT_PORT_TO_GARROSH_HALL, 25 * TimeConstants::IN_MILLISECONDS);
-
-                }
-                break;
-            }
-            }
-        }
-
-        void RegeneratePower(Powers power, int32& value)
-        {
-            if (power != POWER_ENERGY)
-                return;
-
-            if (m_embodiedCounter > 1)
-            {
-                value = 1;
-            }
-            else
-                value = 0;
-
-            int32 val = me->GetPower(POWER_ENERGY);
-            if (val + value > 100)
-                val = 100;
-            else
-                val += value;
-
-
-            std::list<Player*> l_listPlayers;
-            me->GetPlayerListInGrid(l_listPlayers, 1000.0f);
-
-            // Sets Garrosh Power
-            if (!l_listPlayers.empty())
-            {
-                for (auto itr : l_listPlayers)
-                {
-                    ModifyGarroshPride(me->GetInt32Value(UNIT_FIELD_POWER1), itr);
-                }
-            }
-
-            me->SetInt32Value(UNIT_FIELD_POWER1, val);
-        }
-
-        void SummonKorkronSoldiers()
-        {
-            if (m_Instance == nullptr)
-                return;
-
-            Talk(Talks::TALK_GARROSH_SPELL03);
-
-            if (GameObject * l_RightDoor = m_Instance->instance->GetGameObject(m_Instance->GetData64(DATA_RIGHT_DOOR_GARROSH)))
-            {
-                if (GameObject * l_LeftDoor = m_Instance->instance->GetGameObject(m_Instance->GetData64(DATA_LEFT_DOOR_GARROSH)))
-                {
-                    // Left Side
-                    l_LeftDoor->SetLootState(LootState::GO_READY);
-                    l_LeftDoor->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                    me->m_Events.AddEvent(new garrosh_close_doors(l_LeftDoor), me->m_Events.CalculateTime(8000));
-
-                    for (int i = 0; i < 3; i++)
-                    {
-                        Creature* l_Korkron = me->SummonCreature(Creatures::CREATURE_KORKRON_WARBRINGER, l_PositionLeftDoor.GetPositionX() + frand(1.5f, 3.0f), l_PositionLeftDoor.GetPositionY() + frand(1.5f, 3.0f), l_PositionLeftDoor.GetPositionZ(), l_PositionLeftDoor.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                        if (l_Korkron)
-                        {
-                            l_Korkron->GetMotionMaster()->MovePoint(2, 1030.901f, -5704.937f, -317.689f);
-                        }
-                    }
-
-                    // Right Side
-                    l_RightDoor->SetLootState(LootState::GO_READY);
-                    l_RightDoor->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                    me->m_Events.AddEvent(new garrosh_close_doors(l_RightDoor), me->m_Events.CalculateTime(8000));
-
-                    for (int i = 0; i < 3; i++)
-                    {
-                        Creature* l_Korkron = me->SummonCreature(Creatures::CREATURE_KORKRON_WARBRINGER, l_PositionRightDoor.GetPositionX() + frand(1.5f, 3.0f), l_PositionRightDoor.GetPositionY() + frand(1.5f, 3.0f), l_PositionRightDoor.GetPositionZ(), l_PositionRightDoor.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                        if (l_Korkron)
-                        {
-                            l_Korkron->GetMotionMaster()->MovePoint(1, 1074.017f, -5563.278f, -317.688f);
-                        }
-                    }
-                }
-
-                m_GateIndentifier = 0 ? m_GateIndentifier = 1 : 1;
-            }
-        }
-
-        void SummonFarseer()
-        {
-            if (m_Instance == nullptr)
-                return;
-
-            Talk(Talks::TALK_GARROSH_SPELL04);
-
-            if (GameObject * l_RightDoor = m_Instance->instance->GetGameObject(m_Instance->GetData64(DATA_RIGHT_DOOR_GARROSH)))
-            {
-                if (GameObject * l_LeftDoor = m_Instance->instance->GetGameObject(m_Instance->GetData64(DATA_LEFT_DOOR_GARROSH)))
-                {
-                    switch (m_GateIndentifier)
-                    {
-                    case 0:
-                    {
-                        // Left Side
-                        l_LeftDoor->SetLootState(LootState::GO_READY);
-                        l_LeftDoor->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                        me->m_Events.AddEvent(new garrosh_close_doors(l_LeftDoor), me->m_Events.CalculateTime(8000));
-
-                        Creature* l_Farseer = me->SummonCreature(Creatures::CREATURE_FARSEER_WOLF_RIDER, l_PositionLeftDoor.GetPositionX(), l_PositionLeftDoor.GetPositionY(), l_PositionLeftDoor.GetPositionZ(), l_PositionLeftDoor.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                        if (l_Farseer)
-                        {
-                            l_Farseer->GetMotionMaster()->MovePoint(2, 1030.901f, -5704.937f, -317.689f);
-                        }
-
-                        break;
-                    }
-                    case 1:
-                    {
-                        // Right Side
-                        l_RightDoor->SetLootState(LootState::GO_READY);
-                        l_RightDoor->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                        me->m_Events.AddEvent(new garrosh_close_doors(l_RightDoor), me->m_Events.CalculateTime(8000));
-
-                        Creature* l_Farseer = me->SummonCreature(Creatures::CREATURE_FARSEER_WOLF_RIDER, l_PositionRightDoor.GetPositionX(), l_PositionRightDoor.GetPositionY(), l_PositionRightDoor.GetPositionZ(), l_PositionRightDoor.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                        if (l_Farseer)
-                        {
-                            l_Farseer->GetMotionMaster()->MovePoint(1, 1074.017f, -5563.278f, -317.688f);
-                        }
-                        break;
-                    }
-                    }
-
-                    m_GateIndentifier = 0 ? m_GateIndentifier = 1 : 1;
-                }
-            }
-        }
-
-        void DamageTaken(Unit* attacker, uint32& damage) override
-        {
-            if (m_NullDamage || m_IntermissionActive)
-                damage = 0;
-
-            switch (m_PhaseCounter)
-            {
-            case Phases::PHASE_THE_TRUE_HORDE:
-                if (me->GetHealthPct() <= 10 && m_PhaseCounter == Phases::PHASE_THE_TRUE_HORDE)
-                {
-                    m_PhaseCounter = Phases::PHASE_REALM_OF_YSHAARJ;
-
-                    Talk(Talks::TALK_DEATH);
-                    events.Reset();
-
-                    me->AttackStop();
-
-                    if (m_Instance != nullptr)
-                    {
-                        m_Instance->DoRemoveAurasDueToSpellOnPlayers(Spells::SPELL_HELLSCREAMS_WARSONG);
-                    }
-
-                    me->SetReactState(REACT_PASSIVE);
-                    me->SetFlag(UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_NON_ATTACKABLE | UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC);
-
-                    me->SetPower(POWER_ENERGY, 0);
-                    me->SetInt32Value(UNIT_FIELD_POWER1, 0);
-                    me->SetMaxPower(POWER_ENERGY, 100);
-                    me->SetInt32Value(UNIT_FIELD_MAXPOWER1, 100);
-                    me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN | UNIT_FLAG2_REGENERATE_POWER);
-
-                    me->m_Events.AddEvent(new garrosh_intermission_introduction(me, 0), me->m_Events.CalculateTime(4500));
-                }
-                break;
-            case Phases::PHASE_POWER_OF_YSHARJ:
-                if (me->GetHealthPct() <= 10 && m_PhaseCounter == Phases::PHASE_POWER_OF_YSHARJ)
-                {
-                    events.Reset();
-                    // Handle 4th event.
-                    m_NullDamage = true;
-            
-                    me->m_Events.KillAllEvents(true);
-
-                    if (m_IntermissionActive)
-                    {
-                        // Renewing the Iron Stars
-                        std::list<Player*> l_ListPlayers;
-                        me->GetPlayerListInGrid(l_ListPlayers, 300.0f);
-
-                        if (l_ListPlayers.empty())
-                            return;
-
-                        for (auto itr : l_ListPlayers)
-                        {
-                            itr->NearTeleportTo(l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionX(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionY(), -307.205f, l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetOrientation());
-                        }
-
-                        m_IntermissionActive = false;
-                    }
-
-                    Talk(Talks::TALK_GARROSH_SPELL09);                 
-
-                    me->SetReactState(REACT_PASSIVE);
-
-                    me->GetMotionMaster()->MovePoint(0, l_PositionGarroshHellScreamSecondPhasePositionPreConvert);
-                    me->m_Events.AddEvent(new garrosh_spell_self_event(me, Spells::SPELL_TRANSITION_THIRD_PHASE), me->m_Events.CalculateTime(6000));
-                    me->m_Events.AddEvent(new garrosh_spell_self_event(me, Spells::SPELL_TRANSITION_THIRD_PHASE_CHANGE_FORM), me->m_Events.CalculateTime(11000));
-                    me->m_Events.AddEvent(new garrosh_spell_self_event(me, Spells::SPELL_TRANSITION_THIRD_PHASE_VISUAL), me->m_Events.CalculateTime(8000)); 
-
-                 
-                    events.ScheduleEvent(Events::EVENT_EMPOWERED_DESECRATE, 20 * TimeConstants::IN_MILLISECONDS);
-                    events.ScheduleEvent(Events::EVENT_TOUCH_OF_YSHAARJ, 60 * TimeConstants::IN_MILLISECONDS);
-                    events.ScheduleEvent(Events::EVENT_GRIPPING_DESPAIR, 12 * TimeConstants::IN_MILLISECONDS);
-                    events.ScheduleEvent(Events::EVENT_WHIRLING_CORRUPTION, 35 * TimeConstants::IN_MILLISECONDS);
-                    events.ScheduleEvent(Events::EVENT_MY_WORLD_REMOVE_FLAGS, 20 * TimeConstants::IN_MILLISECONDS);
-
-                    m_PhaseCounter = Phases::PHASE_MY_WORlD;
-                }
-                break;
-            case Phases::PHASE_MY_WORlD:
-                // Do nothing, just die.
-                break;
-            };
-        }
-
-        void CheckCorruptionLevels()
-        {
-            // Shows markers
-            if ((me->GetInt32Value(UNIT_FIELD_POWER1) >= 100))
-            {
-                if (!me->HasAura(Spells::SPELL_EMPOWERED_GRIPPING_DESPAIR_AURA_DUMMY))
-                    me->CastSpell(me, Spells::SPELL_EMPOWERED_GRIPPING_DESPAIR_AURA_DUMMY);
-            }
-            else if ((me->GetInt32Value(UNIT_FIELD_POWER1) >= 75))
-            {
-                if (!me->HasAura(Spells::SPELL_EMPOWERED_DESECRATE_APPLY_AURA))
-                    me->CastSpell(me, Spells::SPELL_EMPOWERED_DESECRATE_APPLY_AURA);
-            }
-            else if ((me->GetInt32Value(UNIT_FIELD_POWER1) >= 45))
-            {
-                if (!me->HasAura(Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ))
-                    me->CastSpell(me, Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ);
-            }
-            else if ((me->GetInt32Value(UNIT_FIELD_POWER1) >= 25))
-            {
-                if (!me->HasAura(Spells::SPELL_EMPOWERED_WHIRL_CORRUPTION_SPELL_AURA_DUMMY))
-                    me->CastSpell(me, Spells::SPELL_EMPOWERED_WHIRL_CORRUPTION_SPELL_AURA_DUMMY);
-            }
-        }
-
-        void IntermissionRandomSayings(const uint32 diff)
-        {
-            Creature* l_NearestHearth = NULL;
-
-            if (l_NearestHearth = me->FindNearestCreature(Creatures::CREATURE_HEART_OF_YSHAARAJ, 100.0f, true))
-            {
-                if (m_IntermissionActive)
-                {
-                    if (m_RandomIntermissionTalk <= diff)
-                    {
-                        switch (urand(0, 6))
-                        {
-                        case 0:
-                            l_NearestHearth->AI()->Talk(Talks::TALK_YSHAARAJ_01);
-                            break;
-                        case 1:
-                            l_NearestHearth->AI()->Talk(Talks::TALK_YSHAARAJ_02);
-                            break;
-                        case 2:
-                            l_NearestHearth->AI()->Talk(Talks::TALK_YSHAARAJ_03);
-                            break;
-                        case 3:
-                            l_NearestHearth->AI()->Talk(Talks::TALK_YSHAARAJ_04);
-                            break;
-                        case 4:
-                            l_NearestHearth->AI()->Talk(Talks::TALK_YSHAARAJ_05);
-                            break;
-                        case 5:
-                            l_NearestHearth->AI()->Talk(Talks::TALK_YSHAARAJ_06);
-                            break;
-                        }
-
-                        m_RandomIntermissionTalk = 14000;
-                    }
-                    else
-                        m_RandomIntermissionTalk -= diff;
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            events.Update(diff);
-
-            // Add indentifiers for auras
-            CheckCorruptionLevels();
-
-            // Random Intermission talks by Yshaaraj
-            IntermissionRandomSayings(diff);
-
-            if (m_IntermissionActive && m_embodiedCounter > 0)
-            {
+                me->SetByteFlag(UNIT_FIELD_SHAPESHIFT_FORM, 1, UNIT_BYTE2_FLAG_UNK1);
+                me->UnsummonPetTemporaryIfAny();
+                me->CastStop();
                 me->AttackStop();
-                me->SetReactState(REACT_PASSIVE);
-                me->StopMoving();
-            }
+                me->SendMovementFlagUpdate(true);
+                playerEvents.ScheduleEvent(EVENT_TOUCH_OF_YSHAARJ_PLAYER, urand(2 * IN_MILLISECONDS, 4 * IN_MILLISECONDS));
 
-            if (!UpdateVictim())
-                return;
-
-            if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
-                return;
-
-            switch (events.ExecuteEvent())
-            {
-            case Events::EVENT_MY_WORLD_REMOVE_FLAGS:
-                me->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_STATE_CANNOT_TURN);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                me->SetReactState(REACT_DEFENSIVE);        
-                me->setFaction(16);
-                me->Attack(me->getVictim(), true);
-
-                Talk(Talks::TALK_EVENT_7);
-
-                // Grants him 25% hp, hardcoded
-                me->SetHealth(me->GetHealth() + (me->GetMaxHealth() * 0.25));
-                me->SetObjectScale(2.0f);
-
-                Position l_Position;
-                me->GetPosition(&l_Position);
-                me->UpdatePosition(l_Position, true);
-                me->SendMovementFlagUpdate();
-                break;
-                // Phase 1 
-            case Events::EVENT_DESECRATE:
-            {
-                if (Unit* l_Target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 200.0f, true))
-                {
-                    if (m_PhaseCounter == 1)
-                    {
-                        me->CastSpell(l_Target, Spells::SPELL_DESECRATE_TRIGGER_MISSILE);
-                    }
-                    else if (m_PhaseCounter == 2)
-                    {
-                        // Phase 3
-                        if (me->GetUInt32Value(UNIT_FIELD_POWER1) >= 75) // ?? possible only once, dunno yet. creating it on heroic
-                        {
-                            // Cast Empowered Desecrate
-                            me->CastSpell(l_Target, Spells::SPELL_EMPOWER_DESECRATE_TRIGGER_MISSILE);
-                        }
-                        else
-                        {
-                            me->CastSpell(l_Target, Spells::SPELL_DESECRATE_TRIGGER_MISSILE);
-                        }
-                    }
-                    else if (m_PhaseCounter == 3)
-                    {
-                        me->CastSpell(l_Target, Spells::SPELL_EMPOWER_DESECRATE_TRIGGER_MISSILE);
-                    }
-                }
-
-                events.ScheduleEvent(Events::EVENT_DESECRATE, 25 * TimeConstants::IN_MILLISECONDS);
-                break;
-            }
-            case Events::EVENT_HELLSCREAMS_WARSONG:
-                DoCastAOE(Spells::SPELL_HELLSCREAMS_WARSONG);
-
-                Talk(Talks::TALK_GARROSH_SPELL05);
-
-                events.ScheduleEvent(Events::EVENT_HELLSCREAMS_WARSONG, 80 * TimeConstants::IN_MILLISECONDS);
-                break;
-            case Events::EVENT_KORKRON_WARBRINGERS:
-                SummonKorkronSoldiers();
-
-                events.ScheduleEvent(Events::EVENT_KORKRON_WARBRINGERS, 70 * TimeConstants::IN_MILLISECONDS);
-                break;
-            case Events::EVENT_FARSEER:
-                SummonFarseer();
-
-                events.ScheduleEvent(Events::EVENT_FARSEER, 90 * TimeConstants::IN_MILLISECONDS);
-                break;
-            case Events::EVENT_ENGINEERS:
-            {
-                Talk(Talks::TALK_GARROSH_SPELL01);
-
-                // Clean previous triggers
-                DespawnCreaturesInArea(Creatures::CREATURE_KORKRON_IRON_STAR, me);
-                DespawnCreaturesInArea(Creatures::CREATURE_STAR_EXPLOSIVE_TRIGGER, me);
-
-                events.ScheduleEvent(Events::EVENT_ENGINEERS, 50 * TimeConstants::IN_MILLISECONDS);
-                events.ScheduleEvent(Events::EVENT_ENGINEERS + 1, 4 * TimeConstants::IN_MILLISECONDS);
-                break;
-            }
-            case Events::EVENT_ENGINEERS + 1:
-                // Right = 1; Left = 2
-                for (int i = 0; i < 2; i++)
-                {
-                    Creature* l_Engineer = me->SummonCreature(Creatures::CREATURE_SIEGE_ENGINEER, l_PositionEngineers[i], TEMPSUMMON_MANUAL_DESPAWN);
-
-                    if (l_Engineer)
-                    {
-                        l_Engineer->GetMotionMaster()->MovePoint(Movements::MOVEMENT_SIEGE_ENGINEER_IRON_STAR_ACTIVATION, l_PositionEngineersMovement[i].GetPositionX(), l_PositionEngineersMovement[i].GetPositionY(), l_PositionEngineersMovement[i].GetPositionZ());
-                    }
-
-                    Creature* l_IronStar = l_Engineer->SummonCreature(Creatures::CREATURE_KORKRON_IRON_STAR, l_PositionIronStars[i], TEMPSUMMON_MANUAL_DESPAWN);
-
-                    if (l_IronStar && l_IronStar->GetAI())
-                    {
-                        l_IronStar->GetAI()->DoAction(i);
-                    }
-                }
-                break;
-
-                // Phase 2
-            case Events::EVENT_ANNHILIATE:
-                if (Unit* l_Target = me->getVictim())
-                {
-                    me->CastSpell(l_Target, Spells::SPELL_ANNIHILATE_DAMAGE);
-                }
-
-                events.ScheduleEvent(Events::EVENT_ANNHILIATE, 5 * TimeConstants::IN_MILLISECONDS);
-                break;
-
-            case Events::EVENT_PORT_TO_GARROSH_HALL:
-            {
-                std::list<Player*> l_ListPlayers;
-                me->GetPlayerListInGrid(l_ListPlayers, 300.0f);
-
-                if (l_ListPlayers.empty())
-                    return;
-
-                for (auto itr : l_ListPlayers)
-                {
-                    itr->NearTeleportTo(l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionX(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionY(), -307.205f, l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetOrientation());
-                }
-
-                me->NearTeleportTo(l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionX(), l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetPositionY(), -307.205f, l_PositionGarroshHellScreamSecondPhasePositionPreConvert.GetOrientation());
-
-                m_IntermissionActive = false;
-
-                m_PhaseCounter = Phases::PHASE_POWER_OF_YSHARJ;
-
-                events.Reset();
-
-                events.ScheduleEvent(Events::EVENT_WHIRLING_CORRUPTION, 20 * TimeConstants::IN_MILLISECONDS);
-                events.ScheduleEvent(Events::EVENT_TOUCH_OF_YSHAARJ, 40 * TimeConstants::IN_MILLISECONDS);
-                events.ScheduleEvent(Events::EVENT_DESECRATE, 10 * TimeConstants::IN_MILLISECONDS);
-                events.ScheduleEvent(Events::EVENT_GRIPPING_DESPAIR, 6 * TimeConstants::IN_MILLISECONDS);
-
-                if (m_Instance != nullptr)
-                {
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(Spells::SPELL_GARROSH_POWER);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(Spells::SPELL_ENTER_THE_REALM_OF_YSHAARAJ_SCREEN_EFFECT);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(Spells::SPELL_REALM_OF_YSHAARAJ_DEBUFF_PURPLE);
-                }
-
-                me->SetReactState(REACT_DEFENSIVE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_STATE_CANNOT_TURN);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                me->RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
-                me->SetSpeed(MOVE_RUN, 1.12f);
-
-                switch (i_Location)
-                {
-                case Locations::LOCATION_TERRACE_OF_ENDLESS_SPRINGS:
-                    AttackStop(Creatures::CREATURE_EMBODIED_FEAR, me);
-                    break;
-                case Locations::LOCATION_RED_CRANE:
-                    AttackStop(Creatures::CREATURE_EMBODIED_DESPAIR, me);
-                    break;
-                case Locations::LOCATION_JADE_TEMPLE:
-                    AttackStop(Creatures::CREATURE_EMBODIED_DOUBT, me);
-                    break;
-                }
-
-                if (me->GetMap()->IsHeroic())
-                    i_Location++;
-                else
-                    i_Location = Locations::LOCATION_THIRD_PHASE;
-
-                // Starts Intermission again
-               // if (i_Location < 4) // 3 max intermissios
-                    //events.ScheduleEvent(Events::EVENT_TURN_PHASE_2_2, 40 * TimeConstants::IN_MILLISECONDS);
-                break;
-            }
-
-            // Phase 3
-            case Events::EVENT_WHIRLING_CORRUPTION:
-                Talk(Talks::TALK_GARROSH_SPELL06);
-
-                if (m_PhaseCounter == 2)
-                {
-                    if (me->GetUInt32Value(UNIT_FIELD_POWER1) >= 25) // ?? possible only once, dunno yet. creating it on heroic
-                    {
-                        // Empowered Whirling Corruption
-                        me->CastSpell(me, Spells::SPELL_EMPOWERED_WHIRL_CORRUPTION_DUMMY);
-                    }
-                    else
-                    {
-                        me->CastSpell(me, Spells::SPELL_WHIRLLING_CORRUPTION_PERIODIC_SPELL);
-                    }
-                }
-                else if (m_PhaseCounter == 3)
-                {
-                    me->CastSpell(me, Spells::SPELL_EMPOWERED_WHIRL_CORRUPTION_DUMMY);
-                }
-                break;
-            case Events::EVENT_TOUCH_OF_YSHAARJ:
-            {
-                std::list<Player*> l_TouchOfYsyhaarajTargets;
-                me->GetPlayerListInGrid(l_TouchOfYsyhaarajTargets, 100.0f);
-
-                if (l_TouchOfYsyhaarajTargets.empty())
-                    return;
-
-                std::list<Player*>::const_iterator it = l_TouchOfYsyhaarajTargets.begin();
-                std::advance(it, urand(0, l_TouchOfYsyhaarajTargets.size() - 2 ? l_TouchOfYsyhaarajTargets.size() >= 2 : 1));
-
-                if (m_PhaseCounter == 2)
-                {
-                    if (me->GetUInt32Value(UNIT_FIELD_POWER1) >= 50) // ?? possible only once, dunno yet. creating it on heroic
-                    {
-                        me->CastSpell((*it), Spells::SPELL_TOUCH_OF_YSHRAAJ_SCRIPT_EFFECT, true);
-                    }
-                    else
-                    {
-                        me->CastSpell((*it), Spells::SPELL_TOUCH_OF_YSHRAAJ_SCHOOL_ABSORB, true);
-                    }
-                }
-                else if (m_PhaseCounter == 3)
-                {
-                    me->CastSpell((*it), Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ);
-                }
-                break;
-            }
-            case Events::EVENT_GRIPPING_DESPAIR:
-
-                if (m_PhaseCounter == 2)
-                {
-                    if (Unit* l_Target = me->getVictim())
-                    {
-                        // Empowered Gripping Despair
-                        if (me->GetUInt32Value(UNIT_FIELD_POWER1) >= 100) // ?? possible only once, dunno yet. creating it on heroic
-                        {
-                            me->CastSpell(l_Target, Spells::SPELL_EMPOWERED_GRIPPING_DESPAIR_PERIODIC_DAMAGE);
-                        }
-                        else
-                        {
-                            me->CastSpell(l_Target, Spells::SPELL_GRIPPING_DESPAIR_PERIODIC_DAMAGE);
-                        }
-                    }
-                }
-                else if (m_PhaseCounter == 3)
-                {
-                    if (Unit* l_Target = me->getVictim())
-                    {
-                        me->CastSpell(l_Target, Spells::SPELL_EMPOWERED_GRIPPING_DESPAIR_PERIODIC_DAMAGE);
-                    }
-                }
-                break;
-
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new boss_garrosh_hellscreamAI(creature);
-    }
-};
-
-// Empowered Whirling Corruption - 145037 
-class spell_whirling_corruption : public SpellScriptLoader
-{
-public:
-    spell_whirling_corruption() : SpellScriptLoader("spell_whirling_corruption") { }
-
-    class spell_whirling_corruptionAuraScript : public AuraScript
-    {
-        PrepareAuraScript(spell_whirling_corruptionAuraScript);
-
-        void HandlePeriodic(constAuraEffectPtr /*aurEff*/)
-        {
-            PreventDefaultAction();
-
-            if (!GetCaster())
-                return;
-
-            if (GetSpellInfo() && GetSpellInfo()->Id == 145037) // Empowered
-            {             
-                GetCaster()->CastSpell(GetCaster(), 144994, true);
+                // just move to near point for update movement for whole
+                float angle = frand(0.0f, 2 * M_PI);
+                float x = me->GetPositionX() + 0.5f * cos(angle);
+                float y = me->GetPositionY() + 0.5f * sin(angle);
+                float z = me->GetPositionZ();
+                me->UpdateAllowedPositionZ(x, y, z);
+                me->GetMotionMaster()->MovePoint(0, x, y, z, angle);
             }
             else
             {
-                GetCaster()->CastSpell(GetCaster(), 144994, true);
-            }
-        }
-
-        void Register()
-        {
-            OnEffectPeriodic += AuraEffectPeriodicFn(spell_whirling_corruptionAuraScript::HandlePeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_whirling_corruptionAuraScript();
-    }
-};
-
-// Touch of Yshaaraj - 145096
-class spell_touch_of_yshaaraj_proc_two : public SpellScriptLoader
-{
-public:
-    spell_touch_of_yshaaraj_proc_two() : SpellScriptLoader("spell_touch_of_yshaaraj_proc_two") { }
-
-    class spell_touch_of_yshaaraj_proc_twoAuraScript : public AuraScript
-    {
-        PrepareAuraScript(spell_touch_of_yshaaraj_proc_twoAuraScript);
-
-        uint32 RandomWalkingTimer;
-
-        bool Load()
-        {
-            RandomWalkingTimer = 3000;
-            return true;
-        }
-
-        void OnUpdate(uint32 diff, AuraEffectPtr aurEff)
-        {
-            if (GetTarget())
-            {
-                if (GetCaster())
+                // Handle remove health pct inc depend of mind control type (seems like spell for this doesn`t exist)
+                if (Creature* garrosh = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
                 {
-                    // Remove buff when target is below 20 precent
-                    if (GetTarget()->GetHealthPct() <= 20)
+                    float percent = me->GetHealthPct();
+                    uint32 currentHealth = me->GetHealth();
+
+                    me->HandleStatModifier(UNIT_MOD_HEALTH, TOTAL_PCT, float(amount), false);
+
+                    // Set Current health depend of improved health of Y`shaarj
+                    if (me->IsAlive())
+                        me->SetHealth(std::max(uint32(currentHealth), uint32(1)));
+                }
+
+                me->RemoveByteFlag(UNIT_FIELD_SHAPESHIFT_FORM, 1, UNIT_BYTE2_FLAG_UNK1);
+                me->ResummonPetTemporaryUnSummonedIfAny();
+                playerEvents.Reset();
+                me->InterruptNonMeleeSpells(false, SPELL_TOUCH_OF_YSHAARJ_PLAYER);
+                me->RemoveAurasDueToSpell(SPELL_WEAKENED_BLOWS);
+                me->RemoveAurasDueToSpell(SPELL_MORTAL_WOUNDS);
+                me->RemoveAurasDueToSpell(SPELL_MASTER_POISONER); // hotfixed 18.09.2013: "Removing the Touch of Y'Sharrj or Empowered Touch of Y'Shaarj debuff now also removes Weakened Blows, Mortal Wounds, and Master Poisoner effects from the player"
+
+                me->CastStop();
+                me->AttackStop();
+                MovementGeneratorType mgType = me->GetMotionMaster()->GetMotionSlotType(MOTION_SLOT_ACTIVE);
+                if (mgType == FOLLOW_MOTION_TYPE || mgType == CHASE_MOTION_TYPE)
+                {
+                    TargetedMovementGeneratorBase* movementGenerator = dynamic_cast<TargetedMovementGeneratorBase*>(me->GetMotionMaster()->GetMotionSlot(MOTION_SLOT_ACTIVE));
+                    if (movementGenerator && !(movementGenerator->GetTarget() && movementGenerator->GetTarget()->IsAlive()))
                     {
-                        GetTarget()->RemoveAura(SPELL_TOUCH_OF_YSHRAAJ_SCRIPT_EFFECT);
-                        GetTarget()->RemoveAura(SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ);
-                    }
-
-                    // Diff to cast Touch of Yshaaraj
-                    if (RandomWalkingTimer <= diff)
-                    {
-                        UnitList targets;
-                        JadeCore::AnyPlayerHavingBuffInObjectRangeCheck u_check(GetTarget(), GetTarget(), 300.0f, Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ ? GetSpellInfo()->Id == SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ : SPELL_TOUCH_OF_YSHRAAJ_SCRIPT_EFFECT, true);
-                        JadeCore::UnitListSearcher<JadeCore::AnyPlayerHavingBuffInObjectRangeCheck> searcher(GetTarget(), targets, u_check);
-                        GetTarget()->VisitNearbyObject(300.0f, searcher);
-
-                        std::list<Unit*>::const_iterator it = targets.begin();
-                        std::advance(it, urand(0, targets.size() - 1));
-
-                        if (GetSpellInfo() && GetSpellInfo()->Id == Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ)
-                        {
-                            GetTarget()->CastSpell((*it), Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ);
-                        }
+                        // Delete targeted movement generator if there is no target anymore or the target is dead
+                        if (me->GetMotionMaster()->top() == me->GetMotionMaster()->GetMotionSlot(MOTION_SLOT_CONTROLLED))
+                            me->GetMotionMaster()->DirectDelete(MOTION_SLOT_ACTIVE);
                         else
                         {
-
-                            GetTarget()->CastSpell((*it), Spells::SPELL_TOUCH_OF_YSHRAAJ_SCRIPT_EFFECT, false);
+                            me->GetMotionMaster()->MovementExpired();
+                            me->StopMoving();
                         }
-
-                        RandomWalkingTimer = 3000;
-                    }
-                    else
-                        RandomWalkingTimer -= diff;
-                }
-            }
-        }
-
-        void HandleOnApply(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
-        {
-            if (Unit* l_Caster = GetCaster())
-            {
-                if (Unit* l_Target = GetTarget())
-                {
-                    OriginalFaction = l_Target->getFaction();
-
-                    l_Target->SetCharmedBy(l_Caster, CHARM_TYPE_CHARM);
-                    l_Target->setFaction(GetCaster()->getFaction());
-                    l_Target->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-                    l_Target->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-                    if (GetSpellInfo()->Id == Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ)
-                    {
-                        l_Target->RemoveAura(Spells::SPELL_TOUCH_OF_YSHRAAJ_SCHOOL_ABSORB01);
-                        l_Target->AddAura(Spells::SPELL_EMPOWERED_TOUCH_OF_YSHRAAJ_DEBUFF, l_Target);
                     }
                 }
             }
         }
 
-        void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        void DamageTaken(Unit* /*attacker*/, uint32& damage) override
         {
-            if (Unit* l_Caster = GetCaster())
+            if (me->HealthBelowPct(21) || damage >= me->GetHealth())
             {
-                if (Unit* l_Target = GetTarget())
+                // Prevent killable from players
+                if (damage >= me->GetHealth())
+                    damage = 0;
+
+                me->RemoveAurasDueToSpell(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ);
+                me->RemoveAurasDueToSpell(SPELL_TOUCH_OH_YSHAARJ);
+                me->RemoveAurasDueToSpell(SPELL_TOUCH_OF_YSHAARJ_PLAYER_EFF);
+                me->RemoveAurasDueToSpell(SPELL_EMP_TOUCH_OF_YSHAARJ_PLAYER_EFF);
+            }
+        }
+
+        void UpdateAI(uint32 diff) override 
+        {
+            playerEvents.Update(diff);
+    
+            while (uint32 eventId = playerEvents.ExecuteEvent())
+            {
+                if (eventId == EVENT_TOUCH_OF_YSHAARJ_PLAYER)
                 {
-                    l_Target->RemoveFlag(UNIT_FIELD_FLAGS,   UNIT_FLAG_DISABLE_MOVE);
-                    l_Target->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-                    l_Target->RemoveCharmedBy(l_Caster);
-                    l_Target->RemoveCharmAuras();
-                    
-                    if (OriginalFaction != NULL)
-                        l_Target->setFaction(OriginalFaction);
+                    if (Player* target = ObjectAccessor::GetPlayer(*me, getNotCharmedPlayerGUID()))
+                        me->CastSpell(target, SPELL_TOUCH_OF_YSHAARJ_PLAYER, false);
+
+                    playerEvents.ScheduleEvent(EVENT_TOUCH_OF_YSHAARJ_PLAYER, 7 * IN_MILLISECONDS);
                 }
+                break;
             }
         }
 
     private:
-        uint32 OriginalFaction;
-
-        void Register()
+        uint64 getNotCharmedPlayerGUID()
         {
-            OnEffectApply += AuraEffectApplyFn(spell_touch_of_yshaaraj_proc_twoAuraScript::HandleOnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-            AfterEffectRemove += AuraEffectRemoveFn(spell_touch_of_yshaaraj_proc_twoAuraScript::OnRemove, EFFECT_0, SPELL_AURA_MOD_SPEED_ALWAYS, AURA_EFFECT_HANDLE_REAL);
-            OnEffectUpdate += AuraEffectUpdateFn(spell_touch_of_yshaaraj_proc_twoAuraScript::OnUpdate, EFFECT_6, SPELL_AURA_PROC_TRIGGER_SPELL_2);
-        }
-    };
+            std::list<Player*> targets;
+            GetPlayerListInGrid(targets, me, 200.0f);
+            targets.remove_if([=](Player* target) { return target && (target->HasAura(SPELL_TOUCH_OF_YSHAARJ_PLAYER_EFF) || target->HasAura(SPELL_EMP_TOUCH_OF_YSHAARJ_PLAYER_EFF) || target->HasAura(SPELL_TOUCH_OH_YSHAARJ) || target->HasAura(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ)); });
 
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_touch_of_yshaaraj_proc_twoAuraScript();
-    }
+            if (targets.empty())
+                return 0;
+
+            return Trinity::Containers::SelectRandomContainerElement(targets)->GetGUID();
+        }
 };
 
-// not sure if needed
-// Enter the realm of Y'sharaaj
-class spell_enter_the_realm_yshaaraj : public SpellScriptLoader
+class boss_garrosh_hellscream : public CreatureScript
 {
-public:
-    spell_enter_the_realm_yshaaraj() : SpellScriptLoader("spell_enter_the_realm_yshaaraj") { }
+    public:
+        boss_garrosh_hellscream() : CreatureScript("boss_garrosh_hellscream") { }
 
-    class spell_enter_the_realm_yshaaraj_AuraScript : public AuraScript
-    {
-        PrepareAuraScript(spell_enter_the_realm_yshaaraj_AuraScript);
-
-        void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        struct boss_garrosh_hellscreamAI : public BossAI
         {
-            if (GetTarget())
+            boss_garrosh_hellscreamAI(Creature* creature) : BossAI(creature, DATA_GARROSH_HELLSCREAM) 
             {
-                if (GetCaster())
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_HEALING_PCT, true);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
+            }
+			EventMap RealmEvents;
+            bool wRiderGates;
+            bool sPhase;
+            bool inRealm;
+            bool firstTransition;
+            bool clumpCheckDone;
+            bool lastPhaseTriggered;
+            uint8 phase;
+            uint32 currentEmboded, SelectedEmbodied;
+            uint32 strikeCounter;
+            uint32 despairCounter;
+            uint32 touchCount;
+            uint32 bombardCount;
+            uint32 powerGainCount;
+            uint64 targetGUID;
+            uint64 despairTargetGUID;
+            std::list<uint64> realmMinionGUIDs;
+
+            void Reset() override
+            {
+                _Reset();
+                events.Reset();
+                RealmEvents.Reset();
+                summons.DespawnAll();
+
+                if (instance)
                 {
-                    if (InstanceScript* m_Instance = GetTarget()->GetInstanceScript())
-                    {
-                        if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->SetBossState(DATA_GARROSH_HELLSCREAM, NOT_STARTED);
+
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_COURAGE_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FAITH_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HOPE_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DESECRATED);
+                }
+
+                me->SetPowerType(POWER_ENERGY);
+                me->SetMaxPower(POWER_ENERGY, 100);
+                me->SetPower(POWER_ENERGY, 0);
+                DoCast(me, SPELL_NON_REGENERATE_POWER, true);
+
+                wRiderGates = false;
+                phase = PHASE_FIRST;
+                targetGUID = 0;
+                currentEmboded = 0;
+                SelectedEmbodied = 0;
+                despairTargetGUID = 0;
+                strikeCounter = 0;
+                despairCounter = 0;
+                bombardCount = 0;
+                touchCount = 0;
+                powerGainCount = 0;
+                sPhase = false;
+                inRealm = false;
+                firstTransition = true;
+                clumpCheckDone = false;
+                lastPhaseTriggered = false;
+                me->RemoveAurasDueToSpell(SPELL_TRANSITION_EFFECT);
+                me->RemoveAurasDueToSpell(SPELL_SHAARJS_PROTECTION);
+                me->RemoveAurasDueToSpell(SPELL_WHIRLWIND_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_TOUCH_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_DESECRATED_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_GRIPPING_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_TRANSITION_THIRD_EFFECT);
+                me->HandleEmoteStateCommand(EMOTE_STATE_NONE);
+                me->SetAIAnimKitId(0);
+                me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 101441);
+                realmMinionGUIDs.clear();
+                me->GetMap()->SetWorldState(WORLDSTATE_STRIKE, 0);
+                me->GetMap()->SetWorldState(WORLDSTATE_STRIKE_2, 0);
+
+                scheduler
+                    .Schedule(Seconds(1), [this](TaskContext context)
+                {
+                    if (instance && instance->GetData(DATA_GARROSH_HELLSCREAM_PREVE_EVENT) == DONE)
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
+                });
+            }
+
+            uint32 GetData(uint32 type) const override
+            {
+                switch (type)
+                {
+                    case TYPE_GARROSH_FIRST_TRANSITION:
+                        return firstTransition ? 1 : 0;
+                    case TYPE_GARROSH_REALM:
+                        return inRealm ? 1 : 0;
+                    case TYPE_EXPLOSIVE_DESPAIR:
+                        return despairCounter;
+                    case TYPE_CLUMP_CHECK_DONE:
+                        return clumpCheckDone;
+                }
+
+                return 0;
+            }
+
+            void SetData(uint32 type, uint32 data) override
+            {
+                switch (type)
+                {
+                    case TYPE_GARROSH_FIRST_TRANSITION:
+                        firstTransition = false;
+                        break;
+                    case TYPE_GARROSH_STRIKE_COUNT:
+                        if (++strikeCounter >= 17)
                         {
-                            if (l_Garrosh->GetAI())
-                                l_Garrosh->GetAI()->DoAction(Actions::ACTION_BACKPORT);
+                            me->GetMap()->SetWorldState(WORLDSTATE_STRIKE, 1);
+                            me->GetMap()->SetWorldState(WORLDSTATE_STRIKE_2, 1);
                         }
+                        break;
+                    case TYPE_EXPLOSIVE_DESPAIR:
+                        despairCounter = data;
+                        break;
+                }
+            }
+
+            void EnterEvadeMode() override
+            {
+                _EnterEvadeMode();
+                BossAI::EnterEvadeMode();
+
+                me->RemoveAllAreasTrigger();
+
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_COURAGE_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FAITH_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HOPE_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DESECRATED);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ZEN);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_REALM_OF_YSHAARJ);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_EXPLOSIVE_DESPAIR_AURA);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+
+                    if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                        YshaarjHear->AI()->Reset();
+                }
+
+                summons.DespawnAll();
+                me->RemoveAurasDueToSpell(SPELL_TRANSITION_EFFECT);
+                me->RemoveAurasDueToSpell(SPELL_SHAARJS_PROTECTION);
+                me->RemoveAurasDueToSpell(SPELL_WHIRLWIND_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_TOUCH_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_DESECRATED_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_GRIPPING_EMPOWERED);
+                me->RemoveAurasDueToSpell(SPELL_TRANSITION_THIRD_EFFECT);
+
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
+                _DespawnAtEvade();
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                _EnterCombat();
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+                    for (auto&& itr : instance->instance->GetPlayers())
+                        if (Player* target = itr.GetSource())
+                            target->CastSpell(target, SPELL_ZEN, true);
+                }
+
+                Talk(TALK_AGGRO);
+                me->HandleEmoteStateCommand(EMOTE_STATE_READY2H);
+                events.ScheduleEvent(EVENT_DESECRATED, 10.5 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_WARSONG, 12 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_ENGINEERS, 15 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_WOLF_RIDER, 60 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_WARBRINGER, 1 * IN_MILLISECONDS);
+                RealmEvents.ScheduleEvent(EVENT_EVADE_CHECK, 1 * IN_MILLISECONDS);
+            }
+
+            void SetGUID(uint64 guid, int32 /*type*/) override
+            {
+                despairTargetGUID = guid;
+            }
+
+            uint64 GetGUID(int32 /*type*/) const override
+            {
+                return despairTargetGUID;
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (phase == PHASE_MY_WORLD && lastPhaseTriggered) // no case any
+                    return; 
+
+                // In Period when Garrosh Switch between phases (interract to heart)
+                if (sPhase && damage >= me->GetHealth())
+                {
+                    damage = 0;
+                    return;
+                }
+
+                // Not die if we in realm
+                if (GetData(TYPE_GARROSH_REALM) && damage >= me->GetHealth())
+                {
+                    damage = 0;
+                    return;
+                }
+
+                // Not switch while in realm or transition
+                if (GetData(TYPE_GARROSH_REALM) && HealthBelowPct(10))
+                    return;
+
+                // Not interrupt if casting anything
+                if (me->HasUnitState(UNIT_STATE_CASTING) || me->HasAura(SPELL_WHIRLING_CORRUPTION) || me->HasAura(SPELL_EMPOWERED_WHIRLING_CORRUPTION))
+                {
+                    if ((phase == PHASE_FIRST || phase == PHASE_SECOND || IsHeroic() && phase == PHASE_THIRD) && damage >= me->GetHealth())
+                        damage = 0;
+
+                    return;
+                }
+
+                if (HealthBelowPct(10) && phase == PHASE_FIRST && !sPhase)
+                {
+                    if (damage >= me->GetHealth())
+                        damage = 0;
+
+                    sPhase = true;
+                    events.Reset();
+
+                    if (Unit* vict = me->GetVictim())
+                        targetGUID = vict->GetGUID();
+
+                    me->PrepareChanneledCast(me->GetOrientation());
+
+                    if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                        me->GetMotionMaster()->MovePoint(0, YshaarjHear->GetPositionX(), YshaarjHear->GetPositionY(), me->GetPositionZ());
+                }
+
+                if (HealthBelowPct(10) && phase == PHASE_SECOND && !sPhase)
+                {
+                    if (damage >= me->GetHealth())
+                        damage = 0;
+
+                    sPhase = true;
+                    events.Reset();
+
+                    if (Unit* vict = me->GetVictim())
+                        targetGUID = vict->GetGUID();
+
+                    me->PrepareChanneledCast(me->GetOrientation());
+
+                    if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                    {
+                        YshaarjHear->AI()->Reset();
+                        me->GetMotionMaster()->MovePoint(2, YshaarjHear->GetPositionX(), YshaarjHear->GetPositionY(), me->GetPositionZ());
                     }
                 }
-            }
-        }
 
-        void Register()
-        {
-            AfterEffectRemove += AuraEffectRemoveFn(spell_enter_the_realm_yshaaraj_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_MOD_SPEED_ALWAYS, AURA_EFFECT_HANDLE_REAL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_enter_the_realm_yshaaraj_AuraScript();
-    }
-};
-
-// Empowered Gripping Despair - 145195  // 149252 
-class spell_empowered_gripping_despair : public SpellScriptLoader
-{
-public:
-    spell_empowered_gripping_despair() : SpellScriptLoader("spell_empowered_gripping_despair") { }
-
-    class spell_empowered_gripping_despair_AuraScript : public AuraScript
-    {
-        PrepareAuraScript(spell_empowered_gripping_despair_AuraScript);
-
-        void OnRemove(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
-        {
-            if (GetTarget())
-            {
-                if (GetCaster())
+                // Last phase only in Heroic Mode
+                if (IsHeroic() && HealthBelowPct(2) && phase == PHASE_THIRD && !sPhase)
                 {
-                    GetCaster()->CastSpell(GetTarget(), Spells::SPELL_EXPLOSIDE_DESPAIR_DAMAGE);
-                    GetCaster()->CastSpell(GetTarget(), Spells::SPELL_EXPLOSIDE_DESPAIR_MECHANIC_PRECENT);
+                    if (damage >= me->GetHealth())
+                        damage = 0;
+
+                    sPhase = true;
+                    events.Reset();
+
+                    if (Unit* vict = me->GetVictim())
+                        targetGUID = vict->GetGUID();
+
+                    me->PrepareChanneledCast(me->GetOrientation());
+
+                    phase = PHASE_MY_WORLD;
+                    Talk(TALK_PHASE_4_BEGUN);
+
+                    RealmEvents.ScheduleEvent(EVENT_PREPUSH_4TD, 13.5 * IN_MILLISECONDS);
+                    RealmEvents.ScheduleEvent(EVENT_PHASE_FOUR, 19.5 * IN_MILLISECONDS);
+
                 }
             }
-        }
 
-        void Register()
-        {
-            AfterEffectRemove += AuraEffectRemoveFn(spell_empowered_gripping_despair_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new spell_empowered_gripping_despair_AuraScript();
-    }
-};
-
-// Gripping Despair Damage - 145199 
-class spell_empowered_gripping_despair_debuff : public SpellScriptLoader
-{
-public:
-    spell_empowered_gripping_despair_debuff() : SpellScriptLoader("spell_empowered_gripping_despair_debuff") { }
-
-    class spell_empowered_gripping_despair_debuff_AuraScript : public SpellScript
-    {
-        PrepareSpellScript(spell_empowered_gripping_despair_debuff_AuraScript);
-
-        void HandleDamageCalc(SpellEffIndex /*effIndex*/)
-        {
-            if (GetCaster())
+            void JustDied(Unit* /*killer*/) override
             {
-                if (GetHitUnit())
+                _JustDied();
+                me->RemoveAllAreasTrigger();
+
+                if (instance)
                 {
-                    if (!GetSpellInfo())
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_COURAGE_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FAITH_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_HOPE_AURA);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_DESECRATED);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_ZEN);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_REALM_OF_YSHAARJ);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_EXPLOSIVE_DESPAIR_AURA);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+
+                    uint32 sceneSpellId = instance->GetData(DATA_GROUP_FACTION) ? SPELL_FINALE_HORDE_SHARED : SPELL_FINALE_ALLIANCE_SHARED;
+                    DoCast(me, sceneSpellId, true);
+
+                    if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                        YshaarjHear->AI()->Reset();
+                }
+
+                summons.DespawnAll();
+                events.Reset();
+
+                RewardPersonalLoot();
+                DoCast(me, SPELL_SUMMON_FADING_BREATH_MISSLE);
+            }
+
+            void RewardPersonalLoot()
+            {
+                Difficulty difficulty = me->GetMap()->GetDifficulty();
+                uint32 index;
+                switch (difficulty)
+                {
+                    case RAID_DIFFICULTY_10MAN_NORMAL:
+                    case RAID_DIFFICULTY_25MAN_NORMAL:
+                        index = 0;
+                        break;
+                    case RAID_DIFFICULTY_10MAN_HEROIC:
+                    case RAID_DIFFICULTY_25MAN_HEROIC:
+                        index = 1;
+                        break;
+                    case RAID_DIFFICULTY_1025MAN_FLEX:
+                        index = 2;
+                        break;
+                    default:
                         return;
+                }
 
-                    if (AuraPtr l_Aura = GetHitUnit()->GetAura(Spells::SPELL_EXPLOSIDE_DESPAIR_MECHANIC_PRECENT))
+                static std::vector<uint32> const weapons[]
+                {
+                    { 104404, 104405, 104401, 104403, 104400, 104406, 104399, 104402, 104409, 104407, 104408 }, // Normal
+                    { 105685, 105692, 105691, 105686, 105684, 105690, 105683, 105688, 105687, 105693, 105689 }, // Heroic
+                    { 105672, 105679, 105678, 105673, 105671, 105677, 105670, 105675, 105674, 105680, 105676 }, // Flex
+                };
+
+                for (auto&& itr : me->GetMap()->GetPlayers())
+                {
+                    Player* player = itr.GetSource();
+                    if (!player->HasLootLockout(LootLockoutType::HeirloomWeapon, me->GetEntry(), difficulty) && roll_chance_f(20))
                     {
-                        float l_Stacks = float(l_Aura->GetStackAmount() / 100);
-                        uint32 l_Damage = GetSpellInfo()->Effects[0].BasePoints;
-
-                        l_Damage += (uint32(float(l_Stacks)) * l_Damage);
-
-                        SetHitDamage(l_Damage);
-
-                        l_Damage = 0;
+                        uint32 itemId = Trinity::Containers::SelectRandomContainerElement(weapons[index]);
+                        Item* item = Item::CreateItem(itemId, 1);
+                        player->SendDisplayToast(item, itemId, 1, TOAST_TYPE_ITEM, TOAST_DISPLAY_TYPE_ITEM);
+                        player->StoreNewItem(item);
+                        player->AddLootLockout(LootLockoutType::HeirloomWeapon, me->GetEntry(), difficulty);
                     }
                 }
             }
-        }
 
-        void Register()
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_empowered_gripping_despair_debuff_AuraScript::HandleDamageCalc, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
-        }
-    };
+            void SummonedCreatureDies(Creature* summon, Unit* /*killer*/) override
+            { 
+                if (std::find(realmMinionGUIDs.begin(), realmMinionGUIDs.end(), summon->GetGUID()) != realmMinionGUIDs.end())
+                    realmMinionGUIDs.erase(std::find(realmMinionGUIDs.begin(), realmMinionGUIDs.end(), summon->GetGUID()));
 
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_empowered_gripping_despair_debuff_AuraScript();
-    }
-};
-
-// Desecrate - 144745 
-class spell_desecrate_dummy : public SpellScriptLoader
-{
-public:
-    spell_desecrate_dummy() : SpellScriptLoader("spell_desecrate_dummy") { }
-
-    class spell_desecrate_dummy_Spellscript : public SpellScript
-    {
-        PrepareSpellScript(spell_desecrate_dummy_Spellscript);
-
-        void HandleDummy(SpellEffIndex /*effIndex*/)
-        {
-            if (Unit* l_Unit = GetCaster())
-            {
-                if (Unit* l_Target = GetExplTargetUnit())
-                {
-                    l_Unit->CastSpell(l_Target, Spells::SPELL_DESECRATE_TRIGGER_MISSILE);
-                }
+                if (realmMinionGUIDs.empty())
+                    me->RemoveAurasDueToSpell(SPELL_SHAARJS_PROTECTION);
             }
-        }
 
-        void Register()
-        {
-            OnEffectHit += SpellEffectFn(spell_desecrate_dummy_Spellscript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_desecrate_dummy_Spellscript();
-    }
-};
-
-// Empowering Corruption - 145043 
-class spell_empowering_corruption_filter : public SpellScriptLoader
-{
-public:
-    spell_empowering_corruption_filter() : SpellScriptLoader("spell_empowering_corruption_filter") { }
-
-    class spell_empowering_corruption_filter_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_empowering_corruption_filter_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (!GetCaster())
-                return;
-
-            targets.clear();
-
-            std::list<Creature*> l_TempoListCreatures;
-            GetCaster()->GetCreatureListWithEntryInGrid(l_TempoListCreatures, Creatures::CREATURE_MINION_YSHAARJ, 2.0f);
-
-            if (l_TempoListCreatures.empty())
-                return;
-
-            for (auto itr : l_TempoListCreatures)
+            void DoAction(int32 actionId) override
             {
-                targets.push_back(itr->ToUnit());
-            }
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_empowering_corruption_filter_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_empowering_corruption_filter_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_empowering_corruption_filter_SpellScript::FilterTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_empowering_corruption_filter_SpellScript();
-    }
-};
-
-// Enter Realm of Y'Shaarj - 144867  
-class spell_enter_realm_of_yshaarj_purple_beam : public SpellScriptLoader
-{
-public:
-    spell_enter_realm_of_yshaarj_purple_beam() : SpellScriptLoader("spell_enter_realm_of_yshaarj_purple_beam") { }
-
-    class spell_enter_realm_of_yshaarj_purple_beam_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_enter_realm_of_yshaarj_purple_beam_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (!GetCaster())
-                return;
-
-            targets.clear();
-
-            InstanceScript* l_Instance = GetCaster()->GetInstanceScript();
-
-            if (l_Instance != nullptr)
-            {
-                if (Creature * l_Garrosh = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
+                switch (actionId)
                 {
-                    std::list<Player*> l_ListPlayers;
-                    GetCaster()->GetPlayerListInGrid(l_ListPlayers, 300.0f);
+                    case ACTION_GARROSH_PHASE_SECOND:
+                        if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                            YshaarjHear->AI()->DoAction(ACTION_GARROSH_ALT_PHASE);
 
-                    if (!l_ListPlayers.empty())
-                    {
-                        for (auto itr : l_ListPlayers)
+                        me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 101441);
+                        Talk(TALK_PHASE_2_TRANSFORM);
+                        sPhase = false;
+                        phase = PHASE_SECOND;
+                        me->HandleEmoteStateCommand(EMOTE_STATE_READY2H);
+                        me->RemoveChanneledCast(targetGUID);
+                        me->SetPowerType(POWER_ENERGY);
+                        me->SetMaxPower(POWER_ENERGY, 100);
+                        me->SetPower(POWER_ENERGY, 0);
+                        DoCast(me, SPELL_NON_REGENERATE_POWER, true);
+                        
+                        if (Is25ManRaid() && IsHeroic())
+                            me->SetHealth(1757632000); // temp
+                        else
+                            me->SetHealth(me->GetMaxHealth());
+
+                        me->SetAIAnimKitId(0);
+                        break;
+                    case ACTION_GARROSH_ALT_PHASE:
+                        inRealm = true;
+                        RealmEvents.CancelEvent(EVENT_EVADE_CHECK);
+                        me->InterruptNonMeleeSpells(false, SPELL_EMPOWERED_WHIRLING_CORRUPTION);
+                        me->InterruptNonMeleeSpells(false, SPELL_WHIRLING_CORRUPTION);
+                        realmMinionGUIDs.clear();
+                        events.ScheduleEvent(EVENT_ENTER_ANOTHER_REALM, 2.5 * IN_MILLISECONDS);
+                        break;
+                    case ACTION_REMOVE_YSHAARJ_PROTECTION:
+                        me->SetAIAnimKitId(0);
+                        me->RemoveAurasDueToSpell(SPELL_ABSORB_ENERGY);
+
+                        if (IsHeroic())
                         {
-                            targets.push_back(itr);
+                            if (Creature* nearHeart = me->FindNearestCreature(NPC_HEART_OF_YSHAARJ_REALM, 100.0f, true))
+                                nearHeart->RemoveAurasDueToSpell(SPELL_CRUSHING_FEAR_LAUNCHER);
                         }
-                    }
 
-                    targets.push_back(l_Garrosh);
+                        if (GetData(TYPE_GARROSH_REALM))
+                            RealmEvents.ScheduleEvent(EVENT_ANNIHILATE, 5 * IN_MILLISECONDS);
+                        break;
+                    case ACTION_GARROSH_PHASE_THIRD:
+                        if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                            YshaarjHear->AI()->DoAction(ACTION_GARROSH_PHASE_THIRD);
+
+                        me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 101441);
+                        DoCast(me, SPELL_PHASE_THIRD_TRANSFORM, true);
+                        sPhase = false;
+                        phase = PHASE_THIRD;
+                        me->SetDisableGravity(false);
+                        me->HandleEmoteStateCommand(EMOTE_STATE_READY2H);
+
+                        RealmEvents.ScheduleEvent(EVENT_RETURN, 7000);
+                        break;
+                    case ACTION_LAUNCH_IRON_STAR:
+                        Talk(TALK_IRON_STAR_LAUNCH_ANN);
+                        clumpCheckDone = true;
+                        DoCast(me, SPELL_FIRE_IRON_STAR, true);
+                        break;
                 }
             }
-        }
 
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_enter_realm_of_yshaarj_purple_beam_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_enter_realm_of_yshaarj_purple_beam_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_enter_realm_of_yshaarj_purple_beam_SpellScript::FilterTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_enter_realm_of_yshaarj_purple_beam_SpellScript::FilterTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENEMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_enter_realm_of_yshaarj_purple_beam_SpellScript();
-    }
-};
-
-// Ancsetral Healing - 144867  
-class spell_ancsetral_healing : public SpellScriptLoader
-{
-public:
-    spell_ancsetral_healing() : SpellScriptLoader("spell_ancsetral_healing") { }
-
-    class spell_ancsetral_healing_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_ancsetral_healing_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (!GetCaster())
-                return;
-
-            targets.remove_if(CheckIfGarroshAndRemove());
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ancsetral_healing_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_TARGET_ALLY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_ancsetral_healing_SpellScript();
-    }
-};
-
-// Hellscream's Warsong -  144821 
-class spell_hellscream_warsong_filter : public SpellScriptLoader
-{
-public:
-    spell_hellscream_warsong_filter() : SpellScriptLoader("spell_hellscream_warsong_filter") { }
-
-    class spell_hellscream_warsong_filter_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_hellscream_warsong_filter_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (!GetCaster())
-                return;
-
-            targets.remove_if(CheckIfPlayerAndRemove());
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_hellscream_warsong_filter_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_hellscream_warsong_filter_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_hellscream_warsong_filter_SpellScript::FilterTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_hellscream_warsong_filter_SpellScript();
-    }
-};
-
-
-// Embodied Fear - 72237
-class garrosh_hellscream_embodied_fear : public CreatureScript
-{
-public:
-    garrosh_hellscream_embodied_fear() : CreatureScript("garrosh_hellscream_embodied_fear") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-
-            me->SetReactState(REACT_AGGRESSIVE);
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            if (roll_chance_i(20))
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                // Drops on the dead embodied
-                me->CastSpell(me, Spells::SPELL_COURAGE_TRIGGER_MISSILE, true);
-            }
+                if (type != POINT_MOTION_TYPE)
+                    return;
 
-            if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
-            {
-                if (l_Garrosh->GetAI())
-                    l_Garrosh->GetAI()->DoAction(Actions::ACTION_EMBODIED_COUNT_DEATH);
-            }
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new siege_of_orgrimmar_creaturesAI(creature);
-    }
-};
-
-// Embodied Doubt - 72236
-class garrosh_hellscream_embodied_doubt : public CreatureScript
-{
-public:
-    garrosh_hellscream_embodied_doubt() : CreatureScript("garrosh_hellscream_embodied_doubt") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-
-            me->SetReactState(REACT_AGGRESSIVE);
-        }
-
-        void EnterCombat(Unit* attacker) override
-        {
-            events.ScheduleEvent(Events::EVENT_EMBODIED_DOUBT, urand(8 * TimeConstants::IN_MILLISECONDS, 20 * TimeConstants::IN_MILLISECONDS));
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            Position l_Position;
-            me->GetRandomNearPosition(l_Position, frand(5.0f, 8.0f));
-
-            // Missile at random location
-            me->CastSpell(l_Position.GetPositionX(), l_Position.GetPositionY(), l_Position.GetPositionZ(), Spells::SPELL_CONSUMED_FAITH_TRIGGER_MISSILE, true);
-
-            if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
-            {
-                if (l_Garrosh->GetAI())
-                    l_Garrosh->GetAI()->DoAction(Actions::ACTION_EMBODIED_COUNT_DEATH);
-            }
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            switch (events.ExecuteEvent())
-            {
-            case Events::EVENT_EMBODIED_DOUBT:
-                if (Unit* l_Target = me->getVictim())
-                    me->CastSpell(l_Target, Spells::SPELL_EMBODIED_DOUBT_DAMAGE);
-
-                events.ScheduleEvent(Events::EVENT_EMBODIED_DOUBT, 10 * TimeConstants::IN_MILLISECONDS);
-                break;
-            }
-
-            DoMeleeAttackIfReady();
-        }
-
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new siege_of_orgrimmar_creaturesAI(creature);
-    }
-};
-
-// Embodied Despair - 72238
-class garrosh_hellscream_embodied_despair : public CreatureScript
-{
-public:
-    garrosh_hellscream_embodied_despair() : CreatureScript("garrosh_hellscream_embodied_despair") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetReactState(REACT_AGGRESSIVE);
-        }
-
-        void EnterCombat(Unit* attacker) override
-        {
-            events.ScheduleEvent(Events::EVENT_ULTIMATE_DESPAIR, urand(8 * TimeConstants::IN_MILLISECONDS, 20 * TimeConstants::IN_MILLISECONDS));
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            Position l_Position;
-            me->GetRandomNearPosition(l_Position, frand(5.0f, 8.0f));
-
-            // Missile at random location
-            me->CastSpell(l_Position.GetPositionX(), l_Position.GetPositionY(), l_Position.GetPositionZ(), Spells::SPELL_CONSUMED_HOPE_TRIGGER, true);
-
-            if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
-            {
-                if (l_Garrosh->GetAI())
-                    l_Garrosh->GetAI()->DoAction(Actions::ACTION_EMBODIED_COUNT_DEATH);
-            }
-
-            // Ultimate Despair
-            if (Creature* l_Despair = me->FindNearestCreature(Creatures::CREATURE_EMBODIED_DESPAIR, 100.0f, true))
-                l_Despair->CastSpell(l_Despair, Spells::SPELL_ULTIMATE_DESPAIR_TRIGGER_SPELL);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new siege_of_orgrimmar_creaturesAI(creature);
-    }
-};
-
-// Thrall - 73483
-class garrosh_hellscream_creature_thrall : public CreatureScript
-{
-public:
-    garrosh_hellscream_creature_thrall() : CreatureScript("garrosh_hellscream_creature_thrall") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-            m_Intro = false;
-        }
-
-        InstanceScript* m_Instance;
-        bool m_Intro;
-
-        void Reset() override
-        {
-            me->setFaction(35);
-            me->SetReactState(REACT_PASSIVE);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            events.Update(diff);
-
-            if (me->FindNearestPlayer(10.0f, true) && !m_Intro)
-            {
-                m_Intro = true;
-                me->m_Events.AddEvent(new garrosh_fight_introduction(me, 0), me->m_Events.CalculateTime(500));
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new siege_of_orgrimmar_creaturesAI(creature);
-    }
-};
-
-// Iron Star - 73059
-class garrosh_hellscream_creature_iron_star : public CreatureScript
-{
-public:
-    garrosh_hellscream_creature_iron_star() : CreatureScript("garrosh_hellscream_creature_iron_star") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-            m_Activated = false;
-        }
-
-        InstanceScript* m_Instance;
-        uint32 m_PDiff;
-        uint64 m_Trigger = NULL;
-        bool m_Activated;
-
-        void Reset() override
-        {
-            m_PDiff = 1000;
-            me->setFaction(35);
-            me->SetObjectScale(2.0f);
-            me->SetReactState(REACT_PASSIVE);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            me->SetSpeed(MOVE_RUN, 3.8f, true);
-        }
-
-        void DoAction(const int32 action) override
-        {
-            switch (action)
-            {
-                case Actions::ACTION_IRON_STAR_LEFT:
+                switch (pointId)
                 {
-                    Creature* l_Temp = me->SummonCreature(Creatures::CREATURE_STAR_EXPLOSIVE_TRIGGER, 1037.116f, -5737.422f, -317.671f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                    case 0:
+                        Talk(TALK_SWITCH_PHASE_2);
+                        me->SetAIAnimKitId(ANIM_AI_KIT_AROUND_HEART_TALK);
 
-                    if (l_Temp)
-                        m_Trigger = l_Temp->GetGUID();
-                    break;
-                }
-                case Actions::ACTION_IRON_STAR_RIGHT:
-                {
-                    Creature* l_Temp = me->SummonCreature(Creatures::CREATURE_STAR_EXPLOSIVE_TRIGGER, 1109.485f, -5543.685f, -317.671f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                    if (l_Temp)
-                        m_Trigger = l_Temp->GetGUID();
-                    break;
-                }
-                case Actions::ACTION_ACTIVATE_IRON_STAR:
-                {
-                    if (m_Trigger)
-                    {
-                        if (Creature* l_Target = sObjectAccessor->GetCreature(*me, m_Trigger))
+                        scheduler
+                            .Schedule(Seconds(5), [this](TaskContext context)
                         {
-                            me->GetMotionMaster()->MovePoint(0, l_Target->GetPositionX(), l_Target->GetPositionY(), l_Target->GetPositionZ());
-                            me->CastSpell(me, Spells::SPELL_IRON_STAR_IMPACT_AURA_VISUAL_FULL);
+                            me->SetAIAnimKitId(0);
+                            DoCast(me, SPELL_THROW_AXE_AT_HEART);
+                            me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 0);
+                        });
 
-                            m_Activated = true;
-                        }
-                    }
-                    break;
+                        scheduler
+                            .Schedule(Seconds(7), [this](TaskContext context)
+                        {
+                            DoCast(me, SPELL_VISUAL_FLEE_SECOND_PHASE, true);
+                            me->SetAIAnimKitId(ANIM_AI_KIT_TRANSITION);
+
+                            if (Creature* HeartOfYshaarj = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                                HeartOfYshaarj->CastSpell(HeartOfYshaarj, SPELL_TRANSITION_VISUAL, false);
+                        });
+                        break;
+                    case 2:
+                        Talk(TALK_SWITCH_PHASE_3);
+                        me->SetAIAnimKitId(ANIM_AI_KIT_AROUND_HEART_TALK);
+
+                        scheduler
+                            .Schedule(Seconds(5), [this](TaskContext context)
+                        {
+                            DoCast(me, SPELL_REALM_OF_YSHAARJ_REMOVE);
+                            me->SetAIAnimKitId(0);
+                            me->SetUInt32Value(UNIT_FIELD_VIRTUAL_ITEM_ID, 0);
+                        });
+
+                        scheduler
+                            .Schedule(Seconds(7), [this](TaskContext context)
+                        {
+                            DoCast(me, SPELL_VISUAL_FLEE_THIRD_PHASE, true);
+                            me->SetAIAnimKitId(ANIM_AI_KIT_TRANSITION);
+
+                            if (Creature* HeartOfYshaarj = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                                HeartOfYshaarj->CastSpell(HeartOfYshaarj, SPELL_TANSITION_VISUAL_THIRD, false);
+                        });
+
+                        RealmEvents.ScheduleEvent(EVENT_TRANSFORM_PHASE_THIRD, 2.5 * IN_MILLISECONDS);
+                        break;
                 }
             }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+
+                if (summon->GetEntry() == NPC_MINION_OF_YSHAARJ)
+                {
+                    summon->SetReactState(REACT_AGGRESSIVE);
+                    summon->SetInCombatWithZone();
+                    summon->CastSpell(summon, SPELL_EMPOWERED_PROC, true);
+                }
+
+                if (summon->GetEntry() == NPC_MANIFESTATION_OF_RAGE)
+                    summon->SetInCombatWithZone();
+            }
+
+            PlayerAI* GetAIForCharmedPlayer(Player* player) override
+            {
+                return new TouchYshaarjAI(player);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                scheduler.Update(diff);
+                RealmEvents.Update(diff);
+
+                while (uint32 eventId = RealmEvents.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_LEAVE_ANOTHER_REALM:
+                            inRealm = false;
+
+                            for (auto&& itr : instance->instance->GetPlayers())
+                            {
+                                if (Player* target = itr.GetSource())
+                                {
+                                    target->CastSpell(target, SPELL_ZEN, true);
+                                    target->UnsummonPetTemporaryIfAny();
+                                }
+                            }
+
+                            me->RemoveAurasDueToSpell(SPELL_SHAARJS_PROTECTION);
+                            me->InterruptNonMeleeSpells(true);
+                            RealmEvents.Reset();
+                            currentEmboded = 0;
+
+                            if (Creature* HeartOfYshaarj = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                                me->NearTeleportTo(HeartOfYshaarj->GetPositionX(), HeartOfYshaarj->GetPositionY(), -317.39f, HeartOfYshaarj->GetOrientation());
+
+                            RealmEvents.ScheduleEvent(EVENT_RETURN, 2 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_ANNIHILATE:
+                        {
+                            if (!GetData(TYPE_GARROSH_REALM)) // check twice
+                                break;
+
+                            float sOri = frand(0, 2 * M_PI);
+                            me->PrepareChanneledCast(sOri, SPELL_ANNIHILATE);
+                            RealmEvents.ScheduleEvent(EVENT_ANNIHILATE, 3 * IN_MILLISECONDS);
+                            break;
+                        }
+                        case EVENT_RETURN:
+                        {
+                            me->CastSpell(garroshJumpPos.GetPositionX(), garroshJumpPos.GetPositionY(), garroshJumpPos.GetPositionZ(), SPELL_JUMP_TO_GROUND, false);
+
+                            for (auto&& itr : instance->instance->GetPlayers())
+                                if (Player* target = itr.GetSource())
+                                    target->ResummonPetTemporaryUnSummonedIfAny();
+
+                            // Set Active to Korkron Warriors in main phase
+                            std::list<Creature*> korkronsList;
+                            GetCreatureListWithEntryInGrid(korkronsList, me, NPC_WARBRINGER_KORKRON, 300.0f);
+                            GetCreatureListWithEntryInGrid(korkronsList, me, NPC_WOLF_RIDER_FARSEER, 300.0f);
+                            GetCreatureListWithEntryInGrid(korkronsList, me, NPC_MINION_OF_YSHAARJ, 300.0f);
+
+                            korkronsList.remove_if([=](Creature* target) { return target && !target->IsAlive(); });
+
+                            for (auto&& itr : korkronsList)
+                                itr->RemoveChanneledCast(targetGUID);
+
+                            if (sPhase) // we already switch to transition
+                                break;
+
+                            me->RemoveChanneledCast(targetGUID);
+                            me->SetAIAnimKitId(0);
+                            events.ScheduleEvent(EVENT_WHIRLWIND, me->HasAura(SPELL_TRANSITION_THIRD_EFFECT) ? 27 * IN_MILLISECONDS : 30 * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_TOUCH, me->HasAura(SPELL_TRANSITION_THIRD_EFFECT) ? 13 * IN_MILLISECONDS : 15 * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_DESECRATED, me->HasAura(SPELL_TRANSITION_THIRD_EFFECT) ? 3 * IN_MILLISECONDS : 10 * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_GRIPPING, me->HasAura(SPELL_TRANSITION_THIRD_EFFECT) ? 5 * IN_MILLISECONDS : 12.5 * IN_MILLISECONDS);
+                            break;
+                        }
+                        case EVENT_EVADE_CHECK:
+                            if (GetData(TYPE_GARROSH_REALM)) // in realm
+                            {
+                                if (instance && instance->IsWipe(300.0f, me))
+                                {
+                                    EnterEvadeMode();
+                                    break;
+                                }
+                            }
+                            else if (me->GetPositionZ() > -309.0f) // in main phase
+                            {
+                                EnterEvadeMode();
+                                break;
+                            }
+
+                            RealmEvents.ScheduleEvent(EVENT_EVADE_CHECK, 1 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_TRANSFORM_PHASE_THIRD:
+                            if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                                YshaarjHear->CastSpell(YshaarjHear, SPELL_TRANSITION_VISUAL, false);
+                            break;
+                        case EVENT_PREPUSH_4TD:
+                            Talk(TALK_PHASE_4_PUSH);
+                            break;
+                        case EVENT_PHASE_FOUR:
+                        {
+                            inRealm = true;
+                            RealmEvents.CancelEvent(EVENT_EVADE_CHECK);
+                            DoCast(me, SPELL_ENTER_REALM_OF_GARROSH);
+
+                            // Set alive minions to inactive state
+                            std::list<Creature*> minionsList;
+                            GetCreatureListWithEntryInGrid(minionsList, me, NPC_MINION_OF_YSHAARJ, 300.0f);
+
+                            minionsList.remove_if([=](Creature* target) { return target && !target->IsAlive(); });
+
+                            for (auto&& itr : minionsList)
+                                itr->PrepareChanneledCast(itr->GetOrientation());
+
+                            scheduler
+                                .Schedule(Milliseconds(2750), [this](TaskContext context)
+                            {
+                                me->SetPower(POWER_ENERGY, 0);
+                                me->RemoveAurasDueToSpell(SPELL_WHIRLWIND_EMPOWERED);
+                                me->RemoveAurasDueToSpell(SPELL_TOUCH_EMPOWERED);
+                                me->RemoveAurasDueToSpell(SPELL_DESECRATED_EMPOWERED);
+                                me->RemoveAurasDueToSpell(SPELL_GRIPPING_EMPOWERED);
+
+                                me->RemoveAllAreasTrigger();
+                                DoCast(me, SPELL_PHASE_FOUR_TRANSFORM);
+                                me->NearTeleportTo(myworldGarrosh.GetPositionX(), myworldGarrosh.GetPositionY(), myworldGarrosh.GetPositionZ(), myworldGarrosh.GetOrientation());
+
+                                scheduler
+                                    .Schedule(Milliseconds(17250), [this](TaskContext context)
+                                {
+                                    lastPhaseTriggered = true;
+                                    RealmEvents.ScheduleEvent(EVENT_EVADE_CHECK, 1 * IN_MILLISECONDS);
+                                    me->RemoveChanneledCast(targetGUID);
+                                    events.ScheduleEvent(EVENT_MALICE, 9 * IN_MILLISECONDS);
+                                    events.ScheduleEvent(EVENT_BOMBARDMENT, 50 * IN_MILLISECONDS);
+                                    RealmEvents.ScheduleEvent(EVENT_GAIN_POWER, 1 * IN_MILLISECONDS);
+
+                                });
+                            });
+                            break;
+                        }
+                        case EVENT_GAIN_POWER:
+                            uint32 currentPower = me->GetPower(POWER_ENERGY);
+
+                            if (++currentPower > 99)
+                            {
+                                me->SetPower(POWER_ENERGY, 100);
+                                events.ScheduleEvent(EVENT_MANIFEST_RAGE, 0.5 * IN_MILLISECONDS);
+                                RealmEvents.ScheduleEvent(EVENT_GAIN_POWER, 8 * IN_MILLISECONDS);
+                                break;
+                            }
+                            else
+                                me->SetPower(POWER_ENERGY, currentPower);
+
+                            RealmEvents.ScheduleEvent(EVENT_GAIN_POWER, getPowerGainTimer(powerGainCount));
+                            break;
+                    }
+                }
+
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING) || me->HasAura(SPELL_WHIRLING_CORRUPTION) || me->HasAura(SPELL_EMPOWERED_WHIRLING_CORRUPTION))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_DESECRATED:
+                            DoCast(me, SPELL_DESECRATE_SELECTOR);
+                            events.ScheduleEvent(EVENT_DESECRATED, getDesecrateTimer());
+                            break;
+                        case EVENT_WARSONG:
+                            Talk(TALK_WARSONG);
+                            DoCast(me, SPELL_HELLSCREAMS_WARSONG);
+                            events.ScheduleEvent(EVENT_WARSONG, 42.2 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_ENGINEERS:
+                            Talk(TALK_SIEGE_ENGINEERS);
+                            HandleSummonGuards(GUARD_TYPE_ENGINEER);
+                            events.ScheduleEvent(EVENT_ENGINEERS, urand(45 * IN_MILLISECONDS, 49 * IN_MILLISECONDS));
+                            break;
+                        case EVENT_WOLF_RIDER:
+                            Talk(TALK_FARSEERS);
+                            HandleSummonGuards(GUARD_TYPE_WOLF_RIDER);
+                            events.ScheduleEvent(EVENT_WOLF_RIDER, 50 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_WARBRINGER:
+                            HandleSummonGuards(GUARD_TYPE_WARBRINGER);
+                            events.ScheduleEvent(EVENT_WARBRINGER, urand(47 * IN_MILLISECONDS, 49 * IN_MILLISECONDS));
+                            break;
+                        case EVENT_ENTER_ANOTHER_REALM:
+                            Talk(TALK_REALM);
+                            me->InterruptNonMeleeSpells(true);
+                            me->PrepareChanneledCast(me->GetOrientation());
+                            events.Reset();
+
+                            if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                            {
+                                uint32 realmData = YshaarjHear->AI()->GetData(TYPE_GARROSH_REALM);
+                                uint32 transfertSpell = invGarroshRealmsType.find(realmData)->second[0];
+                                uint32 realmId = invGarroshRealmsType.find(realmData)->second[1];
+
+                                // Set Passive to Korkron Warriors until we`ll return in main phase
+                                std::list<Creature*> korkronsList;
+                                GetCreatureListWithEntryInGrid(korkronsList, me, NPC_WARBRINGER_KORKRON, 300.0f);
+                                GetCreatureListWithEntryInGrid(korkronsList, me, NPC_WOLF_RIDER_FARSEER, 300.0f);
+                                GetCreatureListWithEntryInGrid(korkronsList, me, NPC_MINION_OF_YSHAARJ, 300.0f);
+
+                                korkronsList.remove_if([=](Creature* target) { return target && !target->IsAlive(); });
+
+                                for (auto&& itr : korkronsList)
+                                    itr->PrepareChanneledCast(itr->GetOrientation());
+
+                                DoCast(me, transfertSpell, true);
+                                me->PrepareChanneledCast(me->GetOrientation());
+
+                                // Spawn Minions there
+                                HandleSummonGuards(invGarroshRealmsType.find(realmData)->second[2]);
+
+                                for (auto&& itr : instance->instance->GetPlayers())
+                                    if (Player* target = itr.GetSource())
+                                        target->UnsummonPetTemporaryIfAny();
+
+                                me->NearTeleportTo(RealmWorldEGarroshPos[realmId].GetPositionX(), RealmWorldEGarroshPos[realmId].GetPositionY(), RealmWorldEGarroshPos[realmId].GetPositionZ(), RealmWorldEGarroshPos[realmId].GetOrientation());
+
+                                scheduler
+                                    .Schedule(Seconds(1), [this](TaskContext context)
+                                {
+                                    if (Creature* nearHeart = me->FindNearestCreature(NPC_HEART_OF_YSHAARJ_REALM, 100.0f, true))
+                                        nearHeart->AI()->DoAction(0);
+
+                                    DoCast(me, SPELL_REALM_OF_YSHAARJ, true);
+                                    RealmEvents.ScheduleEvent(EVENT_LEAVE_ANOTHER_REALM, 60500);
+                                });
+
+                                scheduler
+                                    .Schedule(Seconds(2), [this](TaskContext context)
+                                {
+                                    DoCast(me, SPELL_SHAARJS_PROTECTION, true);
+                                    me->SetAIAnimKitId(ANIM_AI_KIT_TRANSITION);
+                                    RealmEvents.ScheduleEvent(EVENT_EVADE_CHECK, 1 * IN_MILLISECONDS);
+
+                                    for (auto&& itr : instance->instance->GetPlayers())
+                                        if (Player* target = itr.GetSource())
+                                            target->ResummonPetTemporaryUnSummonedIfAny();
+
+                                    if (Creature* YshaarjHear = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_HEART_OF_YSHAARJ)))
+                                    {
+                                        uint32 realmData = YshaarjHear->AI()->GetData(TYPE_GARROSH_REALM);
+                                        auto key = invGarroshRealmsType.find(realmData);
+
+                                        if (key->second[2] == NPC_EMBODIED_FEAR)
+                                        {
+                                            if (IsHeroic())
+                                                if (Creature* nearHeart = me->FindNearestCreature(NPC_HEART_OF_YSHAARJ_REALM, 100.0f, true))
+                                                    nearHeart->CastSpell(nearHeart, SPELL_CRUSHING_FEAR_LAUNCHER, true);
+
+                                            DoCast(me, SPELL_CONSUMED_COURAGE, true);
+                                        }
+                                        else if (key->second[2] == NPC_EMBODIED_DOUBT)
+                                            DoCast(me, SPELL_CONSUMED_FAITH, true);
+                                    }
+                                });
+                            }
+                            break;
+                        case EVENT_WHIRLWIND:
+                            events.RescheduleEvent(EVENT_GRIPPING, 9.5 * IN_MILLISECONDS);
+                            Talk(me->HasAura(SPELL_WHIRLWIND_EMPOWERED) ? TALK_WHIRLWIND_ANN : TALK_WHIRLWIND_EMP_ANN);
+                            Talk(me->HasAura(SPELL_WHIRLWIND_EMPOWERED) ? TALK_WHIRLWIND : TALK_WHIRLWIND_EMP);
+                            DoCast(me, me->HasAura(SPELL_WHIRLWIND_EMPOWERED) ? SPELL_EMPOWERED_WHIRLING_CORRUPTION : SPELL_WHIRLING_CORRUPTION);
+                            events.ScheduleEvent(EVENT_WHIRLWIND, 49.5 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_TOUCH:
+                            DoCast(me, me->HasAura(SPELL_TOUCH_EMPOWERED) ? SPELL_EMPOWERED_TOUCH_OF_YSHAARJ : SPELL_TOUCH_OH_YSHAARJ);
+                            events.ScheduleEvent(EVENT_TOUCH, getTouchTimer());
+                            break;
+                        case EVENT_GRIPPING:
+                            if (Unit* vict = me->GetVictim())
+                                DoCast(vict, me->HasAura(SPELL_GRIPPING_EMPOWERED) ? SPELL_EMPOWERED_GRIPPING_DESPAIR : SPELL_GRIPPING_DESPAIR);
+
+                            events.ScheduleEvent(EVENT_GRIPPING, 3.2 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_MALICE:
+                            DoCast(me, SPELL_MALICE);
+                            events.ScheduleEvent(EVENT_MALICE, 29.5 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_BOMBARDMENT:
+                            bombardCount++;
+                            Talk(TALK_BOMBARDMENT);
+                            Talk(TALK_BOMBARDMENT_ANN);
+                            clumpCheckDone = false;
+                            DoCast(me, SPELL_CALL_BOMBARDMENT);
+                            events.ScheduleEvent(EVENT_BOMBARDMENT, getBombardTimer());
+                            break;
+                        case EVENT_MANIFEST_RAGE:
+                            DoCast(me, SPELL_MANIFEST_RAGE);
+                            break;
+                    }
+                }
+
+                if (!inRealm || inRealm && phase == PHASE_MY_WORLD)
+                    DoMeleeAttackIfReady();
+            }
+
+            private:
+                void HandleSummonGuards(uint32 type)
+                {
+                    switch (type)
+                    {
+                        case GUARD_TYPE_WARBRINGER:
+                            for (uint8 i = 0; i < 6; i++)
+                                me->SummonCreature(NPC_WARBRINGER_KORKRON, WarbringersSpawnPos[i], TEMPSUMMON_MANUAL_DESPAWN);
+
+                            if (GameObject* westGates = ObjectAccessor::GetGameObject(*me, instance ? instance->GetData64(GO_GARROSH_SOUTH_WEST_DOOR):0))
+                                instance->HandleGameObject(westGates->GetGUID(), true, NULL);
+
+                            if (GameObject* eastGates = ObjectAccessor::GetGameObject(*me, instance ? instance->GetData64(GO_GARROSH_SOUTH_EAST_DOOR) : 0))
+                                instance->HandleGameObject(eastGates->GetGUID(), true, NULL);
+                            break;
+                        case GUARD_TYPE_WOLF_RIDER:
+                            me->SummonCreature(NPC_WOLF_RIDER_FARSEER, WolfridersSpawnPos[wRiderGates ? 0 : 1], TEMPSUMMON_MANUAL_DESPAWN);
+
+                            if (GameObject* sideGates = ObjectAccessor::GetGameObject(*me, instance ? instance->GetData64(wRiderGates ? GO_GARROSH_SOUTH_EAST_DOOR : GO_GARROSH_SOUTH_WEST_DOOR) : 0))
+                                instance->HandleGameObject(sideGates->GetGUID(), true, NULL);
+
+                            wRiderGates = wRiderGates ? false : true;
+                            break;
+                        case GUARD_TYPE_ENGINEER:
+                            for (uint8 i = 0; i < 2; i++)
+                                me->SummonCreature(NPC_SIEGE_ENGINEER, SiegeEngineersSpawnPos[i], TEMPSUMMON_MANUAL_DESPAWN);
+
+                            for (uint8 i = 0; i < 2; i++)
+                                me->SummonCreature(NPC_IRON_STAR, IronStarSpawnPos[i], TEMPSUMMON_MANUAL_DESPAWN);
+                            break;
+                        case NPC_EMBODIED_DESPAIR_G:
+                            for (auto&& itr : embodiedDespairSpawnPos)
+                            {
+                                if (Creature* despair = me->SummonCreature(type, itr, TEMPSUMMON_MANUAL_DESPAWN))
+                                    realmMinionGUIDs.push_back(despair->GetGUID());
+                            }
+                            break;
+                        case NPC_EMBODIED_FEAR:
+                            for (auto&& itr : embodiedFearSpawnPos)
+                            {
+                                for (uint8 i = 0; i < 4; i++)
+                                {
+                                    if (Creature* fear = me->SummonCreature(type, itr.GetPositionX() + frand(-7.0f, 7.0f), itr.GetPositionY() + frand(-7.0f, 7.0f), itr.GetPositionZ(), itr.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN))
+                                        realmMinionGUIDs.push_back(fear->GetGUID());
+
+                                }
+                            }
+                            break;
+                        case NPC_EMBODIED_DOUBT:
+                            for (auto&& itr : embodiedDoubtSpawnPos)
+                            {
+                                for (uint8 i = 0; i < 3; i++)
+                                {
+                                    if (Creature* doubt = me->SummonCreature(type, itr.GetPositionX() + frand(-5.0f, 5.0f), itr.GetPositionY() + frand(-5.0f, 5.0f), itr.GetPositionZ(), itr.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN))
+                                        realmMinionGUIDs.push_back(doubt->GetGUID());
+                                }
+                            }
+                            break;
+                    }
+                }
+
+                uint32 getBombardTimer()
+                {
+                    if (bombardCount > 3)
+                        return 25 * IN_MILLISECONDS;
+
+                    switch (bombardCount)
+                    {
+                        case 1:
+                            return 55 * IN_MILLISECONDS;
+                        case 2:
+                        case 3:
+                            return 40 * IN_MILLISECONDS;
+                    }
+
+                    return 0;
+                }
+
+                uint32 getDesecrateTimer()
+                {
+                    switch (phase)
+                    {
+                        case PHASE_FIRST:
+                            return 41 * IN_MILLISECONDS;
+                        case PHASE_SECOND:
+                            return 35 * IN_MILLISECONDS;
+                        case PHASE_THIRD:
+                            return 25 * IN_MILLISECONDS;
+                    }
+
+                    return 35 * IN_MILLISECONDS; // by default
+                }
+
+                uint32 getTouchTimer()
+                {
+                    switch (phase)
+                    {
+                        case PHASE_SECOND:
+                            return 45 * IN_MILLISECONDS;
+                        case PHASE_THIRD:
+                            return ++touchCount > 1 ? 42 * IN_MILLISECONDS : 34.5 * IN_MILLISECONDS;
+                    }
+
+                    return 45 * IN_MILLISECONDS;
+                }
+
+                uint32 getPowerGainTimer(uint32 &powerCount)
+                {
+                    if (++powerCount % 4 == 0)
+                    {
+                        powerCount = 0;
+                        return 1.3 * IN_MILLISECONDS;
+                    }
+
+                    return 0.8 * IN_MILLISECONDS;
+                }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_garrosh_hellscreamAI(creature);
+        }
+};
+
+struct soo_garrosh_guards_typeAI : public ScriptedAI
+{
+    soo_garrosh_guards_typeAI(Creature* creature) : ScriptedAI(creature) { }
+
+    TaskScheduler scheduler;
+    InstanceScript* instance;
+    EventMap events;
+    uint64 myStarGUID;
+    uint64 warbringerFixateGUID;
+    float x, y;
+    bool hasAffectCombat; // this creatures should move to same pos and affect by combat only after reach his pos. but in case damageTaken - stop moving and instant affect by combat
+
+    void Reset() override
+    {
+        warbringerFixateGUID = 0;
+        myStarGUID = 0;
+        x = 0.0f; y = 0.0f;
+        instance = me->GetInstanceScript();
+
+        GetPositionWithDistInOrientation(me, me->GetEntry() == NPC_SIEGE_ENGINEER ? 14.3f : 45.0f, me->GetEntry() == NPC_SIEGE_ENGINEER ? me->GetOrientation() : GarroshGuardsOri, x, y);
+
+        Movement::MoveSplineInit init(me);
+        init.MoveTo(x, y, me->GetPositionZ());
+
+        if (!IsHeroic() && me->GetEntry() == NPC_WOLF_RIDER_FARSEER)
+            init.SetVelocity(6.7f);
+
+        init.SetSmooth();
+        init.Launch();
+
+        if (me->GetEntry() == NPC_SIEGE_ENGINEER) // only for engineer
+        {
+            me->SetInCombatWithZone();
+
+            if (instance)
+                instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
         }
 
-        void UpdateAI(const uint32 diff) override
+        scheduler
+            .Schedule(Milliseconds(me->GetSplineDuration()), [this](TaskContext context)
         {
-            // Fix orientation
-            if (Creature* l_Target = sObjectAccessor->GetCreature(*me, m_Trigger))
+            if (!hasAffectCombat && me->GetEntry() != NPC_SIEGE_ENGINEER)
             {
-                if (!me->isMoving() && m_Trigger && l_Target->IsInWorld() && !m_Activated)
-                {
-                    me->SetFacingToObject(l_Target);
-                }
-            }
+                me->StopMoving();
 
-            if (m_Activated)
-            {
-                if (Creature* l_Target = sObjectAccessor->GetCreature(*me, m_Trigger))
-                {
-                    if (me->IsWithinDistInMap(l_Target, 1.5f))
-                    {
-                        me->CastSpell(me, Spells::SPELL_EXPLODING_IRON_STAR);
-
-                        me->Kill(me);
-                        me->DespawnOrUnsummon(2000);
-                        m_Activated = false;
-                    }
-                }
-
-                if (m_PDiff <= diff)
-                {
-                    // Kokron Creatures
-                    std::list<Creature*> l_ListCreatures;
-                    me->GetCreatureListWithEntryInGrid(l_ListCreatures, Creatures::CREATURE_KORKRON_WARBRINGER, 24.0f);
-                    me->GetCreatureListWithEntryInGrid(l_ListCreatures, Creatures::CREATURE_FARSEER_WOLF_RIDER, 24.0f);
-
-                    if (!l_ListCreatures.empty())
-                    {
-                        for (auto itr : l_ListCreatures)
-                        {
-                            itr->CastSpell(itr, Spells::SPELL_IRON_STAR_IMPACT_DAMAGE_KNOCKBACK);
-                        }
-                    }
-
-                    // Players
-                    std::list<Player*> l_ListPlayers;
-                    me->GetPlayerListInGrid(l_ListPlayers, 24.0f);
-
-                    if (!l_ListPlayers.empty())
-                    {
-                        for (auto itr : l_ListPlayers)
-                        {
-                            itr->CastSpell(itr, Spells::SPELL_IRON_STAR_IMPACT_DAMAGE_KNOCKBACK);
-                        }
-                    }
-
-                    m_PDiff = 1000;
-                }
+                Movement::MoveSplineInit init(me);
+                if (me->GetExactDist2d(&warbringerLastPosition[0]) > me->GetExactDist2d(&warbringerLastPosition[1]))
+                    init.MoveTo(warbringerLastPosition[1].GetPositionX(), warbringerLastPosition[1].GetPositionY(), warbringerLastPosition[1].GetPositionZ());
                 else
-                {
-                    m_PDiff -= diff;
-                }
-            }
-        }
-    };
+                    init.MoveTo(warbringerLastPosition[0].GetPositionX(), warbringerLastPosition[0].GetPositionY(), warbringerLastPosition[0].GetPositionZ());
 
-    CreatureAI* GetAI(Creature* creature) const override
+                init.SetSmooth();
+                init.Launch();
+
+                scheduler
+                    .Schedule(Milliseconds(me->GetSplineDuration()), [this](TaskContext context)
+                {
+                    if (!hasAffectCombat)
+                    {
+                        hasAffectCombat = true;
+                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                        me->SetInCombatWithZone();
+                    }
+                });
+            }
+            else if (me->GetEntry() == NPC_SIEGE_ENGINEER)
+            {
+                if (Creature* iStar = me->FindNearestCreature(NPC_IRON_STAR, 35.0f, true))
+                {
+                    myStarGUID = iStar->GetGUID();
+                    me->StopMoving();
+                    me->SetFacingTo(me->GetAngle(iStar));
+                }
+
+                DoCast(me, SPELL_POWER_IRON_STAR);
+            }
+        });
+    }
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage) override
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        if (!hasAffectCombat && me->GetEntry() != NPC_KORKRON_SIEGEMASTER)
+        {
+            hasAffectCombat = true;
+            me->StopMoving();
+            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+            me->SetInCombatWithZone();
+
+            // Set near warbringers in combat too
+            std::list<Creature*> warbringersList;
+            GetCreatureListWithEntryInGrid(warbringersList, me, me->GetEntry(), 15.0f);
+
+            for (auto&& itr : warbringersList)
+                itr->AI()->DoAction(ACTION_START_INTRO);
+        }
+    }
+
+    void DoAction(int32 actionId) override
+    {
+        switch (actionId)
+        {
+            case ACTION_START_INTRO:
+                if (hasAffectCombat)
+                    break;
+
+                hasAffectCombat = true;
+                me->StopMoving();
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
+                me->SetInCombatWithZone();
+                break;
+            case ACTION_GARROSH_EVADE:
+                me->DespawnOrUnsummon();
+                break;
+        }
     }
 };
 
-// Korkron Warbringer - 71979
-class garrosh_hellscream_korkron_warbringer : public CreatureScript
+// Siege Engineer 71984
+struct npc_siege_engineer : public soo_garrosh_guards_typeAI
 {
-public:
-    garrosh_hellscream_korkron_warbringer() : CreatureScript("garrosh_hellscream_korkron_warbringer") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
+    npc_siege_engineer(Creature* creature) : soo_garrosh_guards_typeAI(creature) 
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
+        me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        if (instance)
+            instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+    }
+
+    void Unsummoned() override
+    {
+        if (instance)
+            instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
+};
+
+// Kor`kron Warbringer 71979
+struct npc_korkron_warbringer : public soo_garrosh_guards_typeAI
+{
+    npc_korkron_warbringer(Creature* creature) : soo_garrosh_guards_typeAI(creature) 
+    {
+        hasAffectCombat = false;
+        me->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
+
+        if (IsHeroic())
+            DoCast(me, SPELL_BLOOD_FRENZIED);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        if (IsHeroic())
+            DoCast(me, SPELL_BLOOD_FRENZIED_SELECTOR);
+
+        events.ScheduleEvent(EVENT_HAMSTRING, urand(2 * IN_MILLISECONDS, 5.5 *IN_MILLISECONDS));
+    }
+
+    void SetGUID(uint64 guid, int32 /*type*/) override
+    {
+        warbringerFixateGUID = guid;
+    }
+
+    uint64 GetGUID(int32 /*type*/) const override
+    {
+        return warbringerFixateGUID;
+    }
+
+    void JustDied(Unit* killer) override
+    {
+        if (killer->GetGUID() != me->GetGUID())
+            return;
+
+        if (Creature* garrosh = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+            garrosh->AI()->SetData(TYPE_GARROSH_STRIKE_COUNT, 1);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        while (uint32 eventId = events.ExecuteEvent())
         {
-            m_Instance = creature->GetInstanceScript();
+            if (eventId == EVENT_HAMSTRING)
+            {
+                if (Unit* vict = me->GetVictim())
+                    DoCast(vict, SPELL_HAMSTRING);
+
+                events.ScheduleEvent(EVENT_HAMSTRING, urand(6 * IN_MILLISECONDS, 15 * IN_MILLISECONDS));
+            }
+            break;
         }
 
-        InstanceScript* m_Instance;
+        DoMeleeAttackIfReady();
+    }
+};
 
-        void Reset() override
+// Wolf Rider Farseer 71983
+struct npc_wolf_rider_farseer : public soo_garrosh_guards_typeAI
+{
+    npc_wolf_rider_farseer(Creature* creature) : soo_garrosh_guards_typeAI(creature) 
+    { 
+        me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+        hasAffectCombat = false;
+        me->AddUnitState(UNIT_STATE_IGNORE_PATHFINDING);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, urand(4 * IN_MILLISECONDS, 12 * IN_MILLISECONDS));
+        events.ScheduleEvent(EVENT_CHAIN_HEAL, urand(6.5 * IN_MILLISECONDS, 19.5 *IN_MILLISECONDS));
+    }
+
+    void CastInterrupted(SpellInfo const* spell) override
+    {
+        DoCast(me, SPELL_FURY, true);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING) || me->HasReactState(REACT_PASSIVE))
+            return;
+
+        while (uint32 eventId = events.ExecuteEvent())
         {
-            events.Reset();
-            DoZoneInCombat();
-            me->setFaction(16);
+            switch (eventId)
+            {
+                case EVENT_CHAIN_HEAL:
+                    DoCast(me, SPELL_ANCENTRAL_CHAIN_HEAL);
+                    events.ScheduleEvent(EVENT_CHAIN_HEAL, urand(7 * IN_MILLISECONDS, 12 * IN_MILLISECONDS));
+                    break;
+                case EVENT_CHAIN_LIGHTNING:
+                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, CasterSpecTargetSelector()))
+                        DoCast(target, SPELL_CHAIN_LIGHTNING);
+                    else if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 150.0f, true))
+                        DoCast(target, SPELL_CHAIN_LIGHTNING);
 
-            events.ScheduleEvent(Events::EVENT_MOVE_TO_GARROSH, 5 * TimeConstants::IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, urand(13.5 * IN_MILLISECONDS, 27 * IN_MILLISECONDS));
+                    break;
+            }
         }
 
-        void EnterCombat(Unit* attacker) override
+        DoMeleeAttackIfReady();
+    }
+};
+
+// Desecrated Weapon 72154, 72198
+struct npc_soo_desecrated_weapon : public ScriptedAI
+{
+    npc_soo_desecrated_weapon(Creature* creature) : ScriptedAI(creature) { }
+
+    TaskScheduler scheduler;
+
+    void Reset() override
+    {
+        me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+        me->SetInCombatWithZone();
+        DoCast(me, me->GetEntry() == NPC_DESECRATED_WEAPON_EMPOWERED ? SPELL_EMPOWERED_DESECRATED_WEAPON_AT : SPELL_DESECRATED_WEAPON_AREATRIGGER, true);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        me->RemoveAllAreasTrigger();
+    }
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+    {
+        if (me->GetEntry() == NPC_DESECRATED_WEAPON_EMPOWERED && damage >= me->GetHealth())
+            damage = 0;
+
+        if (AreaTrigger* myWeapon = me->GetAreaTrigger(me->GetEntry() == NPC_DESECRATED_WEAPON_EMPOWERED ? SPELL_EMPOWERED_DESECRATED_WEAPON_AT : SPELL_DESECRATED_WEAPON_AREATRIGGER))
         {
-            events.ScheduleEvent(Events::EVENT_HAMSTRING, urand(8 * TimeConstants::IN_MILLISECONDS, 20 * TimeConstants::IN_MILLISECONDS));
+            float radius = (me->GetHealthPct() * 25.0f) / 100.0f;
+            myWeapon->SetFloatValue(AREATRIGGER_FIELD_EXPLICIT_SCALE, (radius * 1.0f) / 25.0f);
+            myWeapon->SetVisualRadius(radius);
+            myWeapon->UpdateObjectVisibility();
+
+            // Update new Radius Value
+            myWeapon->SetRadius(radius);
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
+};
+
+// Iron Star 71985
+struct npc_soo_iron_star : public ScriptedAI
+{
+    npc_soo_iron_star(Creature* creature) : ScriptedAI(creature) { }
+
+    EventMap nonCombatEvents;
+    float x, y;
+
+    void DoAction(int32 actionId) override
+    {
+        if (actionId == ACTION_POWER_IRON_STAR)
+        {
+            me->SetInCombatWithZone();
+            DoCast(me, SPELL_IRON_STAR_VISUAL);
+
+            x = 0.0f; y = 0.0f;
+
+            GetPositionWithDistInOrientation(me, 195.0f, me->GetOrientation(), x, y);
+
+            Movement::MoveSplineInit init(me);
+            init.MoveTo(x, y, me->GetPositionZ());
+            init.Launch();
+            nonCombatEvents.ScheduleEvent(EVENT_COLLISION, me->GetSplineDuration());
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        nonCombatEvents.Update(diff);
+
+        while (uint32 eventId = nonCombatEvents.ExecuteEvent())
+        {
+            if (eventId == EVENT_COLLISION)
+            {
+                DoCast(me, SPELL_EXPLODING_IRON_STAR);
+                me->Kill(me);
+            }
+            break;
+        }
+    }
+};
+
+// Embodied Minions 72236, 72237, 72238
+struct npc_soo_embodied_minions : public ScriptedAI
+{
+    npc_soo_embodied_minions(Creature* creature) : ScriptedAI(creature) { }
+
+    EventMap events;
+    InstanceScript* instance;
+
+    void Reset() override
+    {
+        events.Reset();
+        DoCast(me, SPELL_COSMETIC_CHANNEL);
+
+        if (me->GetEntry() == NPC_EMBODIED_DOUBT || me->GetEntry() == NPC_EMBODIED_DESPAIR_G)
+        {
+            me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+            SetCombatMovement(false);
         }
 
-        void OnAddThreat(Unit* victim, float& fThreat, SpellSchoolMask /*schoolMask*/, SpellInfo const* /*threatSpell*/)
+        instance = me->GetInstanceScript();
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        if (me->GetEntry() != NPC_EMBODIED_DESPAIR_G)
+            return;
+
+        if (!IsHeroic())
+            return;
+
+        std::list<Creature*> despairList;
+        GetCreatureListWithEntryInGrid(despairList, me, me->GetEntry(), 100.0f);
+        despairList.remove_if([=](Creature* target) { return target->GetGUID() == me->GetGUID(); });
+
+        for (auto&& despair : despairList)
+            despair->CastSpell(despair, SPELL_ULTIMATE_DESPAIR, true);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        me->InterruptNonMeleeSpells(false, SPELL_COSMETIC_CHANNEL);
+
+        switch (me->GetEntry())
         {
-            if (me->GetMap()->IsHeroic())
-                fThreat = 0;
+            case NPC_EMBODIED_DOUBT:
+                if (IsHeroic())
+                    events.ScheduleEvent(EVENT_EMBODIED_DOUBT, urand(4 * IN_MILLISECONDS, 9.5*IN_MILLISECONDS));
+                break;
+            case NPC_EMBODIED_DESPAIR_G:
+                events.ScheduleEvent(EVENT_EMBODIED_DESPAIR, urand(2.5 * IN_MILLISECONDS, 5 * IN_MILLISECONDS));
+                break;
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_EMBODIED_DOUBT:
+                    DoCastAOE(SPELL_EMBODIED_DOUBT);
+                    events.ScheduleEvent(EVENT_EMBODIED_DOUBT, urand(4 * IN_MILLISECONDS, 9.5 * IN_MILLISECONDS));
+                    break;
+                case EVENT_EMBODIED_DESPAIR:
+                    DoCast(me, SPELL_EMBODIED_DESPAIR);
+                    events.ScheduleEvent(EVENT_EMBODIED_DESPAIR, 9 * IN_MILLISECONDS);
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+// Heart of Yshaarj 72215
+struct npc_soo_heart_of_yshaarj : public ScriptedAI
+{
+    npc_soo_heart_of_yshaarj(Creature* creature) : ScriptedAI(creature) { }
+
+    EventMap nonCombatEvents;
+    InstanceScript* instance;
+    float x, y;
+    uint32 prevRealm;
+
+    void Reset() override
+    {
+        prevRealm = 0;
+        nonCombatEvents.Reset();
+        instance = me->GetInstanceScript();
+    }
+
+    void DoAction(int32 actionId) override
+    {
+        switch (actionId)
+        {
+            case ACTION_GARROSH_ALT_PHASE:
+                me->RemoveAurasDueToSpell(SPELL_TRANSITION_VISUAL);
+                nonCombatEvents.ScheduleEvent(EVENT_ALT_WORLD, 15 * IN_MILLISECONDS);
+                break;
+            case ACTION_GARROSH_PHASE_THIRD:
+                me->RemoveAurasDueToSpell(SPELL_TRANSITION_VISUAL);
+                break;
+        }
+    }
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+    {
+        damage = 0;
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        if (type == TYPE_GARROSH_REALM)
+            return prevRealm;
+
+        return 0;
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        nonCombatEvents.Update(diff);
+
+        while (uint32 eventId = nonCombatEvents.ExecuteEvent())
+        {
+            if (eventId == EVENT_ALT_WORLD)
+            {
+                DoCast(me, SPELL_ENTER_REALM_OF_YSHAARJ);
+
+                std::vector<uint32> RealmComboStorage = { REALM_TEMPLE_OF_THE_JADE_SERPENT, REALM_TERRACE_OF_THE_ENDLESS_SPRING, REALM_TEMPLE_OF_THE_RED_CRANE };
+
+                if (!IsHeroic())
+                {
+                    // Remove From Temp container value, that was used before (real random)
+                    if (prevRealm)
+                        RealmComboStorage.erase(std::find(RealmComboStorage.begin(), RealmComboStorage.end(), prevRealm));
+
+                    // Select new spell from updated container
+                    prevRealm = Trinity::Containers::SelectRandomContainerElement(RealmComboStorage);
+                }
+                else // Fixated
+                {
+                    switch (prevRealm)
+                    {
+                        case 0:
+                        case REALM_TEMPLE_OF_THE_RED_CRANE:
+                            prevRealm = REALM_TEMPLE_OF_THE_JADE_SERPENT;
+                            break;
+                        case REALM_TEMPLE_OF_THE_JADE_SERPENT:
+                            prevRealm = REALM_TERRACE_OF_THE_ENDLESS_SPRING;
+                            break;
+                        case REALM_TERRACE_OF_THE_ENDLESS_SPRING:
+                            prevRealm = REALM_TEMPLE_OF_THE_RED_CRANE;
+                            break;
+                    }
+                }
+
+                if (Creature* Garrosh = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+                    Garrosh->AI()->DoAction(ACTION_GARROSH_ALT_PHASE);
+
+                nonCombatEvents.ScheduleEvent(EVENT_ALT_WORLD, 3 * MINUTE * IN_MILLISECONDS + 28 * IN_MILLISECONDS); // should be 2.25.5s but 2.5s time fo transition
+            }
+            break;
+        }
+    }
+};
+
+// Heart of Y`shaarj Realm 72228
+struct npc_garrosh_heart_of_yshaarj_realm : public ScriptedAI
+{
+    npc_garrosh_heart_of_yshaarj_realm(Creature* creature) : ScriptedAI(creature) { }
+
+    void DoAction(int32 actionId) override
+    {
+        me->SetInCombatWithZone();
+        DoCast(me, SPELL_ABSORB_ENERGY);
+    }
+
+    void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+    {
+        damage = 0;
+    }
+};
+
+// Minions of Y`shaarj 72272
+struct npc_garrosh_minion_of_yshaarj : public ScriptedAI
+{
+    npc_garrosh_minion_of_yshaarj(Creature* creature) : ScriptedAI(creature) { }
+
+    void Reset() override
+    {
+        if (IsHeroic())
+        {
+            me->SetPowerType(POWER_ENERGY);
+            me->SetMaxPower(POWER_ENERGY, 100);
+            me->SetPower(POWER_ENERGY, 0);
+            DoCast(me, SPELL_NON_REGENERATE_POWER, true);
+        }
+    }
+
+    void DamageDealt(Unit* /*victim*/, uint32& /*damage*/, DamageEffectType damageType) override
+    {
+        if (IsHeroic() && damageType == DIRECT_DAMAGE) // generate 10 energy by each attack only in HC
+        {
+            uint32 currentPower = me->GetPower(POWER_ENERGY) + 10;
+
+            if (currentPower > 99)
+            {
+                me->SetPower(POWER_ENERGY, 0);
+                DoCast(me, SPELL_EMPOWERING_CORRUPTION_2);
+            }
+            else
+                me->SetPower(POWER_ENERGY, currentPower);
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+// Unstable Iron Star 73059
+struct npc_garrosh_unstable_iron_star : public ScriptedAI
+{
+    npc_garrosh_unstable_iron_star(Creature* creature) : ScriptedAI(creature) { }
+
+    TaskScheduler scheduler;
+    uint64 targetGUID;
+    bool hasExplosive;
+    bool allowExplosive;
+
+    void Reset() override
+    {
+        if (Creature* garrosh = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+            garrosh->AI()->JustSummoned(me);
+
+        me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+        targetGUID = 0;
+        hasExplosive = false;
+        allowExplosive = false;
+        me->SetInCombatWithZone();
+        DoCast(me, SPELL_UNSTABLE_IRON_STAR_AT);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        me->PrepareChanneledCast(me->GetOrientation());
+
+        scheduler
+            .Schedule(Milliseconds(2000), [this](TaskContext context)
+        {
+            allowExplosive = true;
+            DoCast(me, SPELL_IRON_STAR_FIXATE_SELECTOR);
+        });
+    }
+
+    void DoAction(int32 actionId) override
+    {
+        if (actionId == ACTION_START_INTRO)
+        {
+            me->PrepareChanneledCast(me->GetOrientation());
+
+            scheduler
+                .Schedule(Milliseconds(500), [this](TaskContext context)
+            {
+                if (me->HasAura(SPELL_UNSTABLE_IRON_STAR_AT))
+                    DoCast(me, SPELL_IRON_STAR_FIXATE_SELECTOR);
+            });
+        }
+    }
+
+    void SetGUID(uint64 guid, int32 /*type*/) override
+    {
+        targetGUID = guid;
+    }
+
+    uint64 GetGUID(int32 /*type*/) const override
+    {
+        return targetGUID;
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        switch (type)
+        {
+            case TYPE_IRON_STAR_EXPLOSIVE:
+                return hasExplosive ? 1 : 0;
+            case TYPE_ALLOW_IRON_STAR_EXPLOSIVE:
+                return allowExplosive ? 1 : 0;
+        }
+
+        return 0;
+    }
+
+    void SetData(uint32 type, uint32 data) override
+    {
+        if (type == TYPE_IRON_STAR_EXPLOSIVE)
+            hasExplosive = true;
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+
+        if (!UpdateVictim())
+            return;
+    }
+};
+
+// Hellscreams Warsong 144821
+class spell_soo_hellscreams_warsong : public SpellScript
+{
+    PrepareSpellScript(spell_soo_hellscreams_warsong);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_WARBRINGER_KORKRON && target->GetEntry() != NPC_WOLF_RIDER_FARSEER; });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_hellscreams_warsong::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_hellscreams_warsong::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_soo_hellscreams_warsong::FilterTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// Power Iron Star 144616
+class spell_soo_power_iron_star : public AuraScript
+{
+    PrepareAuraScript(spell_soo_power_iron_star);
+
+    void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (aurEff->GetBase()->GetDuration() > 0)
+            return;
+
+        if (Creature* owner = GetOwner()->ToCreature())
+            owner->AI()->DoAction(ACTION_POWER_IRON_STAR);
+
+        if (GetCaster() && GetCaster()->ToCreature())
+            GetCaster()->ToCreature()->DespawnOrUnsummon(3 * IN_MILLISECONDS);
+    }
+
+    void OnApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+    {
+        if (GetOwner() && GetOwner()->ToUnit() && GetOwner()->ToUnit()->GetMap()->IsHeroic())
+        {
+            SetDuration(10 * IN_MILLISECONDS);
+
+            // For client-side visual
+            GetAura()->SetMaxDuration(10 * IN_MILLISECONDS);
+            GetAura()->RefreshDuration(false);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_soo_power_iron_star::OnAuraEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_soo_power_iron_star::OnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Realm of Yshaarj 144954
+class spell_garrosh_realm_of_yshaarj : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_realm_of_yshaarj);
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+            owner->CastSpell(owner, SPELL_GARROSH_ENERGY, true);
+    }
+
+    void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+        {
+            if (Creature* heartOfYshaarj = ObjectAccessor::GetCreature(*owner, owner->GetInstanceScript() ? owner->GetInstanceScript()->GetData64(NPC_HEART_OF_YSHAARJ) : 0))
+            {
+                owner->TeleportTo(owner->GetMapId(), heartOfYshaarj->GetPositionX() + frand(-4.5f, 4.5f), heartOfYshaarj->GetPositionY() + frand(-3.0f, 3.0f), heartOfYshaarj->GetPositionZ(), heartOfYshaarj->GetOrientation(), TELE_TO_NOT_UNSUMMON_PET | TELE_TO_NOT_LEAVE_COMBAT);
+
+                // Required for dbm
+                owner->m_Events.Schedule(1000, [=]()
+                {
+                    owner->CastSpell(garroshJumpPos.GetPositionX() + frand(-5.0f, 5.0f), garroshJumpPos.GetPositionY() + frand(-5.0f, 5.0f), garroshJumpPos.GetPositionZ(), SPELL_JUMP_TO_GROUND, true);
+                });
+            }
+
+            owner->RemoveAurasDueToSpell(SPELL_COURAGE_AURA);
+            owner->RemoveAurasDueToSpell(SPELL_FAITH_AURA);
+            owner->RemoveAurasDueToSpell(SPELL_HOPE_AURA);
+            owner->RemoveAurasDueToSpell(SPELL_GARROSH_ENERGY);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_garrosh_realm_of_yshaarj::OnAuraEffectApply, EFFECT_1, SPELL_AURA_SCREEN_EFFECT, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_garrosh_realm_of_yshaarj::OnAuraEffectRemove, EFFECT_1, SPELL_AURA_SCREEN_EFFECT, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Yshaarjs Protection 144945
+class spell_soo_yshaarjs_protection_aura : public AuraScript
+{
+    PrepareAuraScript(spell_soo_yshaarjs_protection_aura);
+
+    void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+        {
+            if (InstanceScript* instance = owner->GetInstanceScript())
+                instance->SetData(DATA_SHA_VORTEX, DONE);
+
+            if (owner->ToCreature())
+                owner->ToCreature()->AI()->DoAction(ACTION_REMOVE_YSHAARJ_PROTECTION);
+        }
+    }
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+            if (InstanceScript* instance = owner->GetInstanceScript())
+                instance->SetData(DATA_SHA_VORTEX, NOT_STARTED);
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_soo_yshaarjs_protection_aura::OnAuraEffectRemove, EFFECT_0, SPELL_AURA_DAMAGE_IMMUNITY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectApply += AuraEffectApplyFn(spell_soo_yshaarjs_protection_aura::OnAuraEffectApply, EFFECT_0, SPELL_AURA_DAMAGE_IMMUNITY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Yshaarjs Protection 144945
+class spell_soo_yshaarjs_protection : public SpellScript
+{
+    PrepareSpellScript(spell_soo_yshaarjs_protection);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        // Not heal at first transition
+        if (GetCaster() && GetCaster()->ToCreature() && GetCaster()->ToCreature()->AI()->GetData(TYPE_GARROSH_FIRST_TRANSITION))
+        {
+            PreventHitEffect(eff_idx);
+            GetCaster()->ToCreature()->AI()->SetData(TYPE_GARROSH_FIRST_TRANSITION, 0);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_soo_yshaarjs_protection::HandleEffectHitTarget, EFFECT_2, SPELL_EFFECT_HEAL_PCT);
+    }
+};
+
+// Whirling Corruption 144985, 145037
+class spell_soo_whirling_corruption : public AuraScript
+{
+    PrepareAuraScript(spell_soo_whirling_corruption);
+
+    bool Load()
+    {
+        minionsCount = 0;
+        return true;
+    }
+
+    void OnTrigger(AuraEffect const* /*aurEff*/)
+    {
+        // Doesn`t matter who is target, but not caster
+        if (Unit* owner = GetOwner()->ToUnit())
+        {
+            if (Player* pItr = owner->FindNearestPlayer(300.0f))
+                owner->CastSpell(pItr, SPELL_WHIRLING_CORRUPTION_VISUAL, true);
+
+            uint32 limitCount = owner->GetMap()->Is25ManRaid() ? 10 : 8;
+            if (GetSpellInfo()->Id == SPELL_EMPOWERED_WHIRLING_CORRUPTION && minionsCount < limitCount) // limit is 8(10)
+            {
+                minionsCount++;
+
+                // no spell selector for these
+                std::list<Player*> targets, copyTargets;
+                GetPlayerListInGrid(targets, owner, 200.0f);
+                copyTargets = targets;
+
+                targets.remove_if(TankSpecTargetSelector()); // allow target melee too
+
+                if (targets.empty())
+                {
+                    targets.clear();
+
+                    for (auto&& itr : copyTargets)
+                        targets.push_back(itr);
+
+                    if (targets.size() > 1)
+                        Trinity::Containers::RandomResizeList(targets, 1);
+
+                    if (Player* target = targets.front())
+                        owner->CastSpell(target, SPELL_EMPOWERED_WHIRLING_MISSLE, true);
+
+                    return;
+                }
+
+                if (targets.size() > 1)
+                    Trinity::Containers::RandomResizeList(targets, 1);
+
+                if (Player* target = targets.front())
+                    owner->CastSpell(target, SPELL_EMPOWERED_WHIRLING_MISSLE, true);
+            }
+        }
+    }
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Creature* owner = GetOwner()->ToCreature())
+            owner->ClearUnitState(UNIT_STATE_CASTING);
+    }
+
+    private:
+        uint8 minionsCount;
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_soo_whirling_corruption::OnTrigger, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        AfterEffectApply += AuraEffectApplyFn(spell_soo_whirling_corruption::OnAuraEffectApply, EFFECT_1, SPELL_AURA_MOD_DECREASE_SPEED, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Empowered Gripping Despair 145195
+class spell_soo_empowered_gripping_despair : public AuraScript
+{
+    PrepareAuraScript(spell_soo_empowered_gripping_despair);
+
+    void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+        {
+            if (owner->GetInstanceScript() && owner->GetInstanceScript()->GetBossState(DATA_GARROSH_HELLSCREAM) != IN_PROGRESS)
+                return;
+
+            if (GetCaster() && GetCaster()->ToCreature())
+                GetCaster()->ToCreature()->AI()->SetData(TYPE_EXPLOSIVE_DESPAIR, GetStackAmount() + GetCaster()->ToCreature()->AI()->GetData(TYPE_EXPLOSIVE_DESPAIR));
+
+            int32 bp = (int32)((GetStackAmount() * sSpellMgr->GetSpellInfo(GetSpellInfo()->Id, owner->GetMap()->GetDifficulty())->Effects[0].BasePoints) / 2);
+
+            owner->CastCustomSpell(owner, SPELL_EXPLOSIVE_DESPAIR, &bp, nullptr, nullptr, true);
+
+            if (owner->GetInstanceScript())
+                owner->GetInstanceScript()->DoRemoveAurasDueToSpellOnPlayers(SPELL_EXPLOSIVE_DESPAIR_AURA);
+
+            owner->CastSpell(owner, SPELL_EXPLOSIVE_DESPAIR_AURA, true);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_soo_empowered_gripping_despair::OnAuraEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DAMAGE, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Explosive Despair Eff 145213
+class spell_garrosh_explosive_despair_eff : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_explosive_despair_eff);
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+            if (Creature* garrosh = ObjectAccessor::GetCreature(*owner, owner->GetInstanceScript() ? owner->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+                SetStackAmount(garrosh->AI()->GetData(TYPE_EXPLOSIVE_DESPAIR));
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_garrosh_explosive_despair_eff::OnAuraEffectApply, EFFECT_0, SPELL_AURA_MOD_MECHANIC_DAMAGE_TAKEN_PERCENT, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Transition Phase Third Effect 145246
+class spell_soo_transition_phase_third_effect : public AuraScript
+{
+    PrepareAuraScript(spell_soo_transition_phase_third_effect);
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Creature* m_owner = GetOwner()->ToCreature())
+            m_owner->AI()->DoAction(ACTION_GARROSH_PHASE_THIRD);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_soo_transition_phase_third_effect::OnAuraEffectApply, EFFECT_1, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Consumed Hope 149032
+class spell_garrosh_consumed_hope : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_consumed_hope);
+
+    void HandleOnProc(ProcEventInfo& eventInfo)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+            owner->CastSpell(owner, SPELL_HOPE_MISSLE, true);
+    }
+
+    void Register()
+    {
+        OnProc += AuraProcFn(spell_garrosh_consumed_hope::HandleOnProc);
+    }
+};
+
+// Desecrate Selector 144745
+class spell_garrosh_desecrate_selector : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_desecrate_selector);
+
+    std::list<WorldObject*> m_targets;
+
+    void HandleOnEffectHit(SpellEffIndex effIdx)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+        {
+            if (Player* target = GetHitPlayer())
+            {
+                caster->SetTarget(target->GetGUID());
+                uint64 targetGUID = target->GetGUID();
+                uint32 spellId = GetSpellInfo()->Effects[caster->HasAura(SPELL_DESECRATED_EMPOWERED) ? EFFECT_1 : EFFECT_0].BasePoints;
+
+                // Target Scanning 0.2s
+                caster->m_Events.Schedule(250, [=]()
+                {
+                    if (Unit* desecrateTarget = ObjectAccessor::GetUnit(*caster, targetGUID))
+                        caster->CastSpell(desecrateTarget, spellId, false);
+
+                    if (Unit* victim = caster->GetVictim())
+                        caster->SetTarget(victim->GetGUID());
+                });
+            }
+        }
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        m_targets = targets;
+
+        targets.remove_if(TankSpecTargetSelector()); // tanks not in priority
+        targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && GetCaster() && target->ToPlayer()->GetExactDist2d(GetCaster()) < 12.5f; });
+
+        uint32 requredInRangeCount = GetCaster()->GetMap()->Is25ManRaid() ? 7 : 3;
+
+        if (targets.size() >= requredInRangeCount)
+        {
+            if (targets.size() > 1)
+                Trinity::Containers::RandomResizeList(targets, 1);
+
             return;
         }
 
-        void UpdateAI(const uint32 diff) override
-        {
-            events.Update(diff);
+        targets.clear();
 
-            if (me->HasUnitState(UNIT_STATE_CASTING))
+        for (auto&& itr : m_targets)
+            targets.push_back(itr);
+
+        if (targets.size() > 1)
+            Trinity::Containers::RandomResizeList(targets, 1);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_desecrate_selector::HandleOnEffectHit, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_desecrate_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Phase Two Transform 144842
+class spell_garrosh_phase_two_transform : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_phase_two_transform);
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Creature* owner = GetOwner()->ToCreature())
+            owner->AI()->DoAction(ACTION_GARROSH_PHASE_SECOND);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_garrosh_phase_two_transform::OnAuraEffectApply, EFFECT_0, SPELL_AURA_MOD_SCALE, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Phase Two Transform 144842
+class spell_garrosh_phase_two_transform_eff : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_phase_two_transform_eff);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (GetCaster() && GetCaster()->GetMap()->IsHeroic() && GetCaster()->GetMap()->Is25ManRaid())
+            PreventHitEffect(eff_idx);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_phase_two_transform_eff::HandleEffectHitTarget, EFFECT_1, SPELL_EFFECT_HEAL_PCT);
+    }
+};
+
+// Exploding Iron Star 144798
+class spell_garrosh_exploding_iron_star : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_exploding_iron_star);
+
+    void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
+    {
+        if (Unit* unit = GetHitUnit())
+        {
+            // 85% damage reduction after 45 yards distance
+            float dist = unit->GetExactDist2d(GetCaster());
+
+            int32 reduction = dist >= 45 ? GetHitDamage() * 0.15 : GetHitDamage() * (1 - ((dist * 0.85) / 45.0f));
+            SetHitDamage(reduction);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_exploding_iron_star::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
+// Touch of Y`shaarj 145065
+class spell_garrosh_touch_of_yshaarj : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_touch_of_yshaarj);
+
+    std::list<WorldObject*> m_targets, copyTargets;
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        m_targets = targets;
+        targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && (target->ToPlayer()->HasAura(SPELL_TOUCH_OH_YSHAARJ) || target->ToPlayer()->HasAura(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ)); });
+        targets.remove_if(TankSpecTargetSelector());
+
+        uint32 targetsCount = sSpellMgr->GetSpellInfo(GetSpellInfo()->Id, GetCaster()->GetMap()->GetDifficulty())->MaxAffectedTargets;
+
+        if (GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetData(DATA_FLEX))
+        {
+            // Calculate TargetsCount
+            targetsCount = 2; // min 2, max 4
+            uint32 totalPlayersCount = GetCaster()->GetInstanceScript()->instance->GetPlayersCountExceptGMs();
+
+            if (totalPlayersCount > 15)
+                targetsCount++;
+
+            if (totalPlayersCount > 20)
+                targetsCount++;
+        }
+
+        if (targets.size() < targetsCount)
+        {
+            targets.clear();
+
+            for (auto&& itr : m_targets)
+                targets.push_back(itr);
+
+            targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && (target->ToPlayer()->HasAura(SPELL_TOUCH_OH_YSHAARJ) || target->ToPlayer()->HasAura(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ)); });
+
+            if (GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetData(DATA_FLEX))
+            {
+                // Calculate TargetsCount
+                targetsCount = 2; // min 2, max 4
+                uint32 totalPlayersCount = GetCaster()->GetInstanceScript()->instance->GetPlayersCountExceptGMs();
+
+                if (totalPlayersCount > 15)
+                    targetsCount++;
+
+                if (totalPlayersCount > 20)
+                    targetsCount++;
+            }
+
+            if (targets.size() > targetsCount)
+                Trinity::Containers::RandomResizeList(targets, targetsCount);
+
+            copyTargets = targets;
+            return;
+        }
+
+        if (targets.size() > targetsCount)
+            Trinity::Containers::RandomResizeList(targets, targetsCount);
+
+        copyTargets = targets;
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = copyTargets;
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_4, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_5, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_6, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_7, TARGET_UNIT_SRC_AREA_ENEMY);
+        /*OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_8, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_9, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_10, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_touch_of_yshaarj::CopyTargets, EFFECT_11, TARGET_UNIT_SRC_AREA_ENEMY);*/
+    }
+};
+
+// Touch of Y`shaarj 145065
+class spell_garrosh_touch_of_yshaarj_aura : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_touch_of_yshaarj_aura);
+
+    void OnUpdate(uint32 /*diff*/, AuraEffect* aurEff)
+    {
+        if (GetOwner() && GetOwner()->ToUnit() && GetOwner()->ToUnit()->HealthBelowPct(20))
+            GetOwner()->ToUnit()->RemoveAurasDueToSpell(GetSpellInfo()->Id);
+    }
+
+    void Absorb(AuraEffect*, DamageInfo& dmgInfo, uint32& absorbAmount)
+    {
+        if (dmgInfo.GetDamage() >= absorbAmount)
+            absorbAmount = -1; // not remove
+    }
+
+    void Register() override
+    {
+        OnEffectUpdate += AuraEffectUpdateFn(spell_garrosh_touch_of_yshaarj_aura::OnUpdate, EFFECT_2, SPELL_AURA_MOD_SCALE);
+        OnEffectAbsorb += AuraEffectAbsorbFn(spell_garrosh_touch_of_yshaarj_aura::Absorb, EFFECT_0);
+    }
+};
+
+// Empowered Touch of Y`shaarj 145171
+class spell_garrosh_empowered_touch_of_yshaarj : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_empowered_touch_of_yshaarj);
+
+    std::list<WorldObject*> m_targets, copyTargets;
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        m_targets = targets;
+        targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && (target->ToPlayer()->HasAura(SPELL_TOUCH_OH_YSHAARJ) || target->ToPlayer()->HasAura(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ)); });
+        targets.remove_if(TankSpecTargetSelector());
+
+        uint32 targetsCount = sSpellMgr->GetSpellInfo(GetSpellInfo()->Id, GetCaster()->GetMap()->GetDifficulty())->MaxAffectedTargets;
+
+        if (GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetData(DATA_FLEX))
+        {
+            // Calculate TargetsCount
+            targetsCount = 2; // min 2, max 4
+            uint32 totalPlayersCount = GetCaster()->GetInstanceScript()->instance->GetPlayersCountExceptGMs();
+
+            if (totalPlayersCount > 15)
+                targetsCount++;
+
+            if (totalPlayersCount > 20)
+                targetsCount++;
+        }
+
+        if (targets.size() < targetsCount)
+        {
+            targets.clear();
+
+            for (auto&& itr : m_targets)
+                targets.push_back(itr);
+
+            targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && (target->ToPlayer()->HasAura(SPELL_TOUCH_OH_YSHAARJ) || target->ToPlayer()->HasAura(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ)); });
+
+            if (GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetData(DATA_FLEX))
+            {
+                // Calculate TargetsCount
+                targetsCount = 2; // min 2, max 4
+                uint32 totalPlayersCount = GetCaster()->GetInstanceScript()->instance->GetPlayersCountExceptGMs();
+
+                if (totalPlayersCount > 15)
+                    targetsCount++;
+
+                if (totalPlayersCount > 20)
+                    targetsCount++;
+            }
+
+            if (targets.size() > targetsCount)
+                Trinity::Containers::RandomResizeList(targets, targetsCount);
+
+            copyTargets = targets;
+            return;
+        }
+
+        if (targets.size() > targetsCount)
+            Trinity::Containers::RandomResizeList(targets, targetsCount);
+
+        copyTargets = targets;
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = copyTargets;
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_4, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_5, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_6, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_7, TARGET_UNIT_SRC_AREA_ENEMY);
+        /*OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_8, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_9, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_10, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_11, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowered_touch_of_yshaarj::CopyTargets, EFFECT_12, TARGET_UNIT_SRC_AREA_ENEMY);*/
+    }
+};
+
+// Empowered Touch of Y`shaarj 145171
+class spell_garrosh_empowered_touch_of_yshaarj_aura : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_empowered_touch_of_yshaarj_aura);
+
+    void OnUpdate(uint32 /*diff*/, AuraEffect* aurEff)
+    {
+        if (GetOwner() && GetOwner()->ToUnit() && GetOwner()->ToUnit()->HealthBelowPct(20))
+        {
+            GetOwner()->ToUnit()->RemoveAurasDueToSpell(GetSpellInfo()->Id);
+            GetOwner()->ToUnit()->InterruptNonMeleeSpells(false, SPELL_TOUCH_OF_YSHAARJ_TARGET_CHARM);
+        }
+    }
+
+    void Absorb(AuraEffect*, DamageInfo& dmgInfo, uint32& absorbAmount)
+    {
+        if (dmgInfo.GetDamage() >= absorbAmount)
+            absorbAmount = -1; // not remove
+    }
+
+    void Register() override
+    {
+        OnEffectUpdate += AuraEffectUpdateFn(spell_garrosh_empowered_touch_of_yshaarj_aura::OnUpdate, EFFECT_2, SPELL_AURA_TRANSFORM);
+        OnEffectAbsorb += AuraEffectAbsorbFn(spell_garrosh_empowered_touch_of_yshaarj_aura::Absorb, EFFECT_0);
+    }
+};
+
+// Touch of Y`shaarj Player Eff 145175, 145071
+class spell_garrosh_touch_of_yshaarj_player_eff_aura : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_touch_of_yshaarj_player_eff_aura);
+
+    void Absorb(AuraEffect*, DamageInfo& dmgInfo, uint32& absorbAmount)
+    {
+        if (dmgInfo.GetDamage() >= absorbAmount)
+            absorbAmount = -1; // not remove
+    }
+
+    void Register() override
+    {
+        OnEffectAbsorb += AuraEffectAbsorbFn(spell_garrosh_touch_of_yshaarj_player_eff_aura::Absorb, EFFECT_0);
+    }
+};
+
+// Empowering Corruption 145043
+class spell_garrosh_empowering_corruption : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_empowering_corruption)
+
+    std::list<WorldObject*> copyTargets;
+
+    void SelectTarget(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_MINION_OF_YSHAARJ; });
+        copyTargets = targets;
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = copyTargets;
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption::SelectTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption::CopyTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// Empowering Corruption Heroic 149536
+class spell_garrosh_empowering_corruption_heroic : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_empowering_corruption_heroic)
+
+        std::list<WorldObject*> copyTargets;
+
+    void SelectTarget(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_MINION_OF_YSHAARJ; });
+        copyTargets = targets;
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = copyTargets;
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption_heroic::SelectTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption_heroic::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption_heroic::CopyTargets, EFFECT_2, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption_heroic::CopyTargets, EFFECT_3, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_empowering_corruption_heroic::CopyTargets, EFFECT_4, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// Enter Realm of Y`shaarj Launcher 144867
+class spell_garrosh_enter_realm_of_yshaarj_launcher : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_enter_realm_of_yshaarj_launcher)
+
+    void SelectTarget(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target && !target->ToPlayer(); });
+    }
+
+    void SelectGarrosh(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_GARROSH_HELLSCREAM; });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_enter_realm_of_yshaarj_launcher::SelectTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_enter_realm_of_yshaarj_launcher::SelectGarrosh, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_enter_realm_of_yshaarj_launcher::SelectTarget, EFFECT_2, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_enter_realm_of_yshaarj_launcher::SelectTarget, EFFECT_3, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Teleport to Realms 144880, 144883, 144885
+class spell_garrosh_teleport_to_realms : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_teleport_to_realms);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Unit* target = GetHitUnit())
+            target->CastSpell(target, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_teleport_to_realms::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+// Consumed Courage 149011
+class spell_garrosh_consumed_courage : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_consumed_courage)
+
+    void SelectTarget(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_EMBODIED_FEAR; });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_consumed_courage::SelectTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// Consumed Faith 149033
+class spell_garrosh_consumed_faith : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_consumed_faith)
+
+    void SelectTarget(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_EMBODIED_DOUBT; });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_consumed_faith::SelectTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// Whirling Corruption Eff 144989
+class spell_garrosh_whirling_corruption : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_whirling_corruption);
+
+    void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
+    {
+        if (Unit* unit = GetHitUnit())
+        {
+            // 65% damage reduction after 30 yards distance
+            float dist = unit->GetExactDist2d(GetCaster());
+            int32 mod = 1;
+
+            if (dist <= 8)
+            {
+                SetHitDamage(GetHitDamage() * mod);
                 return;
-
-            switch (events.ExecuteEvent())
-            {
-                case Events::EVENT_HAMSTRING:
-                {
-                    if (!UpdateVictim())
-                        return;
-
-                    if (Unit* l_Target = me->getVictim())
-                        me->CastSpell(l_Target, Spells::SPELL_HAMSTRING);
-
-                    events.ScheduleEvent(Events::EVENT_HAMSTRING, urand(8 * TimeConstants::IN_MILLISECONDS, 20 * TimeConstants::IN_MILLISECONDS));
-                    break;
-                }
-                case Events::EVENT_MOVE_TO_GARROSH:
-                    if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
-                        me->GetMotionMaster()->MovePoint(3, l_Garrosh->GetPositionX(), l_Garrosh->GetPositionY(), l_Garrosh->GetPositionZ());
-                    break;
             }
 
-            DoMeleeAttackIfReady();
+            int32 reduction = dist >= 30 ? mod * (GetHitDamage() * 0.35) : mod * (GetHitDamage() * (1 - ((0.65 * dist) / 30.0f)));
+            SetHitDamage(reduction);
         }
+    }
 
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void Register() override
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_whirling_corruption::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
     }
 };
 
-// Siege Engineer - 71984
-class garrosh_hellscream_creature_siege_engineer : public CreatureScript
+// Garrosh Energy 145801
+class spell_garrosh_garrosh_energy : public AuraScript
 {
-public:
-    garrosh_hellscream_creature_siege_engineer() : CreatureScript("garrosh_hellscream_creature_siege_engineer") { }
+    PrepareAuraScript(spell_garrosh_garrosh_energy);
 
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
+    void OnUpdate(uint32 /*diff*/, AuraEffect* aurEff)
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
+        if (Player* owner = GetOwner()->ToPlayer())
         {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-        uint64 m_IronStarGuid;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-
-            me->SetReactState(ReactStates::REACT_PASSIVE);
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            events.CancelEvent(Events::EVENT_ACTIVATE_IRON_STAR01);
-     
-            me->CastStop();
-            me->DespawnOrUnsummon(1000);
-        }
-
-        void JustSummoned(Creature* summon) override
-        {
-            summons.Summon(summon);
-
-            m_IronStarGuid = summon->GetGUID();
-        
-            events.ScheduleEvent(Events::EVENT_ACTIVATE_IRON_STAR, 6 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(EVENT_ACTIVATE_IRON_STAR01, 21 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
+            if (owner->GetInstanceScript() && owner->GetInstanceScript()->GetBossState(DATA_GARROSH_HELLSCREAM) != IN_PROGRESS)
             {
-                case Events::EVENT_ACTIVATE_IRON_STAR01:
-                {
-                    me->DespawnOrUnsummon(20000);
-
-                    if (Creature* l_IronStar = sObjectAccessor->GetCreature(*me, m_IronStarGuid))
-                    {
-                        if (l_IronStar->GetAI())
-                            l_IronStar->GetAI()->DoAction(ACTION_ACTIVATE_IRON_STAR);
-                    }
-                    break;
-                }
-                case Events::EVENT_ACTIVATE_IRON_STAR:
-                {
-                    if (Creature* l_IronStar = sObjectAccessor->GetCreature(*me, m_IronStarGuid))
-                    {
-                        me->CastSpell(l_IronStar, Spells::SPELL_ACTIVATE_IRON_STAR);
-                        break;
-                    }
-                }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new siege_of_orgrimmar_creaturesAI(creature);
-    }
-};
-
-// Farseer Wolf Rider - 71983 / Vicious War Wolf - 71994
-class garrosh_hellscream_farseer_wolf_rider : public CreatureScript
-{
-public:
-    garrosh_hellscream_farseer_wolf_rider() : CreatureScript("garrosh_hellscream_farseer_wolf_rider") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            DoZoneInCombat();
-            me->setFaction(16);
-            me->CastSpell(me, 100333, true); // Hacked          
-            events.ScheduleEvent(Events::EVENT_MOVE_TO_GARROSH, 6 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void EnterCombat(Unit* attacker) override
-        {
-            events.ScheduleEvent(Events::EVENT_CHAIN_LIGHTNING, urand(17 * TimeConstants::IN_MILLISECONDS, 25 * TimeConstants::IN_MILLISECONDS));
-            events.ScheduleEvent(Events::EVENT_ANCESTRAL_CHAIN_HEAL, urand(15 * TimeConstants::IN_MILLISECONDS, 22 * TimeConstants::IN_MILLISECONDS));
-        }
-
-        void SpellHit(Unit* /*caster*/, SpellInfo const* spell) override
-        {
-            if (spell && spell->HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
-            {
-                if (!me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                me->CastSpell(me, Spells::SPELL_ANCESTRAL_FURY);
-            }
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            me->RemoveAura(100333);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
+                owner->RemoveAurasDueToSpell(GetSpellInfo()->Id);
                 return;
-
-            switch (events.ExecuteEvent())
-            {
-                case Events::EVENT_ANCESTRAL_CHAIN_HEAL:
-                {
-                    if (!UpdateVictim())
-                        return;
-
-                    Unit* l_Target = NULL;
-                
-                    if (l_Target = me->FindNearestCreature(CREATURE_KORKRON_WARBRINGER, 30.0f, true))
-                    if (l_Target && l_Target->IsInWorld())
-                        me->CastSpell(l_Target, Spells::SPELL_ANCESTRAL_CHAIN_HEAL);
-
-                    events.ScheduleEvent(Events::EVENT_ANCESTRAL_CHAIN_HEAL, urand(20 * TimeConstants::IN_MILLISECONDS, 25 * TimeConstants::IN_MILLISECONDS));
-                    break;
-                }
-                case Events::EVENT_CHAIN_LIGHTNING:
-                {
-                    if (!UpdateVictim())
-                        return;
-
-                    if (Unit* l_Target = me->getVictim())
-                        me->CastSpell(l_Target, Spells::SPELL_CHAIN_LIGHTNING);
-
-                    events.ScheduleEvent(Events::EVENT_CHAIN_LIGHTNING, urand(12 * TimeConstants::IN_MILLISECONDS, 16 * TimeConstants::IN_MILLISECONDS));
-                    break;
-                }
-                case Events::EVENT_MOVE_TO_GARROSH:
-                    if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
-                    me->GetMotionMaster()->MovePoint(3, l_Garrosh->GetPositionX(), l_Garrosh->GetPositionY(), l_Garrosh->GetPositionZ());
-                    break;
             }
 
-            DoMeleeAttackIfReady();
+            if (Creature* garrosh = ObjectAccessor::GetCreature(*owner, owner->GetInstanceScript() ? owner->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+                owner->SetPower(POWER_ALTERNATE_POWER, garrosh->GetPower(POWER_ENERGY));
         }
-    };
+    }
 
-    CreatureAI* GetAI(Creature* creature) const
+    void Register() override
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        OnEffectUpdate += AuraEffectUpdateFn(spell_garrosh_garrosh_energy::OnUpdate, EFFECT_0, SPELL_AURA_ENABLE_ALT_POWER);
     }
 };
 
-// Vicious War Wolf - 71994
-class boss_farseer_vicious_war_wolf : public CreatureScript
+// Empowered Desecrate 144816, 144758
+class spell_garrosh_empowered_desecrate_summon : public SpellScript
 {
-public:
-    boss_farseer_vicious_war_wolf() : CreatureScript("boss_farseer_vicious_war_wolf") { }
+    PrepareSpellScript(spell_garrosh_empowered_desecrate_summon);
 
-    struct boss_farseer_vicious_war_wolfAI : public ScriptedAI
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
     {
-        boss_farseer_vicious_war_wolfAI(Creature* creature) : ScriptedAI(creature), mVehicle(creature->GetVehicleKit())
-        {
-            m_Instance = me->GetInstanceScript();
-        }
+        if (GetCaster() && GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetBossState(DATA_GARROSH_HELLSCREAM) != IN_PROGRESS)
+            PreventHitEffect(eff_idx);
+    }
 
-        Vehicle* mVehicle;
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            ASSERT(mVehicle);
-
-            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
-
-            events.ScheduleEvent(Events::EVENT_MOVE_TO_GARROSH, 5 * TimeConstants::IN_MILLISECONDS);
-        }
- 
-        void UpdateAI(uint32 const diff) override
-        {
-            events.Update(diff);
-
-            if (uint32 eventId = events.ExecuteEvent())
-            {
-                switch (eventId)
-                {
-                    case Events::EVENT_MOVE_TO_GARROSH:
-                        if (Creature * l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_GARROSH_HELLSCREAM)))
-                            me->GetMotionMaster()->MovePoint(3, l_Garrosh->GetPositionX(), l_Garrosh->GetPositionY(), l_Garrosh->GetPositionZ());
-                        break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
+    void Register() override
     {
-        return new boss_farseer_vicious_war_wolfAI(creature);
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_empowered_desecrate_summon::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnEffectHit += SpellEffectFn(spell_garrosh_empowered_desecrate_summon::HandleEffectHitTarget, EFFECT_1, SPELL_EFFECT_SUMMON);
     }
 };
 
-// Desecrated Weapon - 72154
-class garrosh_hellscream_creature_desecrated_weapon : public CreatureScript
+// Growing Power 144947
+class spell_garrosh_growing_power : public SpellScript
 {
-public:
-    garrosh_hellscream_creature_desecrated_weapon() : CreatureScript("garrosh_hellscream_creature_desecrated_weapon") { }
+    PrepareSpellScript(spell_garrosh_growing_power);
 
-    struct siege_of_orgrimmar_creaturesAI : public Scripted_NoMovementAI
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : Scripted_NoMovementAI(creature), m_AreatriggerGUID(0)
+        if (Unit* owner = GetCaster())
         {
-            m_Instance = creature->GetInstanceScript();
+            if (owner->GetPower(POWER_ENERGY) >= 24 && !owner->HasAura(SPELL_WHIRLWIND_EMPOWERED))
+                owner->CastSpell(owner, SPELL_WHIRLWIND_EMPOWERED, true);
+
+            if (owner->GetPower(POWER_ENERGY) >= 49 && !owner->HasAura(SPELL_TOUCH_EMPOWERED))
+                owner->CastSpell(owner, SPELL_TOUCH_EMPOWERED, true);
+
+            if (owner->GetPower(POWER_ENERGY) >= 74 && !owner->HasAura(SPELL_DESECRATED_EMPOWERED))
+                owner->CastSpell(owner, SPELL_DESECRATED_EMPOWERED, true);
+
+            if (owner->GetPower(POWER_ENERGY) >= 99 && !owner->HasAura(SPELL_GRIPPING_EMPOWERED))
+                owner->CastSpell(owner, SPELL_GRIPPING_EMPOWERED, true);
         }
+    }
 
-        InstanceScript* m_Instance;
-        uint32 m_nextSizePct;
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_growing_power::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_ENERGIZE);
+    }
+};
 
-        uint32 m_DesecrateDebuff;
-        uint64 m_AreatriggerGUID = NULL;
-        float m_Radius;
+// Touch of Y`shaarj Player Launcher 145096
+class spell_garrosh_touch_of_yshaarj_player_launcher : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_touch_of_yshaarj_player_launcher);
 
-        void Reset() override
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Unit* caster = GetCaster())
+            if (Unit* target = GetHitUnit())
+                caster->CastSpell(target, SPELL_TOUCH_OF_YSHAARJ_TARGET_CHARM, false);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_touch_of_yshaarj_player_launcher::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+// Ancestral Chain Heal 144583
+class spell_garrosh_ancestral_chain_heal : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_ancestral_chain_heal);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (GetHitUnit() && GetHitUnit()->GetEntry() == NPC_GARROSH_HELLSCREAM)
+            PreventHitEffect(eff_idx);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_ancestral_chain_heal::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_HEAL_PCT);
+    }
+};
+
+// Power of the Old God 144820
+class spell_garrosh_power_of_the_old_god : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_power_of_the_old_god);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
         {
-            events.Reset();
-            me->setFaction(16);
-            DoZoneInCombat();
-
-            m_Radius = 6.0f;
-            m_nextSizePct = 90;
-            m_DesecrateDebuff = 2000;
-
-            me->SetReactState(REACT_PASSIVE);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
-
-            me->SetHealth(me->GetMaxHealth());
-
-            me->CastSpell(me, Spells::SPELL_DESECRATED_WEAPON);
-            me->CastSpell(me, Spells::SPELL_DESECRATED_PURPLE_GROUND);
-        }
-
-        void SetGUID(uint64 guid, int32 /*param*/) override
-        {
-            if (m_AreatriggerGUID == NULL && guid != NULL)
+            if (AreaTrigger* myWeapon = caster->GetAreaTrigger(SPELL_DESECRATED_WEAPON_AREATRIGGER))
             {
-                if (sObjectAccessor->GetAreaTrigger(*me, m_AreatriggerGUID))
-                {
-                    m_AreatriggerGUID = guid;
-                }
+                float radius = ((caster->GetHealthPct() + 1.0f) * 20.0f) / 100.0f;
+                myWeapon->SetFloatValue(AREATRIGGER_FIELD_EXPLICIT_SCALE, (radius * 1.0f) / 20.0f);
+                myWeapon->SetVisualRadius(radius);
+                myWeapon->UpdateObjectVisibility();
+
+                // Update new Radius Value
+                myWeapon->SetRadius(radius);
             }
         }
+    }
 
-        void HackVisuals() // Stupid hack, but seems to work
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_power_of_the_old_god::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_HEAL_PCT);
+    }
+};
+
+// Empowered Whirling Corruption Missle 145033
+class spell_garrosh_empowered_whirling_missle : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_empowered_whirling_missle);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (GetCaster() && GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetBossState(DATA_GARROSH_HELLSCREAM) != IN_PROGRESS)
+            PreventHitEffect(eff_idx);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_empowered_whirling_missle::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnEffectHit += SpellEffectFn(spell_garrosh_empowered_whirling_missle::HandleEffectHitTarget, EFFECT_1, SPELL_EFFECT_SUMMON);
+    }
+};
+
+// Touch of Y`shaarj Player Launcher 145599
+class spell_garrosh_touch_of_yshaarj_player_launcher_2 : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_touch_of_yshaarj_player_launcher_2);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Unit* target = GetHitUnit())
+            if (Creature* garrosh = ObjectAccessor::GetCreature(*target, target->GetInstanceScript() ? target->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+                garrosh->CastSpell(target, garrosh->HasAura(SPELL_TOUCH_EMPOWERED) ? SPELL_EMP_TOUCH_OF_YSHAARJ_PLAYER_EFF : SPELL_TOUCH_OF_YSHAARJ_PLAYER_EFF, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_touch_of_yshaarj_player_launcher_2::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+// Malice 147209
+class spell_garrosh_malice : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_malice);
+
+    std::list<WorldObject*> m_targets, copyTargets;
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+            if (Unit* target = GetHitUnit())
+                caster->AI()->Talk(TALK_MALICE_ANN, target);
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        m_targets = targets;
+        targets.remove_if(TankSpecTargetSelector());
+        targets.remove_if([=](WorldObject* target) { return target && target->ToUnit() && target->ToUnit()->HasAura(SPELL_IRON_STAR_FIXATE); }); // exclude targets with iron star fixate
+
+        if (targets.empty())
         {
-            me->RemoveAura(144760);
-            me->AddAura(144760, me);
+            targets.clear();
+
+            for (auto&& itr : m_targets)
+                targets.push_back(itr);
+
+            if (targets.size() > 1)
+                Trinity::Containers::RandomResizeList(targets, 1);
+
+            copyTargets = targets;
+            return;
         }
 
-        void DamageTaken(Unit* attacker, uint32& damage) override
+        if (targets.size() > 1)
+            Trinity::Containers::RandomResizeList(targets, 1);
+
+        copyTargets = targets;
+    }
+
+    void CopyTargets(std::list<WorldObject*>& targets)
+    {
+        targets = copyTargets;
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_malice::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_malice::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_malice::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Malice Selector 147229
+class spell_garrosh_malice_selector : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_malice_selector);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Unit* target = GetHitUnit())
+            GetCaster()->CastSpell(target, SPELL_MALICIOUS_BLAST, true);
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        uint32 requiredTargets = sSpellMgr->GetSpellInfo(SPELL_MALICE, GetCaster()->GetMap()->GetDifficulty())->Effects[EFFECT_0].BasePoints;
+
+        targets.remove_if([=](WorldObject* target) { return target && target->ToUnit() && target->ToUnit()->GetGUID() == GetCaster()->GetGUID(); }); // remove self
+
+        if (targets.size() < requiredTargets)
         {
-            if (damage == 0)
-                return;
+            uint32 targetsDiff = requiredTargets - targets.size(); // gain power for EACH not affected player
+            targets.clear();
 
-            // afraid
-            if (m_nextSizePct)
+            if (targetsDiff > 1)
             {
-                if (me->HealthBelowPctDamaged(m_nextSizePct, damage))
-                {
-                    if (AreaTrigger* l_AreaTrigger = sObjectAccessor->GetAreaTrigger(*me, m_AreatriggerGUID))
-                    {
-                        l_AreaTrigger->SetObjectScale((l_AreaTrigger->GetObjectSize() - 0.10f));
-                        m_nextSizePct -= 10;
-                        
-                        m_Radius -= 0.5f;
-
-                        if (m_nextSizePct < 10)
-                        {
-                            me->DespawnOrUnsummon(500);
-                            l_AreaTrigger->Remove();
-                        }
-                    }
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            if (m_DesecrateDebuff <= diff)
-            {
-                std::list<Player*> pl_list;
-                me->GetPlayerListInGrid(pl_list, 6.0f);
-
-                if (pl_list.empty())
-                    return;
-
-                for (auto itr : pl_list)
-                {
-                    itr->CastSpell(itr, 144762); // Dot
-
-                    if (itr->GetAura(144762))
-                    {
-                        AuraPtr l_Aura = itr->GetAura(144762);
-
-                        l_Aura->SetDuration(1);
-                    }
-                }
+                for (uint32 i = 0; i < targetsDiff; i++)
+                    GetCaster()->CastSpell(GetCaster(), SPELL_MALICIOUS_ENERGY, true);
             }
             else
-            {
-                m_DesecrateDebuff -= diff;
-            }
+                GetCaster()->CastSpell(GetCaster(), SPELL_MALICIOUS_ENERGY, true); // gain power to garrosh and affect raid by damage
         }
-    };
 
-    CreatureAI* GetAI(Creature* creature) const override
+        if (targets.size() > requiredTargets)
+            Trinity::Containers::RandomResizeList(targets, requiredTargets);
+    }
+
+    void Register() override
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_malice_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_malice_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
     }
 };
 
-// Desecrated Weapon - 72198
-class garrosh_hellscream_creature_empowered_desecrated_weapon : public CreatureScript
+// Bombardment Selector 147132
+class spell_garrosh_bombardment_selector : public SpellScript
 {
-public:
-    garrosh_hellscream_creature_empowered_desecrated_weapon() : CreatureScript("garrosh_hellscream_creature_empowered_desecrated_weapon") { }
+    PrepareSpellScript(spell_garrosh_bombardment_selector);
 
-    struct siege_of_orgrimmar_creaturesAI : public Scripted_NoMovementAI
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : Scripted_NoMovementAI(creature), m_AreatriggerGUID(0)
-        {
-            m_Instance = creature->GetInstanceScript();
-        }
+        if (Unit* target = GetHitUnit())
+            GetCaster()->CastSpell(target, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
+    }
 
-        InstanceScript* m_Instance;
-        uint32 m_nextSizePct;
-
-        uint32 m_DesecrateDebuff;
-        uint64 m_AreatriggerGUID = NULL;
-        float m_Radius;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-            DoZoneInCombat();
-
-            m_DesecrateDebuff = 2000;
-            m_nextSizePct = 90;
-            m_Radius = 6.0f;
-
-            me->SetReactState(REACT_PASSIVE);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-
-            me->SetHealth(me->GetMaxHealth());
-
-            me->CastSpell(me, Spells::SPELL_DESECRATED_WEAPON);
-            me->CastSpell(me, Spells::SPELL_DESECRATED_PURPLE_GROUND);
-        }
-
-        void SetGUID(uint64 guid, int32 /*param*/) override
-        {
-            if (m_AreatriggerGUID == NULL && guid != NULL)
-            {
-                if (sObjectAccessor->GetAreaTrigger(*me, m_AreatriggerGUID))
-                {
-                    m_AreatriggerGUID = guid;
-                }
-            }
-        }
-
-        void RegeneratePower(Powers power, int32& value) override
-        {
-            if (power != POWER_ENERGY)
-                return;
-
-            if (!me->GetMap()->IsHeroic())
-                return;
-
-            int32 val = me->GetPower(POWER_ENERGY);
-            if (val + value > 100)
-                val = 100;
-            else
-                val += value;
-
-            me->SetInt32Value(UNIT_FIELD_POWER1, val);
-        }
-
-        void HackVisuals() // Stupid hack, but seems to work
-        {
-            me->RemoveAura(144760);
-            me->AddAura(144760, me);
-        }
-
-        void DamageTaken(Unit* attacker, uint32& damage) override
-        {
-            // afraid
-            damage = 0;
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            // Currently is out of usage.
-            //HackVisuals();
-
-            if (m_DesecrateDebuff <= diff)
-            {
-                std::list<Player*> pl_list;
-                me->GetPlayerListInGrid(pl_list, 6.0f);
-
-                if (pl_list.empty())
-                    return;
-
-                for (auto itr : pl_list)
-                {
-                    itr->CastSpell(itr, 144762); // Dot
-
-                    if (itr->GetAura(144762))
-                    {
-                        AuraPtr l_Aura = itr->GetAura(144762);
-
-                        l_Aura->SetDuration(1);
-                    }
-                }
-            }
-            else
-            {
-                m_DesecrateDebuff -= diff;
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        if (targets.size() > 3)
+            Trinity::Containers::RandomResizeList(targets, 3);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_bombardment_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_bombardment_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
-// Minion Of Yshaaraj - 72272
-class garrosh_hellscream_creature_minion_of_yshaaraj : public CreatureScript
+// Manifest Rage 147011
+class spell_garrosh_manifest_rage : public AuraScript
 {
-public:
-    garrosh_hellscream_creature_minion_of_yshaaraj() : CreatureScript("garrosh_hellscream_creature_minion_of_yshaaraj") { }
+    PrepareAuraScript(spell_garrosh_manifest_rage);
 
-    struct siege_of_orgrimmar_creaturesAI : public ScriptedAI
+    void OnPeriodic(AuraEffect const* /*aurEff*/)
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : ScriptedAI(creature)
+        if (Unit* owner = GetOwner()->ToUnit())
         {
-            m_Instance = creature->GetInstanceScript();
+            owner->CastSpell(owner, SPELL_MANIFESTATION_RAGE, true);
+            owner->CastSpell(owner, SPELL_MANIFESTATION_RAGE, true); // twice per tick
         }
+    }
 
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-        }
-
-        void JustDied(Unit* killer) override
-        {
-            events.ScheduleEvent(Events::EVENT_EMPOWERING_CORRUPTION, 1 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void RegeneratePower(Powers power, int32& value) override
-        {
-            if (power != POWER_ENERGY)
-                return;
-
-            if (!me->GetMap()->IsHeroic())
-                return;
-
-            int32 val = me->GetPower(POWER_ENERGY);
-            if (val + value > 100)
-                val = 100;
-            else
-                val += value;
-
-            if (me->GetMap()->IsHeroic())
-            {
-                if (val >= 100)
-                {
-                    val = 0;
-                    events.ScheduleEvent(Events::EVENT_EMPOWERING_CORRUPTION, 1 * TimeConstants::IN_MILLISECONDS);
-                }
-            }
-
-            me->SetInt32Value(UNIT_FIELD_POWER1, val);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            switch (events.ExecuteEvent())
-            {
-            case Events::EVENT_EMPOWERING_CORRUPTION:
-                me->CastSpell(me, Spells::SPELL_EMPOWERING_CORRUPTION);
-                break;
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        if (Creature* owner = GetOwner()->ToCreature())
+        {
+            owner->SetPower(POWER_ENERGY, 0);
+            owner->AI()->Talk(TALK_MANIFEST_RAGE);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_garrosh_manifest_rage::OnPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+        OnEffectApply += AuraEffectApplyFn(spell_garrosh_manifest_rage::OnAuraEffectApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
-// Heart of Yshaaraj - 72215
-class garrosh_hellscream_creature_heart_of_yshaaraj : public CreatureScript
+// Fire Iron Star Selector 147053
+class spell_garrosh_fire_iron_star_selector : public SpellScript
 {
-public:
-    garrosh_hellscream_creature_heart_of_yshaaraj() : CreatureScript("garrosh_hellscream_creature_heart_of_yshaaraj") { }
+    PrepareSpellScript(spell_garrosh_fire_iron_star_selector);
 
-    struct siege_of_orgrimmar_creaturesAI : public Scripted_NoMovementAI
+    std::list<WorldObject*> m_targets;
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : Scripted_NoMovementAI(creature)
+        if (Creature* target = GetHitCreature())
         {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-        std::list<Creature*> m_ListCreatures;
-        bool m_Garrosh;
-        uint32 i_Rand;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(35);
-            m_Garrosh = false;
-
-            me->SetReactState(REACT_PASSIVE);
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new siege_of_orgrimmar_creaturesAI(creature);
-    }
-};
-
-// Heart of Yshaaraj 2nd phase prop - 72228
-class garrosh_hellscream_creature_second_phase_prop_heart_of_yshaaraj : public CreatureScript
-{
-public:
-    garrosh_hellscream_creature_second_phase_prop_heart_of_yshaaraj() : CreatureScript("garrosh_hellscream_creature_second_phase_prop_heart_of_yshaaraj") { }
-
-    struct siege_of_orgrimmar_creaturesAI : public Scripted_NoMovementAI
-    {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : Scripted_NoMovementAI(creature)
-        {
-            m_Instance = creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-
-        uint32 l_DiffShaBolts;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-
-            me->SetDisableGravity(true);
-            me->SetCanFly(true);
-
-            l_DiffShaBolts = 4000;
-
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-        }
-
-        void UpdateAI(const uint32 diff) override
-        {
-            if (Creature* l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(DATA_GARROSH_HELLSCREAM)))
+            if (Creature* caster = GetCaster()->ToCreature())
             {
-                if (boss_garrosh_hellscream::boss_garrosh_hellscreamAI* linkAI = CAST_AI(boss_garrosh_hellscream::boss_garrosh_hellscreamAI, l_Garrosh->GetAI()))
-                {
-                    // Embodied Counter
-                    if (linkAI->m_embodiedCounter != 0)
-                    {
-                        if (!me->HasUnitState(UNIT_STATE_CASTING))
-                        {
-                            if (l_Garrosh->IsWithinDistInMap(me, 30.0f))
-                                me->CastSpell(l_Garrosh, 144946);
-                        }
-                    }
-                    else
-                    {
-                        me->CastStop();
-                    }
-
-                    if (l_DiffShaBolts <= diff)
-                    {
-                        if (Creature* l_Garrosh = m_Instance->instance->GetCreature(m_Instance->GetData64(DATA_GARROSH_HELLSCREAM)))
-                        {
-                            if (linkAI->m_IntermissionActive && linkAI->i_Location == 1) // Terrace of Endless Springs
-                            {
-                                if (Unit* l_Target = SelectTarget(SELECT_TARGET_RANDOM, 0, 300.0f, true))
-                                    me->CastSpell(l_Target, Spells::SPELL_CRUSHING_FEAR_PERIODIC_TRIGGER);
-                            }
-
-                            l_DiffShaBolts = 4000;
-                        }
-                        else
-                        {
-                            l_DiffShaBolts -= diff;
-                        }
-                    }
-                }
+                if (Unit* starTarget = ObjectAccessor::GetUnit(*caster, caster->AI()->GetGUID()))
+                    target->CastSpell(starTarget, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
+                else if (Unit* starTarget = caster->AI()->SelectTarget(SELECT_TARGET_RANDOM, 0, 200.0f, true))
+                    target->CastSpell(starTarget, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
             }
         }
-        };
+    }
 
-    CreatureAI* GetAI(Creature* creature) const override
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_GUNSHIP_MAIN_CANNON; });
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_fire_iron_star_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_fire_iron_star_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
     }
 };
 
-// Heart of Yshaaraj 2nd phase prop - 78097
-class garrosh_hellscream_heart_of_yshaaraj_protection_aura : public CreatureScript
+// Enter Realm of Garrosh Eff 146984
+class spell_garrosh_enter_realm_of_garrosh_eff : public AuraScript
 {
-public:
-    garrosh_hellscream_heart_of_yshaaraj_protection_aura() : CreatureScript("garrosh_hellscream_heart_of_yshaaraj_protection_aura") { }
+    PrepareAuraScript(spell_garrosh_enter_realm_of_garrosh_eff);
 
-    struct siege_of_orgrimmar_creaturesAI : public Scripted_NoMovementAI
+    void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
     {
-        siege_of_orgrimmar_creaturesAI(Creature* creature) : Scripted_NoMovementAI(creature)
+        if (Unit* owner = GetOwner()->ToUnit())
         {
-            m_Instance = creature->GetInstanceScript();
+            uint32 teleportSpell = sSpellMgr->GetSpellInfo(SPELL_ENTER_REALM_OF_GARROSH_EFF, GetCaster()->GetMap()->GetDifficulty())->Effects[EFFECT_0].BasePoints;
+            owner->CastSpell(owner, teleportSpell, true);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_garrosh_enter_realm_of_garrosh_eff::OnAuraEffectRemove, EFFECT_1, SPELL_AURA_SCREEN_EFFECT, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Clump Check 147126
+class spell_garrosh_clump_check : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_clump_check);
+
+    bool Load()
+    {
+        launched = false;
+        return true;
+    }
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (launched)
+            return;
+
+        // Try found 4/7 players around us depend of difficulty
+        if (Unit* target = GetHitUnit())
+        {
+            std::list<Player*> playersList;
+            GetPlayerListInGrid(playersList, target, 8.0f);
+
+            playersList.remove_if([=](WorldObject* potentTarget) { return potentTarget && potentTarget->GetGUID() == target->GetGUID(); });
+
+            uint32 requiredCount = target->GetMap()->Is25ManRaid() ? 6 : 3; // cuz exclude caster
+
+            if (playersList.size() >= requiredCount)
+            {
+                launched = true;
+
+                // Save target for launch iron star to group
+                if (GetCaster() && GetCaster()->ToCreature())
+                    GetCaster()->ToCreature()->AI()->SetGUID(target->GetGUID());
+
+                if (Creature* caster = GetCaster()->ToCreature())
+                    caster->AI()->DoAction(ACTION_LAUNCH_IRON_STAR);
+            }
+        }
+    }
+
+    private:
+        bool launched;
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_clump_check::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+    }
+};
+
+// Call Bombardment 147120
+class spell_garrosh_call_bombardment : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_call_bombardment);
+
+    bool Load()
+    {
+        procCount = 0; // limit is 4, so first trigger after 1s cast finishing bombardment. next - trigger each 3s
+        bombardCounter = 0; // 30 per 10 sec, so trigger 3 each 1s, not 500ms
+        hasFirstTrigger = false;
+        return true;
+    }
+
+    void OnPeriodic(AuraEffect const* /*aurEff*/)
+    {
+        if (!hasFirstTrigger) // first triggering after 1s cast finishing
+        {
+            if (++procCount % 2 == 0)
+            {
+                procCount = 0;
+                hasFirstTrigger = true;
+                return;
+            }
+
+            PreventDefaultAction();
+            return;
         }
 
-        InstanceScript* m_Instance;
+        // Next triggering each 3s
+        if (++procCount % 6 == 0)
+            return;
 
-        uint32 l_DiffShaBolts;
+        PreventDefaultAction();
+    }
 
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(16);
-
-            me->CastSpell(me, Spells::SPELL_YSHAARJ_PROTECTION);
-            me->CastSpell(me, Spells::SPELL_YSHAARJ_PROTECTION_AURA);
-
-            me->AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_IMMUNE_TO_PC);
-            me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_DISABLE_TURN);
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void OnBombardCheck(AuraEffect const* /*aurEff*/)
     {
-        return new siege_of_orgrimmar_creaturesAI(creature);
+        if (++bombardCounter % 2 == 0)
+            return;
+
+        PreventDefaultAction();
+    }
+
+    private:
+        uint32 procCount;
+        uint32 bombardCounter;
+        bool hasFirstTrigger;
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_garrosh_call_bombardment::OnPeriodic, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_garrosh_call_bombardment::OnBombardCheck, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+    }
+};
+
+// Bombardment Force 147131
+class spell_garrosh_bombardment_force : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_bombardment_force);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_GUNSHIP_SMALL_CANNON; });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_bombardment_force::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// Iron Star Fixate Selector 147712
+class spell_garrosh_iron_star_fixate_selector : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_iron_star_fixate_selector);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Unit* target = GetHitUnit())
+            GetCaster()->CastSpell(target, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        if (targets.empty())
+            return;
+
+        targets.sort(Trinity::ObjectDistanceOrderPred(GetCaster(), true));
+        targets.resize(1);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_iron_star_fixate_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_iron_star_fixate_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Fixate 147665
+class spell_garrosh_iron_star_fixate : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_iron_star_fixate);
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
+        {
+            if (GetCaster() && GetCaster()->ToCreature())
+            {
+                GetCaster()->ToCreature()->AI()->SetGUID(owner->GetGUID());
+                GetCaster()->ToCreature()->AI()->AttackStart(owner);
+                GetCaster()->ToCreature()->SetReactState(REACT_PASSIVE);
+                GetCaster()->ToCreature()->ClearUnitState(UNIT_STATE_CASTING);
+            }
+        }
+    }
+
+    void OnAuraEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (GetCaster() && GetCaster()->ToCreature())
+            GetCaster()->ToCreature()->AI()->DoAction(ACTION_START_INTRO);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_garrosh_iron_star_fixate::OnAuraEffectApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_garrosh_iron_star_fixate::OnAuraEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Unstable Iron Star Garrosh Eff 147177
+class spell_garrosh_unstable_iron_star_garrosh_eff : public AuraScript
+{
+    PrepareAuraScript(spell_garrosh_unstable_iron_star_garrosh_eff);
+
+    void OnAuraEffectApply(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Creature* owner = GetOwner()->ToCreature())
+            if (owner->GetPower(POWER_ENERGY) > 99)
+                owner->SetPower(POWER_ENERGY, 0); // only on cast
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_garrosh_unstable_iron_star_garrosh_eff::OnAuraEffectApply, EFFECT_0, SPELL_AURA_MOD_STUN, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Blood Frenzied 149336
+class spell_garrosh_blood_frenzied_selector : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_blood_frenzied_selector);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+        {
+            if (Unit* target = GetHitUnit())
+            {
+                caster->AI()->SetGUID(target->GetGUID());
+                caster->AI()->AttackStart(target);
+                caster->SetReactState(REACT_PASSIVE);
+            }
+        }
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target && (target->GetTypeId() != TYPEID_PLAYER || hasTargetFixated(target->GetGUID())); });
+
+        if (targets.empty())
+            return;
+
+        targets.sort(Trinity::ObjectDistanceOrderPred(GetCaster(), true));
+
+        if (targets.size() > 1)
+            targets.resize(1);
+    }
+
+    private:
+        bool hasTargetFixated(uint64 targetGUID)
+        {
+            std::list<Creature*> warbringersList;
+            GetCreatureListWithEntryInGrid(warbringersList, GetCaster(), GetCaster()->GetEntry(), 100.0f);
+
+            warbringersList.remove_if([=](Creature* korkronWarbringer) { return korkronWarbringer && !korkronWarbringer->IsAlive(); });
+
+            for (auto&& itr : warbringersList)
+                if (itr->AI()->GetGUID() == targetGUID)
+                    return true;
+
+            return false;
+        }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_blood_frenzied_selector::HandleEffectHitTarget, EFFECT_1, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_blood_frenzied_selector::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Crushing Fear Selector 147325
+class spell_garrosh_crushing_fear_selector : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_crushing_fear_selector);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (Unit* target = GetHitUnit())
+            GetCaster()->CastSpell(target, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target && GetCaster() && GetCaster()->GetExactDist2d(target) > 225.0f; });
+
+        uint32 allowTargets = GetCaster()->GetMap()->Is25ManRaid() ? 9 : 4;
+
+        if (targets.size() > allowTargets)
+            Trinity::Containers::RandomResizeList(targets, allowTargets);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_garrosh_crushing_fear_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_crushing_fear_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Manifistation of Rage Eff 147013
+class spell_garrosh_manifistation_of_rage_eff : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_manifistation_of_rage_eff);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (GetCaster() && GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetBossState(DATA_GARROSH_HELLSCREAM) != IN_PROGRESS)
+            PreventHitEffect(eff_idx);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_garrosh_manifistation_of_rage_eff::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SUMMON);
+    }
+};
+
+// Iron Star Crater 147048
+class spell_garrosh_iron_star_crater : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_iron_star_crater);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (GetCaster() && GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetBossState(DATA_GARROSH_HELLSCREAM) != IN_PROGRESS)
+            PreventHitEffect(eff_idx);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_garrosh_iron_star_crater::HandleEffectHitTarget, EFFECT_2, SPELL_EFFECT_SUMMON);
+    }
+};
+
+// Annihilate 144969
+class spell_garrosh_annihilate : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_annihilate);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target && target->GetTypeId() != TYPEID_PLAYER; });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_annihilate::FilterTargets, EFFECT_0, TARGET_UNIT_CONE_ENEMY_104);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_garrosh_annihilate::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Faith Missle 148991
+class spell_garrosh_faith_missle : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_faith_missle);
+
+    void SelectDest(SpellDestination& dest)
+    {
+        Position pos;
+        GetCaster()->GetNearPosition(pos, frand(-GetSpellInfo()->Effects[EFFECT_0].MaxRadiusEntry->RadiusMax, GetSpellInfo()->Effects[EFFECT_0].MaxRadiusEntry->RadiusMax), frand(0.0f, 2 * M_PI));
+        dest._position.Relocate(pos);
+    }
+
+    void Register() override
+    {
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_garrosh_faith_missle::SelectDest, EFFECT_0, TARGET_DEST_CASTER);
+    }
+};
+
+// Jump to Ground 144956
+class spell_garrosh_jump_to_ground : public SpellScript
+{
+    PrepareSpellScript(spell_garrosh_jump_to_ground);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        GetCaster()->CastSpell(GetCaster(), SPELL_JUMO_TO_GROUND_EFF, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_garrosh_jump_to_ground::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_JUMP_DEST);
+    }
+};
+
+// 1089. Summoned by 144645 - Iron Star Impact
+class sat_garrosh_iron_star_impact : public IAreaTriggerAura
+{
+    bool CheckTriggering(WorldObject* triggering) override
+    {
+        return triggering && (triggering->ToCreature() && (triggering->ToCreature()->GetEntry() == NPC_WARBRINGER_KORKRON || triggering->ToCreature()->GetEntry() == NPC_WOLF_RIDER_FARSEER) || triggering->ToPlayer() && triggering->ToPlayer()->IsAlive()) && triggering->ToUnit() && IsInBox(triggering->ToUnit(), 29.0f, 17.0f, 54.0f);
+    }
+
+    void OnTriggeringApply(WorldObject* triggering) override
+    {
+        if (Player* target = triggering->ToPlayer())
+        {
+            if (Unit* caster = GetCaster())
+                caster->CastSpell(target, SPELL_IRON_STAR_IMPACT_EFF, true);
+        }
+        else if (Creature* target = triggering->ToCreature())
+            target->CastSpell(target, SPELL_IRON_STAR_IMPACT_EFF_2, true);
+    }
+};
+
+// 1091, 1093. Summoned by 144760, 144818 - Desecrated Weapon
+class sat_garrosh_desecrated_weapon : public IAreaTriggerAura
+{
+    bool CheckTriggering(WorldObject* triggering) override
+    {
+        if (Creature* garrosh = ObjectAccessor::GetCreature(*triggering, triggering->GetInstanceScript() ? triggering->GetInstanceScript()->GetData64(DATA_GARROSH_HELLSCREAM) : 0))
+            return triggering && triggering->ToPlayer() && triggering->ToPlayer()->IsAlive() && !triggering->ToPlayer()->HasAura(SPELL_TOUCH_OH_YSHAARJ) && !triggering->ToPlayer()->HasAura(SPELL_TOUCH_OF_YSHAARJ_PLAYER_EFF) && !triggering->ToPlayer()->HasAura(SPELL_EMPOWERED_TOUCH_OF_YSHAARJ) && !triggering->ToPlayer()->HasAura(SPELL_EMP_TOUCH_OF_YSHAARJ_PLAYER_EFF) && !triggering->ToPlayer()->HasAura(SPELL_ENTER_REALM_OF_GARROSH) && !garrosh->AI()->GetData(TYPE_GARROSH_REALM); // prevent hit from AT if already in transition.
+
+        return false;
+    }
+
+    void OnTriggeringApply(WorldObject* triggering) override
+    {
+        if (Player* target = triggering->ToPlayer())
+            if (Unit* caster = GetCaster())
+                caster->CastSpell(target, SPELL_DESECRATED, true);
+    }
+
+    void OnTriggeringRemove(WorldObject* triggering) override
+    {
+        if (Player* target = triggering->ToPlayer())
+            target->RemoveAura(SPELL_DESECRATED, GetCaster()->GetGUID(), 0, AURA_REMOVE_BY_EXPIRE);
+    }
+};
+
+// 1347. Summoned by 148982 - Courage
+class sat_garrosh_courage : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* object) override
+    {
+        return object && object->ToPlayer() && object->ToPlayer()->IsAlive() && !object->ToPlayer()->HasAura(SPELL_COURAGE_AURA);
+    }
+
+    void OnTrigger(WorldObject* target) override
+    {
+        if (Player* itr = target->ToPlayer())
+            itr->CastSpell(itr, SPELL_COURAGE_AURA, true);
+    }
+};
+
+// 1350. Summoned by 149003 - Hope
+class sat_garrosh_hope : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* object) override
+    {
+        return object && object->ToPlayer() && object->ToPlayer()->IsAlive() && !object->ToPlayer()->HasAura(SPELL_HOPE_AURA);
+    }
+
+    void OnTrigger(WorldObject* target) override
+    {
+        if (Player* itr = target->ToPlayer())
+            itr->CastSpell(itr, SPELL_HOPE_AURA, true);
+    }
+};
+
+// 1349. Summoned by 148992 - Faith
+class sat_garrosh_faith : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* object) override
+    {
+        return object && object->ToPlayer() && object->ToPlayer()->IsAlive() && !object->ToPlayer()->HasAura(SPELL_FAITH_AURA) && GetAreaTrigger() && GetAreaTrigger()->GetDuration() < 14000;
+    }
+
+    void OnTrigger(WorldObject* target) override
+    {
+        if (Player* itr = target->ToPlayer())
+            itr->CastSpell(itr, SPELL_FAITH_AURA, true);
+    }
+};
+
+// 1275. Summoned by 147135 - Bombardment
+class sat_garrosh_bombardment : public IAreaTriggerAura
+{
+    bool CheckTriggering(WorldObject* triggering) override
+    {
+        return triggering && triggering->ToPlayer() && triggering->ToPlayer()->IsAlive();
+    }
+
+    void OnTriggeringApply(WorldObject* triggering) override
+    {
+        if (Player* target = triggering->ToPlayer())
+            target->CastSpell(target, SPELL_NAPALM, true);
+    }
+
+    void OnTriggeringRemove(WorldObject* triggering) override
+    {
+        if (Player* target = triggering->ToPlayer())
+            target->RemoveAurasDueToSpell(SPELL_NAPALM);
+    }
+};
+
+// 1300. Summoned by 147148 - Unstable Iron Star
+class sat_garrosh_unstable_iron_star_garrosh_collision : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* triggering) override
+    {
+        return triggering && GetCaster() && GetCaster()->ToCreature() && GetCaster()->ToCreature()->AI()->GetData(TYPE_ALLOW_IRON_STAR_EXPLOSIVE) && (triggering->ToPlayer() && triggering->ToPlayer()->IsAlive() || triggering->ToCreature() && triggering->ToCreature()->IsAlive() && triggering->ToCreature()->GetEntry() == NPC_GARROSH_HELLSCREAM && GetCaster()->GetExactDist2d(triggering->ToCreature()) <= 10) && !GetCaster()->ToCreature()->AI()->GetData(TYPE_IRON_STAR_EXPLOSIVE);
+    }
+
+    void OnTrigger(WorldObject* triggering) override
+    {
+        if (GetCaster() && GetCaster()->ToCreature())
+        {
+            if (Creature* target = triggering->ToCreature())
+            {
+                GetCaster()->ToCreature()->AI()->SetData(TYPE_IRON_STAR_EXPLOSIVE, 1);
+                GetCaster()->CastSpell(GetCaster(), SPELL_UNSTABLE_IRON_STAR_EXPLOSION, true);
+                GetCaster()->CastSpell(GetCaster(), SPELL_UNSTABLE_IRON_STAR_GARROSH, true);
+                GetCaster()->ToCreature()->PrepareChanneledCast(GetCaster()->GetOrientation());
+
+                if (AreaTrigger* atrigger = GetAreaTrigger())
+                    atrigger->SetDuration(0);
+
+                GetCaster()->ToCreature()->DespawnOrUnsummon(1 * IN_MILLISECONDS);
+            }
+            else if (Player* target = triggering->ToPlayer())
+            {
+                GetCaster()->ToCreature()->AI()->SetData(TYPE_IRON_STAR_EXPLOSIVE, 1);
+                GetCaster()->CastSpell(GetCaster(), SPELL_UNSTABLE_IRON_STAR_EXPLOSION, true);
+                GetCaster()->ToCreature()->PrepareChanneledCast(GetCaster()->GetOrientation());
+
+                if (AreaTrigger* atrigger = GetAreaTrigger())
+                    atrigger->SetDuration(0);
+
+                GetCaster()->ToCreature()->DespawnOrUnsummon(1 * IN_MILLISECONDS);
+            }
+        }
     }
 };
 
 void AddSC_garrosh_hellscream()
 {
-    // Bosses
     new boss_garrosh_hellscream();
+    new creature_script<npc_siege_engineer>("npc_siege_engineer");
+    new creature_script<npc_korkron_warbringer>("npc_korkron_warbringer");
+    new creature_script<npc_wolf_rider_farseer>("npc_wolf_rider_farseer");
+    new creature_script<npc_soo_desecrated_weapon>("npc_soo_desecrated_weapon");
+    new creature_script<npc_soo_iron_star>("npc_soo_iron_star");
+    new creature_script<npc_soo_embodied_minions>("npc_soo_embodied_minions");
+    new creature_script<npc_soo_heart_of_yshaarj>("npc_soo_heart_of_yshaarj");
+    new creature_script<npc_garrosh_heart_of_yshaarj_realm>("npc_garrosh_heart_of_yshaarj_realm");
+    new creature_script<npc_garrosh_minion_of_yshaarj>("npc_garrosh_minion_of_yshaarj");
+    new creature_script<npc_garrosh_unstable_iron_star>("npc_garrosh_unstable_iron_star");
 
-    // Creatures
-    new garrosh_hellscream_creature_desecrated_weapon();
-    new garrosh_hellscream_creature_empowered_desecrated_weapon();
-    new garrosh_hellscream_creature_heart_of_yshaaraj();
-    new garrosh_hellscream_creature_iron_star();
-    new garrosh_hellscream_creature_minion_of_yshaaraj();
-    new garrosh_hellscream_creature_second_phase_prop_heart_of_yshaaraj();
-    new garrosh_hellscream_creature_siege_engineer();
-    new garrosh_hellscream_creature_thrall();
-    new garrosh_hellscream_embodied_despair();
-    new garrosh_hellscream_embodied_doubt();
-    new garrosh_hellscream_embodied_fear();
-    new garrosh_hellscream_farseer_wolf_rider();
-    new garrosh_hellscream_korkron_warbringer();
-    new garrosh_hellscream_heart_of_yshaaraj_protection_aura();
-    new boss_farseer_vicious_war_wolf();
-
-    // Spells
-    new spell_desecrate_dummy();
-    new spell_empowered_gripping_despair_debuff();
-    new spell_empowered_gripping_despair();
-    new spell_whirling_corruption();
-    new spell_empowering_corruption_filter();
-    new spell_enter_the_realm_yshaaraj();
-    new spell_touch_of_yshaaraj_proc_two();
-    new spell_hellscream_warsong_filter();
-    new spell_ancsetral_healing();
-    new spell_enter_realm_of_yshaarj_purple_beam();
+    new spell_script<spell_soo_hellscreams_warsong>("spell_soo_hellscreams_warsong");
+    new aura_script<spell_soo_power_iron_star>("spell_soo_power_iron_star");
+    new aura_script<spell_garrosh_realm_of_yshaarj>("spell_garrosh_realm_of_yshaarj");
+    new aura_script<spell_soo_yshaarjs_protection_aura>("spell_soo_yshaarjs_protection_aura");
+    new spell_script<spell_soo_yshaarjs_protection>("spell_soo_yshaarjs_protection");
+    new aura_script<spell_soo_whirling_corruption>("spell_soo_whirling_corruption");
+    new aura_script<spell_soo_empowered_gripping_despair>("spell_soo_empowered_gripping_despair");
+    new aura_script<spell_garrosh_explosive_despair_eff>("spell_garrosh_explosive_despair_eff");
+    new aura_script<spell_soo_transition_phase_third_effect>("spell_soo_transition_phase_third_effect");
+    new aura_script<spell_garrosh_consumed_hope>("spell_garrosh_consumed_hope");
+    new spell_script<spell_garrosh_desecrate_selector>("spell_garrosh_desecrate_selector");
+    new aura_script<spell_garrosh_phase_two_transform>("spell_garrosh_phase_two_transform");
+    new spell_script<spell_garrosh_phase_two_transform_eff>("spell_garrosh_phase_two_transform_eff");
+    new spell_script<spell_garrosh_exploding_iron_star>("spell_garrosh_exploding_iron_star");
+    new spell_script<spell_garrosh_touch_of_yshaarj>("spell_garrosh_touch_of_yshaarj");
+    new aura_script<spell_garrosh_touch_of_yshaarj_aura>("spell_garrosh_touch_of_yshaarj_aura");
+    new spell_script<spell_garrosh_empowered_touch_of_yshaarj>("spell_garrosh_empowered_touch_of_yshaarj");
+    new aura_script<spell_garrosh_empowered_touch_of_yshaarj_aura>("spell_garrosh_empowered_touch_of_yshaarj_aura");
+    new aura_script<spell_garrosh_touch_of_yshaarj_player_eff_aura>("spell_garrosh_touch_of_yshaarj_player_eff_aura");
+    new spell_script<spell_garrosh_empowering_corruption>("spell_garrosh_empowering_corruption");
+    new spell_script<spell_garrosh_empowering_corruption_heroic>("spell_garrosh_empowering_corruption_heroic");
+    new spell_script<spell_garrosh_enter_realm_of_yshaarj_launcher>("spell_garrosh_enter_realm_of_yshaarj_launcher");
+    new spell_script<spell_garrosh_teleport_to_realms>("spell_garrosh_teleport_to_realms");
+    new spell_script<spell_garrosh_consumed_courage>("spell_garrosh_consumed_courage");
+    new spell_script<spell_garrosh_consumed_faith>("spell_garrosh_consumed_faith");
+    new spell_script<spell_garrosh_whirling_corruption>("spell_garrosh_whirling_corruption");
+    new spell_script<spell_garrosh_empowered_desecrate_summon>("spell_garrosh_empowered_desecrate_summon");
+    new aura_script<spell_garrosh_garrosh_energy>("spell_garrosh_garrosh_energy");
+    new spell_script<spell_garrosh_growing_power>("spell_garrosh_growing_power");
+    new spell_script<spell_garrosh_touch_of_yshaarj_player_launcher>("spell_garrosh_touch_of_yshaarj_player_launcher");
+    new spell_script<spell_garrosh_ancestral_chain_heal>("spell_garrosh_ancestral_chain_heal");
+    new spell_script<spell_garrosh_power_of_the_old_god>("spell_garrosh_power_of_the_old_god");
+    new spell_script<spell_garrosh_empowered_whirling_missle>("spell_garrosh_empowered_whirling_missle");
+    new spell_script<spell_garrosh_touch_of_yshaarj_player_launcher_2>("spell_garrosh_touch_of_yshaarj_player_launcher_2");
+    new spell_script<spell_garrosh_malice>("spell_garrosh_malice");
+    new spell_script<spell_garrosh_malice_selector>("spell_garrosh_malice_selector");
+    new spell_script<spell_garrosh_bombardment_selector>("spell_garrosh_bombardment_selector");
+    new aura_script<spell_garrosh_manifest_rage>("spell_garrosh_manifest_rage");
+    new spell_script<spell_garrosh_fire_iron_star_selector>("spell_garrosh_fire_iron_star_selector");
+    new aura_script<spell_garrosh_enter_realm_of_garrosh_eff>("spell_garrosh_enter_realm_of_garrosh_eff");
+    new spell_script<spell_garrosh_clump_check>("spell_garrosh_clump_check");
+    new aura_script<spell_garrosh_call_bombardment>("spell_garrosh_call_bombardment");
+    new spell_script<spell_garrosh_bombardment_force>("spell_garrosh_bombardment_force");
+    new spell_script<spell_garrosh_iron_star_fixate_selector>("spell_garrosh_iron_star_fixate_selector");
+    new aura_script<spell_garrosh_iron_star_fixate>("spell_garrosh_iron_star_fixate");
+    new aura_script<spell_garrosh_unstable_iron_star_garrosh_eff>("spell_garrosh_unstable_iron_star_garrosh_eff");
+    new spell_script<spell_garrosh_blood_frenzied_selector>("spell_garrosh_blood_frenzied_selector");
+    new spell_script<spell_garrosh_crushing_fear_selector>("spell_garrosh_crushing_fear_selector");
+    new spell_script<spell_garrosh_manifistation_of_rage_eff>("spell_garrosh_manifistation_of_rage_eff");
+    new spell_script<spell_garrosh_iron_star_crater>("spell_garrosh_iron_star_crater");
+    new spell_script<spell_garrosh_annihilate>("spell_garrosh_annihilate");
+    new spell_script<spell_garrosh_faith_missle>("spell_garrosh_faith_missle");
+    new spell_script<spell_garrosh_jump_to_ground>("spell_garrosh_jump_to_ground");
+    new atrigger_script<sat_garrosh_iron_star_impact>("sat_garrosh_iron_star_impact");
+    new atrigger_script<sat_garrosh_desecrated_weapon>("sat_garrosh_desecrated_weapon");
+    new atrigger_script<sat_garrosh_courage>("sat_garrosh_courage");
+    new atrigger_script<sat_garrosh_hope>("sat_garrosh_hope");
+    new atrigger_script<sat_garrosh_faith>("sat_garrosh_faith");
+    new atrigger_script<sat_garrosh_bombardment>("sat_garrosh_bombardment");
+    new atrigger_script<sat_garrosh_unstable_iron_star_garrosh_collision>("sat_garrosh_unstable_iron_star_garrosh_collision");
 }

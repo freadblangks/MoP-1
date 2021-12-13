@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -19,6 +21,9 @@
 #define _TRANSACTION_H
 
 #include "SQLOperation.h"
+#include "Task.h"
+#include <memory>
+#include <mutex>
 
 //- Forward declare (don't include header to prevent circular includes)
 class PreparedStatement;
@@ -28,10 +33,12 @@ class Transaction
 {
     friend class TransactionTask;
     friend class MySQLConnection;
-    friend class DatabaseWokerPool;
+
+    template <typename T>
+    friend class DatabaseWorkerPool;
 
     public:
-        Transaction() : _cleanedUp(false) {}
+        Transaction() : _cleanedUp(false) { }
         ~Transaction() { Cleanup(); }
 
         void Append(PreparedStatement* statement);
@@ -48,7 +55,7 @@ class Transaction
         bool _cleanedUp;
 
 };
-typedef JadeCore::AutoPtr<Transaction, ACE_Thread_Mutex> SQLTransaction;
+typedef std::shared_ptr<Transaction> SQLTransaction;
 
 /*! Low level class*/
 class TransactionTask : public SQLOperation
@@ -57,13 +64,28 @@ class TransactionTask : public SQLOperation
     friend class DatabaseWorker;
 
     public:
-        TransactionTask(SQLTransaction trans) : m_trans(trans) {} ;
+        TransactionTask(SQLTransaction&& trans, Task<bool>* continuation = nullptr)
+            : m_trans(std::move(trans)), _continuation(continuation) { }
+
         ~TransactionTask(){};
 
     protected:
         bool Execute();
+        bool DoTask();
 
         SQLTransaction m_trans;
+        static std::mutex _lock;
+        Task<bool>* _continuation;
+};
+
+class SafeTransactionTask : public TransactionTask
+{
+public:
+    SafeTransactionTask(SQLTransaction&& trans, Task<bool>* continuation = nullptr)
+        : TransactionTask(std::move(trans), continuation) { }
+
+protected:
+    bool Execute();
 };
 
 #endif

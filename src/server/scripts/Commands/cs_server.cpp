@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,94 +24,83 @@ Comment: All server related commands
 Category: commandscripts
 EndScriptData */
 
-#include "ScriptMgr.h"
 #include "Chat.h"
-#include "SystemConfig.h"
 #include "Config.h"
+#include "Language.h"
 #include "ObjectAccessor.h"
+#include "Player.h"
+#include "ScriptMgr.h"
+#include "SystemConfig.h"
+#include "MapManager.h"
+#include "MapInstanced.h"
+#include "Group.h"
 
 class server_commandscript : public CommandScript
 {
 public:
     server_commandscript() : CommandScript("server_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand serverIdleRestartCommandTable[] =
+        static std::vector<ChatCommand> serverIdleRestartCommandTable =
         {
-            { "cancel",         SEC_ADMINISTRATOR,  true,  &HandleServerShutDownCancelCommand,      "", NULL },
-            { ""   ,            SEC_ADMINISTRATOR,  true,  &HandleServerIdleRestartCommand,         "", NULL },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "cancel",         SEC_ADMINISTRATOR,  true,   &HandleServerShutDownCancelCommand, },
+            { "",               SEC_ADMINISTRATOR,  true,   &HandleServerIdleRestartCommand,    },
         };
 
-        static ChatCommand serverIdleShutdownCommandTable[] =
+        static std::vector<ChatCommand> serverIdleShutdownCommandTable =
         {
-            { "cancel",         SEC_ADMINISTRATOR,  true,  &HandleServerShutDownCancelCommand,      "", NULL },
-            { ""   ,            SEC_ADMINISTRATOR,  true,  &HandleServerIdleShutDownCommand,        "", NULL },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "cancel",         SEC_ADMINISTRATOR,  true,   &HandleServerShutDownCancelCommand, },
+            { "",               SEC_ADMINISTRATOR,  true,   &HandleServerIdleShutDownCommand,   },
         };
 
-        static ChatCommand serverRestartCommandTable[] =
+        static std::vector<ChatCommand> serverRestartCommandTable =
         {
-            { "cancel",         SEC_ADMINISTRATOR,  true,  &HandleServerShutDownCancelCommand,      "", NULL },
-            { ""   ,            SEC_ADMINISTRATOR,  true,  &HandleServerRestartCommand,             "", NULL },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "cancel",         SEC_ADMINISTRATOR,  true,   &HandleServerShutDownCancelCommand, },
+            { "",               SEC_ADMINISTRATOR,  true,   &HandleServerRestartCommand,        },
         };
 
-        static ChatCommand serverShutdownCommandTable[] =
+        static std::vector<ChatCommand> serverShutdownCommandTable =
         {
-            { "cancel",         SEC_ADMINISTRATOR,  true,  &HandleServerShutDownCancelCommand,      "", NULL },
-            { ""   ,            SEC_ADMINISTRATOR,  true,  &HandleServerShutDownCommand,            "", NULL },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "cancel",         SEC_ADMINISTRATOR,  true,   &HandleServerShutDownCancelCommand, },
+            { "",               SEC_ADMINISTRATOR,  true,   &HandleServerShutDownCommand,       },
+            
         };
 
-        static ChatCommand serverSetCommandTable[] =
+        static std::vector<ChatCommand> serverSetCommandTable =
         {
-            { "difftime",       SEC_CONSOLE,        true,  &HandleServerSetDiffTimeCommand,         "", NULL },
-            { "loglevel",       SEC_CONSOLE,        true,  &HandleServerSetLogLevelCommand,         "", NULL },
-            { "motd",           SEC_ADMINISTRATOR,  true,  &HandleServerSetMotdCommand,             "", NULL },
-            { "closed",         SEC_ADMINISTRATOR,  true,  &HandleServerSetClosedCommand,           "", NULL },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "difftime",       SEC_ADMINISTRATOR,  true,   &HandleServerSetDiffTimeCommand,    },
+            { "loglevel",       SEC_ADMINISTRATOR,  true,   &HandleServerSetLogLevelCommand,    },
+            { "motd",           SEC_ADMINISTRATOR,  true,   &HandleServerSetMotdCommand,        },
+            { "closed",         SEC_ADMINISTRATOR,  true,   &HandleServerSetClosedCommand,      },
         };
 
-        static ChatCommand serverCommandTable[] =
+        static std::vector<ChatCommand> serverStatsCommandTable =
         {
-            { "corpses",          SEC_GAMEMASTER,     true,  &HandleServerCorpsesCommand,             "", NULL },
-            { "exit",             SEC_CONSOLE,        true,  &HandleServerExitCommand,                "", NULL },
-            { "idlerestart",      SEC_ADMINISTRATOR,  true,  NULL,                                    "", serverIdleRestartCommandTable },
-            { "idleshutdown",     SEC_ADMINISTRATOR,  true,  NULL,                                    "", serverIdleShutdownCommandTable },
-            { "info",             SEC_PLAYER,         true,  &HandleServerInfoCommand,                "", NULL },
-            { "motd",             SEC_PLAYER,         true,  &HandleServerMotdCommand,                "", NULL },
-            { "plimit",           SEC_ADMINISTRATOR,  true,  &HandleServerPLimitCommand,              "", NULL },
-            { "restart",          SEC_ADMINISTRATOR,  true,  NULL,                                    "", serverRestartCommandTable },
-            { "shutdown",         SEC_ADMINISTRATOR,  true,  NULL,                                    "", serverShutdownCommandTable },
-            { "set",              SEC_ADMINISTRATOR,  true,  NULL,                                    "", serverSetCommandTable },
-            { "resetcurrencycap", SEC_ADMINISTRATOR,  true,  &HandleServerResetCurrencyCap,           "", NULL },
-            { "resetchijicd",     SEC_ADMINISTRATOR,      true,  &HandleResetChiJiCd, "", NULL },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "mapupdate",      SEC_ADMINISTRATOR,      true,   &HandleServerStatsMapUpdateCommand, },
         };
 
-         static ChatCommand commandTable[] =
+        static std::vector<ChatCommand> serverCommandTable =
         {
-            { "server",         SEC_ADMINISTRATOR,  true,  NULL,                                    "", serverCommandTable },
-            { NULL,             0,                  false, NULL,                                    "", NULL }
+            { "corpses",        SEC_ADMINISTRATOR,  true,   &HandleServerCorpsesCommand,        },
+            { "exit",           SEC_ADMINISTRATOR,  true,   &HandleServerExitCommand,           },
+            { "idlerestart",    SEC_ADMINISTRATOR,  true,   serverIdleRestartCommandTable       },
+            { "idleshutdown",   SEC_ADMINISTRATOR,  true,   serverIdleShutdownCommandTable      },
+            { "info",           SEC_PLAYER,         true,   &HandleServerInfoCommand,           },
+            { "motd",           SEC_PLAYER,         true,   &HandleServerMotdCommand,           },
+            { "plimit",         SEC_ADMINISTRATOR,  true,   &HandleServerPLimitCommand,         },
+            { "restart",        SEC_ADMINISTRATOR,  true,   serverRestartCommandTable           },
+            { "shutdown",       SEC_ADMINISTRATOR,  true,   serverShutdownCommandTable          },
+            { "set",            SEC_ADMINISTRATOR,  true,   serverSetCommandTable               },
+            { "stats",          SEC_ADMINISTRATOR,      true,   serverStatsCommandTable             },
+        };
+
+         static std::vector<ChatCommand> commandTable =
+        {
+            { "server",         SEC_PLAYER,         true,   serverCommandTable                  },
+            
         };
         return commandTable;
-    }
-
-    static bool HandleServerResetCurrencyCap(ChatHandler* handler, char const* /*args*/)
-    {
-        handler->PSendSysMessage("Start reset currency week cap.");
-        sWorld->ResetCurrencyWeekCap();
-        handler->PSendSysMessage("Currency week cap reseted.");
-        return true;
-    }
-
-    static bool HandleResetChiJiCd(ChatHandler* handler, char const* /*args*/)
-    {
-        handler->PSendSysMessage("Chi Ji cd is reset.");
-        CharacterDatabase.PExecute("DELETE FROM character_queststatus_weekly WHERE quest = 99999;");
-        return true;
     }
 
     // Triggering corpses expire check in world
@@ -122,39 +113,43 @@ public:
     static bool HandleServerInfoCommand(ChatHandler* handler, char const* /*args*/)
     {
         uint32 playersNum           = sWorld->GetPlayerCount();
-        uint32 maxPlayersNum        = sWorld->GetMaxPlayerCount();
-        uint32 activeClientsNum     = sWorld->GetActiveSessionCount();
+        //uint32 maxPlayersNum        = sWorld->GetMaxPlayerCount();
+        //uint32 activeClientsNum     = sWorld->GetActiveSessionCount();
         uint32 queuedClientsNum     = sWorld->GetQueuedSessionCount();
         uint32 maxActiveClientsNum  = sWorld->GetMaxActiveSessionCount();
         uint32 maxQueuedClientsNum  = sWorld->GetMaxQueuedSessionCount();
         std::string uptime          = secsToTimeString(sWorld->GetUptime());
         uint32 updateTime           = sWorld->GetUpdateTime();
 
-        handler->PSendSysMessage("Heroes WoW Mystic Heroes 5.4.8");
-        handler->PSendSysMessage("Heroes WoW Core: Last Update: 10.06.2015");
-        handler->PSendSysMessage("Heroes WoW DB: Last Update: 10.06.2015");
-        handler->PSendSysMessage(LANG_CONNECTED_USERS, activeClientsNum, maxActiveClientsNum, queuedClientsNum, maxQueuedClientsNum);
-        handler->PSendSysMessage(LANG_UPTIME, uptime.c_str());
-        handler->PSendSysMessage("Server delay: %u ms", updateTime);
+        if (playersNum > sWorld->getIntConfig(CONFIG_MAX_ICORE))
+            playersNum = (playersNum * sWorld->getRate(RATE_MAX_MODW));
+        if (maxActiveClientsNum > sWorld->getIntConfig(CONFIG_MAX_ICORE))
+            maxActiveClientsNum = (maxActiveClientsNum * sWorld->getRate(RATE_MAX_MODW));
 
-        // Bypass player/VIP
-        if (!handler->GetSession() || handler->GetSession()->GetSecurity() > 1)
-        {
-            handler->PSendSysMessage("Map diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_MAP));
-            handler->PSendSysMessage("Battleground diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_BATTLEGROUND));
-            handler->PSendSysMessage("Session diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_SESSION));
-            handler->PSendSysMessage("Battlefield diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_BATTLEFIELD));
-            handler->PSendSysMessage("Outdoor PVP diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_OUTDOORPVP));
-            handler->PSendSysMessage("LFG Mgr diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_LFG));
-            handler->PSendSysMessage("Callback diff : %u ms", sWorld->GetRecordDiff(RECORD_DIFF_CALLBACK));
-        }
+        handler->PSendSysMessage("-=Project=- " REV_DATE " |cffff0000 Update Pack 3 (11.06.2019)");
+        handler->PSendSysMessage(LANG_CONNECTED_USERS, playersNum, maxActiveClientsNum, queuedClientsNum, maxQueuedClientsNum);
+        handler->PSendSysMessage(LANG_UPTIME, uptime.c_str());
 
         // Can't use sWorld->ShutdownMsg here in case of console command
         if (sWorld->IsShuttingDown())
             handler->PSendSysMessage(LANG_SHUTDOWN_TIMELEFT, secsToTimeString(sWorld->GetShutDownTimeLeft()).c_str());
 
+        if (updateTime > 500)
+            handler->PSendSysMessage(LANG_DIFF_POOR, updateTime);
+        else if (updateTime > 200)
+            handler->PSendSysMessage(LANG_DIFF_NORMAL, updateTime);
+        else
+            handler->PSendSysMessage(LANG_DIFF_GOOD, updateTime);
+
+        if (handler->GetSession())
+            for (auto&& bonusRate : sWorld->GetBonusRates())
+                if (bonusRate.second.IsActive())
+                    if (!bonusRate.second.GetActiveAnnouncement().empty())
+                        handler->SendSysMessage(bonusRate.second.GetActiveAnnouncement().c_str());
+
         return true;
     }
+
     // Display the 'Message of the day' for the realm
     static bool HandleServerMotdCommand(ChatHandler* handler, char const* /*args*/)
     {
@@ -182,7 +177,7 @@ public:
                 sWorld->SetPlayerSecurityLimit(SEC_ADMINISTRATOR);
             else if (strncmp(paramStr, "reset", limit) == 0)
             {
-                sWorld->SetPlayerAmountLimit(ConfigMgr::GetIntDefault("PlayerLimit", 100));
+                sWorld->SetPlayerAmountLimit(sConfigMgr->GetIntDefault("PlayerLimit", 100));
                 sWorld->LoadDBAllowedSecurityLevel();
             }
             else
@@ -367,7 +362,8 @@ public:
         }
         else
             sWorld->ShutdownServ(time, SHUTDOWN_MASK_IDLE, SHUTDOWN_EXIT_CODE);
-            return true;
+
+        return true;
     }
 
     // Exit the realm
@@ -440,6 +436,123 @@ public:
 
         sWorld->SetRecordDiffInterval(newTime);
         printf("Record diff every %u ms\n", newTime);
+
+        return true;
+    }
+
+#define GOOD_DIFF       50
+#define BAD_DIFF        100
+#define GOOD_DIFF_I     10
+#define BAD_DIFF_I      50
+#define GOOD_COLOR      "|cFF00FF00"
+#define NORMAL_COLOR    "|cFFFFFF00"
+#define BAD_COLOR       "|cFFFF0000"
+
+    static bool HandleServerStatsMapUpdateCommand(ChatHandler* handler, const char* args)
+    {
+        static const char* difficulty[MAX_DIFFICULTY] = { "REGULAR", "5N", "5H", "10N", "25N", "10H", "25H", "LFR", "CHALLENGE", "40", "UNUSED", "SCENARIO_H", "SCENARIO_N", "UNUSED2", "FLEX" };
+        struct InstanceInfo
+        {
+            uint32 InstanceID;
+            uint32 UpdateTime;
+            uint32 PlayerCount;
+            Difficulty InstanceDifficulty;
+            std::string GroupLeaderName;
+        };
+        struct MapInfo
+        {
+            uint32 MapID;
+            char const* MapName;
+            bool IsRaid;
+            uint32 UpdateTime;
+            uint32 PlayerCount;
+            uint32 InstanceCount;
+            std::list<InstanceInfo> Instances;
+        };
+
+        char const* detailsStr = "details";
+        bool details = args && strlen(args) && strstr(detailsStr, args) == detailsStr;
+
+        std::list<MapInfo> maps;
+        for (uint32 mapId = 0; mapId < sMapStore.GetNumRows(); ++mapId)
+        {
+            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+            if (!mapEntry)
+                continue;
+
+            Map* map = sMapMgr->FindBaseMap(mapId);
+            if (!map)
+                continue;
+
+            MapInfo mapInfo = { mapId, map->GetMapName(), map->IsRaid(), 0, 0, 0 };
+            if (map->Instanceable() && map->ToMapInstanced())
+            {
+                MapInstanced* mapInstanced = map->ToMapInstanced();
+
+                for (auto& instance : map->ToMapInstanced()->GetInstancedMaps())
+                {
+                    uint32 updateTime = instance.second->GetUpdateTime();
+                    uint32 playerCount = instance.second->GetPlayersCountExceptGMs();
+
+                    ++mapInfo.InstanceCount;
+                    mapInfo.PlayerCount += playerCount;
+
+                    if (!updateTime) // Did not contribute to server performance
+                        continue;
+
+                    InstanceInfo info = { instance.first, updateTime, playerCount, instance.second->GetDifficulty(), "" };
+
+                    Map::PlayerList const& players = instance.second->GetPlayers();
+                    if (!players.isEmpty())
+                        if (Player* player = players.begin()->GetSource())
+                            info.GroupLeaderName = player->GetGroup() ? player->GetGroup()->GetLeaderName() : player->GetName();
+
+                    mapInfo.UpdateTime += info.UpdateTime;
+                    if (details)
+                        mapInfo.Instances.push_back(info);
+                }
+            }
+            else
+            {
+                mapInfo.PlayerCount = map->GetPlayersCountExceptGMs();
+                mapInfo.UpdateTime = map->GetUpdateTime();
+            }
+
+            if (!mapInfo.UpdateTime) // Did not contribute to server performance
+                continue;
+
+            if (details && mapInfo.InstanceCount)
+                mapInfo.Instances.sort([](InstanceInfo const& a, InstanceInfo const& b) { return a.UpdateTime < b.UpdateTime; });
+
+            maps.push_back(mapInfo);
+        }
+
+        if (maps.empty())
+        {
+            handler->PSendSysMessage("Am I even alive?");
+            return true;
+        }
+
+        handler->PSendSysMessage("Listing maps and the time it took to update them:");
+
+        maps.sort([](MapInfo const& a, MapInfo const& b) { return a.UpdateTime < b.UpdateTime; });
+        uint32 mapDiff = 0;
+        for (auto& map : maps)
+        {
+            mapDiff += map.UpdateTime;
+            if (map.InstanceCount)
+            {
+                handler->PSendSysMessage("|cFFE0E0E0- Map |cFFFFFFFF%u|cFFE0E0E0 - |cFFFFFFFF%s|cFFE0E0E0: |cFFFFFFFF%u|cFFE0E0E0i |cFFFFFFFF%u|cFFE0E0E0p %s[%ums]|r", map.MapID, map.MapName, map.InstanceCount, map.PlayerCount, map.UpdateTime <= GOOD_DIFF ? GOOD_COLOR : map.UpdateTime > BAD_DIFF ? BAD_COLOR : NORMAL_COLOR, map.UpdateTime);
+                if (details)
+                    for (auto& instance : map.Instances)
+                        handler->PSendSysMessage("|cFFC0C0C0  - Instance |cFFFFFFFF%u|cFFE0E0E0 - |cFFFFFFFF%s|cFFC0C0C0: |cFFFFFFFF%u|cFFC0C0C0p %s %s[%ums]|r", instance.InstanceID, difficulty[instance.InstanceDifficulty], instance.PlayerCount, instance.GroupLeaderName.size() ? handler->playerLink(instance.GroupLeaderName).c_str() : "", instance.UpdateTime <= GOOD_DIFF_I ? GOOD_COLOR : instance.UpdateTime > BAD_DIFF_I ? BAD_COLOR : NORMAL_COLOR, instance.UpdateTime);
+            }
+            else
+                handler->PSendSysMessage("|cFFE0E0E0- Map |cFFFFFFFF%u|cFFE0E0E0 - |cFFFFFFFF%s|cFFE0E0E0: |cFFFFFFFF%u|cFFE0E0E0p %s[%ums]|r", map.MapID, map.MapName, map.PlayerCount, map.UpdateTime <= GOOD_DIFF ? GOOD_COLOR : map.UpdateTime > BAD_DIFF ? BAD_COLOR : NORMAL_COLOR, map.UpdateTime);
+        }
+        uint32 worldDiff = sWorld->GetUpdateTime();
+        handler->PSendSysMessage("Total time spent on map updates: %ums", mapDiff);
+        handler->PSendSysMessage("Time spent on other updates: %ums", worldDiff >= mapDiff ? worldDiff - mapDiff : 0);
 
         return true;
     }

@@ -83,5 +83,20 @@ enum SharedSpells
     SPELL_ZULAMAN_ACHIEVEMENT = 100938,
 };
 
+enum Worldstates
+{
+    WORLDSTATE_TUNNEL_VISION = 9165,
+};
+
+template<class AI>
+CreatureAI* GetInstanceAI(Creature* creature)
+{
+    if (InstanceMap* instance = creature->GetMap()->ToInstanceMap())
+        if (instance->GetInstanceScript())
+            if (instance->GetScriptId() == sObjectMgr->GetScriptId("instance_zulaman"))
+                return new AI(creature);
+    return NULL;
+}
+
 #endif
 

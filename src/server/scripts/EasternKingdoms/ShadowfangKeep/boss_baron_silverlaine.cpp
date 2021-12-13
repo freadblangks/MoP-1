@@ -1,14 +1,11 @@
 #include"ScriptPCH.h"
 #include"shadowfang_keep.h"
 
-
-#define SAY_AGGRO "Leave this accursed place at once!"
-#define SAY_DEATH "This death is only a temporary respite from my curse."
-#define SAY_KILL1 "I hope your spirit finds solace."
-#define SAY_KILL2 "May your soul rest in peace."
-
 enum ScriptTexts
 {
+    SAY_AGGRO = 0,
+    SAY_DEATH = 1,
+    SAY_KILL  = 2,
 };
 
 enum Events
@@ -35,24 +32,20 @@ enum Adds
     NPC_RAZORCLAW_DUMMY  = 51080,
     NPC_ODO_DUMMY        = 50934,
     NPC_NANDOS_DUMMY     = 51047,
-    NPC_ODO              = 50857,
-    NPC_RAZORCLAW        = 50869,
-    NPC_RETHILGORE       = 50834,
-    NPC_NANDOS           = 50851,
 };
 
 class boss_baron_silverlaine : public CreatureScript
 {
     public:
         boss_baron_silverlaine() : CreatureScript("boss_baron_silverlaine") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_baron_silverlaineAI(pCreature);
-        }
+
         struct boss_baron_silverlaineAI : public BossAI
         {
-            boss_baron_silverlaineAI(Creature* pCreature) : BossAI(pCreature, DATA_SILVERLAINE)
+            boss_baron_silverlaineAI(Creature* creature) : BossAI(creature, DATA_SILVERLAINE) { }
+
+            uint8 phase;
+
+            void InitializeAI() override
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -65,142 +58,268 @@ class boss_baron_silverlaine : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                Reset();
             }
 
-            uint8 phase;
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
                 phase = 0;
             }
 
-            void EnterCombat(Unit* pWho)
+            void EnterCombat(Unit* /*who*/) override
             {
-                me->MonsterYell(SAY_AGGRO, 0, 0);
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+                Talk(SAY_AGGRO);
                 events.ScheduleEvent(EVENT_VEIL_OF_SHADOW, 12000);
                 DoZoneInCombat();
-                instance->SetBossState(DATA_SILVERLAINE, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
-                me->MonsterYell(urand(0, 1)? SAY_KILL1: SAY_KILL2, 0, 0);
+                Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* pWho)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-                me->MonsterYell(SAY_DEATH, 0, 0);
-            }
-                                 
-            void UpdateAI(const uint32 uiDiff)
-            {
-                if (!UpdateVictim())
-                    return;
 
-                if (!HealthAbovePct(50) && phase == 0)
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                Talk(SAY_DEATH);
+                instance->SetData(DATA_SILVERLAINE, DONE);
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (HealthBelowPct(70) && phase == 0)
                 {
                     phase = 1;
                     DoCast(SPELL_SUMMON_WORGEN_SPIRIT);
                     return;
                 }
-                if (!HealthAbovePct(25) && phase == 1)
+                if (HealthBelowPct(35) && phase == 1)
                 {
                     phase = 2;
                     DoCast(SPELL_SUMMON_WORGEN_SPIRIT);
                     return;
                 }
+            }
 
-                events.Update(uiDiff);
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
 
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
                     
-                while(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    if (eventId == EVENT_VEIL_OF_SHADOW)
                     {
-                        case EVENT_VEIL_OF_SHADOW:
-                            DoCast(me, SPELL_VEIL_OF_SHADOW);
-                            events.ScheduleEvent(EVENT_VEIL_OF_SHADOW, 12000);
-                            break;
+                        if (Unit* target = me->GetVictim())
+                            DoCast(target, SPELL_VEIL_OF_SHADOW);
+
+                        events.ScheduleEvent(EVENT_VEIL_OF_SHADOW, 12000);
                     }
+                    break;
                 }
+
                 DoMeleeAttackIfReady();
             }
          };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_baron_silverlaineAI>(creature);
+        }
 };
 
+// Silverlaine Worgens 50857, 50851, 50834, 50869
 class npc_silverlaine_worgen : public CreatureScript
 {
     public:
         npc_silverlaine_worgen() : CreatureScript("npc_silverlaine_worgen") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+
+        enum iEvents
         {
-            return new npc_silverlaine_worgenAI(pCreature);
-        }
-         struct npc_silverlaine_worgenAI : public ScriptedAI
-         {
-            npc_silverlaine_worgenAI(Creature* pCreature) : ScriptedAI(pCreature)
+            EVENT_SPECIAL_1 = 1,
+            EVENT_SPECIAL_2 = 2,
+        };
+
+        enum iSpells
+        {
+            // Odo
+            SPELL_HOWLING_RAGE         = 93931,
+            SPELL_BLINDING_SHADOWS     = 93952,
+
+            // Nandos
+            SPELL_SUMMON_LUPINE_SPIRIT = 94199,
+            SPELL_CLAW                 = 93861,
+
+            // Rethilgore
+            SPELL_SOUL_DRAIN           = 93863,
+
+            // Razorclaw
+            SPELL_RAVAGE               = 93914,
+        };
+
+        struct npc_silverlaine_worgenAI : public ScriptedAI
+        {
+            npc_silverlaine_worgenAI(Creature* creature) : ScriptedAI(creature), summons(me) { }
+
+            EventMap events;
+            uint32 spell_type;
+            SummonList summons;
+
+            void Reset() override
             {
-                pInstance = pCreature->GetInstanceScript();
+                events.Reset();
+                summons.DespawnAll();
             }
 
-            InstanceScript *pInstance;
-
-            void IsSummonedBy(Unit* summoner)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
-                if (Creature* _silverlaine = me->FindNearestCreature(NPC_SILVERLAINE, 200.0f))
-                    if (Unit* target = _silverlaine->AI()->SelectTarget(SELECT_TARGET_RANDOM))
-                        AttackStart(target);
+                if (InstanceScript* instance = me->GetInstanceScript())
+                    if (Creature* _silverlaine = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SILVERLAINE)))
+                        if (Unit* target = _silverlaine->AI()->SelectTarget(SELECT_TARGET_RANDOM))
+                            AttackStart(target);
+
+                switch (me->GetEntry())
+                {
+                    case NPC_ODO_BLINDWATCHER:
+                        spell_type = SPELL_BLINDING_SHADOWS;
+                        break;
+                    case NPC_WOLF_MASTER_NANDOS:
+                        spell_type = SPELL_CLAW;
+                        break;
+                    case NPC_RETHILGORE:
+                        spell_type = SPELL_SOUL_DRAIN;
+                        break;
+                    case NPC_RAZORCLAW_BUTHER:
+                        spell_type = SPELL_RAVAGE;
+                        break;
+                }
             }
 
-            void UpdateAI(const uint32 diff)
+            void EnterCombat(Unit* /*who*/) override
             {
-                if (pInstance && pInstance->GetBossState(DATA_SILVERLAINE) != IN_PROGRESS)
-                    me->DespawnOrUnsummon();
+                events.ScheduleEvent(EVENT_SPECIAL_1, urand(5 * IN_MILLISECONDS, 8.5 * IN_MILLISECONDS));
+
+                switch (me->GetEntry())
+                {
+                    case NPC_ODO_BLINDWATCHER:
+                        events.ScheduleEvent(EVENT_SPECIAL_2, 12 * IN_MILLISECONDS);
+                        break;
+                    case NPC_WOLF_MASTER_NANDOS:
+                        for (uint8 i = 0; i < 3; ++i)
+                            DoCast(me, SPELL_SUMMON_LUPINE_SPIRIT);
+                        break;
+                }
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+                DoZoneInCombat();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_SPECIAL_1:
+                            if (spell_type)
+                            {
+                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, NonTankTargetSelector(me)))
+                                    me->CastSpell(target, spell_type, false);
+                                else if (Unit* target = me->GetVictim())
+                                    me->CastSpell(target, spell_type, false);
+                            }
+
+                            events.ScheduleEvent(EVENT_SPECIAL_1, urand(9 * IN_MILLISECONDS, 14.8 * IN_MILLISECONDS));
+                            break;
+                        case EVENT_SPECIAL_2:
+                            DoCast(me, SPELL_HOWLING_RAGE);
+                            break;
+                    }
+                }
 
                 DoMeleeAttackIfReady();
             }
-         };
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_silverlaine_worgenAI>(creature);
+        }
 };
 
 class npc_silverlaine_worgen_spirit : public CreatureScript
 {
     public:
         npc_silverlaine_worgen_spirit() : CreatureScript("npc_silverlaine_worgen_spirit") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+
+        struct npc_silverlaine_worgen_spiritAI : public ScriptedAI
         {
-            return new npc_silverlaine_worgen_spiritAI(pCreature);
-        }
-         struct npc_silverlaine_worgen_spiritAI : public Scripted_NoMovementAI
-         {
-            npc_silverlaine_worgen_spiritAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_silverlaine_worgen_spiritAI(Creature* creature) : ScriptedAI(creature) { }
+
+            uint32 m_spell;
+            InstanceScript* instance;
+
+            void InitializeAI() override
             {
+                instance = me->GetInstanceScript();
+                SetCombatMovement(false);
             }
 
-            void IsSummonedBy(Unit* summoner)
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 switch (me->GetEntry())
                 {
                     case NPC_ODO_DUMMY:
-                        DoCast(me, SPELL_ODO_T);
+                        m_spell = SPELL_ODO_T;
                         break;
                     case NPC_RETHILGORE_DUMMY:
-                        DoCast(me, SPELL_RETHILGORE_T);
+                        m_spell = SPELL_RETHILGORE_T;
                         break;
                     case NPC_NANDOS_DUMMY:
-                        DoCast(me, SPELL_NANDOS_T);
+                        m_spell = SPELL_NANDOS_T;
                         break;
                     case NPC_RAZORCLAW_DUMMY:
-                        DoCast(me, SPELL_RAZORCLAW_T);
-                        break;    
+                        m_spell = SPELL_RAZORCLAW_T;
+                        break;
                 }
+
+                if (instance && m_spell)
+                    if (Creature* m_silverlaine = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_SILVERLAINE)))
+                        m_silverlaine->CastSpell(me, m_spell, false);
             }
-         };
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_silverlaine_worgen_spiritAI>(creature);
+        }
 };
 
 class spell_silverlaine_summon_worgen_spirit : public SpellScriptLoader
@@ -208,11 +327,9 @@ class spell_silverlaine_summon_worgen_spirit : public SpellScriptLoader
     public:
         spell_silverlaine_summon_worgen_spirit() : SpellScriptLoader("spell_silverlaine_summon_worgen_spirit") { }
 
-
         class spell_silverlaine_summon_worgen_spirit_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_silverlaine_summon_worgen_spirit_SpellScript);
-
 
             void HandleScript(SpellEffIndex effIndex)
             {
@@ -221,33 +338,32 @@ class spell_silverlaine_summon_worgen_spirit : public SpellScriptLoader
 
                 switch (urand(0, 3))
                 {
-                case 0:
-                    GetCaster()->CastSpell(GetCaster(), 93925, true);
-                    break;
-                case 1:
-                    GetCaster()->CastSpell(GetCaster(), 93921, true);
-                    break;
-                case 2:
-                    GetCaster()->CastSpell(GetCaster(), 93859, true);
-                    break;
-                case 3:
-                    GetCaster()->CastSpell(GetCaster(), 93896, true);
-                    break;
+                    case 0:
+                        GetCaster()->CastSpell(GetCaster(), 93925, true);
+                        break;
+                    case 1:
+                        GetCaster()->CastSpell(GetCaster(), 93921, true);
+                        break;
+                    case 2:
+                        GetCaster()->CastSpell(GetCaster(), 93859, true);
+                        break;
+                    case 3:
+                        GetCaster()->CastSpell(GetCaster(), 93896, true);
+                        break;
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_silverlaine_summon_worgen_spirit_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_silverlaine_summon_worgen_spirit_SpellScript();
         }
 };
-
 
 void AddSC_boss_baron_silverlaine()
 {

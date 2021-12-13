@@ -1,444 +1,594 @@
-/*
-    Dungeon : Stormstout Brewery 85-87
-    Boss: Ook-Ook
-	www.pandawow.ir
-	stefan2008@ymail.com
-	it's a work of me and my friend
-*/
-
-#include "ObjectMgr.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
-#include "CreatureTextMgr.h"
-#include "SpellScript.h"
-#include "SpellAuras.h"
-#include "SpellAuraEffects.h"
-#include "Player.h"
-#include "Vehicle.h"
-
 #include "stormstout_brewery.h"
-
-enum Yells
-{
-    SAY_INTRO                    = 0, // Who crashing Ook party!? Ook ook ook...
-    SAY_AGGRO                    = 1, // Me gonna ook you in the ooker!
-    SAY_KILL                     = 2, // In the ooker!
-    SAY_BANANAS                  = 3, // 0 - Get Ooking party started! ; 1 - Come on and get your Ook on! ; 2 - We're gonna Ook all night!
-    SAY_DEATH                    = 4  // Ook ! Oooook !
-};
-
-#define ANN_BANANAS "Ook-Ook is Going Bananas! More barrels are coming!"
+#include "Vehicle.h"
 
 enum Spells
 {
-    // Boss
-    SPELL_GROUND_POUND           = 106807, // Aura.
-    SPELL_GOING_BANANAS          = 106651, // Aura.
-    SPELL_GOING_BANANAS_DUMMY    = 115978,
+    SPELL_BARREL_EXPLOSION_HOSTILE = 106769,
+    SPELL_BARREL_EXPLOSION_PLAYER  = 107016,
 
-    // NPCs
-    SPELL_BARREL_COSMETIC        = 106647, // Visual spell, triggers 106672 dummy each 300 ms.
+    SPELL_FORCECAST_BARREL_DROP    = 122385,
+    SPELL_CANCEL_BARREL_AURA       = 94465,
+    SPELL_ROLLING_BARREL_COSMETIC  = 106647,
+    SPELL_BARREL_TOSS              = 106847,
 
-    SPELL_BARREL_EXPLOSION       = 107016, // Explosion on players. Triggered by 115868 periodic aura.
-    SPELL_BARREL_EXPLOSION_O     = 106784, // Explosion on Ook-Ook. Triggered by 115875, triggered by 115907 periodic aura.
+    SPELL_BARREL_PERIODIC_PLAYER   = 115868,
+    SPELL_BARREL_PERIODIC_OOK      = 106784,
+    SPELL_BARREL_PERIODIC_HOSTILE  = 106768,
 
-    SPELL_BARREL_EXPLOSION_M_O   = 106769, // Explosion on monkeys (eff 0) && Ook-Ook (eff 1). Triggered by 106768 periodic aura.
-    SPELL_BARREL_RIDE            = 106614, // Vehicle ride spell, triggers 106768, triggering 106769.
-    SPELL_FORCECAST_BARREL_DROP  = 122385, // Triggers SPELL_BARREL_DROP.
-    SPELL_BARREL_DROP            = 122376  // Jump spell for Barrel NPC.
+    SPELL_BARREL_RIDE              = 106614,
+
+    SPELL_GOING_BANANAS            = 106651,
+    SPELL_GROUND_POUND             = 106807,
 };
 
-enum Events
+static const Position ookJumpPos = { -755.68f, 1351.83f, 146.92f, 1.82f };
+static const Position barrelPos[] =
 {
-    // Boss
-    EVENT_GROUND_POUND           = 1,
-    EVENT_GOING_BANANAS,
-
-    // NPCs
-    EVENT_EXPLODE
+    { -733.33f, 1372.51f, 146.73f, 4.66f },
+    { -777.73f, 1357.66f, 147.79f, 1.64f }
 };
 
-enum GoingBananasStates
+bool CheckIfAgainstUnit(uint64 casterGUID)
 {
-    DONE_NONE              = 0, // No casts done.
-    DONE_90                = 1, // First cast done.
-    DONE_60                = 2, // Second cast done.
-    DONE_30                = 3  // All casts done.
-};
+    Unit* owner = ObjectAccessor::FindUnit(casterGUID);
+
+    if (!owner)
+        return false;
+
+    if (Unit* bunny = owner->SelectNearbyTarget(nullptr, 3.f)) // General purpose bunny JMF
+        if (bunny->ToCreature() && bunny->ToCreature()->GetEntry() == NPC_BARREL_TOSS_BUNNY)
+            return true;
+
+    if (Unit* bunny = GetClosestCreatureWithEntry(owner, NPC_BARREL_TOSS_BUNNY, 10.f))
+        if (owner->GetDistance(bunny) < 3.3f)
+            return true;
+
+    if (Player* itr = owner->FindNearestPlayer(1.0f))
+        if (owner->GetDistance(itr) < 3.0f)
+            if (!itr->IsOnVehicle() || !owner->GetCharmer())
+                return true;
+
+    if (Unit* ookOok = GetClosestCreatureWithEntry(owner, NPC_OOK_OOK, 100.0f, true))
+        if (owner->GetDistance(ookOok) < 3.0f)
+            return true;
+
+    return false;
+}
 
 class boss_ook_ook : public CreatureScript
 {
     public:
         boss_ook_ook() : CreatureScript("boss_ook_ook") { }
 
+        enum Creatures
+        {
+            NPC_HOZEN_HOLLERER          = 56783,
+            NPC_ROLLING_BARREL          = 56682
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_INTROCHECK,
+            EVENT_GOING_BANANAS,
+            EVENT_GROUND_POUND,
+            EVENT_BARREL_TOSS,
+            EVENT_GROUND_POUND_CANCEL,
+        };
+
+        enum Talks
+        {
+            TALK_INTRO,
+            TALK_AGGRO,
+            TALK_SPELL,
+            EMOTE_GOING_BANANAS,
+            TALK_DEATH
+        };
+
         struct boss_ook_ook_AI : public BossAI
         {
-            boss_ook_ook_AI(Creature* creature) : BossAI(creature, DATA_OOKOOK_EVENT), summons(me)
+            boss_ook_ook_AI(Creature* creature) : BossAI(creature, DATA_OOK_OOK) { }
+
+            bool introDone, initializedBarrels;
+            uint64 targetGuid;
+
+            void InitializeAI() override
             {
-                instance = creature->GetInstanceScript();
+                me->setActive(true);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->SetReactState(REACT_PASSIVE);
+                introDone = false;
+                initializedBarrels = false;
+                events.ScheduleEvent(EVENT_INTROCHECK, 3000);
+
+                if (instance && instance->GetBossState(DATA_OOK_OOK) == SPECIAL)
+                    me->AI()->DoAction(0);
             }
 
-            InstanceScript* instance;
-            EventMap events;
-            SummonList summons;
-            uint8 goingBananasDone;
-            bool summonedBarrels; // For Going Bananas phasesAmin.
-
-            void IsSummonedBy(Unit* /*summoner*/)
+            void Reset() override
             {
-                Talk(SAY_INTRO);
-                Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-                summonedBarrels = false;
-
-                if (instance)
-                    instance->SetData(DATA_OOKOOK_EVENT, NOT_STARTED);
-
-                goingBananasDone = DONE_NONE;
-
                 _Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-            {
-                Talk(SAY_AGGRO);
+                events.Reset();
 
                 if (instance)
-                {
-                    instance->SetData(DATA_OOKOOK_EVENT, IN_PROGRESS);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me); // Add
-                }
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+            }
 
-                events.ScheduleEvent(EVENT_GROUND_POUND, 10000);
+            void HandleRemoveHollers()
+            {
+                std::list<Creature*> hollers;
+                GetCreatureListWithEntryInGrid(hollers, me, NPC_HOZEN_HOLLERER, 150.0f);
 
+                if (!hollers.empty())
+                    for (auto&& itr : hollers)
+                        itr->DespawnOrUnsummon();
+            }
+
+            void StartIntro()
+            {
+                introDone = true;
+                events.CancelEvent(EVENT_INTROCHECK);
+
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+                me->SetReactState(REACT_AGGRESSIVE);
+
+                DoAction(1);
+
+                Talk(TALK_INTRO);
+                me->GetMotionMaster()->MoveJump(ookJumpPos.GetPositionX(), ookJumpPos.GetPositionY(), ookJumpPos.GetPositionZ(), 25.0f, 25.0f);
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->SetHomePosition(ookJumpPos);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
                 _EnterCombat();
-            }
 
-            void KilledUnit(Unit* victim)
-            {
-                if (victim->GetTypeId() == TYPEID_PLAYER)
-                    Talk(SAY_KILL);
-            }
+                Talk(TALK_AGGRO);
 
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
+                events.ScheduleEvent(EVENT_GOING_BANANAS, 2000);
+                events.ScheduleEvent(EVENT_GROUND_POUND, (8000, 14000));
 
                 if (instance)
-                {
-                    instance->SetData(DATA_OOKOOK_EVENT, FAIL);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
-                }
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+            }
 
+            void DoAction(int32 actionId) override
+            {
+                if (actionId == 0)
+                    StartIntro();
+                else if (actionId == 1)
+                    events.ScheduleEvent(EVENT_BARREL_TOSS, 1000);
+            }
+
+            float GetNeededHealthPercent() 
+            {
+                if (me->GetAura(SPELL_GOING_BANANAS))
+                    return (90 - ((me->GetAura(SPELL_GOING_BANANAS)->GetStackAmount()) * 30)); // 90, 60 and 30%
+
+                return 90;
+            }
+
+            void EnterEvadeMode() override
+            {
                 _EnterEvadeMode();
-            }
 
-            void JustDied(Unit* /*killer*/)
-            {
-                Talk(SAY_DEATH);
-                summons.DespawnAll();
+                events.Reset();
+
+                me->RemoveAllAuras();
+
+                if (me->HasUnitState(UNIT_STATE_CANNOT_TURN))
+                    me->ClearUnitState(UNIT_STATE_CANNOT_TURN);
 
                 if (instance)
-                {
-                    instance->SetData(DATA_OOKOOK_EVENT, DONE);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
-                }
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
-                _JustDied();
+                me->GetMotionMaster()->MovePoint(4, ookJumpPos);
             }
 
-            void JustSummoned(Creature* summon)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                summons.Summon(summon);
-                summon->setActive(true);
-
-		        if (me->isInCombat())
-                    summon->SetInCombatWithZone();
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
+                if (type != POINT_MOTION_TYPE)
                     return;
 
+                if (pointId == 4)
+                    JustReachedHome();
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+
+                HandleRemoveHollers();
+            }
+
+            void MoveInLineOfSight(Unit* who) override
+            {
+                ScriptedAI::MoveInLineOfSight(who);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
                 events.Update(diff);
 
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                // Set Going Bananas phases execution.
-                if (me->HealthBelowPct(91) && goingBananasDone == DONE_NONE || me->HealthBelowPct(61) && goingBananasDone == DONE_90 || me->HealthBelowPct(31) && goingBananasDone == DONE_60)
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    events.ScheduleEvent(EVENT_GOING_BANANAS, 1000);
-                    goingBananasDone++;
-                }
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_GROUND_POUND:
-                            DoCast(me, SPELL_GROUND_POUND);
-                            events.ScheduleEvent(EVENT_GROUND_POUND, DUNGEON_MODE(10000, 7000));
-                            break;
-
                         case EVENT_GOING_BANANAS:
-                            me->MonsterTextEmote(ANN_BANANAS, NULL, true);
-                            Talk(SAY_BANANAS);
-                            summonedBarrels = false;
-                            DoCast(me, SPELL_GOING_BANANAS);
+                            if (me->GetHealthPct() < GetNeededHealthPercent())
+                            {
+                                DoCast(SPELL_GOING_BANANAS);
+                                Talk(TALK_SPELL);
+                                Talk(EMOTE_GOING_BANANAS);
+                            }
+                            events.ScheduleEvent(EVENT_GOING_BANANAS, 2000);
                             break;
-
-                        default: break;
+                        case EVENT_GROUND_POUND:
+                            if (Unit* vict = me->GetVictim())
+                            {
+                                targetGuid = vict->GetGUID();
+                                me->PrepareChanneledCast(me->GetAngle(vict), SPELL_GROUND_POUND);
+                            }
+                            Talk(TALK_SPELL);
+                            events.ScheduleEvent(EVENT_GROUND_POUND_CANCEL, 5 * IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_GROUND_POUND, urand(10000, 14000));
+                            break;
+                        case EVENT_GROUND_POUND_CANCEL:
+                            me->RemoveChanneledCast(targetGuid);
+                            break;
                     }
                 }
+
+                if (!UpdateVictim())
+                    return;
 
                 DoMeleeAttackIfReady();
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new boss_ook_ook_AI(creature);
         }
 };
 
-// Brew Barrel 56682.
 class npc_barrel : public CreatureScript
 {
     public:
         npc_barrel() : CreatureScript("npc_barrel") { }
 
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_EXPLOSION,
+            EVENT_MOVE,
+            EVENT_EXPLOSION_BREAK,
+        };
+
         struct npc_barrel_AI : public ScriptedAI
         {
-            npc_barrel_AI(Creature* creature) : ScriptedAI(creature) { }
+            npc_barrel_AI(Creature* creature) : ScriptedAI(creature) {}
 
-            void Reset()
+            uint64 playerGuid;
+            EventMap events;
+            bool initiate;
+
+            void IsSummonedBy(Unit* summoner) override
             {
                 me->SetReactState(REACT_PASSIVE);
-                me->AddAura(SPELL_BARREL_COSMETIC, me);
-                me->SetSpeed(MOVE_WALK, 0.7f);
-                me->SetSpeed(MOVE_RUN, 0.7f);
-
-                float x, y, z;
-                me->GetClosePoint(x, y, z, me->GetObjectSize() / 3, 40.0f);
-                me->GetMotionMaster()->MovePoint(1, x, y, z);
+                me->AddAura(SPELL_ROLLING_BARREL_COSMETIC, me);
+                me->SetSpeed(MOVE_WALK, 0.85f);
+                me->SetSpeed(MOVE_RUN, 0.85f);
+                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                Move();
+                initiate = false;
+                events.ScheduleEvent(EVENT_EXPLOSION_BREAK, 2000);
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void OnSpellClick(Unit* clicker, bool& result) override
             {
-                if (!me->isAlive() || type != POINT_MOTION_TYPE || id != 1)
-                    return;
+                if (clicker)
+                    clicker->CastSpell(me, SPELL_BARREL_RIDE, false);
 
-                events.ScheduleEvent(EVENT_EXPLODE, 500);
+                me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
             }
 
-            void UpdateAI(const uint32 diff)
+            void Move()
             {
-                if (CheckIfAgainstWall() || CheckIfAgainstPlayer())
-                    DoExplode(true);
-                else if (CheckIfAgainstOokOok())
-                    DoExplode(false);
+                float x = 0, y = 0;
+                GetPositionWithDistInOrientation(me, 5.0f, me->GetOrientation(), x, y);
+
+                me->GetMotionMaster()->MovePoint(100, x, y, me->GetPositionZ());
+
+                events.ScheduleEvent(EVENT_MOVE, 300);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (CheckIfAgainstUnit(me->GetGUID()) && initiate)
+                    DoExplode();
 
                 events.Update(diff);
 
-                while(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_EXPLODE:
-                            DoExplode(true);
+                        case EVENT_MOVE:
+                            Move();
                             break;
-
-                        default: break;
+                        case EVENT_EXPLOSION_BREAK:
+                            initiate = true;
+                            break;
                     }
                 }
             }
 
-        // Particular functions here.
+            // Particular functions here.
         private:
-            bool CheckIfAgainstWall()
+            void DoExplode()
             {
-                float x, y, z;
-                me->GetClosePoint(x, y, z, me->GetObjectSize() / 3, 5.0f);
-                if (!me->IsWithinLOS(x, y, me->GetPositionZ()))
-                    return true;
+                DoCast(SPELL_BARREL_EXPLOSION_HOSTILE);
+                DoCast(SPELL_BARREL_EXPLOSION_PLAYER);
 
-                return false;
-            }
-
-            bool CheckIfAgainstOokOok()
-            {
-                if (me->FindNearestCreature(BOSS_OOKOOK, 1.0f, true))
-                    return true;
-
-                return false;
-            }
-
-            bool CheckIfAgainstPlayer()
-            {
-                if (Player* nearPlayer = me->FindNearestPlayer(1.0f))
-                    if (nearPlayer->IsWithinDistInMap(me, 1.0f))
-                    return true;
-
-                return false;
-            }
-
-            void DoExplode(bool onPlayer = true)
-            {
-                if (onPlayer) // On players.
-                    DoCast(me, SPELL_BARREL_EXPLOSION);
-                else // On Ook-Ook.
-                {
-                    if (Vehicle* barrel = me->GetVehicleKit())
-                        barrel->RemoveAllPassengers();
-
-                    DoCast(me, SPELL_BARREL_EXPLOSION_O);
-                }
-
-                me->DespawnOrUnsummon(200);
+                me->Kill(me);
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
             return new npc_barrel_AI(creature);
         }
 };
 
-// Going Bananas 115978.
-class spell_ook_ook_going_bananas_summon : public SpellScriptLoader
-{
-public :
-    spell_ook_ook_going_bananas_summon() : SpellScriptLoader("spell_ook_ook_going_bananas_summon") { }
-
-    class spell_ook_ook_going_bananas_summon_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_ook_ook_going_bananas_summon_SpellScript)
-
-        bool Validate(const SpellInfo* spellInfo)
-        {
-            if (!sSpellMgr->GetSpellInfo(SPELL_GOING_BANANAS_DUMMY))
-                return false;
-
-            return true;
-        }
-
-        void HandleDummy(SpellEffIndex effIndex) // This comes periodic, so only do it once per phase.
-        {
-            if (GetCaster() && GetCaster()->ToCreature())
-            {
-                if (CAST_AI(boss_ook_ook::boss_ook_ook_AI, GetCaster()->ToCreature()->AI())->summonedBarrels == false)
-                {
-                    for (uint8 i = 0; i < 6; i++)
-                        if (Creature* OokOok = GetCaster()->ToCreature())
-                            OokOok->SummonCreature(NPC_OOK_BARREL, OokOok->GetPositionX() + frand(-10.0f, 10.0f), OokOok->GetPositionY() + frand(-10.0f, 10.0f), OokOok->GetPositionZ() + 1.0f, frand(0.0f, 6.0f), TEMPSUMMON_MANUAL_DESPAWN);
-                    CAST_AI(boss_ook_ook::boss_ook_ook_AI, GetCaster()->ToCreature()->AI())->summonedBarrels = true;
-                }
-            }
-        }
-
-        void Register()
-        {
-            OnEffectLaunch += SpellEffectFn(spell_ook_ook_going_bananas_summon_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_ook_ook_going_bananas_summon_SpellScript();
-    }
-};
-
-class PositionCheck : public std::unary_function<Unit*, bool>
+class npc_hozen_hollerer : public CreatureScript
 {
     public:
-        explicit PositionCheck(Unit* _caster) : caster(_caster) { }
-        bool operator()(WorldObject* object)
-        {
-             return !caster->HasInArc(M_PI / 6, object);
-        }
+        npc_hozen_hollerer() : CreatureScript("npc_hozen_hollerer") { }
 
-    private:
-        Unit* caster;
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_BARREL_TOSS
+        };
+
+        enum Spells
+        {
+            SPELL_BARREL_TOSS       = 106847
+        };
+
+        struct npc_hozen_hollererAI : public ScriptedAI
+        {
+            npc_hozen_hollererAI(Creature* creature) : ScriptedAI(creature) {}
+
+            EventMap events;
+            InstanceScript* instance;
+
+            void InitializeAI() override
+            {
+                instance = me->GetInstanceScript();
+                events.ScheduleEvent(EVENT_BARREL_TOSS, 1000);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+            }
+
+            void DoCastBarrel()
+            {
+                float x, y, z;
+
+                GetPositionWithDistInOrientation(me, frand(5.0f, 10.0f), me->GetOrientation(), x, y);
+                z = 146.79f;
+
+                me->CastSpell(x, y, z, SPELL_BARREL_TOSS, false);
+            }
+
+            uint32 GetBarrelTimer() const
+            {
+                if (instance)
+                    if (Unit* ookOok = ObjectAccessor::GetUnit(*me, instance->GetData64(DATA_OOK_OOK)))
+                        if (ookOok->GetAura(SPELL_GOING_BANANAS))
+                        {
+                            switch (ookOok->GetAura(SPELL_GOING_BANANAS)->GetStackAmount())
+                            {
+                                case 1:
+                                    return urand(8000, 12000);
+                                case 2:
+                                    return urand(6000, 10000);
+                                case 3:
+                                    return urand(4000, 7000);
+                            }
+                        }
+
+                return urand(10000, 14000);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BARREL_TOSS:
+                            DoCastBarrel();
+                            events.ScheduleEvent(EVENT_BARREL_TOSS, GetBarrelTimer());
+                            break;
+                    }
+                }
+            }
+
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_hozen_hollererAI(creature);
+        }
 };
 
-// Ground Pound triggered spell 106808.
-class spell_ook_ook_ground_pound_dmg : public SpellScriptLoader
-{
-public:
-    spell_ook_ook_ground_pound_dmg() : SpellScriptLoader("spell_ook_ook_ground_pound_dmg") { }
-
-    class spell_ook_ook_ground_pound_dmgSpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_ook_ook_ground_pound_dmgSpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            targets.remove_if(PositionCheck(GetCaster()));
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ook_ook_ground_pound_dmgSpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_CONE_ENEMY_104);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_ook_ook_ground_pound_dmgSpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_CONE_ENEMY_104);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_ook_ook_ground_pound_dmgSpellScript();
-    }
-};
-
-// Barrel ride 106614.
 class spell_ook_ook_barrel_ride : public SpellScriptLoader
 {
     public:
-        spell_ook_ook_barrel_ride() :  SpellScriptLoader("spell_ook_ook_barrel_ride") { }
+        spell_ook_ook_barrel_ride() : SpellScriptLoader("spell_ook_ook_barrel_ride") { }
 
         class spell_ook_ook_barrel_ride_AuraScript : public AuraScript
         {
             PrepareAuraScript(spell_ook_ook_barrel_ride_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnApply(const AuraEffect*  /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
-                if (GetTarget())
+                if (Unit* barrelBase = GetTarget())
                 {
-                    if (Unit* barrelBase = GetTarget())
+                    if (Unit* caster = GetCaster())
                     {
-                        barrelBase->GetMotionMaster()->MovementExpired();
-                        barrelBase->GetMotionMaster()->Clear();
-                        // barrelBase->GetMotionMaster()->MoveIdle();
+                        //barrelBase->SetCharmedBy(GetCaster(), CHARM_TYPE_VEHICLE);
+                        caster->CastSpell(barrelBase, SPELL_CANCEL_BARREL_AURA, true);
+                        caster->SetFlag(UNIT_FIELD_FLAGS2, UNIT_FLAG2_FORCE_MOVEMENT);
+                        caster->CastSpell(caster, SPELL_ROLLING_BARREL_COSMETIC, true);
                     }
                 }
             }
 
-            void Register()
+            // unused atm
+            void OnRemove(const AuraEffect*  /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
-                OnEffectApply += AuraEffectApplyFn(spell_ook_ook_barrel_ride_AuraScript::OnApply, EFFECT_0, SPELL_AURA_CONTROL_VEHICLE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+                Unit* caster = GetCaster();
+                Unit* target = GetTarget();
+
+                if (caster && target)
+                {
+                    caster->RemoveFlag(UNIT_FIELD_FLAGS2, UNIT_FLAG2_FORCE_MOVEMENT);
+                    caster->RemoveAurasDueToSpell(SPELL_ROLLING_BARREL_COSMETIC);
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectApply += AuraEffectApplyFn(spell_ook_ook_barrel_ride_AuraScript::OnApply, EFFECT_0, SPELL_AURA_CONTROL_VEHICLE, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_ook_ook_barrel_ride_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_CONTROL_VEHICLE, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_ook_ook_barrel_ride_AuraScript();
         }
 };
 
+// Barrel Hostile 107351
+class spell_barrel_hostile : public SpellScriptLoader
+{
+    public:
+        spell_barrel_hostile() : SpellScriptLoader("spell_barrel_hostile") { }
+
+        class spell_barrel_hostile_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_barrel_hostile_SpellScript);
+
+            void SelectTargets(std::list<WorldObject*>& targets)
+            {
+                targets.remove_if([=](WorldObject* obj) { return obj && (obj->ToPlayer() || obj->GetEntry() == NPC_BARREL_TOSS_BUNNY); });
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_barrel_hostile_SpellScript::SelectTargets, EFFECT_ALL, TARGET_UNIT_SRC_AREA_ENTRY);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_barrel_hostile_SpellScript();
+        }
+};
+
+class spell_ground_pound : public SpellScriptLoader
+{
+    public:
+        spell_ground_pound() : SpellScriptLoader("spell_ground_pound") { }
+
+        class spell_ground_pound_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_ground_pound_AuraScript);
+
+            void HandleOnApply(const AuraEffect* aurEff, AuraEffectHandleModes mode)
+            {
+                GetCaster()->AddUnitState(UNIT_STATE_CANNOT_TURN);
+            }
+
+            void HandleOnPeriodic(AuraEffect const* aurEff)
+            {
+                if (Unit* owner = GetOwner()->ToUnit())
+                {
+                    PreventDefaultAction();
+                    owner->CastSpell(owner, 106808, true);
+                }
+            }
+
+            void HandleOnRemove(const AuraEffect* aurEff, AuraEffectHandleModes mode)
+            {
+                GetCaster()->ClearUnitState(UNIT_STATE_CANNOT_TURN);
+            }
+
+            void Register() override
+            {
+                OnEffectApply += AuraEffectApplyFn(spell_ground_pound_AuraScript::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_ground_pound_AuraScript::HandleOnRemove, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+                //OnEffectPeriodic += AuraEffectPeriodicFn(spell_ground_pound_AuraScript::HandleOnPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_ground_pound_AuraScript();
+        }
+};
+
+// Brew Barrel Ride 106614
+class spell_brew_barrel_ride : public SpellScriptLoader
+{
+    public:
+        spell_brew_barrel_ride() : SpellScriptLoader("spell_brew_barrel_ride") { }
+
+        class spell_brew_barrel_ride_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_brew_barrel_ride_AuraScript);
+
+            void OnTrigger(AuraEffect const* /*aurEff*/)
+            {
+                if (Unit* caster = GetOwner()->ToUnit())
+                    if (CheckIfAgainstUnit(caster->GetGUID()))
+                    {
+                        caster->CastSpell(caster, SPELL_BARREL_EXPLOSION_HOSTILE, false);
+                        caster->CastSpell(caster, SPELL_BARREL_EXPLOSION_PLAYER, false);
+                        caster->Kill(caster);
+                    }
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_brew_barrel_ride_AuraScript::OnTrigger, EFFECT_2, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_brew_barrel_ride_AuraScript();
+        }
+};
+
 void AddSC_boss_ook_ook()
 {
-	new boss_ook_ook();
+    new boss_ook_ook();
     new npc_barrel();
-    new spell_ook_ook_going_bananas_summon();
+    new npc_hozen_hollerer();
     new spell_ook_ook_barrel_ride();
-    new spell_ook_ook_ground_pound_dmg();
+    new spell_barrel_hostile();
+    new spell_ground_pound();
+    new spell_brew_barrel_ride();
 }

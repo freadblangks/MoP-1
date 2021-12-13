@@ -14,7 +14,6 @@ enum ScriptTexts
 enum Spells
 {
     SPELL_VOODOO_BOLT   = 96346,
-    SPELL_VOODOO_BOLT_H = 96347,
     SPELL_ZANZIL_FIRE   = 96914,
     SPELL_ZANZIL_FIRE1  = 96916,
     SPELL_ZANZIL_RES1   = 96319, // zombie
@@ -80,7 +79,7 @@ class boss_zanzil : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
             }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
@@ -88,7 +87,7 @@ class boss_zanzil : public CreatureScript
                     //me->SummonCreature(NPC_ZANZIL_BERSERKER, berserkerPos[i]);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 events.ScheduleEvent(EVENT_VOODOO_BOLT, urand(3000, 5000));
@@ -98,28 +97,27 @@ class boss_zanzil : public CreatureScript
                 instance->SetBossState(DATA_ZANZIL, IN_PROGRESS); 
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
             }   
             
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
             
-            void SpellHit(Unit* caster, SpellInfo const* spell)
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spell) override
             {
                 if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL))
-                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_VOODOO_BOLT ||
-                        me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_VOODOO_BOLT_H)
+                    if (me->GetCurrentSpell(CURRENT_GENERIC_SPELL)->m_spellInfo->Id == SPELL_VOODOO_BOLT)
                         for (uint8 i = 0; i < 3; ++i)
                             if (spell->Effects[i].Effect == SPELL_EFFECT_INTERRUPT_CAST)
                                 me->InterruptSpell(CURRENT_GENERIC_SPELL);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -165,32 +163,25 @@ class boss_zanzil : public CreatureScript
                             break;
                     }
                 }
-                
 
                 DoMeleeAttackIfReady();
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new boss_zanzilAI(creature);
+            return GetInstanceAI<boss_zanzilAI>(creature);
         }
 };
 
 class npc_zanzil_berserker : public CreatureScript
 {
     public:
-
-        npc_zanzil_berserker() : CreatureScript("npc_zanzil_berserker") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_zanzil_berserkerAI(pCreature);
-        }
+        npc_zanzil_berserker() : CreatureScript("npc_zanzil_berserker") { }
 
         struct npc_zanzil_berserkerAI : public ScriptedAI
         {
-            npc_zanzil_berserkerAI(Creature* pCreature) : ScriptedAI(pCreature) 
+            npc_zanzil_berserkerAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -212,7 +203,7 @@ class npc_zanzil_berserker : public CreatureScript
             uint32 spellTimer;
             uint32 pursuitTimer;
 
-            void Reset()
+            void Reset() override
             {
                 bSpell = true;
                 spellTimer = 0;
@@ -220,7 +211,7 @@ class npc_zanzil_berserker : public CreatureScript
                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_IMMUNE_TO_PC);
             }
             
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -237,25 +228,29 @@ class npc_zanzil_berserker : public CreatureScript
                 }
 
                 if (bSpell)
-                    if (Unit* pTarget = me->SelectNearbyTarget())
+                    if (Unit* target = me->SelectNearbyTarget())
                     {
                         bSpell = false;
-                        DoCast(pTarget, urand(0, 1)? SPELL_KNOCK_AWAY: SPELL_THUNDERCLAP);
+                        DoCast(target, urand(0, 1)? SPELL_KNOCK_AWAY: SPELL_THUNDERCLAP);
                     }
 
                 if (pursuitTimer <= diff)
                 {
                     pursuitTimer = 20000;
-                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                        DoCast(pTarget, SPELL_PURSUIT);
+                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                        DoCast(target, SPELL_PURSUIT);
                 }
                 else
                     pursuitTimer -= diff;
 
                 DoMeleeAttackIfReady();
             }
-
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_zanzil_berserkerAI>(creature);
+        }
 };
 
 class spell_zanzil_pursuit : public SpellScriptLoader
@@ -266,7 +261,6 @@ class spell_zanzil_pursuit : public SpellScriptLoader
         class spell_zanzil_pursuit_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_zanzil_pursuit_SpellScript);
-            
 
             void HandleScript(SpellEffIndex effIndex)
             {
@@ -281,13 +275,13 @@ class spell_zanzil_pursuit : public SpellScriptLoader
                 }
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_zanzil_pursuit_SpellScript::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_zanzil_pursuit_SpellScript();
         }
@@ -302,13 +296,13 @@ class spell_zanzil_fire : public SpellScriptLoader
         {
             PrepareAuraScript(spell_zanzil_fire_AuraScript);
             
-            bool Load()
+            bool Load() override
             {
                 count = 0;
                 return true;
             }
 
-            void PeriodicTick(constAuraEffectPtr aurEff)
+            void PeriodicTick(AuraEffect const* aurEff)
             {
                 if (!GetCaster())
                     return;
@@ -326,7 +320,7 @@ class spell_zanzil_fire : public SpellScriptLoader
                 GetCaster()->CastSpell(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), SPELL_ZANZIL_FIRE1, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_zanzil_fire_AuraScript::PeriodicTick, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
             }
@@ -335,7 +329,7 @@ class spell_zanzil_fire : public SpellScriptLoader
             uint8 count;
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_zanzil_fire_AuraScript();
         }
@@ -349,7 +343,6 @@ class spell_frostburn_formula : public SpellScriptLoader
         class spell_frostburn_formula_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_frostburn_formula_SpellScript);
-            
 
             void HandleScript(SpellEffIndex effIndex)
             {
@@ -360,13 +353,13 @@ class spell_frostburn_formula : public SpellScriptLoader
                 GetHitUnit()->CastSpell(GetHitUnit(), SPELL_HYPPOTHERMIA, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_frostburn_formula_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_frostburn_formula_SpellScript();
         }

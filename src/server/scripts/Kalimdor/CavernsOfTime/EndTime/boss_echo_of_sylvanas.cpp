@@ -16,9 +16,9 @@ enum Spells
     SPELL_UNHOLY_SHOT                   = 101411,
     SPELL_BLACK_ARROW                   = 101404,
     SPELL_WRACKING_PAIN_ANY             = 100865,
-    //                                = 100862,
     SPELL_WRACKING_PAIN_AURA            = 101258,
     SPELL_WRACKING_PAIN_DMG             = 101257,
+    SPELL_WRACKING_PAIN_BACK            = 101221,
     SPELL_DEATH_GRIP_AOE                = 101397,
     SPELL_DEATH_GRIP                    = 101987,
     SPELL_SUMMON_GHOULS                 = 102603, // before combat
@@ -27,6 +27,7 @@ enum Spells
     SPELL_CALL_OF_THE_HIGHBORNE_1       = 100867, // visual spawn ghouls
     SPELL_CALL_OF_THE_HIGHBORNE_2       = 105766, // visual back ghouls
     SPELL_CALL_OF_THE_HIGHBORNE_3       = 102581, // visual ?
+    SPELL_CALL_OF_THE_HIGHBORNE_4       = 100862,
     SPELL_SPAWN_GHOUL                   = 101200,
     SPELL_SEEPING_SHADOWS_DUMMY         = 103175,
     SPELL_SEEPING_SHADOWS_AURA          = 103182,
@@ -37,6 +38,9 @@ enum Spells
     SPELL_JUMP_VEHICLE                  = 101528,
     SPELL_PERMANENT_FEIGH_DEATH         = 96733,
     SPELL_SHRINK                        = 101318,
+    SPELL_BLIGHTED_ARROWS_SPAWN         = 101547,
+    SPELL_BLIGHTED_ARROWS               = 101401,
+    SPELL_BLIGHTED_ARROWS_EXPLOSION     = 100763,
 };
 
 enum Events
@@ -49,49 +53,45 @@ enum Events
     EVENT_TELEPORT_1                = 6,
     EVENT_SPAWN_GHOUL               = 7,
     EVENT_MOVE_GHOUL                = 8,
-    EVENT_FALL                      = 0,
-    EVENT_START                     = 10,
+    EVENT_START                     = 9,
+    EVENT_CHECK_OUT_OF_BOUNDS       = 10,
+    EVENT_GHOUL_VISUAL_UPDATE_SCALE = 11,
+    EVENT_BLIGHTED_ARROWS_PREP      = 12,
+    EVENT_BLIGHTED_ARROWS_JUMP      = 13,
+    EVENT_BLIGHTED_ARROWS_VOLLEY    = 14,
+    EVENT_BLIGHTED_ARROWS_FALL      = 15,
+    EVENT_BLIGHTED_ARROWS_END       = 16,
 };
 
 enum Adds
 {
-    NPC_GHOUL_1         = 54197,
+    NPC_GHOUL_VISUAL    = 54197,
     NPC_BRITTLE_GHOUL   = 54952,
     NPC_RISEN_GHOUL     = 54191,
     NPC_JUMP            = 54385,
+    NPC_BLIGHTED_ARROW  = 54403,
 };
 
 enum Others
 {
-    DATA_GUID           = 1,
-    POINT_GHOUL         = 2,
-    ACTION_GHOUL        = 3,
-    ACTION_KILL_GHOUL   = 4,
+    DATA_GUID                   = 1,
+    POINT_GHOUL                 = 2,
+    ACTION_GHOUL                = 3,
+    ACTION_KILL_GHOUL           = 4,
+    ACTION_GHOUL_VISUAL_AURA    = 5,
+    ACTION_GHOUL_VISUAL_MOVE    = 6,
 };
 
-const Position centerPos = {3845.51f, 909.318f, 56.1463f, 1.309f};
-
-const Position ghoulPos[8] =
-{
-    {3810.03f, 914.043f, 55.3974f, 0.0f},
-    {3818.82f, 892.83f, 56.0076f, 0.7854f},
-    {3840.03f, 884.043f, 56.0712f, 1.5708f},
-    {3861.24f, 892.83f, 56.0712f, 2.35619f},
-    {3870.03f, 914.043f, 56.0277f, 3.14159f},
-    {3861.24f, 935.256f, 55.9664f, 3.92699f},
-    {3840.03f, 944.043f, 55.9664f, 4.71239f},
-    {3818.82f, 935.256f, 56.0161f, 5.49779f}
-};
+const Position centerPos = {3839.42f, 911.249f, 56.0298f, 1.309f};
+const float spawnDist = 32.8f;
+const float angleOffset = 0;
+const uint8 spawnCount = 8;
+const float spawnAngle = 2 * M_PI / spawnCount;
 
 class boss_echo_of_sylvanas : public CreatureScript
 {
     public:
         boss_echo_of_sylvanas() : CreatureScript("boss_echo_of_sylvanas") { }
-
-         CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_echo_of_sylvanasAI(creature);
-        }
 
         struct boss_echo_of_sylvanasAI : public BossAI
         {
@@ -115,26 +115,28 @@ class boss_echo_of_sylvanas : public CreatureScript
 
             uint8 ghouls;
             uint8 deadghouls;
+            uint64 ghoulGuids[spawnCount];
+            float blightedArrowsAngle;
+            bool autoattackStopped;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+                if (me->GetVehicleBase())
+                    me->ExitVehicle();
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->SetDisableGravity(false);
                 me->SetCanFly(false);
                 ghouls = 0;
                 deadghouls = 0;
+                for (uint8 i = 0; i < spawnCount; ++i)
+                    ghoulGuids[i] = 0;
+                blightedArrowsAngle = 0;
+                autoattackStopped = false;
+                me->GetMap()->SetWorldState(WORLDSTATE_SEVERED_TIES, 0);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
@@ -143,12 +145,12 @@ class boss_echo_of_sylvanas : public CreatureScript
                 Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
                 if (!PlayerList.isEmpty())
                     for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_SYLVANAS, true);
+                        if (Player* player = i->GetSource())
+                            if (me->GetDistance2d(player) <= 150.0f && player->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
+                                DoCast(player, SPELL_ARCHIVED_SYLVANAS, true);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
                 events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(5000, 20000));
@@ -161,13 +163,13 @@ class boss_echo_of_sylvanas : public CreatureScript
                 instance->SetBossState(DATA_ECHO_OF_SYLVANAS, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* victim) override
             {
-                if (who->GetTypeId() == TYPEID_PLAYER)
+                if (victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_GHOUL)
                 {
@@ -176,26 +178,93 @@ class boss_echo_of_sylvanas : public CreatureScript
                     {
                         DoCastAOE(SPELL_SACRIFICE);
                         summons.DespawnEntry(NPC_RISEN_GHOUL);
+                        summons.DespawnEntry(NPC_GHOUL_VISUAL);
                         events.ScheduleEvent(EVENT_START, 2000);
                         ghouls = 0;
                     }
                 }
                 else if (action == ACTION_KILL_GHOUL)
-                    deadghouls++;
+                {
+                    if (++deadghouls >= 2)
+                        me->GetMap()->SetWorldState(WORLDSTATE_SEVERED_TIES, 1);
+                }
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 Talk(SAY_WIPE);
                 DoCast(me, SPELL_SUMMON_GHOULS, true);
             }
 
-            bool AllowAchieve()
+            void SpawnAround(uint32 entry)
             {
-                return deadghouls >= 2; 
+                Unit* _first = NULL;
+                Unit* _prev = NULL;
+                for (uint8 i = 0; i < spawnCount; ++i)
+                {
+                    float x = me->GetPositionX() + cosf(angleOffset + spawnAngle * i) * spawnDist;
+                    float y = me->GetPositionY() + sinf(angleOffset + spawnAngle * i) * spawnDist;
+                    float z = me->GetMap()->GetHeight(x, y, me->GetPositionZ(), false);
+                    if (Creature* summon = me->SummonCreature(entry, x, y, z, me->GetAngle(x, y) + M_PI))
+                    {
+                        if (entry == NPC_RISEN_GHOUL)
+                        {
+                            ghoulGuids[i] = summon->GetGUID();
+                            if (_prev)
+                            {
+                                _prev->CastSpell(summon, SPELL_WRACKING_PAIN_ANY, true);
+                                _prev->GetAI()->SetGUID(summon->GetGUID(), DATA_GUID);
+                                        
+                            }
+                            _prev = summon;
+                            if (i == 0)
+                                _first = summon;
+                        }
+                    }
+                }
+                if (entry == NPC_RISEN_GHOUL)
+                {
+                    if (_first)
+                    {
+                        _prev->CastSpell(_first, SPELL_WRACKING_PAIN_ANY, true);
+                        _prev->GetAI()->SetGUID(_first->GetGUID(), DATA_GUID);
+                    }
+                }
+            }
+            
+            bool IsPlayerOutOfBounds(Player* player)
+            {
+                if (!player || !player->IsInWorld() || !player->IsAlive())
+                    return false;
+
+                float pAngle = me->GetAngle(player);
+                for (uint8 i = 0; i < spawnCount + 1; ++i)
+                {
+                    if (!ghoulGuids[i % spawnCount])
+                        continue;
+
+                    float angle = angleOffset + spawnAngle * i;
+                    if (pAngle < angle - spawnAngle / 2 || pAngle > angle + spawnAngle / 2)
+                        continue;
+
+                    if (Creature* ghoul = ObjectAccessor::GetCreature(*me, ghoulGuids[i % spawnCount]))
+                    {
+                        float dist = me->GetExactDist2d(ghoul);
+                        if (me->GetExactDist2d(player) <= dist)
+                            continue;
+
+                        if (me->GetExactDist2d(player) >= dist + 10 + 20 * (dist / spawnDist))
+                            continue;
+
+                        if (ghoul->IsAlive())
+                            return true;
+                    }
+                }
+
+                return false;
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -210,13 +279,13 @@ class boss_echo_of_sylvanas : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_UNHOLY_SHOT:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_UNHOLY_SHOT);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_UNHOLY_SHOT);
                             events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(10000, 20000));
                             break;
                         case EVENT_SHRIEK_OF_THE_HIGHBORNE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_SHRIEK_OF_THE_HIGHBORNE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_SHRIEK_OF_THE_HIGHBORNE);
                             events.ScheduleEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE, urand(15000, 21000));
                             break;
                         case EVENT_TELEPORT:
@@ -231,8 +300,7 @@ class boss_echo_of_sylvanas : public CreatureScript
                         case EVENT_TELEPORT_1:
                             Talk(SAY_SPELL);
                             DoCast(me, SPELL_CALL_OF_THE_HIGHBORNE, true);
-                            for (uint8 i = 0; i < 8; ++i)
-                                me->SummonCreature(NPC_GHOUL_1, ghoulPos[i]);
+                            SpawnAround(NPC_GHOUL_VISUAL);
                             events.ScheduleEvent(EVENT_DEATH_GRIP, 3000);
                             events.ScheduleEvent(EVENT_SPAWN_GHOUL, 3000);
                             break;
@@ -240,98 +308,159 @@ class boss_echo_of_sylvanas : public CreatureScript
                             DoCastAOE(SPELL_DEATH_GRIP_AOE);
                             break;
                         case EVENT_SPAWN_GHOUL:
-                        {
                             deadghouls = 0;
-                            Unit* _first = NULL;
-                            Unit* _prev = NULL;
-                            for (uint8 i = 1; i < 8; ++i)
-                            {
-                                if (Creature* pGhoul = me->SummonCreature(NPC_RISEN_GHOUL, ghoulPos[i]))
-                                {
-                                    if (_prev)
-                                    {
-                                        _prev->CastSpell(pGhoul, SPELL_WRACKING_PAIN_ANY, true);
-                                        _prev->GetAI()->SetGUID(pGhoul->GetGUID(), DATA_GUID);
-                                        
-                                    }
-                                    _prev = pGhoul;
-                                    if (i == 1)
-                                        _first = pGhoul;
-                                }
-                            }
-                            if (_first)
-                            {
-                                _prev->CastSpell(_first, SPELL_WRACKING_PAIN_ANY, true);
-                                _prev->GetAI()->SetGUID(_first->GetGUID(), DATA_GUID);
-                            }
-                            summons.DespawnEntry(NPC_GHOUL_1);
+                            SpawnAround(NPC_RISEN_GHOUL);
+                            events.ScheduleEvent(EVENT_CHECK_OUT_OF_BOUNDS, 2000);
+                            break;
+                        case EVENT_CHECK_OUT_OF_BOUNDS:
+                        {
+                            Map::PlayerList const& players = instance->instance->GetPlayers();
+                            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                                if (Player* player = itr->GetSource())
+                                    if (IsPlayerOutOfBounds(player))
+                                        player->CastSpell(player, SPELL_WRACKING_PAIN_BACK, true);
+                            events.ScheduleEvent(EVENT_CHECK_OUT_OF_BOUNDS, 1000);
                             break;
                         }
                         case EVENT_START:
                             me->RemoveAura(SPELL_CALL_OF_THE_HIGHBORNE);
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->GetMotionMaster()->MoveChase(me->getVictim());
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
+                            events.CancelEvent(EVENT_CHECK_OUT_OF_BOUNDS);
+                            events.ScheduleEvent(EVENT_TELEPORT, 38000);
+                            events.ScheduleEvent(EVENT_BLIGHTED_ARROWS_PREP, 500);
+                            break;
+                        case EVENT_BLIGHTED_ARROWS_PREP:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                            {
+                                float dist = me->GetExactDist2d(target);
+                                blightedArrowsAngle = me->GetAngle(target);
+                                me->CastSpell(me->GetPositionX() + cosf(blightedArrowsAngle) * (dist - 5), me->GetPositionY() + sinf(blightedArrowsAngle) * (dist - 5), target->GetPositionZ(), SPELL_BLIGHTED_ARROWS_SPAWN, false);
+                                me->CastSpell(me->GetPositionX() + cosf(blightedArrowsAngle) * (dist + 0), me->GetPositionY() + sinf(blightedArrowsAngle) * (dist + 0), target->GetPositionZ(), SPELL_BLIGHTED_ARROWS_SPAWN, false);
+                                me->CastSpell(me->GetPositionX() + cosf(blightedArrowsAngle) * (dist + 5), me->GetPositionY() + sinf(blightedArrowsAngle) * (dist + 5), target->GetPositionZ(), SPELL_BLIGHTED_ARROWS_SPAWN, false);
+
+                                autoattackStopped = true;
+                                me->StopMoving();
+                                me->GetMotionMaster()->Clear();
+                                me->GetMotionMaster()->MoveIdle();
+                                events.ScheduleEvent(EVENT_BLIGHTED_ARROWS_JUMP, 1000);
+                            }
+                            break;
+                        case EVENT_BLIGHTED_ARROWS_JUMP:
+                            if (Unit* jump = me->SummonCreature(NPC_JUMP, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ() + 5, blightedArrowsAngle))
+                                DoCast(jump, SPELL_JUMP_VEHICLE);
+                            events.ScheduleEvent(EVENT_BLIGHTED_ARROWS_VOLLEY, 2000);
+                            break;
+                        case EVENT_BLIGHTED_ARROWS_VOLLEY:
+                            DoCastAOE(SPELL_BLIGHTED_ARROWS);
+                            events.ScheduleEvent(EVENT_BLIGHTED_ARROWS_FALL, 2000);
+                            break;
+                        case EVENT_BLIGHTED_ARROWS_FALL:
+                            if (me->GetVehicleBase())
+                                me->ExitVehicle();
+                            me->GetMotionMaster()->Clear();
+                            me->GetMotionMaster()->MoveFall();
+                            events.ScheduleEvent(EVENT_BLIGHTED_ARROWS_END, 1000);
+                            break;
+                        case EVENT_BLIGHTED_ARROWS_END:
+                            autoattackStopped = false;
+                            me->NearTeleportTo(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation()); // Hack to fix vehicle bugs
+                            me->GetMotionMaster()->MoveChase(me->GetVictim());
                             events.ScheduleEvent(EVENT_UNHOLY_SHOT, urand(5000, 20000));
-                            events.ScheduleEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE, urand(5000, 20000)); 
-                            events.ScheduleEvent(EVENT_TELEPORT, 40000);
+                            events.ScheduleEvent(EVENT_SHRIEK_OF_THE_HIGHBORNE, urand(5000, 20000));
                             break;
                         default:
                             break;
                     }
                 }
 
-                DoMeleeAttackIfReady();
+                if (!autoattackStopped)
+                    DoMeleeAttackIfReady();
             }
         };
+
+         CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_echo_of_sylvanasAI>(creature);
+        }
 };
 
 class npc_echo_of_sylvanas_ghoul : public CreatureScript
 {
     public:
-
         npc_echo_of_sylvanas_ghoul() : CreatureScript("npc_echo_of_sylvanas_ghoul") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_echo_of_sylvanas_ghoulAI : public ScriptedAI
         {
-            return new npc_echo_of_sylvanas_ghoulAI(pCreature);
-        }
-
-        struct npc_echo_of_sylvanas_ghoulAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_sylvanas_ghoulAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_echo_of_sylvanas_ghoulAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                SetCombatMovement(false);
             }
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void IsSummonedBy(Unit* owner)
+            void DoAction(int32 action) override
+            {
+                if (action == ACTION_GHOUL_VISUAL_AURA)
+                    DoCastAOE(SPELL_CALL_OF_THE_HIGHBORNE_2, true);
+                else if (action == ACTION_GHOUL_VISUAL_MOVE)
+                {
+                    me->SetWalk(true);
+                    me->SetCanFly(false);
+                    me->SetSpeed(MOVE_RUN, 0.5f, true);
+                    me->SetSpeed(MOVE_WALK, 0.5f, true);
+                    me->SetSpeed(MOVE_FLIGHT, 0.5f, true);
+                    me->SetSpeed(MOVE_SWIM, 0.265f, true);
+                    me->GetMotionMaster()->MovePoint(POINT_GHOUL, centerPos);
+                    DoCastAOE(SPELL_SHRINK);
+                    //DoCast(me, SPELL_WRACKING_PAIN_AURA, true);
+                    //events.ScheduleEvent(EVENT_GHOUL_VISUAL_UPDATE_SCALE, 1000);
+                }
+            }
+
+            void IsSummonedBy(Unit* /*summoner*/) override
             {
                 DoCast(me, SPELL_CALL_OF_THE_HIGHBORNE_1, true);
             }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_GHOUL_VISUAL_UPDATE_SCALE:
+                            //me->SetObjectScale(0.25f + (me->GetExactDist2d(&centerPos) / spawnDist) * 0.75f);
+                            events.ScheduleEvent(EVENT_GHOUL_VISUAL_UPDATE_SCALE, 1000);
+                            break;
+                    }
+                }
+            }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_echo_of_sylvanas_ghoulAI>(creature);
+        }
 };
 
 class npc_echo_of_sylvanas_risen_ghoul : public CreatureScript
 {
     public:
-
         npc_echo_of_sylvanas_risen_ghoul() : CreatureScript("npc_echo_of_sylvanas_risen_ghoul") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_echo_of_sylvanas_risen_ghoulAI : public ScriptedAI
         {
-            return new npc_echo_of_sylvanas_risen_ghoulAI(pCreature);
-        }
-
-        struct npc_echo_of_sylvanas_risen_ghoulAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_sylvanas_risen_ghoulAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_echo_of_sylvanas_risen_ghoulAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
@@ -346,58 +475,70 @@ class npc_echo_of_sylvanas_risen_ghoul : public CreatureScript
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
                 me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                SetCombatMovement(false);
             }
 
             EventMap events;
             uint64 _guid;
+            uint64 _visualGuid;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
                 _guid = 0;
-                me->SetFloatValue(UNIT_FIELD_BOUNDINGRADIUS, 5.0f);
-                me->SetFloatValue(UNIT_FIELD_COMBATREACH, 5.0f);
+                _visualGuid = 0;
+                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, 5.0f);
+                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, 5.0f);
             }
  
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 me->RemoveAura(SPELL_WRACKING_PAIN_ANY);
-                if (Creature* pTarget = ObjectAccessor::GetCreature(*me, _guid))
-                    pTarget->RemoveAura(SPELL_WRACKING_PAIN_ANY);
+                if (Creature* target = ObjectAccessor::GetCreature(*me, _guid))
+                    target->RemoveAura(SPELL_WRACKING_PAIN_ANY);
                 _guid = 0;
+                if (Creature* target = ObjectAccessor::GetCreature(*me, _visualGuid))
+                    target->DespawnOrUnsummon();
+                _visualGuid = 0;
                 if (Creature* pSylvanas = me->FindNearestCreature(NPC_ECHO_OF_SYLVANAS, 300.0f))
                     pSylvanas->GetAI()->DoAction(ACTION_KILL_GHOUL);
                 me->DespawnOrUnsummon(500);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
-                DoCast(me, SPELL_SEEPING_SHADOWS_DUMMY, true); 
+                DoCast(me, SPELL_SEEPING_SHADOWS_DUMMY, true);
+                if (Creature* ghoulVisual = me->FindNearestCreature(NPC_GHOUL_VISUAL, 10))
+                {
+                    ghoulVisual->GetAI()->DoAction(ACTION_GHOUL_VISUAL_AURA);
+                    _visualGuid = ghoulVisual->GetGUID();
+                }
                 events.ScheduleEvent(EVENT_MOVE_GHOUL, 2000);
             }
             
-            void SetGUID(uint64 guid, int32 type)
+            void SetGUID(uint64 guid, int32 type) override
             {
                 if (type == DATA_GUID)
                     _guid = guid;
             }
 
-            uint64 GetGUID(int32 type)
+            uint64 GetGUID(int32 type) const override
             {
                 if (type == DATA_GUID)
                     return _guid;
+
                 return 0;
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
                 if (type == POINT_MOTION_TYPE)
-                    if (data == POINT_GHOUL)
+                    if (pointId == POINT_GHOUL)
                         if (Unit* pSylvanas = me->FindNearestCreature(NPC_ECHO_OF_SYLVANAS, 300.0f))
                             pSylvanas->GetAI()->DoAction(ACTION_GHOUL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -410,16 +551,54 @@ class npc_echo_of_sylvanas_risen_ghoul : public CreatureScript
                     {
                         case EVENT_MOVE_GHOUL:
                             me->SetWalk(true);
+                            me->SetCanFly(false);
                             me->SetSpeed(MOVE_RUN, 0.5f, true);
                             me->SetSpeed(MOVE_WALK, 0.5f, true);
+                            me->SetSpeed(MOVE_FLIGHT, 0.5f, true);
+                            me->SetSpeed(MOVE_SWIM, 0.265f, true);
                             me->GetMotionMaster()->MovePoint(POINT_GHOUL, centerPos);
-                            //DoCast(me, SPELL_CALL_OF_THE_HIGHBORNE_2, true);
+                            if (Creature* ghoulVisual = me->FindNearestCreature(NPC_GHOUL_VISUAL, 10))
+                                ghoulVisual->GetAI()->DoAction(ACTION_GHOUL_VISUAL_MOVE);
                             DoCast(me, SPELL_WRACKING_PAIN_AURA, true);
                             break;
                     }
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_echo_of_sylvanas_risen_ghoulAI>(creature);
+        }
+};
+
+class npc_echo_of_sylvanas_blighted_arrows : public CreatureScript
+{
+    public:
+        npc_echo_of_sylvanas_blighted_arrows() : CreatureScript("npc_echo_of_sylvanas_blighted_arrows") { }
+
+        struct npc_echo_of_sylvanas_blighted_arrowsAI : public ScriptedAI
+        {
+            npc_echo_of_sylvanas_blighted_arrowsAI(Creature* creature) : ScriptedAI(creature)
+            {
+                SetCombatMovement(false);
+            }
+
+            void SpellHit(Unit* caster, const SpellInfo* spell) override
+            {
+                if (spell->Id != SPELL_BLIGHTED_ARROWS)
+                    return;
+                me->CastSpell(me, SPELL_BLIGHTED_ARROWS_EXPLOSION);
+                me->DespawnOrUnsummon(1500);
+            }
+
+            void UpdateAI(uint32 diff) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_echo_of_sylvanas_blighted_arrowsAI>(creature);
+        }
 };
 
 class spell_echo_of_sylvanas_wracking_pain_dmg : public SpellScriptLoader
@@ -433,7 +612,7 @@ class spell_echo_of_sylvanas_wracking_pain_dmg : public SpellScriptLoader
 
             void FilterTargets(std::list<WorldObject*>& targets)
             {
-                if (!GetCaster() || !GetCaster()->isAlive())
+                if (!GetCaster() || !GetCaster()->IsAlive())
                 {
                     targets.clear();
                     return;
@@ -446,10 +625,10 @@ class spell_echo_of_sylvanas_wracking_pain_dmg : public SpellScriptLoader
                 }
 
                 uint64 _guid = GetCaster()->GetAI()->GetGUID(DATA_GUID);
-                if (Creature* pTarget = ObjectAccessor::GetCreature(*GetCaster(), _guid))
+                if (Creature* target = ObjectAccessor::GetCreature(*GetCaster(), _guid))
                 {
-                    if (pTarget->isAlive())
-                        targets.remove_if(WrackingPainTargetSelector(GetCaster(), pTarget));
+                    if (target->IsAlive())
+                        targets.remove_if(WrackingPainTargetSelector(GetCaster(), target));
                     else
                         targets.clear();
                 }
@@ -457,13 +636,12 @@ class spell_echo_of_sylvanas_wracking_pain_dmg : public SpellScriptLoader
                     targets.clear();
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_echo_of_sylvanas_wracking_pain_dmg_SpellScript::FilterTargets, EFFECT_0,TARGET_UNIT_SRC_AREA_ENEMY);
             }
 
         private:
-
             class WrackingPainTargetSelector
             {
                 public:
@@ -481,7 +659,7 @@ class spell_echo_of_sylvanas_wracking_pain_dmg : public SpellScriptLoader
             };
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_echo_of_sylvanas_wracking_pain_dmg_SpellScript();
         }
@@ -497,20 +675,20 @@ class spell_echo_of_sylvanas_death_grip_aoe : public SpellScriptLoader
             PrepareSpellScript(spell_echo_of_sylvanas_death_grip_aoe_SpellScript);
 
             void HandleScript(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
 
                 GetHitUnit()->CastSpell(GetCaster(), SPELL_DEATH_GRIP, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_echo_of_sylvanas_death_grip_aoe_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_echo_of_sylvanas_death_grip_aoe_SpellScript();
         }
@@ -525,46 +703,29 @@ class spell_echo_of_sylvanas_seeping_shadows : public SpellScriptLoader
         {
             PrepareAuraScript(spell_echo_of_sylvanas_seeping_shadows_AuraScript);
 
-            void HandlePeriodicTick(constAuraEffectPtr /*aurEff*/)
+            void HandlePeriodicTick(AuraEffect const* /*aurEff*/)
             {
                 if (!GetCaster())
                     return;
 
                 int32 amount = int32(0.2f * (100.0f - GetCaster()->GetHealthPct()));
 
-                if (AuraPtr aur = GetCaster()->GetAura(103182))
+                if (Aura* aur = GetCaster()->GetAura(103182))
                     aur->ModStackAmount(amount - aur->GetStackAmount());
                 else
                     GetCaster()->CastCustomSpell(103182, SPELLVALUE_AURA_STACK, amount, GetCaster(), true);
 
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectPeriodic += AuraEffectPeriodicFn(spell_echo_of_sylvanas_seeping_shadows_AuraScript::HandlePeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_echo_of_sylvanas_seeping_shadows_AuraScript();
-        }
-};
-
-class achievement_several_ties : public AchievementCriteriaScript
-{
-    public:
-        achievement_several_ties() : AchievementCriteriaScript("achievement_several_ties") { }
-
-        bool OnCheck(Player* source, Unit* target)
-        {
-            if (!target)
-                return false;
-
-            if (boss_echo_of_sylvanas::boss_echo_of_sylvanasAI* echo_of_sylvanasAI = CAST_AI(boss_echo_of_sylvanas::boss_echo_of_sylvanasAI, target->GetAI()))
-                return echo_of_sylvanasAI->AllowAchieve();
-
-            return false;
         }
 };
 
@@ -573,8 +734,8 @@ void AddSC_boss_echo_of_sylvanas()
     new boss_echo_of_sylvanas();
     new npc_echo_of_sylvanas_ghoul();
     new npc_echo_of_sylvanas_risen_ghoul();
+    new npc_echo_of_sylvanas_blighted_arrows();
     new spell_echo_of_sylvanas_wracking_pain_dmg();
     new spell_echo_of_sylvanas_death_grip_aoe();
     new spell_echo_of_sylvanas_seeping_shadows();
-    new achievement_several_ties();
 }

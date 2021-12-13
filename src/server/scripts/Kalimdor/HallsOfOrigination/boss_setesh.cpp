@@ -24,7 +24,6 @@ enum Spells
     // Void Seeker
     SPELL_ANTI_MAGIC_PRISON     = 76903,
     SPELL_SHADOW_BOLT_VOLLEY    = 76146, //r
-    SPELL_SHADOW_BOLT_VOLLEY_H  = 89846, //r
 };
 
 enum NPCs
@@ -65,15 +64,15 @@ enum SeteshSummonTypes
 
 const Position movepos[9] =
 {
-    {-481.55f, 14.15f, 343.92f, 2.07f},
-    {-490.31f, 25.55f, 343.93f, 2.56f},
-    {-508.35f, 30.95f, 343.94f, 3.08f},
-    {-524.62f, 30.30f, 343.93f, 3.35f},
-    {-534.63f, 22.76f, 343.92f, 4.08f},
-    {-539.40f, 9.067f, 343.92f, 4.67f},
-    {-537.78f, -3.28f, 343.92f, 5.11f},
-    {-528.39f, -16.43f, 343.93f, 5.85f},
-    {-513.85f, -19.04f, 343.93f, 6.15f}
+    { -481.55f,  14.15f, 343.92f, 2.07f },
+    { -490.31f,  25.55f, 343.93f, 2.56f },
+    { -508.35f,  30.95f, 343.94f, 3.08f },
+    { -524.62f,  30.30f, 343.93f, 3.35f },
+    { -534.63f,  22.76f, 343.92f, 4.08f },
+    { -539.40f,  9.067f, 343.92f, 4.67f },
+    { -537.78f, -3.28f,  343.92f, 5.11f },
+    { -528.39f, -16.43f, 343.93f, 5.85f },
+    { -513.85f, -19.04f, 343.93f, 6.15f }
 };
 
 class boss_setesh : public CreatureScript
@@ -81,36 +80,39 @@ class boss_setesh : public CreatureScript
     public:
         boss_setesh() : CreatureScript("boss_setesh") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new boss_seteshAI(creature);
-        }
-
         struct boss_seteshAI : public BossAI
         {
             boss_seteshAI(Creature* creature) : BossAI(creature, DATA_SETESH)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-			    me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-			    me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
             }
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 Talk (SAY_AGGRO);
                 events.ScheduleEvent(EVENT_CHAOS_BOLT, 10000);
                 events.ScheduleEvent(EVENT_SUMMON_CHAOS_PORTAL, 20000);
@@ -119,35 +121,37 @@ class boss_setesh : public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
 
                 DoZoneInCombat();
-                instance->SetBossState(DATA_SETESH, IN_PROGRESS);
             }
 
-            void MovementInform(uint32 type, uint32 id)
-		    {
-			    if (type == POINT_MOTION_TYPE)
-			    {
-				    switch (id)
-				    {
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type == POINT_MOTION_TYPE)
+                {
+                    switch (pointId)
+                    {
                         case 1:
                             events.ScheduleEvent(EVENT_MOVE, 1000);
                             break;
                     }
-			    }
-		    }
+                }
+            }
 
-            void KilledUnit(Unit* who)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
 
                 Talk(SAY_DEATH);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -159,11 +163,11 @@ class boss_setesh : public CreatureScript
 
                 while(uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
                         case EVENT_CHAOS_BOLT:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                                DoCast(pTarget, SPELL_CHAOS_BOLT);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                                DoCast(target, SPELL_CHAOS_BOLT);
                             events.ScheduleEvent(EVENT_CHAOS_BOLT, urand(5000, 10000));
                             break;
                         case EVENT_SUMMON_CHAOS_PORTAL:
@@ -183,6 +187,11 @@ class boss_setesh : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_seteshAI>(creature);
+        }
 };
 
 class npc_setesh_chaos_portal : public CreatureScript
@@ -190,27 +199,20 @@ class npc_setesh_chaos_portal : public CreatureScript
     public:
         npc_setesh_chaos_portal() : CreatureScript("npc_setesh_chaos_portal") { }
 
-        CreatureAI* GetAI(Creature* creature) const
+        struct npc_setesh_chaos_portalAI : public ScriptedAI
         {
-            return new npc_setesh_chaos_portalAI(creature);
-        }
-
-        struct npc_setesh_chaos_portalAI : public Scripted_NoMovementAI
-        {
-            npc_setesh_chaos_portalAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_setesh_chaos_portalAI(Creature* creature) : ScriptedAI(creature)
             {
-                pInstance = pCreature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
+                SetCombatMovement(false);
             }
 
-            InstanceScript* pInstance;
+            InstanceScript* instance;
             EventMap events;
 
             void SeteshSummon(SeteshSummonTypes type)
             {
-                if (!pInstance)
-                    return;
-
-                if (Creature* pSetesh = pInstance->instance->GetCreature(pInstance->GetData64(DATA_SETESH)))
+                if (Creature* pSetesh = instance->instance->GetCreature(instance->GetData64(DATA_SETESH)))
                 {    
                     switch (type)
                     {
@@ -244,7 +246,7 @@ class npc_setesh_chaos_portal : public CreatureScript
                 }
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->SetReactState(REACT_PASSIVE);
 
@@ -262,13 +264,13 @@ class npc_setesh_chaos_portal : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
                 while(uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
                         case EVENT_SUMMON_6:
                             SeteshSummon(SETESH_SUMMON_WURM);
@@ -302,6 +304,10 @@ class npc_setesh_chaos_portal : public CreatureScript
             }
         };
 
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_setesh_chaos_portalAI>(creature);
+        }
 };
 
 class npc_setesh_void_sentinel : public CreatureScript
@@ -309,27 +315,18 @@ class npc_setesh_void_sentinel : public CreatureScript
     public:
         npc_setesh_void_sentinel() : CreatureScript("npc_setesh_void_sentinel") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_setesh_void_sentinelAI(creature);
-        }
-
         struct npc_setesh_void_sentinelAI : public ScriptedAI
         {
-            npc_setesh_void_sentinelAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                pInstance = pCreature->GetInstanceScript();
-            }
+            npc_setesh_void_sentinelAI(Creature* creature) : ScriptedAI(creature) { }
 
-            InstanceScript* pInstance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -341,7 +338,7 @@ class npc_setesh_void_sentinel : public CreatureScript
 
                 while(uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
                         case EVENT_CHARGED_FISTS:
                             DoCast(me, SPELL_CHARGED_FISTS);
@@ -357,6 +354,10 @@ class npc_setesh_void_sentinel : public CreatureScript
             }
         };
 
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_setesh_void_sentinelAI>(creature);
+        }
 };
 
 class npc_setesh_void_seeker : public CreatureScript
@@ -364,27 +365,18 @@ class npc_setesh_void_seeker : public CreatureScript
     public:
         npc_setesh_void_seeker() : CreatureScript("npc_setesh_void_seeker") { }
 
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_setesh_void_seekerAI(creature);
-        }
-
         struct npc_setesh_void_seekerAI : public ScriptedAI
         {
-            npc_setesh_void_seekerAI(Creature* pCreature) : ScriptedAI(pCreature)
-            {
-                pInstance = pCreature->GetInstanceScript();
-            }
+            npc_setesh_void_seekerAI(Creature* creature) : ScriptedAI(creature) { }
 
-            InstanceScript* pInstance;
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 events.Reset();
             }
 
-            void EnterCombat(Unit* who)
+            void EnterCombat(Unit* /*who*/) override
             {
                 if (urand(0, 1))
                     events.ScheduleEvent(EVENT_ANTI_MAGIC_PRISON, urand(3000, 5000));
@@ -392,7 +384,7 @@ class npc_setesh_void_seeker : public CreatureScript
                     events.ScheduleEvent(EVENT_SHADOW_BOLT_VOLLEY, urand(3000, 5000));
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -404,11 +396,11 @@ class npc_setesh_void_seeker : public CreatureScript
 
                 while(uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
                     case EVENT_ANTI_MAGIC_PRISON:
-                        if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM))
-                            DoCast(pTarget, SPELL_ANTI_MAGIC_PRISON);
+                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                            DoCast(target, SPELL_ANTI_MAGIC_PRISON);
                         events.ScheduleEvent(EVENT_ANTI_MAGIC_PRISON, urand(31000, 33000));
                         break;
                     case EVENT_SHADOW_BOLT_VOLLEY:
@@ -417,11 +409,14 @@ class npc_setesh_void_seeker : public CreatureScript
                         break;
                     }
                 }
-
                 DoMeleeAttackIfReady();
             }
         };
 
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_setesh_void_seekerAI>(creature);
+        }
 };
 
 void AddSC_boss_setesh()

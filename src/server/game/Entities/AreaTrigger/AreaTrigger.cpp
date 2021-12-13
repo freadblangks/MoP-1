@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2012-2013 JadeCore <http://www.pandashan.com/>
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -24,9 +25,191 @@
 #include "SpellInfo.h"
 #include "Log.h"
 #include "AreaTrigger.h"
+#include "Object.h"
+#include "SpellAuraEffects.h"
 #include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "Spline.h"
+#include <ace/Stack_Trace.h>
 
-AreaTrigger::AreaTrigger() : WorldObject(false), _duration(0), m_caster(NULL), m_visualRadius(0.0f)
+class IAreaTriggerOnceChecker
+{
+    public:
+        IAreaTriggerOnceChecker(IAreaTriggerOnce* areaTrigger)
+            : m_areaTrigger(areaTrigger)
+        {
+        }
+
+        bool operator()(WorldObject* object)
+        {
+            if (m_areaTrigger->GetTarget()->GetExactDist2d(object) > m_areaTrigger->GetRange() + object->GetObjectSize())
+                return false;
+            if (std::abs(object->GetPositionZ() - m_areaTrigger->GetTarget()->GetPositionZ()) > 10.0f)
+                return false;
+
+            return m_areaTrigger->CheckTriggering(object);
+        }
+
+    private:
+        IAreaTriggerOnce* m_areaTrigger;
+};
+
+class IAreaTriggerAuraUpdater
+{
+    public:
+        IAreaTriggerAuraUpdater(IAreaTriggerAura* areaTrigger)
+            : m_areaTrigger(areaTrigger)
+        {
+        }
+
+        void operator()(WorldObject* object) const
+        {
+            // This is during WorldObjectWorker::Visit so do it right here
+            if (!m_areaTrigger->GetAreaTrigger()->IsInWorld())
+                return;
+
+            if (!object->IsInWorld())
+                return;
+
+            if (m_areaTrigger->GetTarget()->GetExactDist2d(object) > m_areaTrigger->GetRange() + object->GetObjectSize())
+                return;
+            if (std::abs(object->GetPositionZ() - m_areaTrigger->GetTarget()->GetPositionZ()) > 10.0f)
+                return;
+
+            if (!m_areaTrigger->CheckTriggering(object))
+                return;
+
+            IAreaTriggerAura::TriggeringList::iterator iter;
+            for (iter = m_areaTrigger->m_triggerings.begin(); iter != m_areaTrigger->m_triggerings.end(); ++iter)
+            {
+                if (iter->Guid == object->GetGUID())
+                {
+                    iter->UpdateNumber = m_areaTrigger->m_updateNumber;
+                    m_areaTrigger->OnTriggeringUpdate(object);
+                    return;
+                }
+            }
+
+            IAreaTriggerAura::Triggering triggering;
+            triggering.Guid = object->GetGUID();
+            triggering.UpdateNumber = m_areaTrigger->m_updateNumber;
+            m_areaTrigger->m_triggerings.push_back(triggering);
+            m_areaTrigger->OnTriggeringApply(object);
+        }
+
+    private:
+        IAreaTriggerAura* m_areaTrigger;
+};
+
+void IAreaTrigger::Initialize(AreaTrigger* trigger, Unit* caster, WorldObject* target)
+{
+    m_caster = caster;
+    ASSERT(target);
+    m_target = target;
+    m_spellInfo = sSpellMgr->GetSpellInfo(trigger->GetSpellId());
+    m_location = m_target;
+    m_areaTrigger = trigger;
+    OnInit();
+}
+
+void IAreaTrigger::OnRemoveFromWorld()
+{
+    m_duringRemoveFromWorld = true;
+    OnDestroy();
+}
+
+void IAreaTriggerOnce::OnUpdate(uint32)
+{
+    WorldObject* triggering = NULL;
+    IAreaTriggerOnceChecker checker(this);
+    Trinity::WorldObjectSearcher<IAreaTriggerOnceChecker> searcher(m_target, triggering, checker, m_mapTypeMask);
+    m_target->VisitNearbyObject(m_range, searcher);
+
+    if (triggering)
+    {
+        OnTrigger(triggering);
+        GetAreaTrigger()->Remove();
+    }
+}
+
+void IAreaTriggerOnce::OnRemoveFromWorld()
+{
+    return IAreaTrigger::OnRemoveFromWorld();
+}
+
+IAreaTriggerAura::IAreaTriggerAura()
+    : m_mapTypeMask(GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_PLAYER)
+{
+}
+
+IAreaTriggerAura::~IAreaTriggerAura()
+{
+    ASSERT(m_triggerings.empty());
+}
+
+void IAreaTriggerAura::OnUpdate(uint32)
+{
+    ++m_updateNumber;
+
+    IAreaTriggerAuraUpdater updater(this);
+    Trinity::WorldObjectWorker<IAreaTriggerAuraUpdater> worker(m_target, updater, m_mapTypeMask);
+    m_target->VisitNearbyObject(m_range, worker);
+
+    for (TriggeringList::iterator iter = m_triggerings.begin(); iter != m_triggerings.end(); )
+    {
+        if (iter->UpdateNumber != m_updateNumber)
+        {
+            // remove
+            if (WorldObject* object = ObjectAccessor::GetWorldObject(*m_target, iter->Guid))
+                OnTriggeringRemove(object);
+            else if (Player* player = ObjectAccessor::FindPlayerInOrOutOfWorld(iter->Guid))
+                if (player->GetMap() == m_areaTrigger->GetMap())
+                    OnTriggeringRemove(player);
+
+            iter = m_triggerings.erase(iter);
+        }
+        else
+            ++iter;
+    }
+}
+
+bool IAreaTriggerAura::IsInBox(Unit* target, float extentsX, float extentsY, float extentsZ)
+{
+    float halfExtentsZ = extentsZ / 2.0f;
+
+    float minX = GetCaster()->GetPositionX() - extentsX;
+    float maxX = GetCaster()->GetPositionX() + extentsX;
+
+    float minY = GetCaster()->GetPositionY() - extentsY;
+    float maxY = GetCaster()->GetPositionY() + extentsY;
+
+    float minZ = GetCaster()->GetPositionZ() - halfExtentsZ;
+    float maxZ = GetCaster()->GetPositionZ() + halfExtentsZ;
+
+    G3D::AABox const box({ minX, minY, minZ }, { maxX, maxY, maxZ });
+    return box.contains({ target->GetPositionX(), target->GetPositionY(), target->GetPositionZ() });
+}
+
+void IAreaTriggerAura::OnRemoveFromWorld()
+{
+    m_duringRemoveFromWorld = true;
+
+    for (auto&& it : m_triggerings)
+    {
+        if (WorldObject* object = ObjectAccessor::GetWorldObject(*m_target, it.Guid))
+            OnTriggeringRemove(object);
+    }
+    m_triggerings.clear();
+
+    OnDestroy();
+}
+
+AreaTrigger::AreaTrigger() : AreaTrigger(nullptr)
+{
+}
+
+AreaTrigger::AreaTrigger(AuraEffect const* eff)
+    : WorldObject(false), m_auraOwner(eff ? eff->GetBase()->GetOwner()->GetGUID() : 0), m_effectIndex(eff ? eff->GetEffIndex() : 0)
 {
     m_objectType |= TYPEMASK_AREATRIGGER;
     m_objectTypeId = TYPEID_AREATRIGGER;
@@ -49,6 +232,12 @@ void AreaTrigger::AddToWorld()
         sObjectAccessor->AddObject(this);
         WorldObject::AddToWorld();
         BindToCaster();
+
+        if (auto script = sScriptMgr->CreateAreaTriggerInterface(GetEntry()))
+        {
+            m_script.reset(script);
+            m_script->Initialize(this, m_caster, m_effectTarget);
+        }
     }
 }
 
@@ -57,556 +246,127 @@ void AreaTrigger::RemoveFromWorld()
     ///- Remove the AreaTrigger from the accessor and from all lists of objects in world
     if (IsInWorld())
     {
+        if (m_script)
+            m_script->OnRemoveFromWorld();
+
         UnbindFromCaster();
         WorldObject::RemoveFromWorld();
         sObjectAccessor->RemoveObject(this);
     }
 }
-bool AreaTrigger::CreateAreaTrigger(uint32 guidlow, uint32 triggerEntry, Unit* caster, SpellInfo const* spell, Position const& pos)
+
+bool AreaTrigger::CreateAreaTrigger(uint32 guidlow, uint32 triggerEntry, Unit* caster, SpellInfo const* spell, Position const& pos, Unit* effectTarget)
 {
     SetMap(caster->GetMap());
     Relocate(pos);
     if (!IsPositionValid())
     {
-        sLog->outError(LOG_FILTER_GENERAL, "AreaTrigger (spell %u) not created. Invalid coordinates (X: %f Y: %f)", spell->Id, GetPositionX(), GetPositionY());
+        TC_LOG_ERROR("misc", "AreaTrigger (spell %u) not created. Invalid coordinates (X: %f Y: %f)", spell->Id, GetPositionX(), GetPositionY());
         return false;
     }
 
     WorldObject::_Create(guidlow, HIGHGUID_AREATRIGGER, caster->GetPhaseMask());
 
+    int32 duration = spell->GetDuration();
+    if (Player* modOwner = caster->GetSpellModOwner())
+        modOwner->ApplySpellMod(spell->Id, SPELLMOD_DURATION, duration);
+
     SetEntry(triggerEntry);
-    SetDuration(spell->GetDuration());
+    SetDuration(duration);
     SetObjectScale(1);
 
-    SetUInt64Value(AREATRIGGER_CASTER, caster->GetGUID());
-    SetUInt32Value(AREATRIGGER_SPELLID, spell->Id);
-    SetUInt32Value(AREATRIGGER_DURATION, spell->GetDuration());
-    SetUInt32Value(AREATRIGGER_SPELLVISUALID, spell->SpellVisual[0]);
+    SetUInt64Value(AREATRIGGER_FIELD_CASTER, caster->GetGUID());
+    SetUInt32Value(AREATRIGGER_FIELD_SPELL_ID, spell->Id);
+    SetUInt32Value(AREATRIGGER_FIELD_SPELL_VISUAL_ID, spell->SpellVisual[0]);
+    SetInt32Value(AREATRIGGER_FIELD_DURATION, duration);
+    // TODO: Find proper scaling of areatriggers
+    float scale = 1.0f;
+    switch (spell->Id)
+    {
+        case 136049:
+            scale = 0.14f;
+            break;
+        case 133292: // Flames of Fallen Glory
+            scale = 0.5f;
+            break;
+        default:
+            scale = 1.0f;
+            break;
+    }
+
+    SetFloatValue(AREATRIGGER_FIELD_EXPLICIT_SCALE, scale);
 
     switch (spell->Id)
     {
-    case 116011:// Rune of Power
-        SetVisualRadius(3.5f);
-        break;
-    case 116235:// Amethyst Pool
-        SetVisualRadius(3.5f);
-        break;
-    case 123811:
-        SetDuration(500000000);
-        break;
-    default:
-        break;
+        case 125301: // Blade Tempest
+            SetVisualRadius(12.0f);
+            break;
+        case 133292: // Flames of Fallen Glory
+            SetVisualRadius(5.0f);
+        default:
+            break;
     }
+
+    if (AreaTriggerTemplate const* atTemplate = sObjectMgr->GetAreaTriggerTemplate(triggerEntry))
+    {
+        m_scaleX = atTemplate->ScaleX;
+        m_scaleY = atTemplate->ScaleY;
+    }
+
+    m_effectTarget = effectTarget;
+    if (!m_effectTarget)
+        m_effectTarget = this;
 
     if (!GetMap()->AddToMap(this))
         return false;
 
     return true;
-
 }
 
-void AreaTrigger::Update(uint32 p_time)
+void AreaTrigger::Expire()
 {
-    if (GetDuration() > int32(p_time))
-        _duration -= p_time;
-    else
-        Remove(); // expired
+    if (m_script)
+        m_script->OnExpire();
 
-    WorldObject::Update(p_time);
+    Remove();
+}
 
-    SpellInfo const* m_spellInfo = sSpellMgr->GetSpellInfo(GetUInt32Value(AREATRIGGER_SPELLID));
-    if (!m_spellInfo)
+void AreaTrigger::SetRadius(float radius)
+{
+    if (m_script)
+        m_script->SetRange(radius);
+}
+
+void AreaTrigger::Update(uint32 diff)
+{
+    // Before Expire
+    UpdateSplinePosition(diff);
+
+    // Despawned in movement hooks
+    if (!IsInWorld())
         return;
 
-    if (!GetCaster())
+    if (GetMaxDuration() != -1)
+    {
+        if (GetDuration() > int32(diff))
+            m_duration -= diff;
+        else
+            Expire();
+    }
+
+    WorldObject::Update(diff);
+
+    if (m_script && IsInWorld())    // Expired
+        m_script->OnUpdate(diff);
+
+    if (!IsInWorld())
+        return;
+
+    auto caster = GetCaster();
+    if (!caster)
     {
         Remove();
         return;
-    }
-
-    Unit* caster = GetCaster();
-    float radius = 0.0f;
-
-    // Custom MoP Script
-    switch (m_spellInfo->Id)
-    {
-    case 144479: //Expel Corruption
-    {
-        if (Player* nearest = this->FindNearestPlayer(1.0f, true))
-        {
-            this->Remove();
-        }
-        break;
-    }
-        // Drop Feathers.
-    case 134338:
-    {
-        this->SetDuration(10000);
-
-        if (Player* nearest = this->FindNearestPlayer(1.0f, true))
-        {
-            // Lesson of Icarus
-            if (nearest->HasAura(140571))
-                return;
-
-            nearest->CastSpell(nearest, 140571);
-
-            // Flight
-            if (!nearest->HasSpell(133755))
-                nearest->learnSpell(133755, true);
-
-            nearest->GetSession()->SendNotification("You have just learnt [Flight] put it on your auction bar");
-
-            // Daedling stack
-            nearest->CastSpell(nearest, 140014);
-
-            if (AuraPtr aura = nearest->GetAura(140014))
-            {
-                aura->SetStackAmount(4);
-            }
-
-            this->Remove();
-        }
-        break;
-    }
-        // defiled aura soo 2nd boss
-    case 143960:
-    {
-        std::list<Player*> pl_list;
-        pl_list.clear();
-
-        this->GetPlayerListInGrid(pl_list, 2.0f);
-
-        if (pl_list.empty())
-            return;
-
-        for (auto itr : pl_list)
-        {
-            itr->CastSpell(itr, 143959);
-
-            if (AuraPtr aura = itr->GetAura(143959))
-            {
-                aura->SetDuration(1);
-            }
-        }
-        break;
-    }
-    case 143235:
-    {
-        std::list<Player*> pl_list;
-        pl_list.clear();
-
-        this->GetPlayerListInGrid(pl_list, 2.0f);
-
-        if (pl_list.empty())
-            return;
-
-        for (auto itr : pl_list)
-        {
-            itr->CastSpell(itr, 144367);
-        }
-        break;
-    }
-        // rushing waters
-    case 147181:
-    case 147178:
-    case 147182:
-    case 147191:
-    case 147189:
-    case 149164:
-    {
-        if (roll_chance_i(75))
-        {
-            Position pos;
-            std::list<Unit*> targetList;
-            radius = 1.0f;
-            /*
-            float y = 10.386f;
-            float x = 0.512f;
-            float newx, newy;
-
-            newx = this->GetPositionX() - x;
-            newy = this->GetPositionY() - y;
-            pos.m_positionX = newx;
-            pos.m_positionY = newy;
-            */
-            this->GetRandomNearPosition(pos, 100.0f);
-            this->MovePosition(pos, 5.0F, this->GetOrientation());
-
-            JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-            JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-            VisitNearbyObject(radius, searcher);
-
-            for (auto itr : targetList)
-            {
-                itr->CastSpell(itr, 143412);
-
-                if (AuraPtr aura = itr->GetAura(143412))
-                {
-                    aura->SetDuration(1);
-                    this->Remove();
-                }
-            }
-
-       
-        }
-        break;
-    }
-    case 13810: // Ice Trap
-    {
-        std::list<Unit*> targetList;
-        radius = 10.0f;
-
-        JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        for (auto itr : targetList)
-            itr->CastSpell(itr, 135299, true);
-
-        break;
-    }
-    case 102793:// Ursol's Vortex
-    {
-        std::list<Unit*> targetList;
-        radius = 8.0f;
-
-        JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-            for (auto itr : targetList)
-                if (!itr->HasAura(127797))
-                    caster->CastSpell(itr, 127797, true);
-
-        break;
-    }
-    case 144692: // Pool of Fire Ordos
-    {
-        std::list<Player*> targetList;
-        radius = 15.0f; // Not sure, needs check.
-
-        GetPlayerListInGrid(targetList, 200.0f);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                // Pool of Fire - Periodic Damage
-                if (itr->GetDistance(this) > radius)
-                    itr->RemoveAurasDueToSpell(144693);
-                else if (!itr->HasAura(144693))
-                    caster->AddAura(144693, itr);
-            }
-        }
-        break;
-    }
-    case 115460:// Healing Sphere
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                caster->CastSpell(itr, 115464, true); // Healing Sphere heal
-                SetDuration(0);
-                return;
-            }
-        }
-
-        break;
-    }
-    case 115817:// Cancel Barrier
-    {
-        std::list<Unit*> targetList;
-        radius = 6.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-            for (auto itr : targetList)
-                itr->CastSpell(itr, 115856, true);
-
-        break;
-    }
-    case 116011:// Rune of Power
-    {
-        std::list<Unit*> targetList;
-        bool affected = false;
-        radius = 2.25f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                if (itr->GetGUID() == caster->GetGUID())
-                {
-                    caster->CastSpell(itr, 116014, true); // Rune of Power
-                    affected = true;
-
-                    if (caster->ToPlayer())
-                        caster->ToPlayer()->UpdateManaRegen();
-
-                    return;
-                }
-            }
-        }
-
-        if (!affected)
-            caster->RemoveAura(116014);
-
-        break;
-    }
-    case 116235:// Amethyst Pool
-    {
-        std::list<Unit*> targetList;
-        radius = 10.0f;
-
-        JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                // Amethyst Pool - Periodic Damage
-                if (itr->GetDistance(this) > 3.5f)
-                    itr->RemoveAura(130774);
-                else if (!itr->HasAura(130774))
-                    caster->CastSpell(itr, 130774, true);
-            }
-        }
-
-        break;
-    }
-    case 122731:// Create Cancelling Noise Area trigger
-    {
-        std::list<Unit*> targetList;
-        radius = 10.0f;
-
-        JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                // Periodic absorption for Imperial Vizier Zor'lok's Force and Verve and Sonic Rings
-                if (itr->GetDistance(this) > 2.0f)
-                    itr->RemoveAura(122706);
-                else if (!itr->HasAura(122706))
-                    caster->AddAura(122706, itr);
-            }
-        }
-        break;
-    }
-    case 123461:// Get Away!
-    {
-        std::list<Player*> playerList;
-        GetPlayerListInGrid(playerList, 60.0f);
-
-        Position pos;
-        GetPosition(&pos);
-
-        for (auto player : playerList)
-        {
-            player->SendApplyMovementForce(true, pos, -3.0f);
-        }
-
-        break;
-    }
-    case 123811:// Pheromones of Zeal
-    {
-        std::list<Player*> targetList;
-        radius = 35.0f;
-
-        GetPlayerListInGrid(targetList, 200.0f);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                // Pheromones of Zeal - Periodic Damage
-                if (itr->GetDistance(this) > radius)
-                    itr->RemoveAura(123812);
-                else if (!itr->HasAura(123812))
-                    caster->AddAura(123812, itr);
-            }
-        }
-        break;
-    }
-    case 116546:// Draw Power
-    {
-        std::list<Unit*> targetList;
-        radius = 30.0f;
-
-        JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        for (auto itr : targetList)
-        {
-            if (itr->IsInAxe(caster, this, 2.0f))
-            {
-                if (!itr->HasAura(116663))
-                    caster->AddAura(116663, itr);
-            }
-            else
-                itr->RemoveAurasDueToSpell(116663);
-        }
-
-        break;
-    }
-    case 117032:// Healing Sphere (Afterlife)
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                if (itr->GetGUID() == caster->GetGUID())
-                {
-                    caster->CastSpell(itr, 125355, true); // Heal for 15% of life
-                    SetDuration(0);
-                    return;
-                }
-            }
-        }
-
-        break;
-    }
-    case 119031:// Gift of the Serpent (Mastery)
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                caster->CastSpell(itr, 124041, true); // Gift of the Serpent heal
-                SetDuration(0);
-                return;
-            }
-        }
-
-        break;
-    }
-    case 121286:// Chi Sphere (Afterlife)
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                if (itr->GetGUID() == caster->GetGUID())
-                {
-                    caster->CastSpell(itr, 121283, true); // Restore 1 Chi
-                    SetDuration(0);
-                    return;
-                }
-            }
-        }
-
-        break;
-    }
-    case 121536:// Angelic Feather
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                caster->CastSpell(itr, 121557, true); // Angelic Feather increase speed
-                SetDuration(0);
-                return;
-            }
-        }
-
-        break;
-    }
-    case 122035:// Path of Blossom
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::NearestAttackableUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::NearestAttackableUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        if (!targetList.empty())
-        {
-            for (auto itr : targetList)
-            {
-                caster->CastSpell(itr, 122036, true); // Path of Blossom damage
-                SetDuration(0);
-                return;
-            }
-        }
-
-        break;
-    }
-    case 124503:// Gift of the Ox
-    case 124506:// Gift of the Ox?
-    {
-        std::list<Unit*> targetList;
-        radius = 1.0f;
-
-        JadeCore::AnyFriendlyUnitInObjectRangeCheck u_check(this, caster, radius);
-        JadeCore::UnitListSearcher<JadeCore::AnyFriendlyUnitInObjectRangeCheck> searcher(this, targetList, u_check);
-        VisitNearbyObject(radius, searcher);
-
-        for (auto itr : targetList)
-        {
-            if (itr->GetGUID() != caster->GetGUID())
-                continue;
-
-            caster->CastSpell(itr, 124507, true); // Gift of the Ox - Heal
-            SetDuration(0);
-            return;
-        }
-
-        break;
-    }
-    default:
-        break;
     }
 }
 
@@ -614,51 +374,20 @@ void AreaTrigger::Remove()
 {
     if (IsInWorld())
     {
-        SpellInfo const* m_spellInfo = sSpellMgr->GetSpellInfo(GetUInt32Value(AREATRIGGER_SPELLID));
-        if (!m_spellInfo)
-            return;
-
-        switch (m_spellInfo->Id)
+        if (m_auraOwner)
         {
-        case 116011:// Rune of Power : Remove the buff if caster is still in radius
-            if (m_caster && m_caster->HasAura(116014))
-                m_caster->RemoveAura(116014);
-            break;
-        case 122731:// Create Noise Cancelling Area Trigger
-        {
-            std::list<Player*> playerList;
-            GetPlayerListInGrid(playerList, 200.0f);
-
-            for (auto player : playerList)
-                if (player->HasAura(122706))
-                    player->RemoveAura(122706);
-            break;
-        }
-        case 144692: // Pool of Fire Ordos
-        {
-            std::list<Player*> targetList;
-            GetPlayerListInGrid(targetList, 100.0f);
-
-            if (!targetList.empty())
-                for (auto itr : targetList)
-                    itr->RemoveAurasDueToSpell(144693); // Pool of Fire - Periodic Damage Remove.
-            break;
-        }
-        case 123461:// Get Away!
-        {
-            std::list<Player*> playerList;
-            GetPlayerListInGrid(playerList, 100.0f);
-
-            Position pos;
-            GetPosition(&pos);
-
-            for (auto player : playerList)
-                player->SendApplyMovementForce(false, pos);
-
-            break;
-        }
-        default:
-            break;
+            Unit* auraOwner = ObjectAccessor::GetUnit(*this, m_auraOwner);
+            if (!auraOwner)
+            {
+                ACE_Stack_Trace st;
+                TC_LOG_ERROR("shitlog", "!auraOwner, spell %u, owner " UI64FMTD ", caster " UI64FMTD "\n%s", GetSpellId(), m_auraOwner, GetCasterGUID(), st.c_str());
+            }
+            else
+            {
+                // If aura expired before it can be removed first, don't report
+                if (AuraEffect* effect = auraOwner->GetAuraEffect(GetSpellId(), m_effectIndex, GetCasterGUID()))
+                    effect->GetBase()->Remove();
+            }
         }
 
         SendObjectDeSpawnAnim(GetGUID());
@@ -669,17 +398,192 @@ void AreaTrigger::Remove()
 
 void AreaTrigger::BindToCaster()
 {
-    //ASSERT(!m_caster);
+    ASSERT(!m_caster);
     m_caster = ObjectAccessor::GetUnit(*this, GetCasterGUID());
-    //ASSERT(GetCaster());
-    //ASSERT(GetCaster()->GetMap() == GetMap());
     if (m_caster)
-        m_caster->_RegisterAreaTrigger(this);
+        m_caster->RegisterAreaTrigger(this);
 }
 
 void AreaTrigger::UnbindFromCaster()
 {
-    ASSERT(m_caster);
-    m_caster->_UnregisterAreaTrigger(this);
-    m_caster = NULL;
+    if (!m_caster)
+        return;
+
+    m_caster->UnregisterAreaTrigger(this);
+    m_caster = nullptr;
+}
+
+std::vector<G3D::Vector3> const& AreaTrigger::GetPath() const
+{
+    return m_spline->getPoints();
+}
+
+void AreaTrigger::InitSpline(std::vector<Position> const& path, int32 duration)
+{
+    if (path.size() < 2)
+    {
+        TC_LOG_ERROR("entities.areatrigger", "AreaTrigger::InitSpline - Size of path < 2 (entry: %u)", GetEntry());
+        return;
+    }
+
+    if (duration < 0)
+    {
+        TC_LOG_ERROR("entities.areatrigger", "AreaTrigger::InitSpline - duration < 0 (entry: %u)", GetEntry());
+        return;
+    }
+
+    std::vector<G3D::Vector3> splinePoints;
+    splinePoints.reserve(path.size());
+    for (auto&& itr : path)
+        splinePoints.push_back({ itr.GetPositionX(), itr.GetPositionY(), itr.GetPositionZ() });
+    m_spline.reset(new Movement::Spline<int32>());
+    m_spline->init_spline(splinePoints.data(), splinePoints.size(), GetOrientation(), Movement::SplineBase::ModeLinear);
+    m_spline->initLengths();
+    SetInt32Value(AREATRIGGER_FIELD_DURATION, duration);
+    SetDuration(duration);
+}
+
+void AreaTrigger::AttachToTarget()
+{
+    m_movementInfo.transport.guid = m_effectTarget->GetGUID();
+    m_movementInfo.transport.seat = 0;
+    m_attachedToTransport = true;
+}
+
+void AreaTrigger::UpdateSplinePosition(uint32 diff)
+{
+    if (m_reachedDestination)
+        return;
+
+    if (!m_spline)
+        return;
+
+    m_movementTime += diff;
+
+    if (int32(m_movementTime) >= GetMaxDuration())
+    {
+        m_reachedDestination = true;
+        m_lastSplineIndex = int32(m_spline->last());
+
+        G3D::Vector3 lastSplinePosition = m_spline->getPoint(m_lastSplineIndex);
+        GetMap()->AreaTriggerRelocation(this, lastSplinePosition.x, lastSplinePosition.y, lastSplinePosition.z, GetOrientation());
+
+        if (m_script)
+        {
+            m_script->OnPathPointRiched();
+            m_script->OnDestinationReached();
+        }
+        return;
+    }
+
+    float currentTimePercent = float(m_movementTime) / float(GetMaxDuration());
+
+    if (currentTimePercent <= 0.0f)
+        return;
+
+    /*
+    if (GetMiscTemplate()->MoveCurveId)
+    {
+        float progress = sDB2Manager.GetCurveValueAt(GetMiscTemplate()->MoveCurveId, currentTimePercent);
+        if (progress < 0.f || progress > 1.f)
+        {
+            TC_LOG_ERROR("entities.areatrigger", "AreaTrigger (Id: %u, SpellMiscId: %u) has wrong progress (%f) caused by curve calculation (MoveCurveId: %u)",
+                GetTemplate()->Id, GetMiscTemplate()->MiscId, progress, GetMiscTemplate()->MorphCurveId);
+        }
+        else
+            currentTimePercent = progress;
+    }
+    */
+
+    int32 lastPositionIndex = 0;
+    float percentFromLastPoint = 0;
+    m_spline->computeIndex(currentTimePercent, lastPositionIndex, percentFromLastPoint);
+
+    G3D::Vector3 currentPosition;
+    m_spline->evaluate_percent(lastPositionIndex, percentFromLastPoint, currentPosition);
+
+    float orientation = GetOrientation();
+    /*
+    if (GetTemplate()->HasFlag(AREATRIGGER_FLAG_HAS_FACE_MOVEMENT_DIR))
+    {
+        G3D::Vector3 const& nextPoint = _spline->getPoint(lastPositionIndex + 1);
+        orientation = GetAngle(nextPoint.x, nextPoint.y);
+    }
+    */
+    GetMap()->AreaTriggerRelocation(this, currentPosition.x, currentPosition.y, currentPosition.z, orientation);
+
+    if (m_lastSplineIndex != lastPositionIndex)
+    {
+        m_lastSplineIndex = lastPositionIndex;
+        if (m_script)
+            m_script->OnPathPointRiched();
+    }
+}
+
+void AreaTrigger::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target) const
+{
+    if (!target)
+        return;
+
+    UpdateBuilder builder;
+    builder.SetSource(updateType == UPDATETYPE_VALUES ? _changesMask.GetBits() : m_uint32Values, m_valuesCount);
+    builder.SetDest(data);
+
+    uint32* flags = nullptr;
+    uint32 visibleFlag = GetUpdateFieldData(target, flags);
+
+    for (uint16 index = 0; index < m_valuesCount; ++index)
+    {
+        if (_fieldNotifyFlags & flags[index] || (builder.GetSrcBit(index) && (flags[index] & visibleFlag)))
+        {
+            builder.SetDestBit(index);
+
+            if (index == AREATRIGGER_FIELD_SPELL_VISUAL_ID)
+                *data << GetVisualForTarget(target);
+            else
+                *data << m_uint32Values[index];
+        }
+    }
+
+    builder.Finish();
+    BuildDynamicValuesUpdate(updateType, data);
+}
+
+uint32 AreaTrigger::GetVisualForTarget(Player const* target) const
+{
+    auto getVisualIfHostile = [=](Player const* target, uint32 hostileViusal)
+    {
+        if (GetMap()->IsBattlegroundOrArena())
+        {
+            if (GetCaster()->ToPlayer())
+                if (GetCaster()->ToPlayer()->GetBGTeam() != target->GetBGTeam())
+                    return hostileViusal;
+        }
+        else if (GetCaster()->IsHostileTo(target))
+            return hostileViusal;
+        return m_uint32Values[AREATRIGGER_FIELD_SPELL_VISUAL_ID];
+    };
+
+    switch (GetSpellId())
+    {
+        case 13810:     // Ice trap
+            return getVisualIfHostile(target, 29567);
+        case 102793:    // Ursol's Vortex
+            return getVisualIfHostile(target, 25824);
+        case 115460:    // Healing Sphere (doesn't have sniffs but originals have same PersistentAreaKit, so whatever)
+        case 119031:    // Gift of the Serpent
+            return getVisualIfHostile(target, 25768);
+        case 116011:    // Rune of Power
+            if (target == GetCaster())
+                return 25943;
+            break;
+        case 121536:    // Angelic Feather
+            return getVisualIfHostile(target, 27404);
+        case 132950:    // Flare
+            return getVisualIfHostile(target, 20730);
+        default:
+            break;
+    }
+
+    return m_uint32Values[AREATRIGGER_FIELD_SPELL_VISUAL_ID];
 }

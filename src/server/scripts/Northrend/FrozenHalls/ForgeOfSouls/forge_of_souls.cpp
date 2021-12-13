@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -20,49 +23,47 @@
 
 enum Spells
 {
-    //Spiteful Apparition
-    SPELL_SPITE                                 = 68895,
-    H_SPELL_SPITE                               = 70212,
+    // Spiteful Apparition
+    SPELL_SPITEFUL_APPARITION_SPITE     = 68895,
+    SPELL_SPITEFUL_APPARITION_VISUAL_1  = 69136,
+    SPELL_SPITEFUL_APPARITION_VISUAL_2  = 69658,
+    SPELL_SOUL_HORROR_VISUAL            = 69105,
 
-    //Spectral Warden
-    SPELL_VEIL_OF_SHADOWS                       = 69633,
-    SPELL_WAIL_OF_SOULS                         = 69148,
-    H_SPELL_WAIL_OF_SOULS                       = 70210,
+    // Spectral Warden
+    SPELL_VEIL_OF_SHADOWS               = 69633,
+    SPELL_WAIL_OF_SOULS                 = 69148,
 
-    //Soulguard Watchman
-    SPELL_SHROUD_OF_RUNES                       = 69056,
-    SPELL_UNHOLY_RAGE                           = 69053,
+    // Soulguard Watchman
+    SPELL_SHROUD_OF_RUNES               = 69056,
+    SPELL_UNHOLY_RAGE                   = 69053,
 
-    //Soulguard Reaper
-    SPELL_FROST_NOVA                            = 69060,
-    H_SPELL_FROST_NOVA                          = 70209,
-    SPELL_SHADOW_LANCE                          = 69058,
-
-    //Soulguard Bonecaster
-    SPELL_BONE_VOLLEY                           = 69080,
-    H_SPELL_BONE_VOLLEY                         = 70206,
-    SPELL_RAISE_DEAD                            = 69562,
-    SPELL_SHIELD_OF_BONES                       = 69069,
-    H_SPELL_SHIELD_OF_BONES                     = 70207,
-
-    //Soulguard Animator
+    // Soulguard Reaper
+    SPELL_FROST_NOVA                    = 70209,
+    SPELL_SHADOW_LANCE                  = 69058,
+    
+    // Soulguard Bonecaster
+    SPELL_BONE_VOLLEY                   = 69080,
+    SPELL_RAISE_DEAD                    = 69562,
+    SPELL_SHIELD_OF_BONES               = 69069,
+    
+    // Soulguard Animator
     // Raise dead 69562
-    SPELL_SHADOW_BOLT                           = 69068,
-    H_SPELL_SHADOW_BOLT                         = 70208,
-    SPELL_SOUL_SICKNESS                         = 69131,
-    SPELL_SOUL_SIPHON                           = 69128,
-
-    //Soulguard Adept
-    //Raise dead 69562
-    //Shadow Bolt 69068/70208
-    SPELL_DRAIN_LIFE                            = 69066,
-    H_SPELL_DRAIN_LIFE                          = 70213,
-    SPELL_SHADOW_MEND                           = 69564,
-    H_SPELL_SHADOW_MEND                         = 70205,
-
-    //Soul Horror
-    SPELL_SOUL_STRIKE                           = 69088,
-    H_SPELL_SOUL_STRIKE                         = 70211,
+    SPELL_SHADOW_BOLT                   = 69068,
+    SPELL_SOUL_SICKNESS                 = 69131,
+    SPELL_SOUL_SIPHON                   = 69128,
+    
+    // Soulguard Adept
+    // Raise dead 69562
+    // Shadow Bolt 69068/70208
+    SPELL_DRAIN_LIFE                    = 69066,
+    SPELL_SHADOW_MEND                   = 69564,
+    
+    // Soul Horror
+    SPELL_SOUL_STRIKE                   = 69088,
+    SPELL_SOUL_CHANNELING_IMPACT        = 68837,
+    
+    SPELL_SOULGUARD_CHANNEL_BEAM02      = 68834,
+    SPELL_SOULGUARD_CHANNEL             = 68797,
 };
 
 enum Events
@@ -79,65 +80,52 @@ enum Events
     EVENT_INTRO_7,
     EVENT_INTRO_8,
 
-    //Spiteful Apparition
-    EVENT_SPITE,
+    // Spiteful Apparition
+    EVENT_SPITEFUL_APPARITION_SPITE,
 
-    //Spectral Warden
+    // Spectral Warden
     EVENT_VEIL_OF_SHADOWS,
     EVENT_WAIL_OF_SOULS,
 
-    //Soulguard Watchman
+    // Soulguard Watchman
     EVENT_SHROUD_OF_RUNES,
-    EVENT_UNHOLY_RAGE,
 
-    //Soulguard Reaper
+    // Soulguard Reaper
     EVENT_FROST_NOVA,
     EVENT_SHADOW_LANCE,
 
-    //Soulguard Bonecaster
+    // Soulguard Bonecaster
     EVENT_BONE_VOLLEY,
     EVENT_RAISE_DEAD,
     EVENT_SHIELD_OF_BONES,
 
-    //Soulguard Animator
+    // Soulguard Animator
     EVENT_SHADOW_BOLT,
     EVENT_SOUL_SICKNESS,
     EVENT_SOUL_SIPHON,
 
-    //Soulguard Adept
+    // Soulguard Adept
     EVENT_DRAIN_LIFE,
     EVENT_SHADOW_MEND,
 
-    //Soul Horror
+    // Soul Horror
     EVENT_SOUL_STRIKE,
 };
 
-/****************************************SYLVANAS************************************/
-#define GOSSIP_SYLVANAS_ITEM    "What would you have of me, Banshee Queen?"
-#define GOSSIP_JAINA_ITEM       "What would you have of me, my lady?"
-
 enum Yells
 {
-    SAY_JAINA_INTRO_1                           = -1632040,
-    SAY_JAINA_INTRO_2                           = -1632041,
-    SAY_JAINA_INTRO_3                           = -1632042,
-    SAY_JAINA_INTRO_4                           = -1632043,
-    SAY_JAINA_INTRO_5                           = -1632044,
-    SAY_JAINA_INTRO_6                           = -1632045,
-    SAY_JAINA_INTRO_7                           = -1632046,
-    SAY_JAINA_INTRO_8                           = -1632047,
-
-    SAY_SYLVANAS_INTRO_1                        = -1632050,
-    SAY_SYLVANAS_INTRO_2                        = -1632051,
-    SAY_SYLVANAS_INTRO_3                        = -1632052,
-    SAY_SYLVANAS_INTRO_4                        = -1632053,
-    SAY_SYLVANAS_INTRO_5                        = -1632054,
-    SAY_SYLVANAS_INTRO_6                        = -1632055,
+    SAY_JAINA_SYLVANAS_INTRO_1              = 0,
+    SAY_JAINA_SYLVANAS_INTRO_2              = 1,
+    SAY_JAINA_SYLVANAS_INTRO_3              = 2,
+    SAY_JAINA_SYLVANAS_INTRO_4              = 3,
+    SAY_JAINA_SYLVANAS_INTRO_5              = 4,
+    SAY_JAINA_INTRO_6                       = 5,
+    SAY_JAINA_INTRO_7                       = 6,
 };
 
 enum eSylvanas
 {
-    GOSSIP_SPEECHINTRO                           = 13525,
+    GOSSIP_SPEECHINTRO                      = 13525,
     ACTION_INTRO,
 };
 
@@ -149,769 +137,690 @@ enum Phase
 
 class npc_sylvanas_fos : public CreatureScript
 {
-public:
-    npc_sylvanas_fos() : CreatureScript("npc_sylvanas_fos") { }
+    public:
+        npc_sylvanas_fos() : CreatureScript("npc_sylvanas_fos") { }
 
-    struct npc_sylvanas_fosAI : public ScriptedAI
-    {
-        npc_sylvanas_fosAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_sylvanas_fosAI : public ScriptedAI
         {
-            instance = me->GetInstanceScript();
-            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-        }
-
-        InstanceScript* instance;
-
-        EventMap events;
-        Phase phase;
-
-        void Reset()
-        {
-            events.Reset();
-            phase = PHASE_NORMAL;
-        }
-
-        void DoAction(const int32 actionId)
-        {
-            switch (actionId)
+            npc_sylvanas_fosAI(Creature* creature) : ScriptedAI(creature)
             {
-                case ACTION_INTRO:
-                {
-                    phase = PHASE_INTRO;
-                    me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-                    events.Reset();
-                    events.ScheduleEvent(EVENT_INTRO_1, 1000);
-                }
+                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
             }
-        }
 
-        void UpdateAI(const uint32 diff)
-        {
-            if (phase == PHASE_INTRO)
+            void sGossipSelect(Player* player, uint32 sender, uint32 action) override
             {
-                if (!instance)
+                player->CLOSE_GOSSIP_MENU();
+                if (sender == 10942 && action == 0)
+                    StartScene(player);
+            }
+
+            void sQuestAccept(Player* player, Quest const* /*quest*/) override
+            {
+                StartScene(player, 5000);
+            }
+
+        private:
+            bool started = false;
+
+            void StartScene(Player* player, uint32 firstDelay = 0)
+            {
+                if (started)
                     return;
 
-                events.Update(diff);
-                switch (events.ExecuteEvent())
-                {
-                    case EVENT_INTRO_1:
-                        DoScriptText(SAY_SYLVANAS_INTRO_1, me);
-                        events.ScheduleEvent(EVENT_INTRO_2, 11500);
-                        break;
-
-                    case EVENT_INTRO_2:
-                        DoScriptText(SAY_SYLVANAS_INTRO_2, me);
-                        events.ScheduleEvent(EVENT_INTRO_3, 10500);
-                        break;
-
-                    case EVENT_INTRO_3:
-                        DoScriptText(SAY_SYLVANAS_INTRO_3, me);
-                        events.ScheduleEvent(EVENT_INTRO_4, 9500);
-                        break;
-
-                    case EVENT_INTRO_4:
-                        DoScriptText(SAY_SYLVANAS_INTRO_4, me);
-                        events.ScheduleEvent(EVENT_INTRO_5, 10500);
-                        break;
-
-                    case EVENT_INTRO_5:
-                        DoScriptText(SAY_SYLVANAS_INTRO_5, me);
-                        events.ScheduleEvent(EVENT_INTRO_6, 9500);
-                        break;
-
-                    case EVENT_INTRO_6:
-                        DoScriptText(SAY_SYLVANAS_INTRO_6, me);
-                        // End of Intro
-                        phase = PHASE_NORMAL;
-                        break;
-                }
+                started = true;
+                me->SetGossip(true, 10971);
+                me->SetFacingToObject(player);
+                uint32 delay = firstDelay;
+                me->m_Events.Schedule(delay +=   200, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_1); });
+                me->m_Events.Schedule(delay += 11500, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_2); });
+                me->m_Events.Schedule(delay += 10500, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_3); });
+                me->m_Events.Schedule(delay += 10500, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_4); });
+                me->m_Events.Schedule(delay += 12000, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_5); });
             }
+        };
 
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    bool OnGossipHello(Player* player, Creature* creature)
-    {
-        if (creature->isQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        if (creature->GetEntry() == NPC_JAINA_PART1)
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_JAINA_ITEM, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
-        else
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_SYLVANAS_ITEM, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
-
-        player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action)
-    {
-        player->PlayerTalkClass->ClearMenus();
-        switch (action)
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            case GOSSIP_ACTION_INFO_DEF+1:
-                player->CLOSE_GOSSIP_MENU();
-
-                if (creature->AI())
-                    creature->AI()->DoAction(ACTION_INTRO);
-                break;
+            return new npc_sylvanas_fosAI(creature);
         }
-
-        return true;
-    }
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_sylvanas_fosAI(creature);
-    }
 };
 
 class npc_jaina_fos : public CreatureScript
 {
-public:
-    npc_jaina_fos() : CreatureScript("npc_jaina_fos") { }
+    public:
+        npc_jaina_fos() : CreatureScript("npc_jaina_fos") { }
 
-    struct npc_jaina_fosAI: public ScriptedAI
-    {
-        npc_jaina_fosAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_jaina_fosAI: public ScriptedAI
         {
-            instance = me->GetInstanceScript();
-            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-        }
-
-        InstanceScript* instance;
-
-        EventMap events;
-        Phase phase;
-
-        void Reset()
-        {
-            events.Reset();
-            phase = PHASE_NORMAL;
-        }
-
-        void DoAction(const int32 actionId)
-        {
-            switch (actionId)
+            npc_jaina_fosAI(Creature* creature) : ScriptedAI(creature)
             {
-                case ACTION_INTRO:
+                me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+            }
+
+            void sGossipSelect(Player* player, uint32 sender, uint32 action) override
+            {
+                player->CLOSE_GOSSIP_MENU();
+                if (sender == 10943 && action == 0)
+                    StartScene(player);
+            }
+
+            void sQuestAccept(Player* player, Quest const* /*quest*/) override
+            {
+                StartScene(player, 5000);
+            }
+
+        private:
+            bool started = false;
+
+            void StartScene(Player* player, uint32 firstDelay = 0)
+            {
+                if (started)
+                    return;
+
+                started = true;
+                me->SetGossip(true, 10970);
+                me->SetFacingToObject(player);
+                uint32 delay = firstDelay;
+                me->m_Events.Schedule(delay +=   200, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_1); });
+                me->m_Events.Schedule(delay +=  8500, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_2); });
+                me->m_Events.Schedule(delay += 12000, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_3); });
+                me->m_Events.Schedule(delay +=  8500, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_4); });
+                me->m_Events.Schedule(delay += 11000, [this]() { Talk(SAY_JAINA_SYLVANAS_INTRO_5); });
+                me->m_Events.Schedule(delay +=  8500, [this]() { Talk(SAY_JAINA_INTRO_6); });
+                me->m_Events.Schedule(delay += 12000, [this]() { Talk(SAY_JAINA_INTRO_7); });
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_jaina_fosAI(creature);
+        }
+};
+
+class npc_spiteful_apparition : public CreatureScript
+{
+    public:
+        npc_spiteful_apparition() : CreatureScript("npc_spiteful_apparition") { }
+
+        struct npc_spiteful_apparitionAI: public ScriptedAI
+        {
+            npc_spiteful_apparitionAI(Creature* creature) : ScriptedAI(creature)
+            {
+            }
+
+            EventMap events;
+
+            void Reset() override
+            {
+                events.Reset();
+                me->SetReactState(REACT_AGGRESSIVE);
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage)
+            {
+                if (damage >= me->GetHealth() && !me->HasUnitState(UNIT_STATE_CASTING))
                 {
-                    phase = PHASE_INTRO;
-                    me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-                    events.Reset();
-                    events.ScheduleEvent(EVENT_INTRO_1, 1000);
+                    DoCast(me, SPELL_SPITEFUL_APPARITION_SPITE);
+                    damage = 0;
                 }
             }
-        }
 
-        void UpdateAI(const uint32 diff)
-        {
-            if (phase == PHASE_INTRO)
+            void EnterCombat(Unit* /*who*/) override
             {
-                if (!instance)
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                DoCast(me, SPELL_SOUL_HORROR_VISUAL, true);
+                DoCast(me, SPELL_SPITEFUL_APPARITION_VISUAL_1, true);
+                events.ScheduleEvent(EVENT_SPITEFUL_APPARITION_SPITE, urand(3000, 5000));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
                     return;
 
                 events.Update(diff);
-                switch (events.ExecuteEvent())
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    case EVENT_INTRO_1:
-                        DoScriptText(SAY_JAINA_INTRO_1, me);
-                        events.ScheduleEvent(EVENT_INTRO_2, 8000);
-                        break;
+                    switch (eventId)
+                    {
+                        case EVENT_SPITEFUL_APPARITION_SPITE:
+                            me->GetMotionMaster()->Clear();
+                            me->GetMotionMaster()->MoveIdle();
+                            DoCast(me, SPELL_SPITEFUL_APPARITION_SPITE);
+                            events.CancelEvent(EVENT_SPITEFUL_APPARITION_SPITE);
+                            me->m_Events.Schedule(3500, [this]()
+                            {
+                                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                                me->RemoveAurasDueToSpell(SPELL_SOUL_HORROR_VISUAL);
+                                me->RemoveAurasDueToSpell(SPELL_SPITEFUL_APPARITION_VISUAL_1);
+                            });
+                            me->DespawnOrUnsummon(6000);
+                            break;
+                    }
+                }
+            }
+        };
 
-                    case EVENT_INTRO_2:
-                        DoScriptText(SAY_JAINA_INTRO_2, me);
-                        events.ScheduleEvent(EVENT_INTRO_3, 8500);
-                        break;
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_spiteful_apparitionAI(creature);
+        }
+};
 
-                    case EVENT_INTRO_3:
-                        DoScriptText(SAY_JAINA_INTRO_3, me);
-                        events.ScheduleEvent(EVENT_INTRO_4, 8000);
-                        break;
+class npc_spectral_warden : public CreatureScript
+{
+    public:
+        npc_spectral_warden() : CreatureScript("npc_spectral_warden") { }
 
-                    case EVENT_INTRO_4:
-                        DoScriptText(SAY_JAINA_INTRO_4, me);
-                        events.ScheduleEvent(EVENT_INTRO_5, 10000);
-                        break;
+        struct npc_spectral_wardenAI: public ScriptedAI
+        {
+            npc_spectral_wardenAI(Creature* creature) : ScriptedAI(creature) { }
 
-                    case EVENT_INTRO_5:
-                        DoScriptText(SAY_JAINA_INTRO_5, me);
-                        events.ScheduleEvent(EVENT_INTRO_6, 8000);
-                        break;
+            EventMap events;
 
-                    case EVENT_INTRO_6:
-                        DoScriptText(SAY_JAINA_INTRO_6, me);
-                        events.ScheduleEvent(EVENT_INTRO_7, 12000);
-                        break;
+            void Reset() override
+            {
+                events.Reset();
+            }
 
-                    case EVENT_INTRO_7:
-                        DoScriptText(SAY_JAINA_INTRO_7, me);
-                        events.ScheduleEvent(EVENT_INTRO_8, 8000);
-                        break;
+            void EnterCombat(Unit* /*who*/) override
+            {
+                events.ScheduleEvent(EVENT_VEIL_OF_SHADOWS, urand(3000, 5000));
+                events.ScheduleEvent(EVENT_WAIL_OF_SOULS, 10000);
+            }
 
-                    case EVENT_INTRO_8:
-                        DoScriptText(SAY_JAINA_INTRO_8, me);
-                        // End of Intro
-                        phase = PHASE_NORMAL;
-                        break;
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_VEIL_OF_SHADOWS:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_VEIL_OF_SHADOWS);
+                            events.RescheduleEvent(EVENT_VEIL_OF_SHADOWS, urand(5000, 10000));
+                            break;
+                        case EVENT_WAIL_OF_SOULS:
+                            DoCastVictim(SPELL_WAIL_OF_SOULS);
+                            events.RescheduleEvent(EVENT_WAIL_OF_SOULS, 5000);
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_spectral_wardenAI(creature);
+        }
+};
+
+class npc_soulguard_watchman : public CreatureScript
+{
+    public:
+        npc_soulguard_watchman() : CreatureScript("npc_soulguard_watchman") { }
+
+        struct npc_soulguard_watchmanAI: public ScriptedAI
+        {
+            npc_soulguard_watchmanAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+            bool rage;
+
+            void Reset() override
+            {
+                rage = false;
+                events.Reset();
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage)
+            {
+                if (!rage && me->HealthBelowPctDamaged(25, damage))
+                {
+                    DoCast(me, SPELL_UNHOLY_RAGE);
+                    rage = true;
                 }
             }
 
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
+            void EnterCombat(Unit* /*who*/) override
+            {
+                events.ScheduleEvent(EVENT_SHROUD_OF_RUNES, urand(5000, 15000));
+            }
 
-            events.Update(diff);
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
 
-            DoMeleeAttackIfReady();
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_SHROUD_OF_RUNES:
+                            DoCast(me, SPELL_SHROUD_OF_RUNES);
+                            events.CancelEvent(EVENT_SHROUD_OF_RUNES);
+                            break;
+                    }
+                }
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_soulguard_watchmanAI(creature);
         }
-    };
+};
 
-    bool OnGossipHello(Player* player, Creature* creature)
+void CommonJustReachedHome(Creature* me)
+{
+    Creature* horror = NULL;
+    Trinity::NearestCreatureEntryWithLiveStateInObjectRangeCheck checker(*me, NPC_SOUL_HORROR, true, 40.0f);
+    Trinity::CreatureLastSearcher<Trinity::NearestCreatureEntryWithLiveStateInObjectRangeCheck> searcher(me, horror, checker);
+    me->VisitNearbyObject(40.0f, searcher, true); // Load grids
+
+    if (horror)
     {
-        if (creature->isQuestGiver())
-            player->PrepareQuestMenu(creature->GetGUID());
-
-        if (creature->GetEntry() == NPC_JAINA_PART1)
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_JAINA_ITEM, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
+        if (horror->isMoving() || horror->IsInEvadeMode())
+            me->m_Events.Schedule(1000, [me]() { CommonJustReachedHome(me); });
         else
-            player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, GOSSIP_SYLVANAS_ITEM, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF+1);
-
-        player->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-        return true;
+            me->CastSpell(horror, SPELL_SOULGUARD_CHANNEL_BEAM02);
     }
+    else if (me->GetDefaultMovementType() != WAYPOINT_MOTION_TYPE)
+        me->CastSpell(me, SPELL_SOULGUARD_CHANNEL);
+}
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action)
-    {
-        player->PlayerTalkClass->ClearMenus();
-        switch (action)
-        {
-            case GOSSIP_ACTION_INFO_DEF+1:
-                player->CLOSE_GOSSIP_MENU();
-
-                if (creature->AI())
-                    creature->AI()->DoAction(ACTION_INTRO);
-                break;
-        }
-
-        return true;
-    }
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_jaina_fosAI(creature);
-    }
-};
-
-class mob_spiteful_apparition : public CreatureScript
+class npc_soulguard_reaper : public CreatureScript
 {
-public:
-    mob_spiteful_apparition() : CreatureScript("mob_spiteful_apparition") { }
+    public:
+        npc_soulguard_reaper() : CreatureScript("npc_soulguard_reaper") { }
 
-    struct mob_spiteful_apparitionAI: public ScriptedAI
-    {
-        mob_spiteful_apparitionAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_soulguard_reaperAI: public ScriptedAI
         {
-        }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_SPITE, 8000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            npc_soulguard_reaperAI(Creature* creature) : ScriptedAI(creature)
             {
-                switch (eventId)
-                {
-                    case EVENT_SPITE:
-                        DoCastVictim(SPELL_SPITE);
-                        events.RescheduleEvent(EVENT_SPITE, 8000);
-                        return;
-                }
+                if (me->IsAlive())
+                    me->m_Events.Schedule(1000, [this]() { JustReachedHome(); });
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            EventMap events;
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_spiteful_apparitionAI(creature);
-    }
-};
-
-class mob_spectral_warden : public CreatureScript
-{
-public:
-    mob_spectral_warden() : CreatureScript("mob_spectral_warden") { }
-
-    struct mob_spectral_wardenAI: public ScriptedAI
-    {
-        mob_spectral_wardenAI(Creature* creature) : ScriptedAI(creature)
-        {
-        }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_VEIL_OF_SHADOWS, 5000);
-            events.ScheduleEvent(EVENT_WAIL_OF_SOULS, 10000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            void Reset() override
             {
-                switch (eventId)
-                {
-                    case EVENT_VEIL_OF_SHADOWS:
-                        DoCastVictim(SPELL_VEIL_OF_SHADOWS);
-                        events.RescheduleEvent(EVENT_VEIL_OF_SHADOWS, 10000);
-                        return;
-                    case EVENT_WAIL_OF_SOULS:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_WAIL_OF_SOULS);
-                        events.RescheduleEvent(EVENT_WAIL_OF_SOULS, 5000);
-                        return;
-                }
-            }
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_spectral_wardenAI(creature);
-    }
-};
-
-class mob_soulguard_watchman : public CreatureScript
-{
-public:
-    mob_soulguard_watchman() : CreatureScript("mob_soulguard_watchman") { }
-
-    struct mob_soulguard_watchmanAI: public ScriptedAI
-    {
-        mob_soulguard_watchmanAI(Creature* creature) : ScriptedAI(creature) { }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_SHROUD_OF_RUNES, 1000);
-            events.ScheduleEvent(EVENT_UNHOLY_RAGE, 1000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
-            {
-                switch (eventId)
-                {
-                    case EVENT_SHROUD_OF_RUNES:
-                        DoCast(me, SPELL_SHROUD_OF_RUNES);
-                        events.RescheduleEvent(EVENT_SHROUD_OF_RUNES, 5000);
-                        return;
-                    case EVENT_UNHOLY_RAGE:
-                        DoCast(me, SPELL_UNHOLY_RAGE);
-                        events.RescheduleEvent(EVENT_UNHOLY_RAGE, 99999);
-                        return;
-                }
-            }
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_soulguard_watchmanAI(creature);
-    }
-};
-
-class mob_soulguard_reaper : public CreatureScript
-{
-public:
-    mob_soulguard_reaper() : CreatureScript("mob_soulguard_reaper") { }
-
-    struct mob_soulguard_reaperAI: public ScriptedAI
-    {
-        mob_soulguard_reaperAI(Creature* creature) : ScriptedAI(creature) { }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_FROST_NOVA, 8000);
-            events.ScheduleEvent(EVENT_SHADOW_LANCE, 5000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
-            {
-                switch (eventId)
-                {
-                    case EVENT_FROST_NOVA:
-                        DoCast(me, SPELL_FROST_NOVA);
-                        events.RescheduleEvent(EVENT_FROST_NOVA, 9600);
-                        return;
-                    case EVENT_SHADOW_LANCE:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_SHADOW_LANCE);
-                        events.RescheduleEvent(EVENT_SHADOW_LANCE, 8000);
-                        return;
-                }
+                events.Reset();
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_soulguard_reaperAI(creature);
-    }
-};
-
-class mob_soulguard_bonecaster : public CreatureScript
-{
-public:
-    mob_soulguard_bonecaster() : CreatureScript("mob_soulguard_bonecaster") { }
-
-    struct mob_soulguard_bonecasterAI: public ScriptedAI
-    {
-        mob_soulguard_bonecasterAI(Creature* creature) : ScriptedAI(creature) { }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_BONE_VOLLEY, 6000);
-            events.ScheduleEvent(EVENT_RAISE_DEAD, 25000);
-            events.ScheduleEvent(EVENT_SHIELD_OF_BONES, 6000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            void JustReachedHome() override
             {
-                switch (eventId)
-                {
-                    case EVENT_BONE_VOLLEY:
-                        DoCastAOE(SPELL_BONE_VOLLEY);
-                        events.RescheduleEvent(EVENT_BONE_VOLLEY, 7000);
-                        return;
-                    case EVENT_RAISE_DEAD:
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        events.RescheduleEvent(EVENT_RAISE_DEAD, 25000);
-                        return;
-                    case EVENT_SHIELD_OF_BONES:
-                        DoCast(me, SPELL_SHIELD_OF_BONES);
-                        events.RescheduleEvent(EVENT_SHIELD_OF_BONES, 8000);
-                        return;
-                }
+                CommonJustReachedHome(me);
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_soulguard_bonecasterAI(creature);
-    }
-};
-
-class mob_soulguard_animator : public CreatureScript
-{
-public:
-    mob_soulguard_animator() : CreatureScript("mob_soulguard_animator") { }
-
-    struct mob_soulguard_animatorAI : public ScriptedAI
-    {
-        mob_soulguard_animatorAI(Creature* creature) : ScriptedAI(creature)
-        {
-        }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_RAISE_DEAD, 25000);
-            events.ScheduleEvent(EVENT_SHADOW_BOLT, 5000);
-            events.ScheduleEvent(EVENT_SOUL_SICKNESS, 8000);
-            events.ScheduleEvent(EVENT_SOUL_SIPHON, 10000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            void EnterCombat(Unit* /*who*/) override
             {
-                switch (eventId)
-                {
-                    case EVENT_RAISE_DEAD:
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        events.RescheduleEvent(EVENT_RAISE_DEAD, 25000);
-                        return;
-                    case EVENT_SHADOW_BOLT:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_SHADOW_BOLT);
-                        events.RescheduleEvent(EVENT_SHADOW_BOLT, 5000);
-                        return;
-                    case EVENT_SOUL_SICKNESS:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_SOUL_SICKNESS);
-                        events.RescheduleEvent(EVENT_SOUL_SICKNESS, 10000);
-                        return;
-                    case EVENT_SOUL_SIPHON:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_SOUL_SIPHON);
-                        events.RescheduleEvent(EVENT_SOUL_SIPHON, 8000);
-                        return;
-                }
+                me->InterruptNonMeleeSpells(false);
+                events.ScheduleEvent(EVENT_FROST_NOVA, urand(5000, 10000));
+                events.ScheduleEvent(EVENT_SHADOW_LANCE, urand(5000, 10000));
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_soulguard_animatorAI(creature);
-    }
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_FROST_NOVA:
+                            DoCast(me, SPELL_FROST_NOVA);
+                            events.RescheduleEvent(EVENT_FROST_NOVA, urand(10000, 20000));
+                            break;
+                        case EVENT_SHADOW_LANCE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_SHADOW_LANCE);
+                            events.RescheduleEvent(EVENT_SHADOW_LANCE, urand(5000, 10000));
+                            break;
+                    }
+                }
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_soulguard_reaperAI(creature);
+        }
 };
 
-class mob_soulguard_adept : public CreatureScript
+class npc_soulguard_bonecaster : public CreatureScript
 {
-public:
-    mob_soulguard_adept() : CreatureScript("mob_soulguard_adept") { }
+    public:
+        npc_soulguard_bonecaster() : CreatureScript("npc_soulguard_bonecaster") { }
 
-    struct mob_soulguard_adeptAI: public ScriptedAI
-    {
-        mob_soulguard_adeptAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_soulguard_bonecasterAI: public ScriptedAI
         {
-        }
-
-        EventMap events;
-
-        void Reset()
-        {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_RAISE_DEAD, 25000);
-            events.ScheduleEvent(EVENT_SHADOW_BOLT, 8000);
-            events.ScheduleEvent(EVENT_DRAIN_LIFE, 7000);
-            events.ScheduleEvent(EVENT_SHADOW_MEND, 35000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            npc_soulguard_bonecasterAI(Creature* creature) : ScriptedAI(creature)
             {
-                switch (eventId)
-                {
-                    case EVENT_RAISE_DEAD:
-                        DoCast(me, SPELL_RAISE_DEAD);
-                        events.RescheduleEvent(EVENT_RAISE_DEAD, 25000);
-                        return;
-                    case EVENT_SHADOW_BOLT:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_SHADOW_BOLT);
-                        events.RescheduleEvent(EVENT_SHADOW_BOLT, 4000);
-                        return;
-                    case EVENT_DRAIN_LIFE:
-                        if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
-                            DoCast(target, SPELL_DRAIN_LIFE);
-                        events.RescheduleEvent(EVENT_DRAIN_LIFE, 9000);
-                        return;
-                    case EVENT_SHADOW_MEND:
-                        DoCast(me, SPELL_SHADOW_MEND);
-                        events.RescheduleEvent(EVENT_SHADOW_MEND, 20000);
-                        return;
-                }
+                if (me->IsAlive())
+                    me->m_Events.Schedule(1000, [this]() { JustReachedHome(); });
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            EventMap events;
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_soulguard_adeptAI(creature);
-    }
+            void Reset() override
+            {
+                events.Reset();
+            }
+
+            void JustReachedHome() override
+            {
+                CommonJustReachedHome(me);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                me->InterruptNonMeleeSpells(false);
+                events.ScheduleEvent(EVENT_BONE_VOLLEY, urand(100, 3000));
+                events.ScheduleEvent(EVENT_RAISE_DEAD, urand(25000, 35000));
+                events.ScheduleEvent(EVENT_SHIELD_OF_BONES, urand(4000, 8000));
+
+                me->CallForHelp(20);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BONE_VOLLEY:
+                            DoCastAOE(SPELL_BONE_VOLLEY);
+                            events.RescheduleEvent(EVENT_BONE_VOLLEY, urand(5000, 15000));
+                            break;
+                        case EVENT_RAISE_DEAD:
+                            DoCast(me, SPELL_RAISE_DEAD);
+                            events.RescheduleEvent(EVENT_RAISE_DEAD, urand(25000, 35000));
+                            break;
+                        case EVENT_SHIELD_OF_BONES:
+                            DoCast(me, SPELL_SHIELD_OF_BONES);
+                            events.RescheduleEvent(EVENT_SHIELD_OF_BONES, urand(10000, 20000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_soulguard_bonecasterAI(creature);
+        }
 };
 
-class mob_soul_horror : public CreatureScript
+class npc_soulguard_animator : public CreatureScript
 {
-public:
-    mob_soul_horror() : CreatureScript("mob_soul_horror") { }
+    public:
+        npc_soulguard_animator() : CreatureScript("npc_soulguard_animator") { }
 
-    struct mob_soul_horrorAI : public ScriptedAI
-    {
-        mob_soul_horrorAI(Creature* creature) : ScriptedAI(creature) { }
-
-        EventMap events;
-
-        void Reset()
+        struct npc_soulguard_animatorAI : public ScriptedAI
         {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            events.ScheduleEvent(EVENT_SOUL_STRIKE, 6000);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            //Return since we have no target
-            if (!UpdateVictim())
-                return;
-
-            events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            npc_soulguard_animatorAI(Creature* creature) : ScriptedAI(creature)
             {
-                switch (eventId)
-                {
-                    case EVENT_SOUL_STRIKE:
-                        DoCast(me->getVictim(), SPELL_SOUL_STRIKE);
-                        events.RescheduleEvent(EVENT_SOUL_STRIKE, 8000);
-                        return;
-                }
+                if (me->IsAlive())
+                    me->m_Events.Schedule(1000, [this]() { JustReachedHome(); });
             }
 
-            DoMeleeAttackIfReady();
-        }
-    };
+            EventMap events;
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new mob_soul_horrorAI(creature);
-    }
+            void Reset() override
+            {
+                events.Reset();
+            }
+
+            void JustReachedHome() override
+            {
+                CommonJustReachedHome(me);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                me->InterruptNonMeleeSpells(false);
+                events.ScheduleEvent(EVENT_RAISE_DEAD, urand(25000, 35000));
+                events.ScheduleEvent(EVENT_SHADOW_BOLT, urand(100, 5000));
+                events.ScheduleEvent(EVENT_SOUL_SICKNESS, urand(10000, 20000));
+                events.ScheduleEvent(EVENT_SOUL_SIPHON, urand(10000, 20000));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_RAISE_DEAD:
+                            DoCast(me, SPELL_RAISE_DEAD);
+                            events.RescheduleEvent(EVENT_RAISE_DEAD, urand(25000, 35000));
+                            break;
+                        case EVENT_SHADOW_BOLT:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_SHADOW_BOLT);
+                            events.RescheduleEvent(EVENT_SHADOW_BOLT, urand(5000, 10000));
+                            break;
+                        case EVENT_SOUL_SICKNESS:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_SOUL_SICKNESS);
+                            events.RescheduleEvent(EVENT_SOUL_SICKNESS, urand(10000, 20000));
+                            break;
+                        case EVENT_SOUL_SIPHON:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_SOUL_SIPHON);
+                            events.RescheduleEvent(EVENT_SOUL_SIPHON, urand(10000, 20000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_soulguard_animatorAI(creature);
+        }
+};
+
+class npc_soulguard_adept : public CreatureScript
+{
+    public:
+        npc_soulguard_adept() : CreatureScript("npc_soulguard_adept") { }
+
+        struct npc_soulguard_adeptAI: public ScriptedAI
+        {
+            npc_soulguard_adeptAI(Creature* creature) : ScriptedAI(creature)
+            {
+                if (me->IsAlive())
+                    me->m_Events.Schedule(1000, [this]() { JustReachedHome(); });
+            }
+
+            EventMap events;
+
+            void Reset() override
+            {
+                events.Reset();
+            }
+
+            void JustReachedHome() override
+            {
+                CommonJustReachedHome(me);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                me->InterruptNonMeleeSpells(false);
+                events.ScheduleEvent(EVENT_RAISE_DEAD, urand(25000, 35000));
+                events.ScheduleEvent(EVENT_SHADOW_BOLT, urand(100, 3000));
+                events.ScheduleEvent(EVENT_DRAIN_LIFE, urand(5000, 15000));
+                events.ScheduleEvent(EVENT_SHADOW_MEND, urand(15000, 25000));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_RAISE_DEAD:
+                            DoCast(me, SPELL_RAISE_DEAD);
+                            events.RescheduleEvent(EVENT_RAISE_DEAD, urand(25000, 35000));
+                            break;
+                        case EVENT_SHADOW_BOLT:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_SHADOW_BOLT);
+                            events.RescheduleEvent(EVENT_SHADOW_BOLT, urand(5000, 10000));
+                            break;
+                        case EVENT_DRAIN_LIFE:
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0))
+                                DoCast(target, SPELL_DRAIN_LIFE);
+                            events.RescheduleEvent(EVENT_DRAIN_LIFE, urand(10000, 20000));
+                            break;
+                        case EVENT_SHADOW_MEND:
+                            if (Unit* target = DoSelectLowestHpFriendly(39, 11000))
+                                DoCast(target, SPELL_SHADOW_MEND);
+                            else
+                                DoCast(me, SPELL_SHADOW_MEND);
+                            events.RescheduleEvent(EVENT_SHADOW_MEND, urand(10000, 20000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_soulguard_adeptAI(creature);
+        }
+};
+
+class npc_soul_horror : public CreatureScript
+{
+    public:
+        npc_soul_horror() : CreatureScript("npc_soul_horror") { }
+
+        struct npc_soul_horrorAI : public ScriptedAI
+        {
+            npc_soul_horrorAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+
+            void Reset() override
+            {
+                events.Reset();
+                JustReachedHome();
+            }
+
+            void JustReachedHome() override
+            {
+                DoCast(me, SPELL_SOUL_CHANNELING_IMPACT);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                me->InterruptNonMeleeSpells(false);
+                events.ScheduleEvent(EVENT_SOUL_STRIKE, urand(100, 3000));
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_SOUL_STRIKE:
+                            DoCast(me->GetVictim(), SPELL_SOUL_STRIKE);
+                            events.RescheduleEvent(EVENT_SOUL_STRIKE, urand(3000, 8000));
+                            break;
+                    }
+                }
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_soul_horrorAI(creature);
+        }
 };
 
 void AddSC_forge_of_souls()
 {
-    new npc_sylvanas_fos();
-    new npc_jaina_fos();
-    new mob_spiteful_apparition();
-    new mob_spectral_warden();
-    new mob_soulguard_watchman();
-    new mob_soulguard_reaper();
-    new mob_soulguard_bonecaster();
-    new mob_soulguard_animator();
-    new mob_soulguard_adept();
-    new mob_soul_horror();
+    new npc_sylvanas_fos;
+    new npc_jaina_fos;
+    new npc_spiteful_apparition;
+    new npc_spectral_warden;
+    new npc_soulguard_watchman;
+    new npc_soulguard_reaper;
+    new npc_soulguard_bonecaster;
+    new npc_soulguard_animator;
+    new npc_soulguard_adept;
+    new npc_soul_horror;
 }

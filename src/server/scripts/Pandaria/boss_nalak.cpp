@@ -1,421 +1,272 @@
-/*
-World Boss: Nalak <The Storm Lord>
-*/
-
-#include "ObjectMgr.h"
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
-#include "CreatureTextMgr.h"
-#include "SpellScript.h"
-#include "SpellAuras.h"
-#include "SpellAuraEffects.h"
-#include "Player.h"
-
-enum Texts
-{
-    SAY_INTRO = 0, // I am born of thunder!
-    SAY_AGGRO = 1, // Can you feel a chill wind blow? The storm is coming...
-    SAY_DEATH = 2, // I am but... The darkness... Before the storm...
-    SAY_SLAY = 3, // The sky weeps for your demise!
-    SAY_ARC_NOVA = 4, // The clouds arc with vengeance!
-    SAY_STORM_CLOUD = 5  // The air crackles with anger!
-};
+#include "ObjectMgr.h"
+#include "ScriptMgr.h"
 
 enum Spells
 {
-    SPELL_ARC_NOVA = 136338, // 39s, every 42 s.
-    SPELL_LIGHTNING_TET_A = 136339, // 28s, every 35 s.
-    SPELL_LIGHTNING_TET_S = 136350, // Scripting spell. 0 - SE SPELL_LIGHTNING_TET_D +30yd; 1 - Dummy close dmg. SPELL_LITHGNING_TET_N.
-    SPELL_LIGHTNING_TET_D = 136349, // Damage for over 30y.
-    SPELL_LITHGNING_TET_N = 136353, // Normal damage.
-    SPELL_STATIC_SHIELD = 136341, // As aggro, whole fight, triggers dmg each sec.
-    SPELL_STORMCLOUD = 136340  // 15s, every 24 s.
+    SPELL_STATIC_SHIELD             = 136341,
+    SPELL_ARC_NOVA                  = 136338,
+    SPELL_STORM_CLOUD               = 136340,
+    SPELL_LIGHTNING_TETHER          = 136339,
+    SPELL_LIGHTNING_TETHER_EFF      = 136349,
+    SPELL_LIGHTNING_TETHER_EFF_NEAR = 136353,
 };
 
 enum Events
 {
     EVENT_ARC_NOVA = 1,
-    EVENT_LIGHTNING_TET = 2,
-    EVENT_STORMCLOUD = 3
+    EVENT_STORM_CLOUD,
+    EVENT_LIGHTNING_TETHER,
 };
 
+enum Yells
+{
+    // Nalak
+    SAY_NALAK_AGGRO = 0,
+    SAY_NALAK_DEATH,
+    SAY_NALAK_INTRO,
+    SAY_NALAK_SLAY,
+    SAY_NALAK_STORMCLOUD,
+    SAY_NALAK_LIGHTNING_TETHER,
+};
+
+// Nalak 69099
 class boss_nalak : public CreatureScript
 {
-public:
-    boss_nalak() : CreatureScript("boss_nalak") { }
-
-    struct boss_nalakAI : public ScriptedAI
-    {
-        boss_nalakAI(Creature* creature) : ScriptedAI(creature)
+    public:
+        boss_nalak() : CreatureScript("boss_nalak") { }
+    
+        struct boss_nalakAI : public ScriptedAI
         {
-            introDone = false;
-        }
+            boss_nalakAI(Creature* creature) : ScriptedAI(creature) { }
 
-        EventMap _events;
-        bool introDone;
+            EventMap events;
 
-        void InitializeAI()
-        {
-            if (!me->isDead())
-                Reset();
-        }
-
-        void Reset()
-        {
-            me->RemoveAurasDueToSpell(SPELL_STATIC_SHIELD);
-            _events.Reset();
-        }
-
-        void MoveInLineOfSight(Unit* who)
-        {
-            if (!introDone && me->IsWithinDistInMap(who, 40) && who->GetTypeId() == TYPEID_PLAYER)
+            void Reset() override
             {
-                Talk(SAY_INTRO);
-                introDone = true;
+                Talk(SAY_NALAK_INTRO);
+
+                me->SetFloatValue(UNIT_FIELD_BOUNDING_RADIUS, 100.0f);
+                me->SetFloatValue(UNIT_FIELD_COMBAT_REACH, 25.0f);
+                events.Reset();
             }
-        }
-
-        void EnterCombat(Unit* /*who*/)
-        {
-            Talk(SAY_AGGRO);
-            DoCast(me, SPELL_STATIC_SHIELD);
-
-            _events.ScheduleEvent(EVENT_ARC_NOVA, urand(37000, 41000)); // 37-41s
-            _events.ScheduleEvent(EVENT_LIGHTNING_TET, urand(28000, 35000)); // 28-35s
-            _events.ScheduleEvent(EVENT_STORMCLOUD, urand(13000, 17000)); // 13-17s
-        }
-
-        void KilledUnit(Unit* victim)
-        {
-            if (victim->GetTypeId() == TYPEID_PLAYER)
-                Talk(SAY_SLAY);
-        }
-
-        void EnterEvadeMode()
-        {
-            Reset();
-            me->DeleteThreatList();
-            me->CombatStop(false);
-            me->GetMotionMaster()->MoveTargetedHome();
-        }
-
-        void JustDied(Unit* /*killer*/)
-        {
-            Talk(SAY_DEATH);
-        }
-
-        void UpdateAI(const uint32 diff)
-        {
-            if (!UpdateVictim())
-                return;
-
-            _events.Update(diff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = _events.ExecuteEvent())
+    
+            void EnterCombat(Unit* /*who*/) override
             {
-                switch (eventId)
+                Talk(SAY_NALAK_AGGRO);
+                DoCast(me, SPELL_STATIC_SHIELD, true);
+
+                events.ScheduleEvent(EVENT_ARC_NOVA, 39 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_LIGHTNING_TETHER, 28 * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_STORM_CLOUD, urand(15 * IN_MILLISECONDS, 17 * IN_MILLISECONDS));
+            }
+
+            void EnterEvadeMode() override
+            {
+                ScriptedAI::EnterEvadeMode();
+
+                uint32 corpseDelay = me->GetCorpseDelay();
+                uint32 respawnDelay = me->GetRespawnDelay();
+
+                me->SetCorpseDelay(1);
+                me->SetRespawnDelay(29);
+
+                me->DespawnOrUnsummon();
+
+                me->SetCorpseDelay(corpseDelay);
+                me->SetRespawnDelay(respawnDelay);
+            }
+    
+            void KilledUnit(Unit* /*victim*/) override
+            {
+                Talk(SAY_NALAK_SLAY);
+            }
+    
+            void JustDied(Unit* /*killer*/) override
+            {
+                Talk(SAY_NALAK_DEATH);
+            }
+    
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+                
+                events.Update(diff);
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                case EVENT_ARC_NOVA:
-                    Talk(SAY_ARC_NOVA);
-                    DoCast(me, SPELL_ARC_NOVA);
-                    _events.ScheduleEvent(EVENT_ARC_NOVA, urand(41000, 43000));
-                    break;
-
-                case EVENT_LIGHTNING_TET:
-                    DoCast(me, SPELL_LIGHTNING_TET_A);
-                    _events.ScheduleEvent(EVENT_LIGHTNING_TET, urand(37000, 39000));
-                    break;
-
-                case EVENT_STORMCLOUD:
-                    Talk(SAY_STORM_CLOUD);
-                    DoCast(me, SPELL_STORMCLOUD);
-                    _events.ScheduleEvent(EVENT_STORMCLOUD, urand(33000, 37000));
-                    break;
-
-                default: break;
+                    switch (eventId)
+                    {
+                        case EVENT_ARC_NOVA:
+                            DoCast(me, SPELL_ARC_NOVA);
+                            events.ScheduleEvent(EVENT_ARC_NOVA, 42 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_LIGHTNING_TETHER:
+                            Talk(SAY_NALAK_LIGHTNING_TETHER);
+                            DoCast(me, SPELL_LIGHTNING_TETHER);
+                            events.ScheduleEvent(EVENT_LIGHTNING_TETHER, 35 * IN_MILLISECONDS);
+                            break;
+                        case EVENT_STORM_CLOUD:
+                            Talk(SAY_NALAK_STORMCLOUD);
+                            DoCast(me, SPELL_STORM_CLOUD);
+                            events.ScheduleEvent(EVENT_STORM_CLOUD, 24 * IN_MILLISECONDS);
+                            break;
+                    }
                 }
+    
+                DoMeleeAttackIfReady();
+            }
+        };
+    
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_nalakAI(creature);
+        }
+};
+
+// Lightning Tether 136339
+class spell_nalak_lightning_tether : public SpellScript
+{
+    PrepareSpellScript(spell_nalak_lightning_tether);
+
+    void SelectTargets(std::list<WorldObject*>&targets)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 200.0f);
+
+            // Remove tanks and affected by select aura if possible
+            pList.remove_if(TankSpecTargetSelector());
+            pList.remove_if([=](Player* target) { return target && target->HasAura(SPELL_LIGHTNING_TETHER); });
+
+            // if we have enough players without tanks and affected by aura 
+            if (pList.size() >= 5)
+            {
+                targets.clear();
+
+                for (auto&& itr : pList)
+                    targets.push_back(itr);
+
+                if (pList.size() > 5)
+                    Trinity::Containers::RandomResizeList(targets, 5);
+
+                return;
             }
 
-            DoMeleeAttackIfReady();
+            // if we haven`t enough players without tanks and aura affected, then just select anyone
+            targets.remove_if([=](WorldObject* target) { return target && target->ToUnit() && target->ToUnit()->HasAura(SPELL_LIGHTNING_TETHER); });
+
+            if (targets.size() > 5)
+                Trinity::Containers::RandomResizeList(targets, 5);
         }
-    };
+    }
 
-    CreatureAI* GetAI(Creature* creature) const
+    void Register() override
     {
-        return new boss_nalakAI(creature);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_nalak_lightning_tether::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
     }
 };
 
-// Lightning Tether / Static Shield / StormCloud player check.
-class PlayerCheck : public std::unary_function<Unit*, bool>
+// Lightning Tether Eff 136350
+class spell_nalak_lightning_tether_eff : public SpellScript
 {
-public:
-    explicit PlayerCheck(Unit* _caster) : caster(_caster) { }
-    bool operator()(WorldObject* object)
+    PrepareSpellScript(spell_nalak_lightning_tether_eff);
+
+    void HandleEffectHitTarget(SpellEffIndex /*effIndex*/)
     {
-        return object->GetTypeId() != TYPEID_PLAYER;
+        if (Unit* target = GetHitUnit())
+            if (Unit* caster = GetCaster())
+                target->CastSpell(caster, target->GetExactDist2d(caster) > 20.0f ? SPELL_LIGHTNING_TETHER_EFF : SPELL_LIGHTNING_TETHER_EFF_NEAR, true);
     }
 
-private:
-    Unit* caster;
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_nalak_lightning_tether_eff::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
 };
 
-// Static Shield damage 136343.
-class spell_static_shield_damage : public SpellScriptLoader
+// Lightning Teather Hit Eff 136349, 136353
+class spell_nalak_lightning_teather_hit_eff : public SpellScript
 {
-public:
-    spell_static_shield_damage() : SpellScriptLoader("spell_static_shield_damage") { }
+    PrepareSpellScript(spell_nalak_lightning_teather_hit_eff);
 
-    class spell_static_shield_damage_SpellScript : public SpellScript
+    void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
     {
-        PrepareSpellScript(spell_static_shield_damage_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
+        if (Unit* caster = GetCaster())
         {
-            if (targets.empty())
+            if (Unit* target = GetHitUnit())
+            {
+                float dist = target->GetExactDist2d(caster);
+
+                int32 damage = GetHitDamage();
+                int32 reduction = GetHitDamage() + AddPct(damage, dist);
+                SetHitDamage(reduction);
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_nalak_lightning_teather_hit_eff::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+    }
+};
+
+// Storm Cloud 136340
+class spell_nalak_storm_cloud : public SpellScript
+{
+    PrepareSpellScript(spell_nalak_storm_cloud);
+
+    void SelectTargets(std::list<WorldObject*>&targets)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 200.0f);
+
+            // Remove tanks, meelee and affected by select aura if possible
+            pList.remove_if(TankSpecTargetSelector());
+            pList.remove_if(MeeleSpecTargetSelector());
+            pList.remove_if([=](Player* target) { return target && target->HasAura(SPELL_STORM_CLOUD); });
+
+            // if we have enough players without tanks, meelee and affected by aura 
+            if (pList.size() >= 3)
+            {
+                targets.clear();
+
+                for (auto&& itr : pList)
+                    targets.push_back(itr);
+
+                if (pList.size() > 3)
+                    Trinity::Containers::RandomResizeList(targets, 3);
+
                 return;
+            }
 
-            // Set targets.
-            targets.remove_if(PlayerCheck(GetCaster()));
+            // if we haven`t enough players without tanks, meelee and aura affected, then just select anyone
+            targets.remove_if([=](WorldObject* target) { return target && target->ToUnit() && target->ToUnit()->HasAura(SPELL_STORM_CLOUD); });
+
+            if (targets.size() > 3)
+                Trinity::Containers::RandomResizeList(targets, 3);
         }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_static_shield_damage_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_static_shield_damage_SpellScript();
-    }
-};
-
-// Lightning Tether trigger aura 136339.
-class spell_lightning_tether_dmg_trigger : public SpellScriptLoader
-{
-public:
-    spell_lightning_tether_dmg_trigger() : SpellScriptLoader("spell_lightning_tether_dmg_trigger") { }
-
-    class spell_lightning_tether_dmg_trigger_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_lightning_tether_dmg_trigger_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            // Set targets.
-            targets.remove_if(PlayerCheck(GetCaster()));
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lightning_tether_dmg_trigger_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_lightning_tether_dmg_trigger_SpellScript();
-    }
-};
-
-// Lightning Tether aura triggered spell 136350.
-class spell_lightning_tether_trigger : public SpellScriptLoader
-{
-public:
-    spell_lightning_tether_trigger() : SpellScriptLoader("spell_lightning_tether_trigger") { }
-
-    class spell_lightning_tether_trigger_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_lightning_tether_trigger_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            targets.remove_if(PlayerCheck(GetCaster()));
-        }
-
-        void HandleScript(SpellEffIndex effIndex)
-        {
-            PreventHitDefaultEffect(effIndex);
-            GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true); // SPELL_LIGHTNING_TET_D
-        }
-
-        void HandleDummy(SpellEffIndex effIndex)
-        {
-            PreventHitDefaultEffect(effIndex);
-            GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true); // SPELL_LIGHTNING_TET_N
-        }
-
-        void Register()
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_lightning_tether_trigger_SpellScript::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
-            OnEffectHitTarget += SpellEffectFn(spell_lightning_tether_trigger_SpellScript::HandleDummy, EFFECT_1, SPELL_EFFECT_DUMMY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lightning_tether_trigger_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_NEARBY_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lightning_tether_trigger_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_NEARBY_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_lightning_tether_trigger_SpellScript();
-    }
-};
-
-// Lightning Tether dmg distance check.
-class DistanceCheck : public std::unary_function<Unit*, bool>
-{
-public:
-    DistanceCheck(Unit* caster, float dist) : _caster(caster), _dist(dist) { }
-
-    bool operator()(WorldObject* object)
-    {
-        return _caster->GetExactDist2d(object) < _dist;
     }
 
-private:
-    WorldObject* _caster;
-    float _dist;
-};
-
-// Lightning Tether dmg distance 136349.
-class spell_lightning_tether_dmg_dist : public SpellScriptLoader
-{
-public:
-    spell_lightning_tether_dmg_dist() : SpellScriptLoader("spell_lightning_tether_dmg_dist") { }
-
-    class spell_lightning_tether_dmg_dist_SpellScript : public SpellScript
+    void Register() override
     {
-        PrepareSpellScript(spell_lightning_tether_dmg_dist_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            // Set targets.
-            targets.remove_if(PlayerCheck(GetCaster()));
-            targets.remove_if(DistanceCheck(GetCaster(), 30.0f));
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lightning_tether_dmg_dist_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_TARGET_ANY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_lightning_tether_dmg_dist_SpellScript();
-    }
-};
-
-// Lightning Tether dmg close 136353.
-class spell_lightning_tether_dmg_close : public SpellScriptLoader
-{
-public:
-    spell_lightning_tether_dmg_close() : SpellScriptLoader("spell_lightning_tether_dmg_close") { }
-
-    class spell_lightning_tether_dmg_close_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_lightning_tether_dmg_close_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            // Set targets.
-            targets.remove_if(PlayerCheck(GetCaster()));
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lightning_tether_dmg_close_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_TARGET_ANY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_lightning_tether_dmg_close_SpellScript();
-    }
-};
-
-// StormCloud trigger aura 136340.
-class spell_stormcloud_dmg_trigger : public SpellScriptLoader
-{
-public:
-    spell_stormcloud_dmg_trigger() : SpellScriptLoader("spell_stormcloud_dmg_trigger") { }
-
-    class spell_stormcloud_dmg_trigger_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_stormcloud_dmg_trigger_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            // Set targets.
-            targets.remove_if(PlayerCheck(GetCaster()));
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_stormcloud_dmg_trigger_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_stormcloud_dmg_trigger_SpellScript();
-    }
-};
-
-// StormCloud damage 136345.
-class spell_stormcloud_dmg : public SpellScriptLoader
-{
-public:
-    spell_stormcloud_dmg() : SpellScriptLoader("spell_stormcloud_dmg") { }
-
-    class spell_stormcloud_dmg_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_stormcloud_dmg_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& targets)
-        {
-            if (targets.empty())
-                return;
-
-            // Set targets.
-            targets.remove_if(PlayerCheck(GetCaster()));
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_stormcloud_dmg_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_stormcloud_dmg_SpellScript();
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_nalak_storm_cloud::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
     }
 };
 
 void AddSC_boss_nalak()
 {
     new boss_nalak();
-    new spell_static_shield_damage();
-    new spell_lightning_tether_dmg_trigger();
-    new spell_lightning_tether_trigger();
-    new spell_lightning_tether_dmg_dist();
-    new spell_lightning_tether_dmg_close();
-    new spell_stormcloud_dmg_trigger();
-    new spell_stormcloud_dmg();
+    new spell_script<spell_nalak_lightning_tether>("spell_nalak_lightning_tether");
+    new spell_script<spell_nalak_lightning_tether_eff>("spell_nalak_lightning_tether_eff");
+    new spell_script<spell_nalak_lightning_teather_hit_eff>("spell_nalak_lightning_teather_hit_eff");
+    new spell_script<spell_nalak_storm_cloud>("spell_nalak_storm_cloud");
 }

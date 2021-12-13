@@ -4,7 +4,7 @@
 enum ScriptTexts
 {
     SAY_AGGRO    = 0,
-    SAY_KILL    = 1,
+    SAY_KILL     = 1,
     SAY_SPELL    = 2,
     SAY_DEATH    = 3,
 };
@@ -12,26 +12,24 @@ enum ScriptTexts
 enum Spells
 {
     SPELL_CHAIN_LIGHTNING                    = 87622,
-    SPELL_CHAIN_LIGHTNING_H                    = 93993,
-    SPELL_UNSTABLE_GROUNDING_FIELD            = 86911,
-    SPELL_GROUNDING_FIELD_VISUAL_BEAMS        = 87517,
+    SPELL_UNSTABLE_GROUNDING_FIELD           = 86911,
+    SPELL_GROUNDING_FIELD_VISUAL_BEAMS       = 87517,
 
-    SPELL_SUPREMACY_OF_THE_STORM            = 86930,
+    SPELL_SUPREMACY_OF_THE_STORM             = 86930,
     
-    SPELL_SUPREMACY_OF_THE_STORM_DUMMY        = 86715,
-    SPELL_SUPREMACY_OF_THE_STORM_DMG        = 87553,
-    SPELL_SUPREMACY_OF_THE_STORM_DMG_H        = 93994,
+    SPELL_SUPREMACY_OF_THE_STORM_DUMMY       = 86715,
+    SPELL_SUPREMACY_OF_THE_STORM_DMG         = 87553,
 
-    SPELL_SUPREMACY_OF_THE_STORM_DUMMY_1    = 87521,
-    SPELL_SUPREMACY_OF_THE_STORM_SUM        = 87518,
+    SPELL_SUPREMACY_OF_THE_STORM_DUMMY_1     = 87521,
+    SPELL_SUPREMACY_OF_THE_STORM_SUM         = 87518,
     SPELL_SUPREMACY_OF_THE_STORM_TELE        = 87328,
 
-    SPELL_STATIC_CLING                        = 87618,
+    SPELL_STATIC_CLING                       = 87618,
 };
 
 enum Events
 {
-    EVENT_FIELD                = 1,
+    EVENT_FIELD              = 1,
     EVENT_FIELD_1            = 2,
     EVENT_FIELD_2            = 3,
     EVENT_FIELD_3            = 4,
@@ -39,7 +37,7 @@ enum Events
     EVENT_FIELD_5            = 6,
     EVENT_FIELD_6            = 7,
     EVENT_CHAIN_LIGHTNING    = 8,
-    EVENT_STATIC_CLING        = 9,
+    EVENT_STATIC_CLING       = 9,
     EVENT_SUMMON_STAR        = 10,
 };
 
@@ -48,39 +46,35 @@ enum Adds
     NPC_UNSTABLE_GROUNDING_FIELD    = 46492,
     NPC_SKYFALL_STAR                = 52019,
     NPC_STORM_TARGET                = 46387,
-    NPC_GROUNDING_FIELD                = 47000,
+    NPC_GROUNDING_FIELD             = 47000,
 };
 
-const Position fieldPos[4]    =
+const Position fieldPos[4] =
 {
-    {-644.20f, 489.00f, 646.63f, 0.0f},
-    {-638.38f, 480.68f, 646.63f, 0.0f},
-    {-635.43f, 492.11f, 646.63f, 0.0f},
-    {-639.23f, 488.13f, 656.63f, 0.0f},
+    { -644.20f, 489.00f, 646.63f, 0.0f  },
+    { -638.38f, 480.68f, 646.63f, 0.0f  },
+    { -635.43f, 492.11f, 646.63f, 0.0f  },
+    { -639.23f, 488.13f, 656.63f, 0.0f  },
 };
 
 const Position starPos[6] = 
 {
-    {-583.77f, 516.56f, 649.51f, 5.65f},
-    {-591.65f, 476.39f, 649.19f, 4.39f},
-    {-617.69f, 544.79f, 650.12f, 0.11f},
-    {-652.62f, 532.48f, 649.03f, 1.53f},
-    {-618.65f, 463.05f, 650.63f, 0.0f},
-    {-649.24f, 474.11f, 649.63f, 0.0f},
+    { -583.77f, 516.56f, 649.51f, 5.65f },
+    { -591.65f, 476.39f, 649.19f, 4.39f },
+    { -617.69f, 544.79f, 650.12f, 0.11f },
+    { -652.62f, 532.48f, 649.03f, 1.53f },
+    { -618.65f, 463.05f, 650.63f, 0.0f  },
+    { -649.24f, 474.11f, 649.63f, 0.0f  },
 };
 
 class boss_asaad : public CreatureScript
 {
     public:
         boss_asaad() : CreatureScript("boss_asaad") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_asaadAI(pCreature);
-        }
+
         struct boss_asaadAI : public BossAI
         {
-            boss_asaadAI(Creature* pCreature) : BossAI(pCreature, DATA_ASAAD)
+            boss_asaadAI(Creature* creature) : BossAI(creature, DATA_ASAAD)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -102,23 +96,21 @@ class boss_asaad : public CreatureScript
             Creature* _field2;
             Creature* _field3;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(VPScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 me->SetCanFly(false);
                 bField = false;
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
-    
-            void EnterCombat(Unit* /*pWho*/)
+
+            void EnterCombat(Unit* /*who*/) override
             {
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
                 events.ScheduleEvent(EVENT_SUMMON_STAR, urand(10000, 20000));
                 events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, urand(5000, 10000));
                 events.ScheduleEvent(EVENT_FIELD, 45000);
@@ -128,21 +120,25 @@ class boss_asaad : public CreatureScript
                 bField = false;
                 DoZoneInCombat();
                 instance->SetBossState(DATA_ASAAD, IN_PROGRESS);
-            }    
-            void KilledUnit(Unit* killer)
+            }
+
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* pWho)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 me->SetCanFly(false);
                 Talk(SAY_DEATH);
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             }
             
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -224,7 +220,7 @@ class boss_asaad : public CreatureScript
                             me->SetCanFly(false);
                             me->SetDisableGravity(false);;
                             me->SetReactState(REACT_AGGRESSIVE);
-                            AttackStart(me->getVictim());
+                            AttackStart(me->GetVictim());
                             events.ScheduleEvent(EVENT_FIELD, 45000);
                             events.ScheduleEvent(EVENT_SUMMON_STAR, urand(10000, 20000));
                             events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, urand(5000, 10000));
@@ -233,36 +229,38 @@ class boss_asaad : public CreatureScript
                             break;
                         }
                 }
-
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_asaadAI>(creature);
+        }
 };
 
 class npc_unstable_grounding_field : public CreatureScript
 {
     public:
         npc_unstable_grounding_field() : CreatureScript("npc_unstable_grounding_field") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
+
+        struct npc_unstable_grounding_fieldAI : public ScriptedAI
         {
-            return new npc_unstable_grounding_fieldAI(pCreature);
-        }
-        struct npc_unstable_grounding_fieldAI : public Scripted_NoMovementAI
-        {
-            npc_unstable_grounding_fieldAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_unstable_grounding_fieldAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
-            {
-            }
+            void Reset() override { }
 
-            void UpdateAI(const uint32 diff)
-            {
-            }
+            void UpdateAI(uint32 /*diff*/) override { }
      };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_unstable_grounding_fieldAI>(creature);
+        }
 };
 
 class spell_asaad_supremacy_of_the_storm : public SpellScriptLoader
@@ -270,11 +268,9 @@ class spell_asaad_supremacy_of_the_storm : public SpellScriptLoader
     public:
         spell_asaad_supremacy_of_the_storm() : SpellScriptLoader("spell_asaad_supremacy_of_the_storm") { }
 
-
         class spell_asaad_supremacy_of_the_storm_SpellScript : public SpellScript
         {
             PrepareSpellScript(spell_asaad_supremacy_of_the_storm_SpellScript);
-
 
             void HandleScript()
             {
@@ -285,13 +281,13 @@ class spell_asaad_supremacy_of_the_storm : public SpellScriptLoader
                     SetHitDamage(0);
             }
 
-            void Register()
+            void Register() override
             {
                 BeforeHit += SpellHitFn(spell_asaad_supremacy_of_the_storm_SpellScript::HandleScript/*, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE*/);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_asaad_supremacy_of_the_storm_SpellScript();
         }

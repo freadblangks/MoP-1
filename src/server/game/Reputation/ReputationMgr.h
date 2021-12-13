@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,21 +17,16 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __TRINITY_REPUTATION_MGR_H
-#define __TRINITY_REPUTATION_MGR_H
+#ifndef SF_TRINITY_REPUTATION_MGR_H
+#define SF_TRINITY_REPUTATION_MGR_H
 
 #include "Common.h"
 #include "SharedDefines.h"
-#include "Language.h"
 #include "DBCStructure.h"
 #include "QueryResult.h"
 #include <map>
 
-static uint32 ReputationRankStrIndex[MAX_REPUTATION_RANK] =
-{
-    LANG_REP_HATED,    LANG_REP_HOSTILE, LANG_REP_UNFRIENDLY, LANG_REP_NEUTRAL,
-    LANG_REP_FRIENDLY, LANG_REP_HONORED, LANG_REP_REVERED,    LANG_REP_EXALTED
-};
+uint32 ReputationRankStrIndex(ReputationRank rank);
 
 enum FactionFlags
 {
@@ -45,12 +41,13 @@ enum FactionFlags
     FACTION_FLAG_SPECIAL            = 0x80                  // horde and alliance home cities and their northrend allies have this flag
 };
 
+typedef uint8 FactionIndex;
 typedef uint32 RepListID;
 struct FactionState
 {
     uint32 ID;
     RepListID ReputationListID;
-    int32  Standing;
+    float Standing;
     uint8 Flags;
     bool needSend;
     bool needSave;
@@ -65,8 +62,8 @@ class ReputationMgr
 {
     public:                                                 // constructors and global modifiers
         explicit ReputationMgr(Player* owner) : _player(owner),
-            _visibleFactionCount(0), _honoredFactionCount(0), _reveredFactionCount(0), _exaltedFactionCount(0), _sendFactionIncreased(false) {}
-        ~ReputationMgr() {}
+            _visibleFactionCount(0), _honoredFactionCount(0), _reveredFactionCount(0), _exaltedFactionCount(0), _sendFactionIncreased(false) { }
+        ~ReputationMgr() { }
 
         void SaveToDB(SQLTransaction& trans);
         void LoadFromDB(PreparedQueryResult result);
@@ -106,7 +103,7 @@ class ReputationMgr
         ReputationRank GetBaseRank(FactionEntry const* factionEntry) const;
         uint32 GetReputationRankStrIndex(FactionEntry const* factionEntry) const
         {
-            return ReputationRankStrIndex[GetRank(factionEntry)];
+            return ReputationRankStrIndex(GetRank(factionEntry));
         };
 
         ReputationRank const* GetForcedRankIfAny(FactionTemplateEntry const* factionTemplateEntry) const
@@ -116,24 +113,25 @@ class ReputationMgr
         }
 
     public:                                                 // modifiers
-        bool SetReputation(FactionEntry const* factionEntry, int32 standing)
+        bool SetReputation(FactionEntry const* factionEntry, float standing)
         {
             return SetReputation(factionEntry, standing, false);
         }
-        bool ModifyReputation(FactionEntry const* factionEntry, int32 standing)
+        bool ModifyReputation(FactionEntry const* factionEntry, float standing)
         {
             return SetReputation(factionEntry, standing, true);
         }
 
         void SetVisible(FactionTemplateEntry const* factionTemplateEntry);
         void SetVisible(FactionEntry const* factionEntry);
-        void SetAtWar(RepListID repListID, bool on);
+        void SetAtWar(FactionIndex FactionIndexID);
+        void SetNotAtWar(FactionIndex FactionIndexID);
         void SetInactive(RepListID repListID, bool on);
 
         void ApplyForceReaction(uint32 faction_id, ReputationRank rank, bool apply);
 
         //! Public for chat command needs
-        bool SetOneFactionReputation(FactionEntry const* factionEntry, int32 standing, bool incremental);
+        bool SetOneFactionReputation(FactionEntry const* factionEntry, float standing, bool incremental);
 
     public:                                                 // senders
         void SendInitialReputations();
@@ -144,7 +142,7 @@ class ReputationMgr
     private:                                                // internal helper functions
         void Initialize();
         uint32 GetDefaultStateFlags(FactionEntry const* factionEntry) const;
-        bool SetReputation(FactionEntry const* factionEntry, int32 standing, bool incremental);
+        bool SetReputation(FactionEntry const* factionEntry, float standing, bool incremental);
         void SetVisible(FactionState* faction);
         void SetAtWar(FactionState* faction, bool atWar) const;
         void SetInactive(FactionState* faction, bool inactive) const;

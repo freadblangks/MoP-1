@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+  
 #ifndef _REGULAR_GRID_H
 #define _REGULAR_GRID_H
 
@@ -103,13 +122,13 @@ public:
     }
 
     template<typename RayCallback>
-    void intersectRay(const G3D::Ray& ray, RayCallback& intersectCallback, float max_dist)
+    void intersectRay(const G3D::Ray& ray, RayCallback& intersectCallback, float max_dist, bool stopAtFirst)
     {
-        intersectRay(ray, intersectCallback, max_dist, ray.origin() + ray.direction() * max_dist);
+        intersectRay(ray, intersectCallback, max_dist, ray.origin() + ray.direction() * max_dist, stopAtFirst);
     }
 
     template<typename RayCallback>
-    void intersectRay(const G3D::Ray& ray, RayCallback& intersectCallback, float& max_dist, const G3D::Vector3& end)
+    void intersectRay(const G3D::Ray& ray, RayCallback& intersectCallback, float& max_dist, const G3D::Vector3& end, bool stopAtFirst)
     {
         Cell cell = Cell::ComputeCell(ray.origin().x, ray.origin().y);
         if (!cell.isValid())
@@ -120,7 +139,7 @@ public:
         if (cell == last_cell)
         {
             if (Node* node = nodes[cell.x][cell.y])
-                node->intersectRay(ray, intersectCallback, max_dist);
+                node->intersectRay(ray, intersectCallback, max_dist, stopAtFirst);
             return;
         }
 
@@ -166,7 +185,7 @@ public:
             if (Node* node = nodes[cell.x][cell.y])
             {
                 //float enterdist = max_dist;
-                node->intersectRay(ray, intersectCallback, max_dist);
+                node->intersectRay(ray, intersectCallback, max_dist, stopAtFirst);
             }
             if (cell == last_cell)
                 break;
@@ -201,8 +220,16 @@ public:
         Cell cell = Cell::ComputeCell(ray.origin().x, ray.origin().y);
         if (!cell.isValid())
             return;
-        if (Node* node = nodes[cell.x][cell.y])
-            node->intersectRay(ray, intersectCallback, max_dist);
+        // This is simple and functional if we assume there are no large GameObjects. But they do exist, namely: transports.
+        //if (Node* node = nodes[cell.x][cell.y])
+        //    node->intersectRay(ray, intersectCallback, max_dist, false);
+        auto maxX = std::min(CELL_NUMBER - 1, cell.x + 1);
+        auto maxY = std::min(CELL_NUMBER - 1, cell.y + 1);
+        for (int32 x = std::max(0, cell.x - 1); x <= maxX; ++x)
+            for (int32 y = std::max(0, cell.y - 1); y <= maxY; ++y)
+                if (Node* node = nodes[x][y])
+                    node->intersectRay(ray, intersectCallback, max_dist, false);
+
     }
 };
 

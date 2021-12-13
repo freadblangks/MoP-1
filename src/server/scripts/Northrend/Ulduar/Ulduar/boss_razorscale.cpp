@@ -1,19 +1,22 @@
 /*
-* Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of the GNU General Public License as published by the
-* Free Software Foundation; either version 2 of the License, or (at your
-* option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along
-* with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
@@ -54,12 +57,12 @@ enum Spells
     SPELL_FUSEARMOR                              = 64771,
     SPELL_FLAMED                                 = 62696,
     SPELL_FIREBOLT                               = 62669,
-    SPELL_STUN                                   = 9032,
+    SPELL_STUN                                   = 62794,
     SPELL_BERSERK                                = 47008,
 
     // Additonal Spells
     // Devouring Flame Spells
-    SPELL_DEVOURING_FLAME                        = 63308,
+    SPELL_DEVOURING_FLAME                        = 63236,
     SPELL_DEVOURING_FLAME_DAMAGE                 = 64704,
     SPELL_DEVOURING_FLAME_TRIGGER                = 64709,
 
@@ -95,6 +98,11 @@ enum DarkRuneSpells
     SPELL_WHIRLWIND                              = 63808,
 };
 
+enum Menus
+{
+    GOSSIP_MENU_RAZORSCALE_START = 10314
+};
+
 enum Actions
 {
     ACTION_EVENT_START                           = 1,
@@ -107,6 +115,7 @@ enum Actions
     ACTION_SUMMON_MOLE_MACHINES                  = 9,
     ACTION_FIRE_OUT                              = 10,
     ACTION_CANCEL_BUILD_HARPOON                  = 11,
+    ACTION_EVADE                                 = 12,
 };
 
 enum Phases
@@ -149,7 +158,7 @@ enum Events
     // Darkrune Sentinel
     EVENT_HEROIC_STRIKE                          = 23,
     EVENT_BATTLE_SHOUT                           = 24,
-    EVENT_WHIRLWIND                              = 25
+    EVENT_WHIRLWIND                              = 25,
 };
 
 #define SPELL_FIREBALL      RAID_MODE(SPELL_FIREBALL_10, SPELL_FIREBALL_25)
@@ -207,21 +216,21 @@ class boss_razorscale_controller : public CreatureScript
             boss_razorscale_controllerAI(Creature* creature) : BossAI(creature, DATA_RAZORSCALE_CONTROL)
             {
                 me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
-                me->SetDisableGravity(true);
+                me->SetFlying(true);
             }
 
-            GameObject* brokenHarpoon[4];
+            uint64 brokenHarpoon[4];
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 me->SetReactState(REACT_PASSIVE);
 
                 for (uint8 i = 0; i < 4; ++i)
-                    brokenHarpoon[i] = NULL;
+                    brokenHarpoon[i] = 0;
             }
 
-            void SpellHit(Unit* /*caster*/, SpellInfo const* spell)
+            void SpellHit(Unit* /*caster*/, SpellInfo const* spell) override
             {
                 switch (spell->Id)
                 {
@@ -240,12 +249,12 @@ class boss_razorscale_controller : public CreatureScript
                 }
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 if (instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
                     return;
@@ -254,12 +263,13 @@ class boss_razorscale_controller : public CreatureScript
                 {
                     case ACTION_HARPOON_BUILD:
                         events.ScheduleEvent(EVENT_BUILD_HARPOON_1, 50000);
-                        if (me->GetMap()->GetSpawnMode() == MAN25_DIFFICULTY)
+                        if (me->GetMap()->GetSpawnMode() == RAID_DIFFICULTY_25MAN_NORMAL)
                             events.ScheduleEvent(EVENT_BUILD_HARPOON_3, 90000);
                         break;
                     case ACTION_PLACE_BROKEN_HARPOON:
                         for (uint8 n = 0; n < RAID_MODE(2, 4); n++)
-                            brokenHarpoon[n] = me->SummonGameObject(GO_RAZOR_BROKEN_HARPOON, PosHarpoon[n].GetPositionX(), PosHarpoon[n].GetPositionY(), PosHarpoon[n].GetPositionZ(), 2.286f, 0, 0, 0, 0, 180000);
+                            if (GameObject* go = me->SummonGameObject(GO_RAZOR_BROKEN_HARPOON, PosHarpoon[n].GetPositionX(), PosHarpoon[n].GetPositionY(), PosHarpoon[n].GetPositionZ(), 2.286f, { }, 180000))
+                                brokenHarpoon[n] = go->GetGUID();
                         break;
                     case ACTION_REMOVE_HARPOON:
                         if (GameObject* Harpoon1 = ObjectAccessor::GetGameObject(*me, instance->GetData64(GO_RAZOR_HARPOON_1)))
@@ -280,20 +290,29 @@ class boss_razorscale_controller : public CreatureScript
                 }
             }
 
-            void UpdateAI(uint32 const Diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (me->isInCombat() && instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
-                    EnterEvadeMode();
+                if (instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
+                    return;
 
-                events.Update(Diff);
+                if (!me->FindNearestPlayer(200.0f))
+                    if (Creature* razorscale = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_RAZORSCALE)))
+                    {
+                        razorscale->AI()->DoAction(ACTION_EVADE);
+                        return;
+                    }
+
+                events.Update(diff);
 
                 while (uint32 eventId = events.ExecuteEvent())
                 {
                     if (eventId != EVENT_REBUILD_HARPOON)
                     {
                         Talk(EMOTE_HARPOON);
-                        if (brokenHarpoon[eventId - 13] && brokenHarpoon[eventId - 13]->IsInWorld())
-                            brokenHarpoon[eventId - 13]->RemoveFromWorld();
+                        if (brokenHarpoon[eventId - 13])
+                            if (GameObject* go = ObjectAccessor::GetGameObject(*me, brokenHarpoon[eventId - 13]))
+                                if (go->IsInWorld())
+                                    go->RemoveFromWorld();
                     }
 
                     switch (eventId)
@@ -301,7 +320,7 @@ class boss_razorscale_controller : public CreatureScript
                         case EVENT_REBUILD_HARPOON:
                             if (instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
                                 return;
-                            if (Creature* commander = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_EXPEDITION_COMMANDER) : 0))
+                            if (Creature* commander = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_EXPEDITION_COMMANDER)))
                                 commander->AI()->DoAction(ACTION_FIRE_OUT);
                             DoAction(ACTION_REMOVE_HARPOON);
                             DoAction(ACTION_PLACE_BROKEN_HARPOON);
@@ -309,7 +328,7 @@ class boss_razorscale_controller : public CreatureScript
                                 DoAction(ACTION_HARPOON_BUILD);
                             return;
                         case EVENT_BUILD_HARPOON_1:
-                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_1, PosHarpoon[0].GetPositionX(), PosHarpoon[0].GetPositionY(), PosHarpoon[0].GetPositionZ(), 4.790f, 0.0f, 0.0f, 0.0f, 0.0f, 180000))
+                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_1, PosHarpoon[0].GetPositionX(), PosHarpoon[0].GetPositionY(), PosHarpoon[0].GetPositionZ(), 4.790f, { }, 180000))
                             {
                                 if (GameObject* BrokenHarpoon = Harpoon->FindNearestGameObject(GO_RAZOR_BROKEN_HARPOON, 5.0f)) //only nearest broken harpoon
                                     BrokenHarpoon->RemoveFromWorld();                                  
@@ -318,7 +337,7 @@ class boss_razorscale_controller : public CreatureScript
                             }
                             return;
                         case EVENT_BUILD_HARPOON_2:
-                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_2, PosHarpoon[1].GetPositionX(), PosHarpoon[1].GetPositionY(), PosHarpoon[1].GetPositionZ(), 4.659f, 0, 0, 0, 0, 180000))
+                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_2, PosHarpoon[1].GetPositionX(), PosHarpoon[1].GetPositionY(), PosHarpoon[1].GetPositionZ(), 4.659f, { }, 180000))
                             {
                                 if (GameObject* BrokenHarpoon = Harpoon->FindNearestGameObject(GO_RAZOR_BROKEN_HARPOON, 5.0f))
                                     BrokenHarpoon->RemoveFromWorld();
@@ -326,7 +345,7 @@ class boss_razorscale_controller : public CreatureScript
                             }
                             return;
                         case EVENT_BUILD_HARPOON_3:
-                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_3, PosHarpoon[2].GetPositionX(), PosHarpoon[2].GetPositionY(), PosHarpoon[2].GetPositionZ(), 5.382f, 0, 0, 0, 0, 180000))
+                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_3, PosHarpoon[2].GetPositionX(), PosHarpoon[2].GetPositionY(), PosHarpoon[2].GetPositionZ(), 5.382f, { }, 180000))
                             {
                                 if (GameObject* BrokenHarpoon = Harpoon->FindNearestGameObject(GO_RAZOR_BROKEN_HARPOON, 5.0f))
                                     BrokenHarpoon->RemoveFromWorld();
@@ -335,7 +354,7 @@ class boss_razorscale_controller : public CreatureScript
                             }
                             return;
                         case EVENT_BUILD_HARPOON_4:
-                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_4, PosHarpoon[3].GetPositionX(), PosHarpoon[3].GetPositionY(), PosHarpoon[3].GetPositionZ(), 4.266f, 0, 0, 0, 0, 180000))
+                            if (GameObject* Harpoon = me->SummonGameObject(GO_RAZOR_HARPOON_4, PosHarpoon[3].GetPositionX(), PosHarpoon[3].GetPositionY(), PosHarpoon[3].GetPositionZ(), 4.266f, { }, 180000))
                             {
                                 if (GameObject* BrokenHarpoon = Harpoon->FindNearestGameObject(GO_RAZOR_BROKEN_HARPOON, 5.0f))
                                     BrokenHarpoon->RemoveFromWorld();
@@ -347,26 +366,9 @@ class boss_razorscale_controller : public CreatureScript
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new boss_razorscale_controllerAI(creature);
-        }
-};
-
-class go_razorscale_harpoon : public GameObjectScript
-{
-    public:
-        go_razorscale_harpoon() : GameObjectScript("go_razorscale_harpoon") {}
-
-        bool OnGossipHello(Player* /*player*/, GameObject* go)
-        {
-            if (go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE))
-                return true;
-
-            InstanceScript* instance = go->GetInstanceScript();
-            if (ObjectAccessor::GetCreature(*go, instance->GetData64(BOSS_RAZORSCALE)))
-                go->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
-            return false;
+            return GetInstanceAI<boss_razorscale_controllerAI>(creature);
         }
 };
 
@@ -385,15 +387,14 @@ class boss_razorscale : public CreatureScript
 
             Phases phase;
 
-            uint32 EnrageTimer;
             uint8 FlyCount;
             uint8 HarpoonCounter;
             bool PermaGround;
-            bool Enraged;
 
-            void Reset()
+            void Reset() override
             {
-                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_RAZORSCALE_CONTROL) : 0))
+                me->RemoveAllAuras();
+                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAZORSCALE_CONTROL)))
                 {
                     controller->AI()->DoAction(ACTION_REMOVE_HARPOON);
                     controller->AI()->DoAction(ACTION_PLACE_BROKEN_HARPOON);
@@ -402,54 +403,63 @@ class boss_razorscale : public CreatureScript
                 EntryCheckPredicate pred(NPC_MOLE_MACHINE_TRIGGER);
                 summons.DoAction(ACTION_DESPAWN_ADDS, pred);
                 _Reset();
-                me->SetCanFly(true);
-                me->SetDisableGravity(true);
+                me->SetFlying(true);
                 me->SetHover(true);
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_STUNNED | UNIT_FLAG_PACIFIED);
                 me->SetReactState(REACT_PASSIVE);
                 PermaGround = false;
                 HarpoonCounter = 0;
-                if (Creature* commander = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_EXPEDITION_COMMANDER) : 0))
+                if (Creature* commander = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_EXPEDITION_COMMANDER)))
                     commander->AI()->DoAction(ACTION_COMMANDER_RESET);
+
+                me->GetMap()->SetWorldState(WORLDSTATE_A_QUICK_SHAVE, 1);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void DamageTaken(Unit* /*who*/, uint32& damage) override
+            {
+                if (phase == PHASE_FLIGHT)
+                    damage = 0;
+            }
+
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
-                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_RAZORSCALE_CONTROL) : 0))
+                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAZORSCALE_CONTROL)))
                     controller->AI()->DoAction(ACTION_HARPOON_BUILD);
-                me->SetSpeed(MOVE_FLIGHT, 3.0f, true);
+                me->SetSpeed(MOVE_RUN, 3.0f, true);
                 me->SetReactState(REACT_PASSIVE);
                 phase = PHASE_GROUND;
                 events.SetPhase(PHASE_GROUND);
                 FlyCount = 0;
-                EnrageTimer = 15*MINUTE*IN_MILLISECONDS;
-                Enraged = false;
                 events.ScheduleEvent(EVENT_FLIGHT, 0, 0, PHASE_GROUND);
             }
 
-            void JustDied(Unit* /*who*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
-                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_RAZORSCALE_CONTROL) : 0))
+                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAZORSCALE_CONTROL)))
                     controller->AI()->Reset();
             }
 
-            void SpellHit(Unit* /*caster*/, SpellInfo const* spell)
+            void SpellHit(Unit* /*caster*/, SpellInfo const* spell) override
             {
                 if (spell->Id == SPELL_HARPOON_TRIGGER)
                     ++HarpoonCounter;
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 point) override
             {
                 if (type != POINT_MOTION_TYPE && type != EFFECT_MOTION_TYPE)
                     return;
-                
-                switch (id)
+
+                switch (point)
                 {
                     case 1:
-                        me->GetMotionMaster()->MoveLand(3, RazorGround);
+                        me->m_Events.Schedule(1000, [this]()
+                        {
+                            me->GetMotionMaster()->MoveLand(3, RazorGround, 5.0f);
+                        });
                         break;
                     case 3:
                         phase = PHASE_GROUND;
@@ -458,11 +468,12 @@ class boss_razorscale : public CreatureScript
                         break;
                     case 2:
                         me->SetFacingTo(RazorFlight.GetOrientation());
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
                         break;
                 }
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 if (type == DATA_QUICK_SHAVE)
                     if (FlyCount <= 2)
@@ -471,23 +482,15 @@ class boss_razorscale : public CreatureScript
                 return 0;
             }
 
-            void UpdateAI(uint32 const Diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (!UpdateVictim())
+                if (instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
                     return;
 
-                events.Update(Diff);
+                events.Update(diff);
 
-                if (HealthBelowPct(50) && !PermaGround)
+                if (me->HealthBelowPct(50) && !PermaGround)
                     EnterPermaGround();
-
-                if (EnrageTimer <= Diff && !Enraged)
-                {
-                    DoCast(me, SPELL_BERSERK);
-                    Enraged = true;
-                }
-                else
-                    EnrageTimer -= Diff;
 
                 if (HarpoonCounter == RAID_MODE(2, 4))
                 {
@@ -502,30 +505,34 @@ class boss_razorscale : public CreatureScript
                     {
                         switch (eventId)
                         {
+                            case EVENT_BERSERK:
+                                DoCast(me, SPELL_BERSERK);
+                                return;
                             case EVENT_FLIGHT:
                                 phase = PHASE_FLIGHT;
                                 events.SetPhase(PHASE_FLIGHT);
-                                me->SetCanFly(true);
-                                me->SetDisableGravity(true);
+                                me->SetFlying(true);
                                 me->SetHover(true);
                                 me->RemoveAllAuras();
                                 me->SetReactState(REACT_PASSIVE);
                                 me->AttackStop();
-                                me->GetMotionMaster()->MovePoint(2, RazorFlight);
+                                me->GetMotionMaster()->MoveTakeoff(2, RazorFlight);
                                 events.ScheduleEvent(EVENT_FIREBALL, 7000, 0, PHASE_FLIGHT);
                                 events.ScheduleEvent(EVENT_DEVOURING, 10000, 0, PHASE_FLIGHT);
                                 events.ScheduleEvent(EVENT_SUMMON, 5000, 0, PHASE_FLIGHT);
                                 ++FlyCount;
+
+                                if (FlyCount > 2)
+                                    me->GetMap()->SetWorldState(WORLDSTATE_A_QUICK_SHAVE, 0);
                                 return;
                             case EVENT_LAND:
-                                me->SetCanFly(false);
-                                me->SetDisableGravity(false);
+                                me->SetFlying(false);
                                 me->SetHover(false);
                                 me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_STUNNED | UNIT_FLAG_PACIFIED);
                                 DoCast(me, SPELL_STUN, true);
                                 me->SetFacingTo(RazorGround.GetOrientation());
-                                if (Creature* commander = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_EXPEDITION_COMMANDER) : 0))
+                                if (Creature* commander = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_EXPEDITION_COMMANDER)))
                                     commander->AI()->DoAction(ACTION_GROUND_PHASE);
                                 events.ScheduleEvent(EVENT_BREATH, 30000, 0, PHASE_GROUND);
                                 events.ScheduleEvent(EVENT_BUFFET, 33000, 0, PHASE_GROUND);
@@ -542,7 +549,7 @@ class boss_razorscale : public CreatureScript
                             case EVENT_BUFFET:
                                 me->CastSpell(me, SPELL_FIREBOLT, true);
                                 DoCastAOE(SPELL_WINGBUFFET);
-                                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_RAZORSCALE_CONTROL) : 0))
+                                if (Creature* controller = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_RAZORSCALE_CONTROL)))
                                     controller->CastSpell(controller, SPELL_FLAMED, true);
                                 events.CancelEvent(EVENT_BUFFET);
                                 return;
@@ -584,8 +591,6 @@ class boss_razorscale : public CreatureScript
                                 return;
                         }
                     }
-
-                    DoMeleeAttackIfReady();
                 }
                 else
                 {
@@ -600,7 +605,7 @@ class boss_razorscale : public CreatureScript
                                 return;
                             case EVENT_DEVOURING:
                                 if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 200.0f, true))
-                                    me->CastSpell(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), SPELL_DEVOURING_FLAME, true);
+                                    DoCast(target, SPELL_DEVOURING_FLAME, true);
                                 events.ScheduleEvent(EVENT_DEVOURING, 10000, 0, PHASE_FLIGHT);
                                 return;
                             case EVENT_SUMMON:
@@ -619,14 +624,20 @@ class boss_razorscale : public CreatureScript
                 Talk(EMOTE_PERMA);
                 phase = PHASE_PERMAGROUND;
                 events.SetPhase(PHASE_PERMAGROUND);
-                me->SetCanFly(false);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_STUNNED | UNIT_FLAG_PACIFIED);
+                DoMeleeAttackIfReady();
+                me->SetFlying(false);
+                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_STUNNED | UNIT_FLAG_PACIFIED | UNIT_FLAG_DISABLE_MOVE);
                 me->SetReactState(REACT_AGGRESSIVE);
                 me->RemoveAurasDueToSpell(SPELL_STUN);
                 me->RemoveAurasDueToSpell(SPELL_HARPOON_TRIGGER);
-                me->SetSpeed(MOVE_FLIGHT, 1.0f, true);
+                me->SetSpeed(MOVE_RUN, 1.0f, true);
                 PermaGround = true;
                 DoCastAOE(SPELL_FLAMEBREATH);
+                if (Unit* target = SelectTarget(SELECT_TARGET_TOPAGGRO, 0, 200.0f, true))
+                {
+                    me->SetTarget(target->GetGUID());
+                    me->AI()->AttackStart(target);
+                }
                 events.ScheduleEvent(EVENT_FLAME, 15000, 0, PHASE_PERMAGROUND);
                 events.RescheduleEvent(EVENT_DEVOURING, 15000, 0, PHASE_PERMAGROUND);
                 events.RescheduleEvent(EVENT_BREATH, 20000, 0, PHASE_PERMAGROUND);
@@ -650,22 +661,29 @@ class boss_razorscale : public CreatureScript
                 }
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
                     case ACTION_EVENT_START:
+                        EnterCombat(nullptr);
                         me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                         me->SetReactState(REACT_AGGRESSIVE);
-                        DoZoneInCombat(me, 150.0f);
+                        DoZoneInCombat(me, 200.0f);
+                        events.ScheduleEvent(EVENT_FUSE, 15*MINUTE*IN_MILLISECONDS);
+                        break;
+                    case ACTION_EVADE:
+                        EnterEvadeMode();
+                        me->SetFullHealth();
+                        instance->SetBossState(BOSS_RAZORSCALE, FAIL);
                         break;
                 }
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return GetUlduarAI<boss_razorscaleAI>(creature);
+            return GetInstanceAI<boss_razorscaleAI>(creature);
         }
 };
 
@@ -680,6 +698,8 @@ class npc_expedition_commander : public CreatureScript
             {
                 instance = me->GetInstanceScript();
                 Greet = false;
+                memset(Engineer, 0, sizeof(Engineer));
+                memset(Defender, 0, sizeof(Defender));
             }
 
             InstanceScript* instance;
@@ -687,10 +707,10 @@ class npc_expedition_commander : public CreatureScript
             bool Greet;
             uint32 AttackStartTimer;
             uint8  Phase;
-            Creature* Engineer[4];
-            Creature* Defender[4];
+            uint64 Engineer[4];
+            uint64 Defender[4];
 
-            void Reset()
+            void Reset() override
             {
                 AttackStartTimer = 0;
                 Phase = 0;
@@ -698,7 +718,7 @@ class npc_expedition_commander : public CreatureScript
                 summons.DespawnAll();
             }
 
-            void MoveInLineOfSight(Unit* who)
+            void MoveInLineOfSight(Unit* who) override
             {
                 if (!Greet && me->IsWithinDistInMap(who, 10.0f) && who->GetTypeId() == TYPEID_PLAYER)
                 {
@@ -707,12 +727,12 @@ class npc_expedition_commander : public CreatureScript
                 }
             }
 
-            void JustSummoned(Creature* summoned)
+            void JustSummoned(Creature* summoned) override
             {
                 summons.Summon(summoned);
             }
 
-            void DoAction(int32 const action)
+            void DoAction(int32 action) override
             {
                 switch (action)
                 {
@@ -724,17 +744,18 @@ class npc_expedition_commander : public CreatureScript
                         break;
                     case ACTION_COMMANDER_RESET:
                         summons.DespawnAll();
-                        me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                         break;
                     case ACTION_FIRE_OUT:
-                        Engineer[0]->AI()->Talk(SAY_TURRETS);
+                        if (Creature* engineer = ObjectAccessor::GetCreature(*me, Engineer[0]))
+                            engineer->AI()->Talk(SAY_TURRETS);
                         break;
                 }
             }
 
-            void UpdateAI(uint32 const Diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (AttackStartTimer <= Diff)
+                if (AttackStartTimer <= diff)
                 {
                     switch (Phase)
                     {
@@ -747,51 +768,62 @@ class npc_expedition_commander : public CreatureScript
                         case 2:
                             for (uint8 n = 0; n < RAID_MODE(2, 4); n++)
                             {
-                                Engineer[n] = me->SummonCreature(NPC_ENGINEER, PosEngSpawn, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 3000);
-                                Engineer[n]->SetWalk(false);
-                                Engineer[n]->SetSpeed(MOVE_RUN, 0.5f);
-                                Engineer[n]->SetHomePosition(PosEngRepair[n]);
-                                Engineer[n]->GetMotionMaster()->MoveTargetedHome();
+                                if (Creature* engineer = me->SummonCreature(NPC_ENGINEER, PosEngSpawn, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 3000))
+                                {
+                                    Engineer[n] = engineer->GetGUID();
+                                    engineer->SetWalk(false);
+                                    engineer->SetSpeed(MOVE_RUN, 0.5f);
+                                    engineer->SetHomePosition(PosEngRepair[n]);
+                                    engineer->GetMotionMaster()->MoveTargetedHome();
+                                }
                             }
-                            Engineer[0]->AI()->Talk(SAY_READY);
+                            if (Creature* engineer = ObjectAccessor::GetCreature(*me, Engineer[0]))
+                                engineer->AI()->Talk(SAY_READY);
                             Phase = 3;
                             AttackStartTimer = 14000;
                             break;
                         case 3:
                             for (uint8 n = 0; n < 4; n++)
                             {
-                                Defender[n] = me->SummonCreature(NPC_DEFENDER, PosDefSpawn[n], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 3000);
-                                Defender[n]->SetWalk(false);
-                                Defender[n]->SetHomePosition(PosDefCombat[n]);
-                                Defender[n]->GetMotionMaster()->MoveTargetedHome();
+                                if (Creature* defender = me->SummonCreature(NPC_DEFENDER, PosDefSpawn[n], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 3000))
+                                {
+                                    Defender[n] = defender->GetGUID();
+                                    defender->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED | UNIT_FLAG_IMMUNE_TO_NPC);
+                                    defender->SetWalk(false);
+                                    defender->SetHomePosition(PosDefCombat[n]);
+                                    defender->GetMotionMaster()->MoveTargetedHome();
+                                }
                             }
                             Phase = 4;
                             break;
                         case 4:
                             for (uint8 n = 0; n < RAID_MODE(2, 4); n++)
-                                Engineer[n]->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_USE_STANDING);
+                                if (Creature* engineer = ObjectAccessor::GetCreature(*me, Engineer[n]))
+                                    engineer->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, EMOTE_STATE_USE_STANDING);
                             for (uint8 n = 0; n < 4; ++n)
-                                Defender[n]->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_READY2H);
+                                if (Creature* defender = ObjectAccessor::GetCreature(*me, Defender[n]))
+                                    defender->SetUInt32Value(UNIT_FIELD_NPC_EMOTESTATE, EMOTE_STATE_READY2H);
                             AttackStartTimer = 16000;
                             Phase = 5;
                             break;
                         case 5:
-                            if (Creature* Razorscale = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(BOSS_RAZORSCALE) : 0))
+                            if (Creature* Razorscale = ObjectAccessor::GetCreature(*me, instance->GetData64(BOSS_RAZORSCALE)))
                             {
                                 Razorscale->AI()->DoAction(ACTION_EVENT_START);
                                 me->SetInCombatWith(Razorscale);
                             }
-                            Engineer[0]->AI()->Talk(SAY_PREPARED);
+                            if (Creature* engineer = ObjectAccessor::GetCreature(*me, Engineer[0]))
+                                engineer->AI()->Talk(SAY_PREPARED);
                             Phase = 6;
                             break;
                     }
                 }
                 else
-                    AttackStartTimer -= Diff;
+                    AttackStartTimer -= diff;
             }
         };
 
-        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action)
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
         {
             player->PlayerTalkClass->ClearMenus();
             switch (action)
@@ -804,14 +836,16 @@ class npc_expedition_commander : public CreatureScript
             return true;
         }
 
-        bool OnGossipHello(Player* player, Creature* creature)
+        bool OnGossipHello(Player* player, Creature* creature) override
         {
+            bool ru = player->GetSession()->GetSessionDbLocaleIndex() == LOCALE_ruRU;
+
             InstanceScript* instance = creature->GetInstanceScript();
-            if (instance && instance->GetBossState(BOSS_RAZORSCALE) == NOT_STARTED)
+            if (instance && instance->GetBossState(BOSS_RAZORSCALE) != DONE && instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
             {
                 player->PrepareGossipMenu(creature);
 
-                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, sObjectMgr->GetTrinityStringForDBCLocale(LANG_ULD_RAZOR_GOSSIP), GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Мы готовы помочь!" : "Activate Harpoons!", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
                 player->SEND_GOSSIP_MENU(13853, creature->GetGUID());
             }
             else
@@ -820,9 +854,9 @@ class npc_expedition_commander : public CreatureScript
             return true;
         }
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_expedition_commanderAI(creature);
+            return GetInstanceAI<npc_expedition_commanderAI>(creature);
         }
 };
 
@@ -831,27 +865,28 @@ class npc_mole_machine_trigger : public CreatureScript
     public:
         npc_mole_machine_trigger() : CreatureScript("npc_mole_machine_trigger") { }
 
-        struct npc_mole_machine_triggerAI : public Scripted_NoMovementAI
+        struct npc_mole_machine_triggerAI : public ScriptedAI
         {
-            npc_mole_machine_triggerAI(Creature* creature) : Scripted_NoMovementAI(creature), summons(me)
+            npc_mole_machine_triggerAI(Creature* creature) : ScriptedAI(creature), summons(me)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
                 me->SetVisible(false);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.ScheduleEvent(EVENT_SUMMON_GOB, 2000);
                 events.ScheduleEvent(EVENT_SUMMON_NPC, 6000);
                 events.ScheduleEvent(EVENT_DISSAPPEAR, 10000);
             }
             
-            void DoAction(int32 const /*action*/)
+            void DoAction(int32 /*action*/) override
             {
                 summons.DespawnAll();
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
                 
@@ -861,10 +896,10 @@ class npc_mole_machine_trigger : public CreatureScript
                     {
                         case EVENT_SUMMON_GOB:
                             //DoCast(SPELL_SUMMON_MOLE_MACHINE);
-                            if (GameObject * gob = me->SummonGameObject(GO_MOLE_MACHINE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 2.286f, 0, 0, 0, 0, 180000))
+                            if (GameObject* go = me->SummonGameObject(GO_MOLE_MACHINE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 2.286f, { }, 180000))
                             {
-                                gob->SetLootState(GO_READY);
-                                gob->UseDoorOrButton(10000, false);
+                                go->SetLootState(GO_READY);
+                                go->UseDoorOrButton(10000, false);
                             }
                             break;
                         case EVENT_SUMMON_NPC:
@@ -891,10 +926,9 @@ class npc_mole_machine_trigger : public CreatureScript
                             break;
                     }
                 }
-                          
             }
 
-            void JustSummoned(Creature* summoned)
+            void JustSummoned(Creature* summoned) override
             {
                 summons.Summon(summoned);
                 summoned->AI()->DoZoneInCombat();
@@ -905,9 +939,9 @@ class npc_mole_machine_trigger : public CreatureScript
                 EventMap events;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_mole_machine_triggerAI(creature);
+            return GetInstanceAI<npc_mole_machine_triggerAI>(creature);
         }
 };
 
@@ -916,23 +950,28 @@ class npc_devouring_flame : public CreatureScript
     public:
         npc_devouring_flame() : CreatureScript("npc_devouring_flame") { }
 
-        struct npc_devouring_flameAI : public Scripted_NoMovementAI
+        struct npc_devouring_flameAI : public ScriptedAI
         {
-            npc_devouring_flameAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_devouring_flameAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
                 me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
+                me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
-            void Reset()
+            void Reset() override
             {
                 DoCast(SPELL_FLAME_GROUND);
             }
+
+            void EnterEvadeMode() override { }
+            void AttackStart(Unit* who) override { }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_devouring_flameAI(creature);
+            return GetInstanceAI<npc_devouring_flameAI>(creature);
         }
 };
 
@@ -941,21 +980,22 @@ class npc_razorscale_harpoon_fire_state : public CreatureScript
     public:
         npc_razorscale_harpoon_fire_state() : CreatureScript("npc_razorscale_harpoon_fire_state") { }
 
-        struct npc_razorscale_harpoon_fire_stateAI : public Scripted_NoMovementAI
+        struct npc_razorscale_harpoon_fire_stateAI : public ScriptedAI
         {
-            npc_razorscale_harpoon_fire_stateAI(Creature* creature) : Scripted_NoMovementAI(creature)
+            npc_razorscale_harpoon_fire_stateAI(Creature* creature) : ScriptedAI(creature)
             { 
+                SetCombatMovement(false);
             }
 
-            void DamageTaken(Unit* /*who*/, uint32& damage)
+            void DamageTaken(Unit* /*who*/, uint32& damage) override
             {
                 damage = 0;
             }
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_razorscale_harpoon_fire_stateAI(creature);
+            return GetInstanceAI<npc_razorscale_harpoon_fire_stateAI>(creature);
         }
 };
 
@@ -968,18 +1008,18 @@ class npc_darkrune_watcher : public CreatureScript
         {
             npc_darkrune_watcherAI(Creature* creature) : ScriptedAI(creature)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, urand(10000, 15000));
                 events.ScheduleEvent(EVENT_LIGHTING_BOLT, urand(1000, 3000));
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
@@ -1015,12 +1055,12 @@ class npc_darkrune_watcher : public CreatureScript
 
         private:
             EventMap events;
-            InstanceScript* _instance;
+            InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_darkrune_watcherAI(creature);
+            return GetInstanceAI<npc_darkrune_watcherAI>(creature);
         }
 };
 
@@ -1033,32 +1073,31 @@ class npc_darkrune_guardian : public CreatureScript
         {
             npc_darkrune_guardianAI(Creature* creature) : ScriptedAI(creature)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
             uint32 StormTimer;
 
-            void Reset()
+            void Reset() override
             {
                 StormTimer = urand(3000, 6000);
                 killedByBreath = false;
             }
 
-            uint32 GetData(uint32 type)
+            uint32 GetData(uint32 type) const override
             {
                 return type == DATA_IRON_DWARF_MEDIUM_RARE ? killedByBreath : 0;
             }
 
-            void SetData(uint32 type, uint32 value)
+            void SetData(uint32 type, uint32 data) override
             {
                 if (type == DATA_IRON_DWARF_MEDIUM_RARE)
-                    killedByBreath = value;
+                    killedByBreath = data;
             }
 
-
-            void UpdateAI(uint32 const Diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
@@ -1067,25 +1106,25 @@ class npc_darkrune_guardian : public CreatureScript
                 if (!UpdateVictim())
                     return;
 
-                if (StormTimer <= Diff)
+                if (StormTimer <= diff)
                 {
                     DoCastVictim(SPELL_STORMSTRIKE);
                     StormTimer = urand(4000, 8000);
                 }
                 else
-                    StormTimer -= Diff;
+                    StormTimer -= diff;
 
                 DoMeleeAttackIfReady();
             }
 
         private:
             bool killedByBreath;
-            InstanceScript* _instance;
+            InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_darkrune_guardianAI(creature);
+            return GetInstanceAI<npc_darkrune_guardianAI>(creature);
         }
 };
 
@@ -1098,10 +1137,10 @@ class npc_darkrune_sentinel : public CreatureScript
         {
             npc_darkrune_sentinelAI(Creature* creature) : ScriptedAI(creature)
             {
-                _instance = creature->GetInstanceScript();
+                instance = creature->GetInstanceScript();
             }
 
-            void Reset()
+            void Reset() override
             {
                 events.ScheduleEvent(EVENT_HEROIC_STRIKE, urand(4000, 8000));
                 events.ScheduleEvent(EVENT_BATTLE_SHOUT, urand(15000, 30000));
@@ -1109,9 +1148,9 @@ class npc_darkrune_sentinel : public CreatureScript
                     events.ScheduleEvent(EVENT_WHIRLWIND, urand(20000, 25000));
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
-                if (_instance && _instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
+                if (instance && instance->GetBossState(BOSS_RAZORSCALE) != IN_PROGRESS)
                 {
                     me->DespawnOrUnsummon();
                     return;
@@ -1151,12 +1190,29 @@ class npc_darkrune_sentinel : public CreatureScript
 
         private:
             EventMap events;
-            InstanceScript* _instance;
+            InstanceScript* instance;
         };
 
-        CreatureAI* GetAI(Creature* creature) const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new npc_darkrune_sentinelAI(creature);
+            return GetInstanceAI<npc_darkrune_sentinelAI>(creature);
+        }
+};
+
+class go_razorscale_harpoon : public GameObjectScript
+{
+    public:
+        go_razorscale_harpoon() : GameObjectScript("go_razorscale_harpoon") { }
+
+        bool OnGossipHello(Player* /*player*/, GameObject* go) override
+        {
+            if (go->HasFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE))
+                return true;
+
+            InstanceScript* instance = go->GetInstanceScript();
+            if (ObjectAccessor::GetCreature(*go, instance->GetData64(BOSS_RAZORSCALE)))
+                go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_NOT_SELECTABLE);
+            return false;
         }
 };
 
@@ -1169,25 +1225,18 @@ class spell_razorscale_devouring_flame : public SpellScriptLoader
         {
             PrepareSpellScript(spell_razorscale_devouring_flame_SpellScript);
 
-            void HandleSummon(SpellEffIndex effIndex)
+            void SelectTarget(SpellDestination& dest)
             {
-                PreventHitDefaultEffect(effIndex);
-                Unit* caster = GetCaster();
-                uint32 entry = uint32(GetSpellInfo()->Effects[effIndex].MiscValue);
-                WorldLocation const* summonLocation = GetExplTargetDest();
-                if (!caster || !summonLocation)
-                    return;
-
-                caster->SummonCreature(entry, summonLocation->GetPositionX(), summonLocation->GetPositionY(), GROUND_Z, 0.0f, TEMPSUMMON_TIMED_DESPAWN, 20000);
+                dest._position.m_positionZ = GROUND_Z;
             }
 
-            void Register()
+            void Register() override
             {
-                OnEffectHit += SpellEffectFn(spell_razorscale_devouring_flame_SpellScript::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
+                OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_razorscale_devouring_flame_SpellScript::SelectTarget, EFFECT_0, TARGET_DEST_DEST);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_razorscale_devouring_flame_SpellScript();
         }
@@ -1202,19 +1251,19 @@ class spell_razorscale_firebolt : public SpellScriptLoader
         {
             PrepareSpellScript(spell_razorscale_firebolt_SpellScript);
 
-            void HandleDummy(SpellEffIndex /* effIndex */)
+            void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 if (Unit* target = GetHitUnit())
                     target->CastSpell(target, SPELL_FLAMED, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_razorscale_firebolt_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_razorscale_firebolt_SpellScript();
         }
@@ -1239,13 +1288,13 @@ class spell_razorscale_flame_breath : public SpellScriptLoader
                     target->AI()->SetData(DATA_IRON_DWARF_MEDIUM_RARE, 1);
             }
 
-            void Register()
+            void Register() override
             {
                 OnHit += SpellHitFn(spell_razorscale_flame_breath_SpellScript::CheckDamage);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_razorscale_flame_breath_SpellScript();
         }
@@ -1262,26 +1311,9 @@ class achievement_iron_dwarf_medium_rare : public AchievementCriteriaScript
         }
 };
 
-class achievement_quick_shave : public AchievementCriteriaScript
-{
-    public:
-        achievement_quick_shave() : AchievementCriteriaScript("achievement_quick_shave") { }
-
-        bool OnCheck(Player* /*source*/, Unit* target)
-        {
-           if (target)
-                if (Creature* razorscale = target->ToCreature())
-                    if (razorscale->AI()->GetData(DATA_QUICK_SHAVE))
-                        return true;
-
-            return false;
-        }
-};
-
 void AddSC_boss_razorscale()
 {
     new boss_razorscale_controller();
-    new go_razorscale_harpoon();
     new boss_razorscale();
     new npc_expedition_commander();
     new npc_mole_machine_trigger();
@@ -1290,11 +1322,11 @@ void AddSC_boss_razorscale()
     new npc_darkrune_watcher();
     new npc_darkrune_guardian();
     new npc_darkrune_sentinel();
+    new go_razorscale_harpoon();
     new spell_razorscale_devouring_flame();
     new spell_razorscale_flame_breath();
     new spell_razorscale_firebolt();
     new achievement_iron_dwarf_medium_rare();
-    new achievement_quick_shave();
 }
 
 #undef SPELL_FIREBALL

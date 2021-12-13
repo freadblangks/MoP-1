@@ -18,8 +18,7 @@ enum Spells
     SPELL_SKEWER                = 104936,
     SPELL_SEETHING_HATE_DUMMY   = 105065,
     SPELL_SEETHING_HATE         = 105067,
-    SPELL_SEETHING_HATE_DMG_10  = 105069,
-    SPELL_SEETHING_HATE_DMG_25  = 108094,
+    SPELL_SEETHING_HATE_DMG     = 105069,
     SPELL_BLADE_DANCE_CHARGE    = 105726,
     SPELL_BLADE_DANCE_DUMMY     = 106248,
     SPELL_BLADE_DANCE_SELF      = 105828,
@@ -43,49 +42,36 @@ class boss_alizabal : public CreatureScript
     public:
         boss_alizabal() : CreatureScript("boss_alizabal") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_alizabalAI(pCreature);
-        }
-
         struct boss_alizabalAI : public BossAI
         {
-            boss_alizabalAI(Creature* pCreature) : BossAI(pCreature, DATA_ALIZABAL) 
+            boss_alizabalAI(Creature* creature) : BossAI(creature, DATA_ALIZABAL) 
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
-				me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
-				me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_STUN, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FEAR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_ROOT, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_FREEZE, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_POLYMORPH, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_HORROR, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_SAPPED, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
+                me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_DISORIENTED, true);
+                me->ApplySpellImmune(0, IMMUNITY_STATE, SPELL_AURA_MOD_CONFUSE, true);
                 introDone = false;
             }
 
             bool introDone;
             uint8 uiCharges;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(BHScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 
                 events.Reset();
             }
 
-            void MoveInLineOfSight(Unit* who)
+            void MoveInLineOfSight(Unit* who) override
             {
                 if (!introDone && me->IsWithinDistInMap(who, 70.0f))
                 {
@@ -94,19 +80,19 @@ class boss_alizabal : public CreatureScript
                 }
             }
 
-            void JustReachedHome()
+            void JustReachedHome() override
             {
                 _JustReachedHome();
                 Talk(SAY_WIPE);
             }
 
-            void MovementInform(uint32 type, uint32 data)
+            void MovementInform(uint32 /*type*/, uint32 pointId) override
             {
-                if (data == EVENT_CHARGE)
+                if (pointId == EVENT_CHARGE)
                     events.ScheduleEvent(EVENT_BLADE_DANCE_AURA, 500);
             }
 
-            void EnterCombat(Unit* attacker)
+            void EnterCombat(Unit* /*who*/) override
             {
                 uiCharges = 0;
                 events.ScheduleEvent(EVENT_BERSERK, 300000);
@@ -125,19 +111,19 @@ class boss_alizabal : public CreatureScript
                 instance->SetBossState(DATA_ALIZABAL, IN_PROGRESS);
             }
 
-            void KilledUnit(Unit* victim)
+            void KilledUnit(Unit* victim) override
             {
                 if (victim && victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_KILL);
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -148,15 +134,15 @@ class boss_alizabal : public CreatureScript
                     return;
 
                 if (uint32 eventId = events.ExecuteEvent())
-				{
-					switch (eventId)
-					{
+                {
+                    switch (eventId)
+                    {
                         case EVENT_BERSERK:
                             DoCast(me, SPELL_BERSERK, true);
                             break;
                         case EVENT_SKEWER:
                             Talk(SAY_SKEWER);
-                            DoCast(me->getVictim(), SPELL_SKEWER);
+                            DoCast(me->GetVictim(), SPELL_SKEWER);
                             events.ScheduleEvent(EVENT_SKEWER, 20500);
                             break;
                         case EVENT_SEETHING_HATE:
@@ -191,7 +177,7 @@ class boss_alizabal : public CreatureScript
                                 uiCharges = 0;
                                 me->InterruptNonMeleeSpells(false);
                                 me->SetReactState(REACT_AGGRESSIVE);
-                                me->GetMotionMaster()->MoveChase(me->getVictim());
+                                me->GetMotionMaster()->MoveChase(me->GetVictim());
                             }
                             else
                             {
@@ -206,10 +192,14 @@ class boss_alizabal : public CreatureScript
                             break;
                     }
                 }
-
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_alizabalAI>(creature);
+        }
 };
 
 class spell_alizabal_seething_hate : public SpellScriptLoader
@@ -222,20 +212,20 @@ class spell_alizabal_seething_hate : public SpellScriptLoader
             PrepareSpellScript(spell_alizabal_seething_hate_SpellScript);
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
 
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_SEETHING_HATE, true);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_alizabal_seething_hate_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_alizabal_seething_hate_SpellScript();
         }
@@ -251,21 +241,21 @@ class spell_alizabal_blade_dance : public SpellScriptLoader
             PrepareSpellScript(spell_alizabal_blade_dance_SpellScript);
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
 
                 GetCaster()->CastSpell(GetHitUnit(), SPELL_BLADE_DANCE_CHARGE, true);
                 GetCaster()->ClearUnitState(UNIT_STATE_CASTING);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_alizabal_blade_dance_SpellScript::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_alizabal_blade_dance_SpellScript();
         }
@@ -281,25 +271,25 @@ class spell_alizabal_blade_dance_dmg : public SpellScriptLoader
             PrepareSpellScript(spell_alizabal_blade_dance_dmg_SpellScript);
 
             void HandleDamage(SpellEffIndex /*effIndex*/)
-			{
-				if(!GetCaster() || !GetHitUnit())
-					return;
+            {
+                if (!GetCaster() || !GetHitUnit())
+                    return;
 
                 PreventHitDamage();
                 uint32 ticks = 1;
-                if (constAuraEffectPtr aurEff = GetCaster()->GetAuraEffect(SPELL_BLADE_DANCE_AURA_2, EFFECT_0))
+                if (AuraEffect const* aurEff = GetCaster()->GetAuraEffect(SPELL_BLADE_DANCE_AURA_2, EFFECT_0))
                     ticks = std::max(aurEff->GetTickNumber(), ticks);
 
                 SetHitDamage(urand(11875, 13125) * ticks);
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectHitTarget += SpellEffectFn(spell_alizabal_blade_dance_dmg_SpellScript::HandleDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_alizabal_blade_dance_dmg_SpellScript();
         }

@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,11 +18,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
+#include "ScriptPCH.h"
 #include "utgarde_keep.h"
-#include "SpellScript.h"
-#include "SpellAuraEffects.h"
 
 uint32 entry_search[3] =
 {
@@ -30,146 +30,149 @@ uint32 entry_search[3] =
 
 class npc_dragonflayer_forge_master : public CreatureScript
 {
-public:
-    npc_dragonflayer_forge_master() : CreatureScript("npc_dragonflayer_forge_master") { }
+    public:
+        npc_dragonflayer_forge_master() : CreatureScript("npc_dragonflayer_forge_master") { }
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_dragonflayer_forge_masterAI(creature);
-    }
-
-    struct npc_dragonflayer_forge_masterAI : public ScriptedAI
-    {
-        npc_dragonflayer_forge_masterAI(Creature* creature) : ScriptedAI(creature)
+        struct npc_dragonflayer_forge_masterAI : public ScriptedAI
         {
-            instance = creature->GetInstanceScript();
-            fm_Type = 0;
-        }
-
-        InstanceScript* instance;
-        uint8 fm_Type;
-
-        void Reset()
-        {
-            if (fm_Type == 0)
-                fm_Type = GetForgeMasterType();
-
-            CheckForge();
-        }
-
-        void CheckForge()
-        {
-            if (instance)
+            npc_dragonflayer_forge_masterAI(Creature* creature) : ScriptedAI(creature)
             {
-                switch (fm_Type)
-                {
-                    case 1:
-                        instance->SetData(EVENT_FORGE_1, me->isAlive() ? NOT_STARTED : DONE);
-                        break;
-
-                    case 2:
-                        instance->SetData(EVENT_FORGE_2, me->isAlive() ? NOT_STARTED : DONE);
-                        break;
-
-                    case 3:
-                        instance->SetData(EVENT_FORGE_3, me->isAlive() ? NOT_STARTED : DONE);
-                        break;
-                }
+                instance = creature->GetInstanceScript();
+                fm_Type = 0;
             }
-        }
 
-        void JustDied(Unit* /*killer*/)
-        {
-            if (fm_Type == 0)
-                fm_Type = GetForgeMasterType();
+            InstanceScript* instance;
+            uint8 fm_Type;
 
-            if (instance)
+            void Reset() override
             {
-                switch (fm_Type)
-                {
-                    case 1:
-                        instance->SetData(EVENT_FORGE_1, DONE);
-                        break;
+                if (fm_Type == 0)
+                    fm_Type = GetForgeMasterType();
 
-                    case 2:
-                        instance->SetData(EVENT_FORGE_2, DONE);
-                        break;
-
-                    case 3:
-                        instance->SetData(EVENT_FORGE_3, DONE);
-                        break;
-                }
+                CheckForge();
             }
-        }
 
-        void EnterCombat(Unit* /*who*/)
-        {
-            if (fm_Type == 0)
-                fm_Type = GetForgeMasterType();
-
-            if (instance)
+            void CheckForge()
             {
-                switch (fm_Type)
+               if (instance)
                 {
-                    case 1:
-                        instance->SetData(EVENT_FORGE_1, IN_PROGRESS);
-                        break;
-
-                    case 2:
-                        instance->SetData(EVENT_FORGE_2, IN_PROGRESS);
-                        break;
-
-                    case 3:
-                        instance->SetData(EVENT_FORGE_3, IN_PROGRESS);
-                        break;
-                }
-            }
-            me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_ONESHOT_NONE);
-        }
-
-        uint8 GetForgeMasterType()
-        {
-            float diff = 30.0f;
-            uint8 near_f = 0;
-
-            for (uint8 i = 0; i < 3; ++i)
-            {
-                if (GameObject* go = me->FindNearestGameObject(entry_search[i], 30))
-                {
-                    if (me->IsWithinDist(go, diff, false))
+                    switch (fm_Type)
                     {
-                        near_f = i + 1;
-                        diff = me->GetDistance2d(go);
+                        case 1:
+                            instance->SetData(EVENT_FORGE_1,me->IsAlive() ? NOT_STARTED : DONE);
+                            break;
+                        case 2:
+                            instance->SetData(EVENT_FORGE_2,me->IsAlive() ? NOT_STARTED : DONE);
+                            break;
+                        case 3:
+                            instance->SetData(EVENT_FORGE_3,me->IsAlive() ? NOT_STARTED : DONE);
+                            break;
                     }
                 }
             }
 
-            switch (near_f)
+            void JustDied(Unit* /*killer*/) override
             {
-                case 1:  return 1;
-                case 2:  return 2;
-                case 3:  return 3;
-                default: return 0;
+                if (fm_Type == 0)
+                    fm_Type = GetForgeMasterType();
+
+                if (instance)
+                {
+                    switch (fm_Type)
+                    {
+                        case 1:
+                            instance->SetData(EVENT_FORGE_1,DONE);
+                            break;
+                        case 2:
+                            instance->SetData(EVENT_FORGE_2,DONE);
+                            break;
+                        case 3:
+                            instance->SetData(EVENT_FORGE_3,DONE);
+                            break;
+                    }
+                }
             }
-        }
 
-        void UpdateAI(const uint32 /*diff*/)
+            void EnterCombat(Unit* /*who*/)
+            {
+                if (fm_Type == 0)
+                    fm_Type = GetForgeMasterType();
+
+                if (instance)
+                {
+                    switch (fm_Type)
+                    {
+                        case 1:
+                            instance->SetData(EVENT_FORGE_1,IN_PROGRESS);
+                            break;
+                        case 2:
+                            if (instance->GetData(EVENT_FORGE_1) != DONE)
+                            {
+                                EnterEvadeMode();
+                                return;
+                            }
+                            instance->SetData(EVENT_FORGE_2,IN_PROGRESS);
+                            break;
+                        case 3:
+                            if (instance->GetData(EVENT_FORGE_2) != DONE)
+                            {
+                                EnterEvadeMode();
+                                return;
+                            }
+                            instance->SetData(EVENT_FORGE_3,IN_PROGRESS);
+                            break;
+                    }
+                }
+                me->HandleEmoteStateCommand(EMOTE_ONESHOT_NONE);
+            }
+
+            uint8 GetForgeMasterType()
+            {
+                float diff = 30.0f;
+                int near_f = 0;
+
+                for (uint8 i = 0; i < 3 ; ++i)
+                {
+                    GameObject* temp;
+                    temp = me->FindNearestGameObject(entry_search[i],30);
+                    if (temp)
+                    {
+                        if (me->IsWithinDist(temp,diff,false))
+                        {
+                            near_f = i + 1;
+                            diff = me->GetDistance2d(temp);
+
+                        }
+                    }
+                }
+
+                switch (near_f)
+                {
+                    case 1:  return 1;
+                    case 2:  return 2;
+                    case 3:  return 3;
+                    default: return 0;
+                }
+            }
+
+            void UpdateAI(uint32 /*diff*/) override
+            {
+                if (fm_Type == 0)
+                    fm_Type = GetForgeMasterType();
+
+                if (!UpdateVictim())
+                    return;
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            if (fm_Type == 0)
-                fm_Type = GetForgeMasterType();
-
-            if (!UpdateVictim())
-                return;
-
-            DoMeleeAttackIfReady();
+            return new npc_dragonflayer_forge_masterAI(creature);
         }
-    };
 };
 
-enum TickingTimeBomb
-{
-    SPELL_TICKING_TIME_BOMB_EXPLODE = 59687
-};
 class spell_ticking_time_bomb : public SpellScriptLoader
 {
     public:
@@ -179,69 +182,26 @@ class spell_ticking_time_bomb : public SpellScriptLoader
         {
             PrepareAuraScript(spell_ticking_time_bomb_AuraScript);
 
-            bool Validate(SpellInfo const* /*spellEntry*/)
+            void HandleDummyTick(AuraEffect const* aurEff)
             {
-                return (bool) sSpellMgr->GetSpellInfo(SPELL_TICKING_TIME_BOMB_EXPLODE);
+                if (Unit* caster = aurEff->GetCaster())
+                    caster->CastSpell(caster, 59687, false);
             }
 
-            void HandleOnEffectRemove(constAuraEffectPtr /* aurEff */, AuraEffectHandleModes /* mode */)
+            void Register() override
             {
-                if (GetCaster() == GetTarget())
-                {
-                    GetTarget()->CastSpell(GetTarget(), SPELL_TICKING_TIME_BOMB_EXPLODE, true);
-                }
-            }
-
-            void Register()
-            {
-                OnEffectRemove += AuraEffectRemoveFn(spell_ticking_time_bomb_AuraScript::HandleOnEffectRemove, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_ticking_time_bomb_AuraScript::HandleDummyTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_ticking_time_bomb_AuraScript();
         }
 };
 
-enum Fixate
-{
-    SPELL_FIXATE_TRIGGER = 40415
-};
-class spell_fixate : public SpellScriptLoader
-{
-    public:
-        spell_fixate() : SpellScriptLoader("spell_fixate") { }
-
-        class spell_fixate_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_fixate_SpellScript);
-
-            bool Validate(SpellInfo const* /*spellEntry*/)
-            {
-                return (bool) sSpellMgr->GetSpellInfo(SPELL_FIXATE_TRIGGER);
-            }
-
-            void HandleScriptEffect(SpellEffIndex /*effIndex*/)
-            {
-                // The unit has to cast the taunt on hisself, but we need the original caster for SPELL_AURA_MOD_TAUNT
-                GetCaster()->CastSpell(GetCaster(), SPELL_FIXATE_TRIGGER, true, 0, 0, GetHitUnit()->GetGUID());
-            }
-
-            void Register()
-            {
-                OnEffectHitTarget += SpellEffectFn(spell_fixate_SpellScript::HandleScriptEffect, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_fixate_SpellScript();
-        }
-};
 void AddSC_utgarde_keep()
 {
     new npc_dragonflayer_forge_master();
     new spell_ticking_time_bomb();
-    new spell_fixate();
 }

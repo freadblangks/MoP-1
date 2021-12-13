@@ -1,8 +1,9 @@
 #include "throne_of_thunder.h"
 #include "CreatureTextMgr.h"
-#include "ScriptPCH.h"
+#include "Pet.h"
+#include <array>
 
-enum eSpells : uint32
+enum Spells
 {
     SPELL_PRIMORDIUS_INTRO_COSMETIC         = 137064,
     SPELL_SUBMERGE_COSMETIC                 = 140483,
@@ -10,8 +11,8 @@ enum eSpells : uint32
 
     SPELL_PRIMORDIAL_STRIKE                 = 136037,   // Cast on main target next melee
     SPELL_MALFORMED_BLOOD                   = 136050,   // Stacking dot, applied to tank
-    SPELL_CONGEAL_BLOOD                     = 136051,
-    SPELL_EVOLUTION                         = 139144,   // Boss gains damage each time he evolves
+    SPELL_CONGEAL_BLOOD                     = 136051,   // Proc Eff
+    SPELL_EVOLUTION                         = 136209,   // Boss gains damage each time he evolves
     SPELL_MUTATED_ABOMINATION               = 140544,   // Boss aura
 
     SPELL_BERSERK_PRIMORDIUS                = 47008,
@@ -24,7 +25,7 @@ enum eSpells : uint32
     SPELL_CAUSTIC_GAS                       = 136216,   // Split between all targets hit, 800k damage
 
     SPELL_ACIDIC_SPINES                     = 136218,   // Triggers missile aoe on random players
-    SPELL_ACIDIC_EXPLOSION                  = 136856,   // Target selection spell, basepoints is trigger missile
+    SPELL_ACIDIC_EXPLOSION_SELECTOR         = 136856,   // Target selection spell, basepoints is trigger missile
     SPELL_ACIDIC_SPINES_MISSILE             = 136219,
     SPELL_ACIDIC_SPINES_DAMAGE              = 136220,
 
@@ -35,6 +36,8 @@ enum eSpells : uint32
     SPELL_METABOLIC_BOOST                   = 136245,   // Mods spell cooldown, timers need to be explicitly checked here (possibly through event function)
 
     SPELL_ERUPTING_PUSTULES                 = 136246,
+    SPELL_ERUPTING_PUSTULES_SELECTOR        = 140499, // for caster group
+    SPELL_ERUPTING_PUSTULES_MISSLE          = 136248,
     SPELL_PUSTULE_ERUPTION                  = 140499,   // Script effect for targeted pustule eruption
     SPELL_PUSTULE_ERUPTION_RAND             = 136249,
     SPELL_PUSTULE_ERUPTION_PLAYER           = 136248,
@@ -62,10 +65,33 @@ enum eSpells : uint32
     SPELL_CLOUDED_MIND                      = 136187,   // Mastery decrease
 
     SPELL_FULLY_MUTATED                     = 140546,   // Stacks of any combination
-    SPELL_FULLY_MUTATED_PET                 = 140706
+    SPELL_FULLY_MUTATED_PET                 = 140706,
+
+    /*Heroic*/
+    SPELL_BLACK_BLOOD                       = 137000,
+    SPELL_BLACK_BLOOD_EFF                   = 136999,
+    SPELL_DEADLY_MUTAGEN                    = 136995,
+    SPELL_PROXIMITY_CHECK_AURA              = 137051,
+    SPELL_PROXIMITY_CHECK_EFF               = 137052,
 };
 
-enum eEvents : uint32
+const std::vector<uint32> possitiveEff=
+{
+    SPELL_KEEN_EYESIGHT,
+    SPELL_IMPROVED_SYNAPSES,
+    SPELL_THICK_BONES,
+    SPELL_CLEAR_MIND,
+};
+
+const std::vector<uint32> negativeEff =
+{
+    SPELL_IMPAIRED_EYESIGHT,
+    SPELL_DULLED_SYNAPSES,
+    SPELL_FRAGILE_BONES,
+    SPELL_CLOUDED_MIND,
+};
+
+enum Events
 {
     EVENT_EMPTY,
     EVENT_RELOCATE,
@@ -78,26 +104,26 @@ enum eEvents : uint32
 
     EVENT_LIVING_FLUID,
     EVENT_PRIMORDIAL_STRIKE,
+    EVENT_MALFORMED_BLOOD,
     EVENT_GAIN_ENERGY,
-    EVENT_CAUSTIC_GAS,
-    EVENT_VOLATILE_PATHOGEN,
-    EVENT_CHECK_ENERGY,
+    EVENT_GAS_BLADDER,
+    EVENT_PATHOGEN_GLANDS,
     EVENT_BERSERK,
 
     EVENT_MOVE,
-    EVENT_CHECK_PROXIMITY
+    EVENT_CHECK_PROXIMITY,
+    EVENT_VISCOUS_HORROR,
+    EVENT_BLACK_BLOOD,
 };
 
-enum eTalks : uint32
+enum Talks
 {
     TALK_INTRO_1,
     TALK_INTRO_2,
     TALK_INTRO_3,
-    TALK_INTRO_4,
 
     TALK_AGGRO,
     TALK_EVOLVE,
-    TALK_SLAY,
     TALK_DEATH,
 
     EMOTE_VENTRAL_SACS,
@@ -106,12 +132,6 @@ enum eTalks : uint32
     EMOTE_PATHOGEN_GLANDS,
     EMOTE_METABOLIC_BOOST,
     EMOTE_ERUPTING_PUSTULES
-};
-
-enum eCreatures : uint32
-{
-    NPC_LIVING_FLUID        = 69069,
-    NPC_AT_STALKER          = 69081
 };
 
 const int32 ACTION_ACTIVATE_PRIMORDIUS = 32;
@@ -148,16 +168,30 @@ static const uint32 m_auiEvolutions[6] =
     SPELL_GAS_BLADDER
 };
 
-static inline const uint32 GetTotalMutations(Unit* pUnit)
+const std::map<uint32, std::array<uint32, 3>> invEvolveType =
+{
+    { SPELL_VENTRAL_SACS, { 0, 0, EMOTE_VENTRAL_SACS } },
+    { SPELL_ACIDIC_SPINES, { 0, 0, EMOTE_ACIDIC_SPINES } },
+    { SPELL_ERUPTING_PUSTULES, { 0, 0, EMOTE_ERUPTING_PUSTULES } },
+    { SPELL_METABOLIC_BOOST, { 0, 0, EMOTE_METABOLIC_BOOST } },
+    { SPELL_PATHOGEN_GLANDS, { EVENT_PATHOGEN_GLANDS , 5000, EMOTE_PATHOGEN_GLANDS} }, // grant ability
+    { SPELL_GAS_BLADDER, { EVENT_GAS_BLADDER, 10000, EMOTE_GAS_BLADDER} }, // grant ability
+};
+
+enum _displays
+{
+    DISPLAYID_INVIS = 11686
+};
+
+static inline const uint32 GetTotalMutations(Unit* unit)
 {
     uint32 m_uiMutations = 0;
-
-    Aura* pAura;
+    Aura* aura;
 
     for (uint8 i = 0; i < 4; ++i)
     {
-        if (pAura = pUnit->GetAura(m_pMutations[i].first))
-            m_uiMutations += pAura->GetStackAmount();
+        if (aura = unit->GetAura(m_pMutations[i].first))
+            m_uiMutations += aura->GetStackAmount();
     }
 
     return m_uiMutations;
@@ -165,1104 +199,1128 @@ static inline const uint32 GetTotalMutations(Unit* pUnit)
 
 class boss_primordius : public CreatureScript
 {
-public:
-    boss_primordius() : CreatureScript("boss_primordius") {}
-
-    class boss_primordiusAI : public BossAI
-    {
     public:
-        boss_primordiusAI(Creature* pCreature) : BossAI(pCreature, DATA_PRIMORDIUS)
+        boss_primordius() : CreatureScript("boss_primordius") { }
+
+        struct boss_primordiusAI : public BossAI
         {
-            m_uiPosition = 10;
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            
-            if (Aura* pAura = me->AddAura(SPELL_EMERGE, me))
-                pAura->SetDuration(-1);
-
-            me->AddAura(SPELL_PRIMORDIUS_INTRO_COSMETIC, me);
-            me->SetReactState(REACT_PASSIVE);
-            m_bIntroDone = false;
-        }
-
-        EventMap m_mDuringCastEvents;
-        EventMap m_mOocEvents;
-
-        std::array<uint32, 3> m_uiEvolutions;
-
-        bool m_bDouble;
-        bool m_bIntroDone;
-
-        uint32 m_uiPosition;
-
-        void Reset() override
-        {         
-            me->setPowerType(POWER_ENERGY);
-            me->SetMaxPower(POWER_ENERGY, 60);
-            me->SetPower(POWER_ENERGY, 0);
-            me->AddAura(SPELL_ZERO_POWER, me);
-
-            me->AddAura(SPELL_MUTATED_ABOMINATION, me);
-
-            me->SetFullHealth();
-
-            instance->SetBossState(DATA_PRIMORDIUS, NOT_STARTED);
-            instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-
-            for (uint8 i = 0; i < 3; ++i)
+            boss_primordiusAI(Creature* creature) : BossAI(creature, DATA_PRIMORDIUS)
             {
-                m_uiEvolutions[i] = 0;
+                m_uiPosition = 10;
+                introDone = false;
             }
 
-            events.Reset();
-            m_mDuringCastEvents.Reset();
-            m_mOocEvents.Reset();
+            bool m_bDouble;
+            bool introDone;
+            bool hasInGasBladder;
+            uint32 m_uiPosition;
+            std::list<uint32> evolveList;
+            EventMap berserkEvents;
 
-            if (m_bIntroDone)
-                m_mOocEvents.ScheduleEvent(EVENT_SUBMERGE, 4000);
-
-            summons.DespawnAll();
-
-            m_bDouble = false;
-        }
-
-        void DoAction(const int32 iAction) override
-        {
-            if (iAction == ACTION_START_INTRO)
+            void Reset() override
             {
-                m_bIntroDone = true;
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
-                me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->SetPowerType(POWER_MANA);
+                me->SetMaxPower(POWER_MANA, 60);
+                me->SetPower(POWER_MANA, 0);
+                me->setRegeneratingMana(false);
+                evolveList.clear();
 
-                m_mOocEvents.ScheduleEvent(EVENT_SUBMERGE, 7000);
-
-                me->RemoveAurasDueToSpell(SPELL_EMERGE);
-                me->RemoveAurasDueToSpell(SPELL_PRIMORDIUS_INTRO_COSMETIC);
-
-                me->SetReactState(REACT_AGGRESSIVE);
-            }
-
-            if (iAction == ACTION_ACTIVATE_PRIMORDIUS)
-            {
-                m_mOocEvents.ScheduleEvent(EVENT_INTRO_1, 2000);
-            }
-        }
-
-        void EnterCombat(Unit* /*pwho*/) override
-        {
-            instance->SetBossState(DATA_PRIMORDIUS, IN_PROGRESS);
-            instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
-
-            me->SummonCreature(59508, me->GetPositionX(), me->GetPositionY(), TEMPSUMMON_MANUAL_DESPAWN);
-
-            m_mDuringCastEvents.ScheduleEvent(EVENT_LIVING_FLUID, 3000);
-            m_mDuringCastEvents.ScheduleEvent(EVENT_BERSERK, 8 * MINUTE*IN_MILLISECONDS);
-            m_mDuringCastEvents.ScheduleEvent(EVENT_GAIN_ENERGY, 800);
-
-            events.ScheduleEvent(EVENT_PRIMORDIAL_STRIKE, 10000 + rand() % 5000);
-            events.ScheduleEvent(EVENT_CHECK_ENERGY, 300);
-
-            me->RemoveAurasDueToSpell(SPELL_SUBMERGE_COSMETIC);
-
-            Talk(TALK_AGGRO);
-        }
-
-        void JustDied(Unit* /*pKiller*/) override
-        {
-            instance->SetBossState(DATA_PRIMORDIUS, DONE);
-            instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
-
-            Talk(TALK_DEATH);
-        }
-
-        void KilledUnit(Unit* /*pVictim*/) override
-        {
-            Talk(TALK_SLAY);
-        }
-
-        void JustSummoned(Creature* pSummoned) override
-        {
-            summons.Summon(pSummoned);
-        }
-
-        void SummonedCreatureDespawn(Creature* pSummoned) override
-        {
-            summons.Despawn(pSummoned);
-        }
-
-        void UpdateAI(const uint32 uiDiff) override
-        {
-            if (!UpdateVictim())
-            {
-                m_mOocEvents.Update(uiDiff);
-
-                switch (m_mOocEvents.ExecuteEvent())
+                if (instance)
                 {
-                    case EVENT_RELOCATE:
-                    {
-                        uint32 m_uiNewPos = urand(0, 9);
+                    instance->SetBossState(DATA_PRIMORDIUS, NOT_STARTED);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                }
 
-                        while (m_uiNewPos == m_uiPosition)
-                            m_uiNewPos = urand(0, 9);
+                events.Reset();
+                berserkEvents.Reset();
 
-                        m_uiPosition = m_uiNewPos;
+                summons.DespawnAll();
 
-                        me->NearTeleportTo(aFluidPos[m_uiPosition].GetPositionX(), aFluidPos[m_uiPosition].GetPositionY(), aFluidPos[m_uiPosition].GetPositionZ(), aFluidPos[m_uiPosition].GetOrientation());
-                        me->SetFacingTo(aFluidPos[m_uiPosition].GetOrientation());
+                me->GetMap()->SetWorldState(WORLDSTATE_GEN_UNMODIFIED_ORGANISM, 1);
 
-                        if (!m_bIntroDone)
+                m_bDouble = false;
+                hasInGasBladder = false;
+                DoCast(me, SPELL_MUTATED_ABOMINATION, true);
+
+                scheduler
+                    .Schedule(Seconds(2), [this](TaskContext context)
+                {
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
+                });
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                switch (actionId)
+                {
+                    case ACTION_START_INTRO:
+                        if (introDone || instance && instance->GetData(DATA_PRIMORDIUS_EVENT) == DONE)
+                            break;
+
+                        introDone = true;
+
+                        if (instance)
+                            instance->SetData(DATA_PRIMORDIUS_EVENT, DONE);
+
+                        Talk(TALK_INTRO_1);
+
+                        scheduler
+                            .SetValidator([this] { return instance && instance->GetBossState(DATA_PRIMORDIUS) != IN_PROGRESS; })
+                            .Schedule(Seconds(7), [this](TaskContext context)
                         {
-                            if (Aura* pAura = me->GetAura(SPELL_SUBMERGE_COSMETIC))
-                                pAura->SetDuration(10000);
+                            Talk(TALK_INTRO_2);
+                        });
+
+                        scheduler
+                            .SetValidator([this] { return instance && instance->GetBossState(DATA_PRIMORDIUS) != IN_PROGRESS; })
+                            .Schedule(Seconds(17), [this](TaskContext context)
+                        {
+                            Talk(TALK_INTRO_3);
+                        });
+                        break;
+                    case ACTION_EVOLVE:
+                        Talk(TALK_EVOLVE);
+                        me->SetPower(POWER_MANA, 0);
+                        // Update Container exclude using elements
+                        std::list<uint32> evolveDef = { SPELL_VENTRAL_SACS, SPELL_ACIDIC_SPINES, SPELL_ERUPTING_PUSTULES, SPELL_METABOLIC_BOOST, SPELL_PATHOGEN_GLANDS, SPELL_GAS_BLADDER };
+
+                        evolveDef.remove_if([=](uint32 evolveId) { return std::find(evolveList.begin(), evolveList.end(), evolveId) != evolveList.end(); });
+
+                        // Remove Last One if have with same eff
+                        uint32 evolveSize = IsHeroic() ? 3 : 2;
+                        if (evolveList.size() > evolveSize)
+                        {
+                            if (invEvolveType.find(evolveList.front())->second[0])
+                                events.CancelEvent(invEvolveType.find(evolveList.front())->second[0]);
+
+                            me->RemoveAurasDueToSpell(invEvolveType.find(evolveList.front())->first);
+
+                            evolveList.pop_front();
                         }
-                        else
-                            m_mOocEvents.ScheduleEvent(EVENT_SUBMERGE, 12000);
-                    }
-                    break;
-                    case EVENT_SUBMERGE:
-                    {
-                        DoCast(SPELL_SUBMERGE_COSMETIC);
-                        m_mOocEvents.ScheduleEvent(EVENT_RELOCATE, 4000);
-                    }
-                    break;
-                    case EVENT_INTRO_1:
-                        me->RemoveAurasDueToSpell(SPELL_EMERGE);
-                        Talk(TALK_INTRO_1, 0, false, TEXT_RANGE_AREA);
-                        m_mOocEvents.ScheduleEvent(EVENT_SUBMERGE, 6000);
-                        m_mOocEvents.ScheduleEvent(EVENT_INTRO_2, 21500);
-                    break;
-                    case EVENT_INTRO_2:
-                        Talk(TALK_INTRO_2, 0, false, TEXT_RANGE_AREA);
-                        m_mOocEvents.ScheduleEvent(EVENT_SUBMERGE, 6000);
-                        m_mOocEvents.ScheduleEvent(EVENT_INTRO_3, 21500);
+
+                        // Take new one, that we haven`t last 4-5 times depend of difficulty
+                        uint32 prevSpellId = Trinity::Containers::SelectRandomContainerElement(evolveDef);
+                        evolveList.push_back(prevSpellId);
+
+                        DoCast(me, prevSpellId, true);
+
+                        Talk(invEvolveType.find(prevSpellId)->second[2]);
+
+                        // Schedule events if it possible (some evolve spells just periodic aura with smth eff)
+                        if (invEvolveType.find(prevSpellId)->second[0])
+                            events.ScheduleEvent(invEvolveType.find(prevSpellId)->second[0], invEvolveType.find(prevSpellId)->second[1]);
                         break;
-                    case EVENT_INTRO_3:
-                        Talk(TALK_INTRO_3, 0, false, TEXT_RANGE_AREA);
-                        m_mOocEvents.ScheduleEvent(EVENT_SUBMERGE, 6000);
-                        m_mOocEvents.ScheduleEvent(EVENT_INTRO_4, 21500);
-                        break;
-                    case EVENT_INTRO_4:
-                        Talk(TALK_INTRO_4, 0, false, TEXT_RANGE_AREA);
-                        DoAction(ACTION_START_INTRO);
-                        break;
-                    }      
-                return;
+                }
             }
 
-            m_mDuringCastEvents.Update(uiDiff);
-            events.Update(uiDiff);
-
-            switch (m_mDuringCastEvents.ExecuteEvent())
+            void EnterCombat(Unit* /*who*/) override
             {
-            case EVENT_LIVING_FLUID:
-                SummonLivingFluid();
-                break;
-            case EVENT_BERSERK:
-                DoCast(me, SPELL_BERSERK_PRIMORDIUS, true);
-                break;
-            case EVENT_GAIN_ENERGY:
-                me->SetPower(POWER_ENERGY, me->GetPower(POWER_ENERGY) + 1);
+                _EnterCombat();
+
+                if (instance)
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me);
+
+                events.ScheduleEvent(EVENT_LIVING_FLUID, 3000);
+                berserkEvents.ScheduleEvent(EVENT_BERSERK, 8 * MINUTE * IN_MILLISECONDS);
+                events.ScheduleEvent(EVENT_GAIN_ENERGY, 800);
+
+                events.ScheduleEvent(EVENT_PRIMORDIAL_STRIKE, 10000 + rand() % 5000);
+                events.ScheduleEvent(EVENT_MALFORMED_BLOOD, 15 * IN_MILLISECONDS);
+
+                if (IsHeroic())
+                {
+                    DoCast(me, SPELL_PROXIMITY_CHECK_AURA, true);
+                    events.ScheduleEvent(EVENT_VISCOUS_HORROR, 11 * IN_MILLISECONDS);
+                }
+
+                me->RemoveAurasDueToSpell(SPELL_SUBMERGE_COSMETIC);
+
+                Talk(TALK_AGGRO);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                _JustDied();
+
+                if (instance)
+                {
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MALFORMED_BLOOD);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_VOLATILE_PATHOGEN);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FULLY_MUTATED);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BLACK_BLOOD);
+
+                    for (auto itr : possitiveEff)
+                        instance->DoRemoveAurasDueToSpellOnPlayers(itr);
+
+                    for (auto&& itr : negativeEff)
+                        instance->DoRemoveAurasDueToSpellOnPlayers(itr);
+                }
+
+                berserkEvents.Reset();
+                Talk(TALK_DEATH);
+            }
+
+            void EnterEvadeMode() override
+            {
+                _EnterEvadeMode();
+                BossAI::EnterEvadeMode();
+
+                if (instance)
+                {
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->SetBossState(DATA_PRIMORDIUS, FAIL);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_MALFORMED_BLOOD);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_VOLATILE_PATHOGEN);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_FULLY_MUTATED);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_BLACK_BLOOD);
+
+                    for (auto itr : possitiveEff)
+                        instance->DoRemoveAurasDueToSpellOnPlayers(itr);
+
+                    for (auto&& itr : negativeEff)
+                        instance->DoRemoveAurasDueToSpellOnPlayers(itr);
+                }
+
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED | UNIT_FLAG_NON_ATTACKABLE);
+                _DespawnAtEvade();
+                me->GetMotionMaster()->MoveTargetedHome();
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+            }
+
+            void SummonedCreatureDespawn(Creature* summon) override
+            {
+                summons.Despawn(summon);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                scheduler.Update(diff);
+
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+                berserkEvents.Update(diff);
+
+                while (uint32 eventId = berserkEvents.ExecuteEvent())
+                {
+                    if (eventId == EVENT_BERSERK)
+                        DoCast(me, SPELL_BERSERK_PRIMORDIUS, true);
+                    break;
+                }
+
+                if (me->HasUnitState(UNIT_STATE_CASTING) || hasInGasBladder)
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_PRIMORDIAL_STRIKE:
+                            if (Unit* target = me->GetVictim())
+                                DoCast(target, SPELL_PRIMORDIAL_STRIKE);
+
+                            events.ScheduleEvent(EVENT_PRIMORDIAL_STRIKE, (20000 + rand() % 5000) * GetEventTimer());
+                            break;
+                        case EVENT_MALFORMED_BLOOD:
+                            if (Unit* target = me->GetVictim())
+                                DoCast(target, SPELL_MALFORMED_BLOOD);
+
+                            events.ScheduleEvent(EVENT_MALFORMED_BLOOD, 15 * IN_MILLISECONDS * GetEventTimer());
+                            break;
+                        case EVENT_GAS_BLADDER:
+                            DoCast(SPELL_CAUSTIC_GAS);
+                            me->ClearUnitState(UNIT_STATE_CASTING);
+                            hasInGasBladder = true;
+
+                            scheduler
+                                .SetValidator([this] { return instance && instance->GetBossState(DATA_PRIMORDIUS) == IN_PROGRESS; })
+                                .Schedule(Milliseconds(3500), [this](TaskContext context)
+                            {
+                                hasInGasBladder = false;
+                            });
+                            events.ScheduleEvent(EVENT_GAS_BLADDER, (12000 + rand() % 5000) * GetEventTimer());
+                            break;
+                        case EVENT_PATHOGEN_GLANDS:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, NonTankSpecTargetSelector(SPELL_VOLATILE_PATHOGEN)))
+                                DoCast(unit, SPELL_VOLATILE_PATHOGEN);
+                            else if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.f, true))
+                                DoCast(unit, SPELL_VOLATILE_PATHOGEN);
+
+                            events.ScheduleEvent(EVENT_PATHOGEN_GLANDS, 25000 * GetEventTimer());
+                            break;
+                        case EVENT_GAIN_ENERGY:
+                            me->SetPower(POWER_MANA, me->GetPower(POWER_MANA) + 1);
+
+                            if (me->GetPower(POWER_MANA) >= 60)
+                            {
+                                DoCast(me, SPELL_EVOLUTION);
+                                events.ScheduleEvent(EVENT_GAIN_ENERGY, m_bDouble ? 800 + 3500 : 1500 + 3500);
+                                m_bDouble = !m_bDouble;
+                                break;
+                            }
+
+                            events.ScheduleEvent(EVENT_GAIN_ENERGY, m_bDouble ? 800 : 1500);
+                            m_bDouble = !m_bDouble;
+                            break;
+                        case EVENT_LIVING_FLUID:
+                            SummonLivingFluid();
+                            break;
+                        case EVENT_VISCOUS_HORROR:
+                            me->SummonCreature(NPC_VISCOUS_HORROR, aFluidPos[urand(0, 9)], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000 + rand() % 2000);
+                            events.ScheduleEvent(EVENT_VISCOUS_HORROR, 30 * IN_MILLISECONDS);
+                            break;
+                    }
+                }
                 
-                if (m_bDouble)
-                {
-                    m_mDuringCastEvents.ScheduleEvent(EVENT_GAIN_ENERGY, 800);
-                    m_bDouble = false;
-                }
-                else
-                {
-                    m_mDuringCastEvents.ScheduleEvent(EVENT_GAIN_ENERGY, 1500);
-                    m_bDouble = true;
-                }
-                break;
+                DoMeleeAttackIfReady();
+                EnterEvadeIfOutOfCombatArea(diff);
             }
 
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            while (uint32 eventId = events.ExecuteEvent())
+            void SummonLivingFluid()
             {
-                switch (eventId)
+                for (uint8 i = 0; i < 10; ++i)
+                    me->SummonCreature(NPC_LIVING_FLUID, aFluidPos[i], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000 + rand() % 2000);
+
+                events.ScheduleEvent(EVENT_LIVING_FLUID, 14000);
+            }
+
+            float GetEventTimer() const
+            {
+                if (me->HasAura(SPELL_METABOLIC_BOOST))
+                    return 0.8f;
+
+                return 1.f;
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_primordiusAI(creature);
+        }
+};
+
+// Living Fluid 69069
+class npc_living_fluid : public CreatureScript
+{
+    public:
+        npc_living_fluid() : CreatureScript("npc_living_fluid") { }
+
+        struct npc_living_fluidAI : public ScriptedAI
+        {
+            npc_living_fluidAI(Creature* creature) : ScriptedAI(creature) { }
+
+            bool m_bIsVolatile;
+            bool m_bHasDied;
+            EventMap events;
+            TaskScheduler scheduler;
+            InstanceScript* instance;
+
+            void IsSummonedBy(Unit* summoner) override
+            {
+                instance = me->GetInstanceScript();
+
+                me->SetReactState(REACT_PASSIVE);
+
+                events.ScheduleEvent(EVENT_MOVE, 1000);
+                events.ScheduleEvent(EVENT_CHECK_PROXIMITY, 1500);
+
+                DecideVolatility();
+
+                m_bHasDied = false;
+
+                me->SetWalk(true);
+            }
+
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (damage >= me->GetHealth() && m_bIsVolatile)
                 {
-                case EVENT_CHECK_ENERGY:
-                    if (me->GetPower(POWER_ENERGY) >= 60)
+                    if (m_bHasDied)
                     {
-                        DoCast(me, SPELL_EVOLUTION);
-                        events.ScheduleEvent(EVENT_CHECK_ENERGY, 2500);
+                        damage = 0;
+                        return;
                     }
                     else
-                        events.ScheduleEvent(EVENT_CHECK_ENERGY, 300);
-                    break;
-                case EVENT_PRIMORDIAL_STRIKE:
-                    DoCast(me->GetVictim(), SPELL_PRIMORDIAL_STRIKE);
-                    events.ScheduleEvent(EVENT_PRIMORDIAL_STRIKE, 20000 + rand() % 5000 * GetEventTimer());
-                    break;
-                case EVENT_CAUSTIC_GAS:
-                    if (me->HasAura(SPELL_GAS_BLADDER))
                     {
-                        DoCast(SPELL_CAUSTIC_GAS);
-                        events.ScheduleEvent(EVENT_CAUSTIC_GAS, 12000 + rand() % 5000 * GetEventTimer());
-                    }
-                    break;
-                case EVENT_VOLATILE_PATHOGEN:
-                    if (me->HasAura(SPELL_PATHOGEN_GLANDS))
-                    {
-                        if (Unit* pUnit = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.f, true, -(int32)SPELL_VOLATILE_PATHOGEN))
-                            DoCast(pUnit, SPELL_VOLATILE_PATHOGEN);
-                        else if (Unit* pUnit = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.f, true))
-                            DoCast(pUnit, SPELL_VOLATILE_PATHOGEN);
+                        damage = 0;
 
-                        events.ScheduleEvent(EVENT_VOLATILE_PATHOGEN, 25000 * GetEventTimer());
+                        me->SetWalk(false);
+                        me->SetSpeed(MOVE_RUN, 0.1f, true);
+                        me->SetSpeed(MOVE_WALK, 0.1f, true);
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                        DoCast(me, SPELL_VOLATILE_POOL);
+                        me->ClearUnitState(UNIT_STATE_CASTING);
+
+                        me->StopMoving();
+                        me->GetMotionMaster()->MoveIdle();
+
+                        events.Reset();
+
+                        m_bHasDied = true;
+
+                        scheduler
+                            .SetValidator([this] { return instance && instance->GetBossState(DATA_PRIMORDIUS) == IN_PROGRESS; })
+                            .Schedule(Seconds(1), [this](TaskContext context)
+                        {
+                            if (Creature* primordius = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_PRIMORDIUS) : 0))
+                                me->GetMotionMaster()->MoveFollow(primordius, 0.0f, me->GetAngle(primordius));
+
+                            context.Repeat(Seconds(1));
+                        });
+
+                        me->SetDisplayId(DISPLAYID_INVIS);
+                        me->UpdateObjectVisibility();
                     }
-                    break;
                 }
             }
-            
-            DoMeleeAttackIfReady();
-        }
 
-        float GetEventTimer() const
-        {
-            if (me->HasAura(SPELL_METABOLIC_BOOST))
-                return 0.8f;
-            
-            return 1.f;
-        }
-
-        void SummonLivingFluid()
-        {
-            for (uint8 i = 0; i < 10; ++i)
+            void JustDied(Unit* /*killer*/) override
             {
-                me->SummonCreature(NPC_LIVING_FLUID, aFluidPos[i], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5000 + rand() % 2000);
+                if (Creature* primordius = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_PRIMORDIUS) : 0))
+                    if (Creature* pStalker = primordius->SummonCreature(NPC_AT_STALKER, me->GetPositionX(), me->GetPositionY(), 55.8f, TEMPSUMMON_MANUAL_DESPAWN))
+                        pStalker->CastSpell(pStalker, SPELL_MUTAGENIC_POOL, true);
             }
 
-            m_mDuringCastEvents.ScheduleEvent(EVENT_LIVING_FLUID, 10000);
-        }
-
-        std::array<uint32, 3> GetEvolutions() const
-        {
-            return m_uiEvolutions;
-        }
-
-        uint32 GetNumberOfEvolutions() const
-        {
-            uint32 m_uiValue = 0;
-
-            for (uint8 i = 0; i < 3; ++i)
+            void UpdateAI(uint32 diff) override
             {
-                if (m_uiEvolutions[i] > 0)
-                    ++m_uiValue;
-            }
+                events.Update(diff);
+                scheduler.Update(diff);
 
-            return m_uiValue;
-        }
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
 
-        void ShiftEvolutions(uint32 m_uiEvolution)
-        {
-            me->SetPower(POWER_ENERGY, 0);
-            bool m_bShift = true;
-
-            // Fill the array from std::begin() so that 
-            // the oldest evolution is placed first
-            for (uint8 i = 0; i < 3; ++i)
-            {
-                // If we're not filled yet, we can stop the function here
-                if (m_uiEvolutions[i] == 0)
+                switch (events.ExecuteEvent())
                 {
-                    m_uiEvolutions[i] = m_uiEvolution;
-                    m_bShift = false;
-                    break;
+                    case EVENT_MOVE:
+                        Move();
+                        break;
+                    case EVENT_CHECK_PROXIMITY:
+                        CheckProximity();
+                        break;
                 }
             }
 
-            // Shift evolutions
-            if (m_bShift)
+            void Move()
             {
-                me->RemoveAurasDueToSpell(m_uiEvolutions[0]);
+                if (Creature* primordius = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_PRIMORDIUS) : 0))
+                    me->GetMotionMaster()->MovePoint(4, *primordius);
 
-                m_uiEvolutions[0] = m_uiEvolutions[1];
-                m_uiEvolutions[1] = m_uiEvolutions[2];
-                m_uiEvolutions[2] = m_uiEvolution;
+                events.ScheduleEvent(EVENT_MOVE, 200);
             }
 
-            me->AddAura(m_uiEvolution, me);
-            Talk(TALK_EVOLVE);
-
-            events.DelayEvents(2000);
-
-            switch (m_uiEvolution)
+            void CheckProximity()
             {
-            case SPELL_GAS_BLADDER:
-                events.ScheduleEvent(EVENT_CAUSTIC_GAS, 1000);
-                Talk(EMOTE_GAS_BLADDER, 0, false, TEXT_RANGE_AREA);
-                break;
-            case SPELL_PATHOGEN_GLANDS:
-                events.ScheduleEvent(EVENT_VOLATILE_PATHOGEN, 1000);
-                Talk(EMOTE_PATHOGEN_GLANDS, 0, false, TEXT_RANGE_AREA);
-                break;
-            case SPELL_VENTRAL_SACS:
-                Talk(EMOTE_VENTRAL_SACS, 0, false, TEXT_RANGE_AREA);
-                break;
-            case SPELL_ACIDIC_SPINES:
-                Talk(EMOTE_ACIDIC_SPINES, 0, false, TEXT_RANGE_AREA);
-                break;
-            case SPELL_METABOLIC_BOOST:
-                Talk(EMOTE_METABOLIC_BOOST, 0, false, TEXT_RANGE_AREA);
-                break;
-            case SPELL_ERUPTING_PUSTULES:
-                Talk(EMOTE_ERUPTING_PUSTULES, 0, false, TEXT_RANGE_AREA);
-                break;
-            default:
-                break;
+                if (Creature* primordius = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(DATA_PRIMORDIUS) : 0))
+                {
+                    if (me->GetExactDist2d(primordius) < 5.1f)
+                    {
+                        me->StopMoving();
+                        me->GetMotionMaster()->MoveIdle();
+                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                        DoCast(SPELL_MUTATE_PRIMORDIUS);
+                        me->DespawnOrUnsummon(200);
+                        return;
+                    }
+                }
+
+                events.ScheduleEvent(EVENT_CHECK_PROXIMITY, 300);
             }
+
+            void DecideVolatility()
+            {
+                if (roll_chance_i(IsHeroic() ? 10 : 8))
+                    m_bIsVolatile = true;
+                else
+                    m_bIsVolatile = false;
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_living_fluidAI(creature);
         }
-    };
+};
 
-    CreatureAI* GetAI(Creature* pCreature) const
+// Primordius AT Stalker 69081
+struct npc_primordius_at_stalker : public ScriptedAI
+{
+    npc_primordius_at_stalker(Creature* creature) : ScriptedAI(creature) { }
+
+    uint32 usingCount;
+
+    void IsSummonedBy(Unit* summoner) override
     {
-        return new boss_primordiusAI(pCreature);
+        usingCount = Is25ManRaid() ? 3 : 1;
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        if (type == TYPE_LIVING_FLUID)
+            return usingCount;
+
+        return 0;
+    }
+
+    void SetData(uint32 type, uint32 data) override
+    {
+        if (type == TYPE_LIVING_FLUID)
+            usingCount = data;
     }
 };
 
-class npc_living_fluid : public CreatureScript
+// Viscous Horror 69070
+struct npc_primordius_viscous_horror : public ScriptedAI
 {
-public:
-    npc_living_fluid() : CreatureScript("npc_living_fluid") {}
+    npc_primordius_viscous_horror(Creature* creature) : ScriptedAI(creature) { }
 
-    class ai_impl : public ScriptedAI
+    TaskScheduler scheduler;
+    EventMap events;
+
+    void IsSummonedBy(Unit* summoner) override
     {
-    public:
-        ai_impl(Creature* pCreature) : ScriptedAI(pCreature) {}
+        me->SetInCombatWithZone();
+        events.ScheduleEvent(EVENT_BLACK_BLOOD, 15 * IN_MILLISECONDS);
+    }
 
-        bool m_bIsVolatile;
-        bool m_bHasDied;
-
-        void Reset() override
-        {
-            me->SetReactState(REACT_PASSIVE);
-
-            events.ScheduleEvent(EVENT_MOVE, 1000);
-            events.ScheduleEvent(EVENT_CHECK_PROXIMITY, 1500);
-
-            DecideVolatility();
-
-            m_bHasDied = false;
-
-            me->SetWalk(true);
-        }
-
-        void DamageTaken(Unit* /*pDealer*/, uint32& uiDamage) override
-        {
-            if (uiDamage >= me->GetHealth())
-            {
-                if (m_bHasDied)
-                    uiDamage = 0;
-
-                if (m_bIsVolatile && !m_bHasDied)
-                {
-                    uiDamage = 0;
-
-                    me->SetWalk(false);
-                    me->SetSpeed(MOVE_RUN, 0.35f, true);
-                    me->SetSpeed(MOVE_WALK, 0.35f, true);
-                    events.ScheduleEvent(EVENT_MOVE, 200);
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                    DoCast(me, SPELL_VOLATILE_POOL);
-
-                    me->StopMoving();
-                    me->GetMotionMaster()->MoveIdle();
-
-                    events.Reset();
-
-                    m_bHasDied = true;
-
-                    me->SetDisplayId(11686);
-                    me->UpdateObjectVisibility();
-                }
-                else
-                {
-                    if (Creature* pBoss = GetClosestCreatureWithEntry(me, BOSS_PRIMORDIUS, 200.f))
-                    {
-                        if (Creature* pStalker = pBoss->SummonCreature(NPC_AT_STALKER, *me))
-                            pStalker->CastSpell(me, SPELL_MUTAGENIC_POOL, true);
-                    }
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 uiDiff) override
-        {
-            events.Update(uiDiff);
-
-            if (me->HasUnitState(UNIT_STATE_CASTING))
-                return;
-
-            switch (events.ExecuteEvent())
-            {
-            case EVENT_MOVE:
-                Move();
-                break;
-            case EVENT_CHECK_PROXIMITY:
-                CheckProximity();
-                break;
-            }
-        }
-
-        void Move()
-        {
-            if (Creature* pPrimordius = GetClosestCreatureWithEntry(me, BOSS_PRIMORDIUS, 200.f))
-            {
-                me->GetMotionMaster()->MovePoint(4, *pPrimordius);
-            }
-
-            events.ScheduleEvent(EVENT_MOVE, 200);
-        }
-
-        void CheckProximity()
-        {
-            if (Creature* pPrimordius = GetClosestCreatureWithEntry(me, BOSS_PRIMORDIUS, 20.f))
-            {
-                if (me->GetExactDist2d(pPrimordius) < 5.1f)
-                {
-                    me->StopMoving();
-                    me->GetMotionMaster()->MoveIdle();
-                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                    DoCast(SPELL_MUTATE_PRIMORDIUS);
-                    me->DespawnOrUnsummon(200);
-                    return;
-                }
-            }
-
-            events.ScheduleEvent(EVENT_CHECK_PROXIMITY, 300);
-        }
-
-        void DecideVolatility()
-        {
-            if (rand() % 9 < 4)
-                m_bIsVolatile = true;
-            else
-                m_bIsVolatile = false;
-        }
-    };
-
-    CreatureAI* GetAI(Creature* pCreature) const
+    void UpdateAI(uint32 diff) override
     {
-        return new ai_impl(pCreature);
+        scheduler.Update(diff);
+
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            if (eventId == EVENT_BLACK_BLOOD)
+            {
+                if (Unit* target = me->GetVictim())
+                    DoCast(target, SPELL_BLACK_BLOOD);
+
+                events.ScheduleEvent(EVENT_BLACK_BLOOD, 15 * IN_MILLISECONDS);
+            }
+            break;
+        }
+
+        DoMeleeAttackIfReady();
     }
 };
 
 class hasAuraPredicate
 {
     private:
-        Unit* pUnit;
+        Unit* unit;
     public:
-        hasAuraPredicate(Unit* _pUnit) : pUnit(_pUnit) {}
+        hasAuraPredicate(Unit* _pUnit) : unit(_pUnit) { }
 
         bool operator()(const uint32 mValue) const
         {
-            return pUnit->HasAura(mValue);
+            return unit->HasAura(mValue);
         }
 };
 
-class spell_evolve_primordius : public SpellScriptLoader
+// Evolve 136209
+class spell_evolve_primordius : public SpellScript
 {
-public:
-    spell_evolve_primordius() : SpellScriptLoader("spell_evolve_primordius") {}
+    PrepareSpellScript(spell_evolve_primordius);
 
-    class spell_impl : public SpellScript
+    void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
     {
-        PrepareSpellScript(spell_impl);
+        if (Creature* target = GetHitCreature())
+            target->AI()->DoAction(ACTION_EVOLVE);
+    }
 
-        void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_evolve_primordius::HandleEffectHitTarget, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+// Acidic Explosion 136856
+class spell_acidic_explosion_selector : public SpellScript
+{
+    PrepareSpellScript(spell_acidic_explosion_selector);
+
+    void HandleEffectHitTarget(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* caster = GetCaster())
+            if (Unit* target = GetHitUnit())
+                caster->CastSpell(target, SPELL_ACIDIC_SPINES_MISSILE, true);
+    }
+
+    void SelectTargets(std::list<WorldObject*>&targets)
+    {
+        if (Unit* caster = GetCaster())
         {
-            if (Creature* pCreature = GetHitCreature())
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 200.0f);
+
+            uint32 targetCount = caster->GetMap()->Is25ManRaid() ? 7 : 3;
+
+            // Remove whole exclude casters
+            pList.remove_if(TankSpecTargetSelector());
+            pList.remove_if(MeeleSpecTargetSelector());
+
+            // if we have enough players without tanks, meelee
+            if (pList.size() >= targetCount)
             {
-                std::list<uint32> m_lEvolveList;
+                targets.clear();
 
-                for (uint8 i = 0; i < 6; ++i)
-                    m_lEvolveList.push_back(m_auiEvolutions[i]);
+                for (auto&& itr : pList)
+                    targets.push_back(itr);
 
-                m_lEvolveList.remove_if(hasAuraPredicate(pCreature));
+                if (targets.size() > targetCount)
+                    Trinity::Containers::RandomResizeList(targets, targetCount);
 
-                // We'll crash next line anyway, might as well assert the shit out of this function here
-                ASSERT(!m_lEvolveList.empty());
-
-                uint32 m_uiAura = Trinity::Containers::SelectRandomContainerElement(m_lEvolveList);
-                CAST_AI(boss_primordius::boss_primordiusAI, pCreature->AI())->ShiftEvolutions(m_uiAura);
+                return;
             }
-        }
 
-        void Register() override
-        {
-            OnEffectHitTarget += SpellEffectFn(spell_impl::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+            // if we haven`t enough players
+            if (targets.size() > targetCount)
+                Trinity::Containers::RandomResizeList(targets, targetCount);
         }
-    };
+    }
 
-    SpellScript* GetSpellScript() const
+    void Register() override
     {
-        return new spell_impl();
+        OnEffectHitTarget += SpellEffectFn(spell_acidic_explosion_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_acidic_explosion_selector::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
-class spell_acidic_explosion : public SpellScriptLoader
+// Caustic Gas 136216
+class spell_caustic_gas : public SpellScript
 {
-public:
-    spell_acidic_explosion() : SpellScriptLoader("spell_acidic_explosion") {}
+    PrepareSpellScript(spell_caustic_gas);
 
-    class spell_impl : public SpellScript
+    uint32 targetCount;
+
+    bool Load() override
     {
-        PrepareSpellScript(spell_impl);
-
-        void SelectTargets(std::list<WorldObject*>&targets)
-        {
-            targets.remove_if(notPlayerPredicate());
-        }
-
-        void HandleEffectHitTarget(SpellEffIndex eff_idx)
-        {
-            Unit* pUnit = GetHitUnit();
-            Unit* pCaster = GetCaster();
-
-            if (!pCaster || !pUnit)
-                return;
-
-            pCaster->CastSpell(pUnit, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
-        }
-
-        void Register() override
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_impl::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnEffectHitTarget += SpellEffectFn(spell_impl::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_impl();
+        targetCount = 1;
+        return true;
     }
-};
 
-class spell_pustule_eruption : public SpellScriptLoader
-{
-public:
-    spell_pustule_eruption() : SpellScriptLoader("spell_pustule_eruption") {}
-
-    class spell_impl : public SpellScript
+    void SelectTargets(std::list<WorldObject*>&targets)
     {
-        PrepareSpellScript(spell_impl);
-
-        void SelectTargets(std::list<WorldObject*>&targets)
-        {
-            targets.remove_if(notPlayerPredicate());
-
-            if (targets.size() > 1)
-                Trinity::Containers::RandomResizeList(targets, 1);
-        }
-
-        void HandleEffectHitTarget(SpellEffIndex eff_idx)
-        {
-            Unit* pUnit = GetHitUnit();
-            Unit* pCaster = GetCaster();
-
-            if (!pCaster || !pUnit)
-                return;
-
-            pCaster->CastSpell(pUnit, GetSpellInfo()->Effects[eff_idx].BasePoints, true);
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_impl::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnEffectHitTarget += SpellEffectFn(spell_impl::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_impl();
+        targets.remove_if([=](WorldObject* target) { return target && target->ToPlayer() && target->ToPlayer()->IsGameMaster(); });
+        targetCount = targets.size();
     }
-};
 
-class spell_caustic_gas : public SpellScriptLoader
-{
-public:
-    spell_caustic_gas() : SpellScriptLoader("spell_caustic_gas") {}
-
-    class spell_impl : public SpellScript
+    void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
     {
-        PrepareSpellScript(spell_impl);
+        if (targetCount > 1)
+            SetHitDamage(GetHitDamage() / targetCount);
+    }
 
-        uint32 m_uiTargetCount;
-
-        bool Load() override
-        {
-            m_uiTargetCount = 1;
-            return true;
-        }
-
-        void SelectTargets(std::list<WorldObject*>&targets)
-        {
-            targets.remove_if(notPlayerPredicate());
-
-            m_uiTargetCount = targets.size();
-        }
-
-        void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
-        {
-            SetHitDamage(GetHitDamage() / m_uiTargetCount);
-        }
-
-        void Register() override
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_impl::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
-            OnEffectHitTarget += SpellEffectFn(spell_impl::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
+    void Register() override
     {
-        return new spell_impl();
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_caustic_gas::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnEffectHitTarget += SpellEffectFn(spell_caustic_gas::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
     }
 };
 
 class spell_mutation_primordius : public SpellScriptLoader
 {
-public:
-    spell_mutation_primordius() : SpellScriptLoader("spell_mutation_primordius") {}
+    public:
+        spell_mutation_primordius() : SpellScriptLoader("spell_mutation_primordius") { }
 
-    class spell_impl : public SpellScript
-    {
-        PrepareSpellScript(spell_impl);
-
-        void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
+        class spell_mutation_primordius_SpellScript : public SpellScript
         {
-            if (Unit* pUnit = GetHitUnit())
+            PrepareSpellScript(spell_mutation_primordius_SpellScript);
+
+            void HandleEffectHitTarget(SpellEffIndex /*eff_idx*/)
             {
-                if (pUnit->HasAura(SPELL_FULLY_MUTATED))
+                if (Unit* unit = GetHitUnit())
                 {
-                    uint32 m_uiInfection = m_pMutations[urand(0, 3)].second;
-
-                    if (Aura* pAura = pUnit->GetAura(m_uiInfection))
-                        pAura->ModStackAmount(1);
-                    else
-                        pUnit->AddAura(m_uiInfection, pUnit);
-                }
-                else
-                {
-                    const std::pair<uint32, uint32> m_pMutationPair = m_pMutations[urand(0, 3)];
-                    const uint32 m_uiTotalStacks = GetTotalMutations(pUnit);
-
-                    if (Aura* pAura = pUnit->GetAura(m_pMutationPair.first))
+                    if (unit->HasAura(SPELL_FULLY_MUTATED))
                     {
-                        if (pAura->GetStackAmount() >= 4)
-                        {
-                            pAura->Remove(AURA_REMOVE_BY_ENEMY_SPELL);
+                        unit->GetMap()->SetWorldState(WORLDSTATE_GEN_UNMODIFIED_ORGANISM, 0);
+                        uint32 m_uiInfection = m_pMutations[urand(0, 3)].second;
 
-                            if (Aura* pNegAura = pUnit->GetAura(m_pMutationPair.second))
-                                pNegAura->ModStackAmount(1);
-                            else
-                                pUnit->AddAura(m_pMutationPair.second, pUnit);
-                        }
+                        if (Aura* aura = unit->GetAura(m_uiInfection))
+                            aura->ModStackAmount(1);
                         else
-                            pAura->ModStackAmount(1);
+                            unit->AddAura(m_uiInfection, unit);
                     }
                     else
-                        pUnit->AddAura(m_pMutationPair.first, pUnit);
-
-                    if (m_uiTotalStacks + 1 >= 5)
                     {
-                        for (uint8 i = 0; i < 4; ++i)
+                        const std::pair<uint32, uint32> m_pMutationPair = m_pMutations[urand(0, 3)];
+                        const uint32 m_uiTotalStacks = GetTotalMutations(unit);
+
+                        if (Aura* aura = unit->GetAura(m_pMutationPair.first))
                         {
-                            if (Aura* pAura = pUnit->GetAura(m_pMutations[i].first))
-                                pAura->RefreshDuration();
+                            if (aura->GetStackAmount() >= 4)
+                            {
+                                aura->Remove(AURA_REMOVE_BY_ENEMY_SPELL);
+
+                                if (Aura* pNegAura = unit->GetAura(m_pMutationPair.second))
+                                    pNegAura->ModStackAmount(1);
+                                else
+                                    unit->AddAura(m_pMutationPair.second, unit);
+                            }
+                            else
+                                aura->ModStackAmount(1);
                         }
+                        else
+                            unit->AddAura(m_pMutationPair.first, unit);
 
-                        pUnit->CastSpell(pUnit, SPELL_FULLY_MUTATED, true);
+                        if (m_uiTotalStacks + 1 >= 5)
+                        {
+                            for (uint8 i = 0; i < 4; ++i)
+                            {
+                                if (Aura* aura = unit->GetAura(m_pMutations[i].first))
+                                    aura->RefreshDuration();
+                            }
 
-                        if (Pet* pPet = pUnit->ToPlayer()->GetPet())
-                            pUnit->AddAura(SPELL_FULLY_MUTATED_PET, pPet);
+                            unit->CastSpell(unit, SPELL_FULLY_MUTATED, true);
+
+                            if (Pet* pet = unit->ToPlayer()->GetPet())
+                                unit->AddAura(SPELL_FULLY_MUTATED_PET, pet);
+                        }
                     }
                 }
             }
-        }
 
-        void Register() override
+            void Register() override
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_mutation_primordius_SpellScript::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
         {
-            OnEffectHitTarget += SpellEffectFn(spell_impl::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+            return new spell_mutation_primordius_SpellScript();
         }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_impl();
-    }
 };
 
 class spell_primordius_mutation_aura : public SpellScriptLoader
 {
-public:
-    spell_primordius_mutation_aura() : SpellScriptLoader("spell_primordius_mutation_aura") {}
+    public:
+        spell_primordius_mutation_aura() : SpellScriptLoader("spell_primordius_mutation_aura") { }
 
-    class aura_impl : public AuraScript
-    {
-        PrepareAuraScript(aura_impl);
-
-        void HandleOnDispel(DispelInfo* /*info*/)
+        class spell_primordius_mutation_aura_AuraScript : public AuraScript
         {
-            for (uint8 i = 0; i < 4; ++i)
+            PrepareAuraScript(spell_primordius_mutation_aura_AuraScript);
+
+            void HandleOnDispel(DispelInfo* /*info*/)
             {
-                uint32 m_uiMutation = m_pMutations[i].first;
-                uint32 m_uiInfection = m_pMutations[i].second;
+                for (uint8 i = 0; i < 4; ++i)
+                {
+                    uint32 m_uiMutation = m_pMutations[i].first;
+                    uint32 m_uiInfection = m_pMutations[i].second;
 
-                if (GetId() != m_uiMutation)
-                    GetOwner()->ToUnit()->RemoveAura(m_uiMutation);
+                    if (GetId() != m_uiMutation)
+                        GetOwner()->ToUnit()->RemoveAura(m_uiMutation);
 
-                if (GetId() != m_uiInfection)
-                    GetOwner()->ToUnit()->RemoveAura(m_uiInfection);
+                    if (GetId() != m_uiInfection)
+                        GetOwner()->ToUnit()->RemoveAura(m_uiInfection);
+                }
             }
-        }
 
-        void Register() override
+            void Register() override
+            {
+                OnDispel += AuraDispelFn(spell_primordius_mutation_aura_AuraScript::HandleOnDispel);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
         {
-            OnDispel += AuraDispelFn(aura_impl::HandleOnDispel);
+            return new spell_primordius_mutation_aura_AuraScript();
         }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new aura_impl();
-    }
 };
 
+// 140483
 class spell_submerge_cosmetic_aura : public SpellScriptLoader
 {
-public:
-    spell_submerge_cosmetic_aura() : SpellScriptLoader("spell_submerge_cosmetic_aura") {}
+    public:
+        spell_submerge_cosmetic_aura() : SpellScriptLoader("spell_submerge_cosmetic_aura") { }
 
-    class aura_impl : public AuraScript
-    {
-        PrepareAuraScript(aura_impl);
-
-        void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+        class spell_submerge_cosmetic_aura_AuraScript : public AuraScript
         {
-            if (Unit* target = GetOwner()->ToUnit())
-                target->SetVisible(false);
-        }
+            PrepareAuraScript(spell_submerge_cosmetic_aura_AuraScript);
 
-        void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
-        {
-            if (Unit* target = GetOwner()->ToUnit())
-                if (!target->IsVisible())
-                    target->SetVisible(true);
-        }
-
-        void Register()
-        {
-            OnEffectApply += AuraEffectApplyFn(aura_impl::HandleOnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-            OnEffectRemove += AuraEffectRemoveFn(aura_impl::HandleOnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const
-    {
-        return new aura_impl();
-    }
-};
-
-class sat_mutagenic_pool : public SpellAreaTriggerScript
-{
-public:
-    sat_mutagenic_pool() : SpellAreaTriggerScript("sat_mutagenic_pool") {}
-
-    class sat_impl : public IAreaTriggerOnce
-    {
-        bool CheckTriggering(WorldObject* pTriggering) override
-        {
-            Player* pPlayer = pTriggering->ToPlayer();
-
-            if (!pPlayer)
-                return false;
-
-            return pPlayer->IsAlive() && m_target->IsWithinDistInMap(pPlayer, m_range);
-        }
-
-        void OnTrigger(WorldObject* pTriggering) override
-        {
-            pTriggering->ToUnit()->CastSpell(pTriggering->ToUnit(), SPELL_MUTATION, true);
-            return;
-        }
-    };
-
-    IAreaTrigger* GetInterface() const override
-    {
-        return new sat_impl();
-    }
-};
-
-class sat_volatile_pool_player : public SpellAreaTriggerScript
-{
-public:
-    sat_volatile_pool_player() : SpellAreaTriggerScript("sat_volatile_pool_player") {}
-
-    class sat_impl : public IAreaTriggerAura
-    {
-        bool CheckTriggering(WorldObject* pTriggering) override
-        {
-            Player* pPlayer = pTriggering->ToPlayer();
-
-            if (!pPlayer)
-                return false;
-
-            return pPlayer->IsAlive() && (m_target->GetExactDist2d(pPlayer) < m_range);
-        }
-
-        void OnTriggeringApply(WorldObject* pTriggering) override
-        {
-            if (Unit* pTarget = pTriggering->ToUnit())
+            void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
             {
-                if (!pTarget->HasAura(SPELL_VOLATILE_MUTATION_AURA, m_caster->GetGUID()))
-                    m_caster->AddAura(SPELL_VOLATILE_MUTATION_AURA, pTarget);
-            }
-        }
-
-        void OnTriggeringRemove(WorldObject* pTriggering) override
-        {
-            if (Unit* pTarget = pTriggering->ToUnit())
-            {
-                if (Aura* pAura = pTarget->GetAura(SPELL_VOLATILE_MUTATION_AURA, m_caster->GetGUID()))
-                    pAura->Remove(AURA_REMOVE_BY_EXPIRE);
-            }
-        }
-
-        void OnTriggeringUpdate(WorldObject* pTriggering) override
-        {
-            if (Unit* pTarget = pTriggering->ToUnit())
-            {
-                if (Aura* pAura = pTarget->GetAura(SPELL_VOLATILE_MUTATION_AURA))
-                    pAura->RefreshDuration();
-            }
-        }
-    };
-
-    IAreaTrigger* GetInterface() const
-    {
-        return new sat_impl();
-    }
-};
-
-class sat_volatile_pool_primordius : public SpellAreaTriggerScript
-{
-public:
-    sat_volatile_pool_primordius() : SpellAreaTriggerScript("sat_volatile_pool_primordius") {}
-
-    class sat_impl : public IAreaTriggerAura
-    {
-        bool CheckTriggering(WorldObject* pTriggering) override
-        {
-            Player* pPlayer = pTriggering->ToPlayer();
-
-            if (!pPlayer || !m_caster)
-                return false;
-
-            return m_caster->IsWithinDistInMap(pPlayer, m_range);
-        }
-
-        void OnTriggeringApply(WorldObject* pTriggering) override
-        {
-            if (Player* pPlayer = pTriggering->ToPlayer())
-            {
-                if (Creature* pBoss = GetClosestCreatureWithEntry(pPlayer, BOSS_PRIMORDIUS, 15.f))
+                if (Unit* target = GetOwner()->ToUnit())
                 {
-                    if (pBoss->IsWithinDistInMap(m_caster, 4.f))
-                    {
-                        pBoss->CastSpell(pBoss, SPELL_VOLATILE_MUTATION_PRIMORDIUS, true);
-
-                        Destroy();
-                        return;
-                    }
+                    target->SetDisplayId(DISPLAYID_INVIS);
+                    target->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
                 }
             }
-        }
-    };
 
-    IAreaTrigger* GetInterface() const
-    {
-        return new sat_impl();
-    }
+            void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (Unit* target = GetOwner()->ToUnit())
+                {
+                    target->SetDisplayId(target->GetNativeDisplayId());
+                    target->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectApply += AuraEffectApplyFn(spell_submerge_cosmetic_aura_AuraScript::HandleOnApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+                OnEffectRemove += AuraEffectRemoveFn(spell_submerge_cosmetic_aura_AuraScript::HandleOnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_submerge_cosmetic_aura_AuraScript();
+        }
 };
 
-class sat_red_pool_player : public SpellAreaTriggerScript
+// Malformed Blood 136050
+class spell_malformed_blood : public AuraScript
 {
-public:
-    sat_red_pool_player() : SpellAreaTriggerScript("sat_red_pool_player") {}
+    PrepareAuraScript(spell_malformed_blood);
 
-    class sat_impl : public IAreaTriggerAura
+    bool CheckProc(ProcEventInfo& rProcInfo)
     {
-        bool CheckTriggering(WorldObject* pTriggering) override
-        {
-            Player* pPlayer = pTriggering->ToPlayer();
+        if (!rProcInfo.GetProcTarget())
+            return false;
 
-            if (!pPlayer)
-                return false;
+        uint32 entry = rProcInfo.GetProcTarget()->GetEntry();
+        if (entry != NPC_LIVING_FLUID && entry != NPC_VISCOUS_HORROR)
+            return false;
 
-            return pPlayer->IsAlive() && (m_target->GetExactDist2d(pPlayer) < m_range);
-        }
-
-        uint32 GetMutation()
-        {
-            switch (rand()%3)
-            {
-            case 0:
-                return 136180;
-            case 1:
-                return 136182;
-            case 2:
-                return 136184;
-            case 3:
-                return 136186;
-            default:
-                break;
-            }
-        }
-
-        void OnTriggeringApply(WorldObject* pTriggering) override
-        {
-            if (Unit* pTarget = pTriggering->ToUnit())
-            {
-                    m_caster->AddAura(GetMutation(), pTarget);
-            }
-        }
-
-        void OnTriggeringRemove(WorldObject* pTriggering) override
-        {
-            if (Unit* pTarget = pTriggering->ToUnit())
-            {
-                if (Aura* pAura = pTarget->GetAura(SPELL_VOLATILE_MUTATION_AURA, m_caster->GetGUID()))
-                    pAura->Remove(AURA_REMOVE_BY_EXPIRE);
-            }
-        }
-
-        void OnTriggeringUpdate(WorldObject* pTriggering) override
-        {
-            if (Unit* pTarget = pTriggering->ToUnit())
-            {
-                if (Aura* pAura = pTarget->GetAura(SPELL_VOLATILE_MUTATION_AURA))
-                    pAura->RefreshDuration();
-            }
-        }
-    };
-
-    IAreaTrigger* GetInterface() const
-    {
-        return new sat_impl();
-    }
-};
-
-class AreaTrigger_at_primordius_intro : public AreaTriggerScript
-{
-public:
-
-    AreaTrigger_at_primordius_intro()
-        : AreaTriggerScript("at_primordius_intro")
-    {
-    }
-
-    bool OnTrigger(Player* pPlayer, AreaTriggerEntry const* /*pTrigger*/)
-    {
-        if (Creature* pBoss = GetClosestCreatureWithEntry(pPlayer, BOSS_PRIMORDIUS, 150.f))
-        {
-            if (pBoss->GetInstanceScript()->GetData(TYPE_PRIMORDIUS_INTRO) == DONE)
-                return true;
-
-            if (pBoss->AI())
-            {
-                pBoss->GetInstanceScript()->SetData(TYPE_PRIMORDIUS_INTRO, DONE);
-                pBoss->AI()->DoAction(ACTION_ACTIVATE_PRIMORDIUS);
-                return true;
-            }
-        }
         return true;
     }
+
+    void HandleOnProc(ProcEventInfo& rProcInfo)
+    {
+        if (Unit* owner = rProcInfo.GetActor())
+        {
+            if (Unit* target = rProcInfo.GetProcTarget())
+            {
+                int32 bp = GetStackAmount() * GetSpellInfo()->Effects[EFFECT_0].BasePoints;
+                owner->CastCustomSpell(target, SPELL_CONGEAL_BLOOD, &bp, 0, 0, true);
+            }
+        }
+    }
+
+    void Register()
+    {
+        DoCheckProc += AuraCheckProcFn(spell_malformed_blood::CheckProc);
+        OnProc += AuraProcFn(spell_malformed_blood::HandleOnProc);
+    }
 };
 
-class trigger_done_mutation : public CreatureScript
+// Black Blood 137000
+class spell_primordius_black_blood : public AuraScript
 {
-public:
-    trigger_done_mutation() : CreatureScript("trigger_done_mutation")
+    PrepareAuraScript(spell_primordius_black_blood);
+
+    bool CheckProc(ProcEventInfo& rProcInfo)
     {
+        if (!rProcInfo.GetProcTarget())
+            return false;
+
+        uint32 entry = rProcInfo.GetProcTarget()->GetEntry();
+        if (entry != NPC_PRIMORDIUS)
+            return false;
+
+        return true;
     }
 
-    CreatureAI* GetAI(Creature* creature) const
+    void HandleOnProc(ProcEventInfo& rProcInfo)
     {
-        return new trigger_done_mutationAI(creature);
-    }
-
-    struct trigger_done_mutationAI : public ScriptedAI
-    {
-        trigger_done_mutationAI(Creature* creature) : ScriptedAI(creature) {}
-
-        EventMap events;
-
-        void Reset()
+        if (Unit* owner = rProcInfo.GetActor())
         {
-            events.Reset();
-        }
-
-        void EnterCombat(Unit* /*who*/) {}
-
-        void JustDied(Unit* /*killer*/) {}
-
-        bool trig;
-
-        void UpdateAI(const uint32 diff)
-        {
-
-            events.Update(diff);
-
-            if (Creature* pBoss = GetClosestCreatureWithEntry(me, BOSS_PRIMORDIUS, 200.f))
+            if (Unit* target = rProcInfo.GetProcTarget())
             {
-                std::list<Player*> PlayersInArea;
-                GetPlayerListInGrid(PlayersInArea, me, 200.0f);
+                int32 bp = GetStackAmount() * GetSpellInfo()->Effects[EFFECT_0].BasePoints;
+                owner->CastCustomSpell(target, SPELL_BLACK_BLOOD_EFF, &bp, 0, 0, true);
+            }
+        }
+    }
 
-                uint32 k = 0;
-                for (auto _player : PlayersInArea)
+    void Register()
+    {
+        DoCheckProc += AuraCheckProcFn(spell_primordius_black_blood::CheckProc);
+        OnProc += AuraProcFn(spell_primordius_black_blood::HandleOnProc);
+    }
+};
+
+// Erupring Pustules Selector 140499
+class spell_erupting_pustules_selector : public SpellScript
+{
+    PrepareSpellScript(spell_erupting_pustules_selector);
+
+    void HandleEffectHitTarget(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* caster = GetCaster())
+            if (Unit* target = GetHitUnit())
+                caster->CastSpell(target, SPELL_ERUPTING_PUSTULES_MISSLE, true);
+    }
+
+    void SelectTargets(std::list<WorldObject*>&targets)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            std::list<Player*> pList;
+            GetPlayerListInGrid(pList, caster, 200.0f);
+
+            uint32 targetCount = caster->GetMap()->Is25ManRaid() ? 7 : 3;
+
+            // Remove whole exclude casters
+            pList.remove_if(TankSpecTargetSelector());
+            pList.remove_if(MeeleSpecTargetSelector());
+
+            // if we have enough players without tanks, meelee
+            if (pList.size() >= targetCount)
+            {
+                targets.clear();
+
+                for (auto&& itr : pList)
+                    targets.push_back(itr);
+
+                if (targets.size() > targetCount)
+                    Trinity::Containers::RandomResizeList(targets, targetCount);
+
+                return;
+            }
+
+            // if we haven`t enough players
+            if (targets.size() > targetCount)
+                Trinity::Containers::RandomResizeList(targets, targetCount);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_erupting_pustules_selector::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_erupting_pustules_selector::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Mutation 136178
+class spell_primordius_player_mutation : public SpellScript
+{
+    PrepareSpellScript(spell_primordius_player_mutation);
+
+    void HandleEffectHitTarget(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* target = GetHitUnit())
+        {
+            if (hasEnoughPossitiveEff(target))
+                target->CastSpell(target, Trinity::Containers::SelectRandomContainerElement(negativeEff), true);
+            else
+            {
+                target->CastSpell(target, Trinity::Containers::SelectRandomContainerElement(possitiveEff), true);
+
+                if (hasEnoughPossitiveEff(target))
                 {
-                    if (_player->HasAura(SPELL_KEEN_EYESIGHT))
-                        k++;
-                    if (_player->HasAura(SPELL_IMPROVED_SYNAPSES))
-                        k++;
-                    if (_player->HasAura(SPELL_THICK_BONES))
-                        k++;
-                    if (_player->HasAura(SPELL_CLEAR_MIND))
-                        k++;
-                    if (k >= 2)
-                        if (!_player->HasAura(SPELL_FULLY_MUTATED))
-                            me->AddAura(SPELL_FULLY_MUTATED, _player);
+                    target->CastSpell(target, SPELL_FULLY_MUTATED, true);
+
+                    // Refresh at mutation
+                    for (auto&& itr : possitiveEff)
+                        if (Aura* aur = target->GetAura(itr))
+                            aur->RefreshDuration();
+
+                    for (auto&& itr : negativeEff)
+                        if (Aura* aur = target->GetAura(itr))
+                            aur->RefreshDuration();
                 }
             }
         }
-    };
+    }
+
+    bool hasEnoughPossitiveEff(Unit* m_target)
+    {
+        uint32 count = 0;
+
+        for (auto&& itr : possitiveEff)
+            if (Aura* aur = m_target->GetAura(itr))
+                count += aur->GetStackAmount();
+
+        return count >= 5;
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_primordius_player_mutation::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
 };
 
+// Volatile Mutation 141094
+class spell_volatile_mutation_player : public AuraScript
+{
+    PrepareAuraScript(spell_volatile_mutation_player);
 
+    void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Unit* target = GetOwner()->ToUnit())
+            target->CastSpell(target, Trinity::Containers::SelectRandomContainerElement(negativeEff), true);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_volatile_mutation_player::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Fully Mutated 140546
+class spell_fully_mutated_by_player : public AuraScript
+{
+    PrepareAuraScript(spell_fully_mutated_by_player);
+
+    void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* target = GetOwner()->ToPlayer())
+        {
+            if (Pet* pet = target->GetPet())
+            {
+                int32 m_bp = target->GetMap()->IsHeroic() ? 300 : 54;
+                target->CastCustomSpell(target, SPELL_FULLY_MUTATED_PET, &m_bp, 0, 0, true);
+            }
+        }
+    }
+
+    void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* target = GetOwner()->ToPlayer())
+            if (Pet* pet = target->GetPet())
+                pet->RemoveAurasDueToSpell(SPELL_FULLY_MUTATED_PET);
+    }
+
+    void Register() override
+    {
+        OnEffectApply += AuraEffectApplyFn(spell_fully_mutated_by_player::HandleOnApply, EFFECT_0, SPELL_AURA_MOD_DAMAGE_DONE_VERSUS_AURASTATE, AURA_EFFECT_HANDLE_REAL);
+        OnEffectRemove += AuraEffectRemoveFn(spell_fully_mutated_by_player::HandleOnRemove, EFFECT_0, SPELL_AURA_MOD_DAMAGE_DONE_VERSUS_AURASTATE, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Primordius Proximity Check Eff 137052
+class spell_primordius_proximity_check_eff : public SpellScript
+{
+    PrepareSpellScript(spell_primordius_proximity_check_eff);
+
+    void HandleEffectHitTarget(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* target = GetHitUnit())
+            target->CastSpell(target, SPELL_DEADLY_MUTAGEN, true);
+    }
+
+    void SelectTargets(std::list<WorldObject*>&targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_VISCOUS_HORROR; });
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_primordius_proximity_check_eff::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_TRIGGER_MISSILE);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_primordius_proximity_check_eff::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+    }
+};
+
+// 659, 884. Summoned by 136049 - Mutagenic Pool
+class sat_mutagenic_pool : public IAreaTriggerAura
+{
+    bool CheckTriggering(WorldObject* pTriggering)
+    {
+        return pTriggering && pTriggering->ToPlayer();
+    }
+
+    void OnTriggeringApply(WorldObject* pTriggering)
+    {
+        if (Player* target = pTriggering->ToPlayer())
+        {
+            target->CastSpell(target, SPELL_MUTATION, true);
+
+            if (Creature* caster = GetCaster()->ToCreature())
+            {
+                caster->AI()->SetData(TYPE_LIVING_FLUID, caster->AI()->GetData(TYPE_LIVING_FLUID) - 1);
+
+                if (!caster->AI()->GetData(TYPE_LIVING_FLUID) && GetAreaTrigger())
+                    GetAreaTrigger()->SetDuration(0);
+            }
+        }
+    }
+};
+
+// 886, 930. Summoned by 140506 - Volatile Pool
+class sat_volatile_pool_player : public IAreaTriggerAura
+{
+    bool CheckTriggering(WorldObject* pTriggering)
+    {
+        return pTriggering && (pTriggering->ToPlayer() || pTriggering->GetEntry() == NPC_PRIMORDIUS);
+    }
+
+    void OnTriggeringApply(WorldObject* pTriggering)
+    {
+        if (Player* target = pTriggering->ToPlayer())
+        {
+            target->GetMap()->SetWorldState(WORLDSTATE_GEN_UNMODIFIED_ORGANISM, 0);
+            target->CastSpell(target, SPELL_VOLATILE_MUTATION_AURA, true);
+        }
+
+        if (Creature* target = pTriggering->ToCreature())
+        {
+            target->CastSpell(target, SPELL_VOLATILE_MUTATION_PRIMORDIUS, true);
+            
+            if (AreaTrigger* areaTrigger = GetAreaTrigger())
+                areaTrigger->SetDuration(0);
+
+            if (GetCaster() && GetCaster()->ToCreature())
+                GetCaster()->ToCreature()->DespawnOrUnsummon(1 * IN_MILLISECONDS);
+        }
+    }
+
+    void OnTriggeringRemove(WorldObject* pTriggering)
+    {
+        if (Player* target = pTriggering->ToPlayer())
+            target->RemoveAurasDueToSpell(SPELL_VOLATILE_MUTATION_AURA);
+    }
+};
+
+// Areatrigger 9006
+class AreaTrigger_at_primordius_intro : public AreaTriggerScript
+{
+    public:
+        AreaTrigger_at_primordius_intro() : AreaTriggerScript("AreaTrigger_at_primordius_intro") { }
+
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*trigger*/) override
+        {
+            if (Creature* primordius = ObjectAccessor::GetCreature(*player, player->GetInstanceScript() ? player->GetInstanceScript()->GetData64(DATA_PRIMORDIUS) : 0))
+                primordius->AI()->DoAction(ACTION_START_INTRO);
+
+            return true;
+        }
+};
 
 void AddSC_boss_primordius()
 {
     new boss_primordius();
     new npc_living_fluid();
+    new creature_script<npc_primordius_at_stalker>("npc_primordius_at_stalker");
+    new creature_script<npc_primordius_viscous_horror>("npc_primordius_viscous_horror");
 
-    new spell_acidic_explosion();
-    new spell_pustule_eruption();
-    new spell_caustic_gas();
-    new spell_evolve_primordius();
+    new spell_script<spell_acidic_explosion_selector>("spell_acidic_explosion_selector");
+    new spell_script<spell_caustic_gas>("spell_caustic_gas");
+    new spell_script<spell_evolve_primordius>("spell_evolve_primordius");
     new spell_mutation_primordius();
     new spell_primordius_mutation_aura();
-
     new spell_submerge_cosmetic_aura();
-
-    new sat_mutagenic_pool();
-    new sat_volatile_pool_player();
-    new sat_red_pool_player();
-    new trigger_done_mutation();
-    //new sat_volatile_pool_primordius();
-
+    new aura_script<spell_malformed_blood>("spell_malformed_blood");
+    new aura_script<spell_primordius_black_blood>("spell_primordius_black_blood");
+    new spell_script<spell_erupting_pustules_selector>("spell_erupting_pustules_selector");
+    new spell_script<spell_primordius_player_mutation>("spell_primordius_player_mutation");
+    new aura_script<spell_volatile_mutation_player>("spell_volatile_mutation_player");
+    new aura_script<spell_fully_mutated_by_player>("spell_fully_mutated_by_player");
+    new spell_script<spell_primordius_proximity_check_eff>("spell_primordius_proximity_check_eff");
+    new atrigger_script<sat_mutagenic_pool>("sat_mutagenic_pool");
+    new atrigger_script<sat_volatile_pool_player>("sat_volatile_pool_player");
     new AreaTrigger_at_primordius_intro();
 }

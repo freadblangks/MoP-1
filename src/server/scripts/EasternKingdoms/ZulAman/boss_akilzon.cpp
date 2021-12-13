@@ -50,16 +50,11 @@ enum Points
 class boss_akilzon : public CreatureScript
 {
     public:
-        boss_akilzon() : CreatureScript("boss_akilzon") {}
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_akilzonAI(pCreature);
-        }
+        boss_akilzon() : CreatureScript("boss_akilzon") { }
 
         struct boss_akilzonAI : public BossAI
         {
-            boss_akilzonAI(Creature* pCreature) : BossAI(pCreature, DATA_AKILZON)
+            boss_akilzonAI(Creature* creature) : BossAI(creature, DATA_AKILZON)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -77,14 +72,14 @@ class boss_akilzon : public CreatureScript
             
             uint64 Eagles[8];
 
-            void Reset()
+            void Reset() override
             {
                 _Reset();
 
                 memset(&Eagles, 0, sizeof(Eagles));
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_ELECTRICAL_STORM, 50000);
                 events.ScheduleEvent(EVENT_STATIC_DISRUPTION, 7000);
@@ -96,28 +91,28 @@ class boss_akilzon : public CreatureScript
                 instance->SetBossState(DATA_AKILZON, IN_PROGRESS);
             }
 
-            void JustDied(Unit* /*killer*/)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
             }
             
-            void JustSummoned(Creature* summon)
+            void JustSummoned(Creature* summon) override
             {
                 BossAI::JustSummoned(summon);
             }
             
-            void SummonedCreatureDespawn(Creature* summon)
+            void SummonedCreatureDespawn(Creature* summon) override
             {
                 BossAI::SummonedCreatureDespawn(summon);
             }
 
-            void KilledUnit(Unit* /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -136,13 +131,13 @@ class boss_akilzon : public CreatureScript
                             events.ScheduleEvent(EVENT_CALL_LIGHTNING, urand(8000, 14000));
                             break;
                         case EVENT_STATIC_DISRUPTION:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_STATIC_DISRUPTION);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_STATIC_DISRUPTION);
                             events.ScheduleEvent(EVENT_STATIC_DISRUPTION, urand(8000, 12000));
                             break;
                         case EVENT_ELECTRICAL_STORM:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_ELECTRICAL_STORM);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_ELECTRICAL_STORM);
                             events.ScheduleEvent(EVENT_ELECTRICAL_STORM, 58000);
                             events.ScheduleEvent(EVENT_SUMMON_EAGLE, 13000);
                             events.RescheduleEvent(EVENT_STATIC_DISRUPTION, urand(13000, 17000));
@@ -155,16 +150,16 @@ class boss_akilzon : public CreatureScript
                             {
                                 if (!Unit::GetUnit(*me, Eagles[i]))
                                 {
-                                    if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                        if (Creature* pEagle = me->SummonCreature(NPC_SOARING_EAGLE, pTarget->GetPositionX() + irand(-10, 10), pTarget->GetPositionY() + irand(-10, 10), pTarget->GetPositionZ() + urand(10, 15), pTarget->GetOrientation(), TEMPSUMMON_CORPSE_DESPAWN, 0))
+                                    if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                        if (Creature* pEagle = me->SummonCreature(NPC_SOARING_EAGLE, target->GetPositionX() + irand(-10, 10), target->GetPositionY() + irand(-10, 10), target->GetPositionZ() + urand(10, 15), target->GetOrientation(), TEMPSUMMON_CORPSE_DESPAWN, 0))
                                             Eagles[i] = pEagle->GetGUID();
                                 }
                             }
                             break;
                         case EVENT_SUMMON_KIDNAPPER:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true, -SPELL_PLUCKED))
-                                if (Creature* pKidnapper = me->SummonCreature(NPC_AMANI_KIDNAPPER, pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ() + 3, pTarget->GetOrientation(), TEMPSUMMON_DEAD_DESPAWN, 5000))
-                                    pTarget->CastSpell(pKidnapper, SPELL_PLUCKED, true);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 1, 0.0f, true, -SPELL_PLUCKED))
+                                if (Creature* pKidnapper = me->SummonCreature(NPC_AMANI_KIDNAPPER, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ() + 3, target->GetOrientation(), TEMPSUMMON_DEAD_DESPAWN, 5000))
+                                    target->CastSpell(pKidnapper, SPELL_PLUCKED, true);
                                 
                             break;
                      }
@@ -173,21 +168,21 @@ class boss_akilzon : public CreatureScript
                 DoMeleeAttackIfReady();
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_akilzonAI>(creature);
+        }
 };
 
 class npc_akilzon_soaring_eagle : public CreatureScript
 {
     public:
         npc_akilzon_soaring_eagle() : CreatureScript("npc_akilzon_soaring_eagle") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_akilzon_soaring_eagleAI(pCreature);
-        }
 
         struct npc_akilzon_soaring_eagleAI : public ScriptedAI
         {
-            npc_akilzon_soaring_eagleAI(Creature* pCreature) : ScriptedAI(pCreature) 
+            npc_akilzon_soaring_eagleAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetReactState(REACT_PASSIVE);
             }
@@ -195,34 +190,30 @@ class npc_akilzon_soaring_eagle : public CreatureScript
             EventMap events;
             Position homePos;
 
-            void Reset()
+            void Reset() override
             {
                 me->SetCanFly(true);
                 me->GetPosition(&homePos);
                 events.Reset();
             }
             
-            void EnterCombat(Unit* who) 
+            void EnterCombat(Unit* /*who*/) override 
             {
                 events.ScheduleEvent(EVENT_EAGLE_SWOOP, urand(100, 6000));
             }
 
-            void MovementInform(uint32 type, uint32 id)
+            void MovementInform(uint32 type, uint32 pointId) override
             { 
                 if (type == POINT_MOTION_TYPE)
                 {
-                    if (id == EVENT_CHARGE)
-                    {
+                    if (pointId == EVENT_CHARGE)
                         events.ScheduleEvent(EVENT_GO_BACK, 3000);
-                    }
-                    else if (id == POINT_HOME)
-                    {
+                    else if (pointId == POINT_HOME)
                         events.ScheduleEvent(EVENT_EAGLE_SWOOP, urand(2000, 10000));
-                    }
                 }
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -237,37 +228,42 @@ class npc_akilzon_soaring_eagle : public CreatureScript
                             me->GetMotionMaster()->MovePoint(POINT_HOME, homePos);
                             break;
                         case EVENT_EAGLE_SWOOP:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
-                                DoCast(pTarget, SPELL_EAGLE_SWOOP);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.0f, true))
+                                DoCast(target, SPELL_EAGLE_SWOOP);
                             break;
                      }
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_akilzon_soaring_eagleAI>(creature);
+        }
 };
 
 class npc_akilzon_amani_kidnapper : public CreatureScript
 {
     public:
         npc_akilzon_amani_kidnapper() : CreatureScript("npc_akilzon_amani_kidnapper") { }
-        
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new npc_akilzon_amani_kidnapperAI(pCreature);
-        }
 
         struct npc_akilzon_amani_kidnapperAI : public ScriptedAI
         {
-            npc_akilzon_amani_kidnapperAI(Creature* pCreature) : ScriptedAI(pCreature) 
+            npc_akilzon_amani_kidnapperAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void Reset()
+            void Reset() override
             {
                 me->SetCanFly(true);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_akilzon_amani_kidnapperAI>(creature);
+        }
 };
 
 class spell_akilzon_electrical_storm : public SpellScriptLoader
@@ -279,42 +275,42 @@ class spell_akilzon_electrical_storm : public SpellScriptLoader
         {
             PrepareAuraScript(spell_akilzon_electrical_storm_AuraScript);
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
                
-                if (Player* pPlayer = GetTarget()->ToPlayer())
+                if (Player* player = GetTarget()->ToPlayer())
                 {
-                    pPlayer->CastSpell(pPlayer, SPELL_ELECTRICAL_SAFE, true);
-                    pPlayer->SetClientControl(pPlayer, 0);
-                    pPlayer->SetCanFly(true);
-                    pPlayer->AddUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
-                    pPlayer->MonsterMoveWithSpeed(pPlayer->GetPositionX(), pPlayer->GetPositionY(), pPlayer->GetPositionZ() + 12, 15000);
+                    player->CastSpell(player, SPELL_ELECTRICAL_SAFE, true);
+                    player->SetClientControl(player, 0);
+                    player->SetCanFly(true);
+                    player->AddUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+                    player->MonsterMoveWithSpeed(player->GetPositionX(), player->GetPositionY(), player->GetPositionZ() + 12, 15000);
                 }
             }
 
-            void OnRemove(constAuraEffectPtr aurEff, AuraEffectHandleModes /*mode*/)
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 if (!GetTarget())
                     return;
 
-                if (Player* pPlayer = GetTarget()->ToPlayer())
+                if (Player* player = GetTarget()->ToPlayer())
                 {
-                    pPlayer->SetClientControl(pPlayer, 1);
-                    pPlayer->SetCanFly(false);
-                    pPlayer->RemoveUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+                    player->SetClientControl(player, 1);
+                    player->SetCanFly(false);
+                    player->RemoveUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
                 }                
             }
 
-            void Register()
+            void Register() override
             {
                 OnEffectApply += AuraEffectApplyFn(spell_akilzon_electrical_storm_AuraScript::OnApply, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
                 OnEffectRemove += AuraEffectRemoveFn(spell_akilzon_electrical_storm_AuraScript::OnRemove, EFFECT_1, SPELL_AURA_PERIODIC_TRIGGER_SPELL, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
             return new spell_akilzon_electrical_storm_AuraScript();
         }
@@ -323,7 +319,7 @@ class spell_akilzon_electrical_storm : public SpellScriptLoader
 class ElectricalSafeCheck
 {
     public:
-        explicit ElectricalSafeCheck() {}
+        explicit ElectricalSafeCheck() { }
 
         bool operator()(WorldObject* object) const
         {
@@ -345,14 +341,14 @@ class spell_akilzon_electrical_storm_dmg : public SpellScriptLoader
                 unitList.remove_if(ElectricalSafeCheck());
             }
 
-            void Register()
+            void Register() override
             {
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_akilzon_electrical_storm_dmg_SpellScript::CheckTarget, EFFECT_0, TARGET_UNIT_SRC_AREA_ALLY);
                 OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_akilzon_electrical_storm_dmg_SpellScript::CheckTarget, EFFECT_1, TARGET_UNIT_SRC_AREA_ALLY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
             return new spell_akilzon_electrical_storm_dmg_SpellScript();
         }
@@ -367,4 +363,3 @@ void AddSC_boss_akilzon()
     new spell_akilzon_electrical_storm();
     new spell_akilzon_electrical_storm_dmg();
 }
-

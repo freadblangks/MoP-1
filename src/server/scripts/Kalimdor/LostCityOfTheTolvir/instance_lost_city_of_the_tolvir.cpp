@@ -1,9 +1,11 @@
 #include "lost_city_of_the_tolvir.h"
 #include "ScriptPCH.h"
 
+#define MAX_ENCOUNTER 5
+
 enum eScriptText
 {
-    YELL_FREE                    = -1877010,
+    YELL_FREE                    = 4,
 };
 
 class instance_lost_city_of_the_tolvir : public InstanceMapScript
@@ -11,32 +13,12 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
     public:
         instance_lost_city_of_the_tolvir() : InstanceMapScript("instance_lost_city_of_the_tolvir", 755) { }
 
-        InstanceScript* GetInstanceScript(InstanceMap* map) const
-        {
-            return new instance_lost_city_of_the_tolvir_InstanceMapScript(map);
-        }
-
         struct instance_lost_city_of_the_tolvir_InstanceMapScript : public InstanceScript
         {
-            instance_lost_city_of_the_tolvir_InstanceMapScript(InstanceMap* map) : InstanceScript(map) { Initialize(); }
-
-            uint32 Encounter[MAX_ENCOUNTER];
-            uint64 uiTunnelGUID[6];
-            uint8 uiTunnelFlag;
-            uint64 uiHusamGUID;
-            uint64 uiLockmawGUID;
-            uint64 uiAughGUID;
-            uint64 uiBarimGUID;
-            uint64 uiBlazeGUID;
-            uint64 uiHarbingerGUID;
-            uint64 uiSiamatGUID;
-            uint64 uiSiamatPlatformGUID;
-            uint32 uiUpdateTimer;
-            bool BarimIsDone;
-
-            void Initialize()
+            instance_lost_city_of_the_tolvir_InstanceMapScript(InstanceMap* map) : InstanceScript(map) 
             {
-                memset(&Encounter, 0, sizeof(Encounter));
+                SetBossNumber(MAX_ENCOUNTER);
+
                 memset(&uiTunnelGUID, 0, sizeof(uiTunnelGUID));
                 uiTunnelFlag = 0;
                 uiHusamGUID = 0;
@@ -48,58 +30,21 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 uiHarbingerGUID = 0;
                 uiSiamatPlatformGUID = 0;
                 uiUpdateTimer = 7000;
-                BarimIsDone = false;
+                BosesIsDone = false;
+                archaeologyQuestAura = 0;
             }
 
-            void SiamatFree()
+            void OnPlayerEnter(Player* player) override
             {
-                if (GameObject* platform = instance->GetGameObject(uiSiamatPlatformGUID))
-                {
-                    platform->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_DAMAGED);
-                    platform->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_DESTROYED);
-                }
-
-                for (int i = 0; i < 6; ++i)
-                    if (Creature* tunnel = instance->GetCreature(uiTunnelGUID[i]))
-                        tunnel->SetVisible(true);
+                if (archaeologyQuestAura)
+                    if (!player->HasAura(archaeologyQuestAura))
+                        player->CastSpell(player, archaeologyQuestAura, true);
             }
 
-            void Update(uint32 diff)
+            void OnCreatureCreate(Creature* creature) override
             {
-                if (BarimIsDone)
-                {
-                    if (uiUpdateTimer <= diff)
-                    {
-                        BarimIsDone = false;
-                        SiamatFree();
-
-                        if (Creature* siamat = instance->GetCreature(uiSiamatGUID))
-                            DoScriptText(YELL_FREE, siamat);
-                    }
-                    else
-                        uiUpdateTimer -= diff;
-                    }
-            }
-
-            bool IsEncounterInProgress() const
-            {
-                for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-                    if (Encounter[i] == IN_PROGRESS) return true;
-
-                return false;
-            }
-
-            void OnGameObjectCreate(GameObject* go)
-            {
-                if (go->GetEntry() == SIAMAT_PLATFORM)
-                {
-                    go->setActive(true);
-                    uiSiamatPlatformGUID = go->GetGUID();
-                }
-            }
-
-            void OnCreatureCreate(Creature* creature)
-            {
+                bool siamatAvailable = (GetBossState(DATA_GENERAL_HUSAM)==DONE) && (GetBossState(DATA_LOCKMAW)==DONE) && (GetBossState(DATA_HIGH_PROPHET_BARIM)==DONE);
+            
                 switch (creature->GetEntry())
                 {
                     case BOSS_GENERAL_HUSAM:
@@ -116,6 +61,8 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                         break;
                     case BOSS_SIAMAT:
                         uiSiamatGUID = creature->GetGUID();
+                        if (siamatAvailable)
+                            BosesIsDone = true;
                         break;
                     case NPC_WIND_TUNNEL:
                         {
@@ -131,24 +78,75 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 }
             }
 
-            uint64 GetData64(uint32 type) const
+            void OnGameObjectCreate(GameObject* go) override
+            {
+                if (go->GetEntry() == SIAMAT_PLATFORM)
+                {
+                    go->setActive(true);
+                    uiSiamatPlatformGUID = go->GetGUID();
+                }
+            }
+
+            void SiamatFree()
+            {
+                if (GameObject* platform = instance->GetGameObject(uiSiamatPlatformGUID))
+                {
+                    platform->RemoveFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_DAMAGED);
+                    platform->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_DESTROYED);
+                }
+
+                for (int i = 0; i < 6; ++i)
+                    if (Creature* tunnel = instance->GetCreature(uiTunnelGUID[i]))
+                        tunnel->SetVisible(true);
+            }
+
+            void Update(uint32 diff) override
+            {
+                if (BosesIsDone)
+                {
+                    if (uiUpdateTimer <= diff)
+                    {
+                        BosesIsDone = false;
+                        SiamatFree();
+
+                        if (Creature* siamat = instance->GetCreature(uiSiamatGUID))
+                            siamat->AI()->Talk(YELL_FREE);
+                    }
+                    else
+                        uiUpdateTimer -= diff;
+                }
+            }
+
+            void SetData(uint32 type, uint32 data) override
+            {
+                if (type == uint32(-1))
+                {
+                    archaeologyQuestAura = data;
+                    SaveToDB();
+                    return;
+                }
+            }
+
+            uint64 GetData64(uint32 type) const override
             {
                 switch (type)
                 {
-                    case DATA_GENERAL_HUSAM:      return uiSiamatGUID;
-                    case DATA_LOCKMAW:            return uiLockmawGUID;
-                    case DATA_AUGH:               return uiAughGUID;
-                    case DATA_HIGH_PROPHET_BARIM: return uiBarimGUID;
-                    case DATA_BLAZE:              return uiBlazeGUID;
-                    case DATA_HARBINGER:          return uiHarbingerGUID;
-                    case DATA_SIAMAT:             return uiSiamatGUID;
+                    case DATA_GENERAL_HUSAM:
+                        return uiSiamatGUID;
+                    case DATA_LOCKMAW:
+                        return uiLockmawGUID;
+                    case DATA_AUGH:
+                        return uiAughGUID;
+                    case DATA_HIGH_PROPHET_BARIM:
+                        return uiBarimGUID;
+                    case DATA_BLAZE:
+                        return uiBlazeGUID;
+                    case DATA_HARBINGER:
+                        return uiHarbingerGUID;
+                    case DATA_SIAMAT:
+                        return uiSiamatGUID;
                 }
                 return 0;
-            }
-
-            uint32 GetData(uint32 type) const
-            {
-                return Encounter[type];
             }
 
             void SetData64(uint32 type, uint64 data)
@@ -164,32 +162,34 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 }
             }
 
-            void SetData(uint32 type, uint32 data)
+            bool SetBossState(uint32 type, EncounterState state) override
             {
-                Encounter[type] = data;
+                if (!InstanceScript::SetBossState(type, state))
+                    return false;
 
-                if (type == DATA_HIGH_PROPHET_BARIM && data == DONE)
-                    if (Encounter[DATA_SIAMAT] != DONE)
-                        BarimIsDone = true;
+                bool siamatAvailable = (GetBossState(DATA_GENERAL_HUSAM)==DONE) && (GetBossState(DATA_LOCKMAW)==DONE) && (GetBossState(DATA_HIGH_PROPHET_BARIM)==DONE);
 
-                if (type == DATA_SIAMAT && data == DONE)
+                switch (type)
                 {
-                    SiamatFree();
+                    case DATA_GENERAL_HUSAM:
+                    case DATA_LOCKMAW:
+                    case DATA_HIGH_PROPHET_BARIM:
+                        if (state == DONE && siamatAvailable)
+                            BosesIsDone = true;
+                        break;
                 }
 
-                if (data == DONE)
-                    SaveToDB();
+                return true;
             }
 
-            std::string GetSaveData()
+            std::string GetSaveData() override
             {
                 OUT_SAVE_INST_DATA;
 
                 std::string str_data;
 
                 std::ostringstream saveStream;
-                saveStream << "P S " << Encounter[0] << " " << Encounter[1]  << " " << Encounter[2]
-                << " " << Encounter[3]  << " " << Encounter[4];
+                saveStream << "L S " << GetBossSaveData() << archaeologyQuestAura;
 
                 str_data = saveStream.str();
 
@@ -197,7 +197,7 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 return str_data;
             }
 
-            void Load(char const* in)
+            void Load(const char* in) override
             {
                 if (!in)
                 {
@@ -208,33 +208,48 @@ class instance_lost_city_of_the_tolvir : public InstanceMapScript
                 OUT_LOAD_INST_DATA(in);
 
                 char dataHead1, dataHead2;
-                uint16 data0, data1, data2, data3, data4;
 
                 std::istringstream loadStream(in);
-                loadStream >> dataHead1 >> dataHead2 >> data0 >> data1 >> data2 >> data3 >> data4;
+                loadStream >> dataHead1 >> dataHead2;
 
-                if (dataHead1 == 'P' && dataHead2 == 'S')
+                if (dataHead1 == 'L' && dataHead2 == 'S')
                 {
-                    Encounter[0] = data0;
-                    Encounter[1] = data1;
-                    Encounter[2] = data2;
-                    Encounter[3] = data3;
-                    Encounter[4] = data4;
-
-                    for (uint8 data = 0; data < MAX_ENCOUNTER; ++data)
+                    for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
                     {
-                        if (Encounter[data] == IN_PROGRESS)
-                            Encounter[data] = NOT_STARTED;
-
-                        SetData(data, Encounter[data]);
+                        uint32 tmpState;
+                        loadStream >> tmpState;
+                        if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
+                        tmpState = NOT_STARTED;
+                        SetBossState(i, EncounterState(tmpState));
                     }
+                    loadStream >> archaeologyQuestAura;
                 }
                 else
                     OUT_LOAD_INST_DATA_FAIL;
 
                 OUT_LOAD_INST_DATA_COMPLETE;
             }
+
+            private:
+            uint64 uiTunnelGUID[6];
+            uint64 uiHusamGUID;
+            uint64 uiLockmawGUID;
+            uint64 uiAughGUID;
+            uint64 uiBarimGUID;
+            uint64 uiBlazeGUID;
+            uint64 uiHarbingerGUID;
+            uint64 uiSiamatGUID;
+            uint64 uiSiamatPlatformGUID;
+            uint32 uiUpdateTimer;
+            uint32 archaeologyQuestAura;
+            uint8 uiTunnelFlag;
+            bool BosesIsDone;
         };
+
+        InstanceScript* GetInstanceScript(InstanceMap* map) const override
+        {
+            return new instance_lost_city_of_the_tolvir_InstanceMapScript(map);
+        }
 };
 
 void AddSC_instance_lost_city_of_the_tolvir()

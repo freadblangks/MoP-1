@@ -1,9 +1,12 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2006-2014 ScriptDev2 <https://github.com/scriptdev2/scriptdev2/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -22,24 +25,24 @@ SDComment: Is not working SPELL_ARCANE_SHIELD. SPELL_FROSTBOMB has some issues, 
 SDCategory: Instance Script
 EndScriptData */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
+#include "ScriptPCH.h"
 #include "oculus.h"
-#include "SpellInfo.h"
+#include "Vehicle.h"
 
 enum Spells
 {
-    SPELL_ARCANE_SHIELD                           = 53813, //Dummy --> Channeled, shields the caster from damage.
+    SPELL_ARCANE_SHIELD                           = 53813, // Dummy --> Channeled, shields the caster from damage.
     SPELL_EMPOWERED_ARCANE_EXPLOSION              = 51110,
     SPELL_EMPOWERED_ARCANE_EXPLOSION_2            = 59377,
-    SPELL_FROSTBOMB                               = 51103, //Urom throws a bomb, hitting its target with the highest aggro which inflict directly 650 frost damage and drops a frost zone on the ground. This zone deals 650 frost damage per second and reduce the movement speed by 35%. Lasts 1 minute.
-    SPELL_SUMMON_MENAGERIE                        = 50476, //Summons an assortment of creatures and teleports the caster to safety.
+    SPELL_FROSTBOMB                               = 51103, // Urom throws a bomb, hitting its target with the highest aggro which inflict directly 650 frost damage and drops a frost zone on the ground. This zone deals 650 frost damage per second and reduce the movement speed by 35%. Lasts 1 minute.
+    SPELL_SUMMON_MENAGERIE                        = 50476, // Summons an assortment of creatures and teleports the caster to safety.
     SPELL_SUMMON_MENAGERIE_2                      = 50495,
     SPELL_SUMMON_MENAGERIE_3                      = 50496,
-    SPELL_TELEPORT                                = 51112, //Teleports to the center of Oculus
-    SPELL_TIME_BOMB                               = 51121, //Deals arcane damage to a random player, and after 6 seconds, deals zone damage to nearby equal to the health missing of the target afflicted by the debuff.
+    SPELL_TELEPORT                                = 51112, // Teleports to the center of Oculus
+    SPELL_TELEPORT_VISUAL                         = 51347,
+    SPELL_TIME_BOMB                               = 51121, // Deals arcane damage to a random player, and after 6 seconds, deals zone damage to nearby equal to the health missing of the target afflicted by the debuff.
     SPELL_TIME_BOMB_2                             = 59376,
-    SPELL_EVOCATE                                 = 51602 // He always cast it on reset or after teleportation
+    SPELL_EVOCATE                                 = 51602  // He always cast it on reset or after teleportation
 };
 
 enum Yells
@@ -74,14 +77,14 @@ struct Summons
     uint32 entry[4];
 };
 
-static Summons Group[]=
+static Summons Group[] =
 {
-    { {NPC_PHANTASMAL_CLOUDSCRAPER, NPC_PHANTASMAL_CLOUDSCRAPER, NPC_PHANTASMAL_MAMMOTH, NPC_PHANTASMAL_WOLF} },
-    { {NPC_PHANTASMAL_AIR, NPC_PHANTASMAL_AIR, NPC_PHANTASMAL_WATER, NPC_PHANTASMAL_FIRE} },
-    { {NPC_PHANTASMAL_OGRE, NPC_PHANTASMAL_OGRE, NPC_PHANTASMAL_NAGAL, NPC_PHANTASMAL_MURLOC} }
+    { {NPC_PHANTASMAL_CLOUDSCRAPER, NPC_PHANTASMAL_CLOUDSCRAPER, NPC_PHANTASMAL_MAMMOTH, NPC_PHANTASMAL_WOLF}   },
+    { {NPC_PHANTASMAL_AIR,          NPC_PHANTASMAL_AIR,          NPC_PHANTASMAL_WATER,   NPC_PHANTASMAL_FIRE}   },
+    { {NPC_PHANTASMAL_OGRE,         NPC_PHANTASMAL_OGRE,         NPC_PHANTASMAL_NAGAL,   NPC_PHANTASMAL_MURLOC} }
 };
 
-static uint32 TeleportSpells[]=
+static uint32 TeleportSpells[] =
 {
     SPELL_SUMMON_MENAGERIE, SPELL_SUMMON_MENAGERIE_2, SPELL_SUMMON_MENAGERIE_3
 };
@@ -95,6 +98,8 @@ class boss_urom : public CreatureScript
         {
             boss_uromAI(Creature* creature) : BossAI(creature, DATA_UROM)
             {
+                Initialize();
+                teleported = false;
                 platform = 0;
 
                 for (uint8 i = 0; i < 3; ++i)
@@ -103,18 +108,14 @@ class boss_urom : public CreatureScript
                 std::random_shuffle(group, group + 3);
             }
 
-            void Reset() 
+            void Initialize()
             {
-                me->CastSpell(me, SPELL_EVOCATE);
-
-                _Reset();
-
                 x = 0.0f;
                 y = 0.0f;
                 canCast = false;
                 canGoBack = false;
 
-                me->GetMotionMaster()->MoveIdle();
+                arcaneShieldPending = false;
 
                 teleportTimer = urand(30000, 35000);
                 arcaneExplosionTimer = 9000;
@@ -123,14 +124,38 @@ class boss_urom : public CreatureScript
                 timeBombTimer = urand(20000, 25000);
             }
 
-            void EnterCombat(Unit* /*who*/) 
+            void InitializeAI() override
+            {
+                BossAI::InitializeAI();
+                if (me->IsAlive())
+                    me->CastSpell(me, SPELL_EVOCATE);
+            }
+
+            void Reset() override
+            {
+                summons.clear(); // We don't want them to despawn each time Urom evades
+                _Reset();
+                Initialize();
+
+                me->GetMotionMaster()->MoveIdle();
+                me->SetFlying(false);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
             {
                 _EnterCombat();
+                me->InterruptSpell(CURRENT_CHANNELED_SPELL);
 
                 StartAttack();
             }
 
-            void AttackStart(Unit* who) 
+            void EnterEvadeMode() override
+            {
+                BossAI::EnterEvadeMode();
+                me->CastSpell(me, SPELL_EVOCATE);
+            }
+
+            void AttackStart(Unit* who) override
             {
                 if (!who)
                     return;
@@ -139,6 +164,29 @@ class boss_urom : public CreatureScript
                     DoStartNoMovement(who);
                 else
                     BossAI::AttackStart(who);
+            }
+
+            bool CanAIAttack(Unit const* who) const override
+            {
+                if (Unit* vehicle = who->GetVehicleBase())
+                    return vehicle->GetEntry() != NPC_RUBY_DRAKE_VEHICLE && vehicle->GetEntry() != NPC_AMBER_DRAKE_VEHICLE && vehicle->GetEntry() != NPC_EMERALD_DRAKE_VEHICLE;
+                return true;
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.push_back(summon->GetGUID());
+            }
+
+            void SummonedCreatureDies(Creature* summon, Unit* killer) override
+            {
+                summons.remove(summon->GetGUID());
+                if (summons.empty())
+                {
+                    me->InterruptSpell(CURRENT_CHANNELED_SPELL);
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NON_ATTACKABLE);
+                    me->CastSpell(me, SPELL_EVOCATE);
+                }
             }
 
             void SetPosition(uint8 i)
@@ -181,32 +229,54 @@ class boss_urom : public CreatureScript
                     me->SummonCreature(Group[group[platform]].entry[i], x, y, me->GetPositionZ(), me->GetOrientation());
                 }
 
+                teleported = false;
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NON_ATTACKABLE);
                 Talk(platform);
                 DoCast(TeleportSpells[platform]);
-
-                ++platform;
             }
 
-            void KilledUnit(Unit* who) 
+            void KilledUnit(Unit* victim) override
             {
-                if (who->GetTypeId() == TYPEID_PLAYER)
+                if (victim->GetTypeId() == TYPEID_PLAYER)
                     Talk(SAY_PLAYER_KILL);
             }
 
-            void UpdateAI(const uint32 diff) 
+            void UpdateAI(uint32 diff) override
             {
+                if (arcaneShieldPending)
+                {
+                    arcaneShieldPending = false;
+                    DoCastAOE(SPELL_ARCANE_SHIELD);
+                }
+
+                // Let him finish casting teleport no matter what. UpdateVictim() can cause him to exit combat, interrupting the cast
+                if (me->IsInCombat() && me->HasUnitState(UNIT_STATE_CASTING))
+                    for (auto&& spell : TeleportSpells)
+                        if (me->FindCurrentSpellBySpellId(spell))
+                            return;
+
                 if (!UpdateVictim())
                     return;
 
-                if (platform < 3)
+                if (platform < 2)
                     return;
 
                 events.Update(diff);
 
+                if (chasePending)
+                {
+                    chasePending = false;
+                    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
+                    if (me->GetVictim())
+                        me->GetMotionMaster()->MoveChase(me->GetVictim());
+                }
+
                 if (teleportTimer <= diff)
                 {
                     me->InterruptNonMeleeSpells(false);
+                    me->GetMotionMaster()->Clear();
                     me->GetMotionMaster()->MoveIdle();
+                    me->SetFlying(true);
                     DoCast(SPELL_TELEPORT);
                     teleportTimer = urand(30000, 35000);
                 }
@@ -215,11 +285,13 @@ class boss_urom : public CreatureScript
 
                 if (canCast && !me->FindCurrentSpellBySpellId(SPELL_EMPOWERED_ARCANE_EXPLOSION))
                 {
+                    me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
                     if (castArcaneExplosionTimer <= diff)
                     {
                         canCast = false;
                         canGoBack = true;
-                        DoCastAOE(SPELL_EMPOWERED_ARCANE_EXPLOSION);
+                        me->InterruptNonMeleeSpells(false);
+                        DoCastAOE(DUNGEON_MODE(SPELL_EMPOWERED_ARCANE_EXPLOSION, SPELL_EMPOWERED_ARCANE_EXPLOSION_2));
                         castArcaneExplosionTimer = 2000;
                     }
                     else
@@ -230,15 +302,16 @@ class boss_urom : public CreatureScript
                 {
                     if (arcaneExplosionTimer <= diff)
                     {
-                        Position pos;
-                        me->getVictim()->GetPosition(&pos);
+                        if (me->GetVictim())
+                        {
+                            Position pos;
+                            me->GetVictim()->GetPosition(&pos);
 
-                        me->NearTeleportTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), pos.GetOrientation());
-                        me->GetMotionMaster()->MoveChase(me->getVictim());
-                        me->SetWalk(true);
-
-                        Talk(EMOTE_ARCANE_EXPLOSION);
-                        Talk(SAY_ARCANE_EXPLOSION);
+                            me->SetFlying(false);
+                            me->NearTeleportTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), pos.GetOrientation());
+                            DoCastAOE(SPELL_TELEPORT_VISUAL, true);
+                            chasePending = true;
+                        }
 
                         canCast = false;
                         canGoBack = false;
@@ -272,7 +345,7 @@ class boss_urom : public CreatureScript
                 DoMeleeAttackIfReady();
             }
 
-            void JustDied(Unit* /*killer*/) 
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
@@ -286,34 +359,33 @@ class boss_urom : public CreatureScript
                 me->DeleteThreatList();
             }
 
-            void SpellHit(Unit* /*caster*/, SpellInfo const* spellInfo) 
+            void SpellHit(Unit* /*caster*/, const SpellInfo* spellInfo) override
             {
+                Position home;
                 switch (spellInfo->Id)
                 {
                     case SPELL_SUMMON_MENAGERIE:
-                        me->SetHomePosition(968.66f, 1042.53f, 527.32f, 0.077f);
-                        LeaveCombat();
-                        me->CastSpell(me, SPELL_EVOCATE);
+                        home.Relocate(968.66f, 1042.53f, 527.32f, 0.077f);
                         break;
                     case SPELL_SUMMON_MENAGERIE_2:
-                        me->SetHomePosition(1164.02f, 1170.85f, 527.321f, 3.66f);
-                        LeaveCombat();
-                        me->CastSpell(me, SPELL_EVOCATE);
+                        home.Relocate(1164.02f, 1170.85f, 527.321f, 3.66f);
                         break;
                     case SPELL_SUMMON_MENAGERIE_3:
-                        me->SetHomePosition(1118.31f, 1080.377f, 508.361f, 4.25f);
-                        LeaveCombat();
-                        me->CastSpell(me, SPELL_EVOCATE);
+                        home.Relocate(1118.31f, 1080.377f, 508.361f, 4.25f);
                         break;
                     case SPELL_TELEPORT:
-                        //! Unconfirmed, previous below
-                        me->SetDisableGravity(true);
-                        //me->AddUnitMovementFlag(MOVEMENTFLAG_CAN_FLY); // with out it the npc will fall down while is casting
+                        Talk(EMOTE_ARCANE_EXPLOSION);
+                        Talk(SAY_ARCANE_EXPLOSION);
                         canCast = true;
-                        break;
+                        return;
                     default:
-                        break;
+                        return;
                 }
+                LeaveCombat();
+                me->SetHomePosition(home);
+                arcaneShieldPending = true;
+                teleported = true;
+                ++platform;
             }
 
         private:
@@ -322,6 +394,9 @@ class boss_urom : public CreatureScript
             bool canCast;
             bool canGoBack;
 
+            bool teleported;
+            bool arcaneShieldPending;
+            bool chasePending;
             uint8 platform;
 
             uint8 group[3];
@@ -331,11 +406,13 @@ class boss_urom : public CreatureScript
             uint32 castArcaneExplosionTimer;
             uint32 frostBombTimer;
             uint32 timeBombTimer;
+
+            std::list<uint64> summons;
         };
 
-        CreatureAI* GetAI(Creature* creature) const 
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new boss_uromAI (creature);
+            return GetOculusAI<boss_uromAI>(creature);
         }
 };
 

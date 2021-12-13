@@ -12,85 +12,252 @@ enum SlipstreamEnums
     DIR_NORTH_TO_EAST,
     DIR_SOUTH_TO_EAST,
     DIR_EAST_TO_SOUTH,
-    DIR_ERROR,
+    DIR_TO_MIDDLE,
 
     // Spells
-    SPELL_SLIPSTREAM_BUFF           = 87740,
-    SPELL_SLIPSTREAM_PLAYER_VISUAL  = 85063,
+    SPELL_SLIPSTREAM_BUFF                   = 87740,
+    SPELL_SLIPSTREAM_PLAYER_VISUAL          = 85063,
+    SPELL_SLIPSTREAM_TO_MIDDLE_AURA         = 87713,
 };
 
 Position const SlipstreamPositions[8] =
 {
-    {-237.766510f, 865.409668f, 196.9f, 0.0f},
-    {-96.677574f, 1004.523499f, 196.9f, 0.0f},
-    {2.173538f, 1002.027039f, 196.9f, 0.0f},
-    {137.942337f, 865.361328f, 196.9f, 0.0f},
-    {138.479660f, 763.253662f, 196.9f, 0.0f},
-    {-1.872189f, 625.810364f, 196.9f, 0.0f},
-    {-100.733566f, 626.520081f, 196.9f, 0.0f},
-    {-237.336517f, 765.919495f, 196.9f, 0.0f}
+    {-245.141129f,  861.474060f,    197.386398f,    0},
+    {-92.116440f,   1010.796448f,   197.475754f,    0},
+    {-5.322055f,    1010.573608f,   197.520096f,    0},
+    {144.480469f,   857.187927f,    197.594208f,    0},
+    {144.221481f,   770.720154f,    197.629150f,    0},
+    {-9.268366f,    620.736328f,    197.567032f,    0},
+    {-96.089645f,   621.198730f,    197.499115f,    0},
+    {-245.653870f,  774.446472f,    197.507156f,    0},
 };
 
-class npc_throne_of_the_four_winds_slipstream : public CreatureScript
+class npc_slipstream_raid : public CreatureScript
 {
     public:
-        npc_throne_of_the_four_winds_slipstream() : CreatureScript("npc_throne_of_the_four_winds_slipstream") { }
+        npc_slipstream_raid() : CreatureScript("npc_slipstream_raid") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_slipstream_raidAI : public ScriptedAI
         {
-            return new npc_throne_of_the_four_winds_slipstreamAI (pCreature);
-        }
-
-        struct npc_throne_of_the_four_winds_slipstreamAI : public Scripted_NoMovementAI
-        {
-            npc_throne_of_the_four_winds_slipstreamAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_slipstream_raidAI(Creature* creature) : ScriptedAI(creature), isActive(true), linkedSlipstreamObjectGuid(0), linkedBossGuid(0), isUltimate(false)
             {
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
+                instance = creature->GetInstanceScript();
+                SlipstreamPosition = DIR_TO_MIDDLE;
+                
+                if (creature->ToTempSummon())
+                {
+                    DoCast(me, SPELL_SLIPSTREAM_TO_MIDDLE_AURA, true);
+                    me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                    return;
+                }
 
-                m_uiSlipstreamPosition = 8;
+                creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
 
-                for (uint8 i = 0; i <= 7; ++i)
-                    if (me->GetDistance2d(SlipstreamPositions[i].GetPositionX(), SlipstreamPositions[i].GetPositionY()) < 10)
+                for (uint8 i = 0; i < DIR_TO_MIDDLE; ++i)
+                {
+                    if (me->GetDistance2d(SlipstreamPositions[i].GetPositionX(), SlipstreamPositions[i].GetPositionY()) < 25)
                     {
-                        m_uiSlipstreamPosition = i;
+                        SlipstreamPosition = i;
                         break;
                     }
+                }
 
-                    if (m_uiSlipstreamPosition >= DIR_ERROR)
-                        return;
-
-                m_uiSlipstreamPosition += (m_uiSlipstreamPosition == DIR_WEST_TO_SOUTH || m_uiSlipstreamPosition == DIR_NORTH_TO_WEST ||
-                    m_uiSlipstreamPosition == DIR_EAST_TO_NORTH || m_uiSlipstreamPosition == DIR_SOUTH_TO_EAST ) ? 1 : -1;
-            }
-
-            void MoveInLineOfSight(Unit* who)
-            {
-                if(m_uiSlipstreamPosition >= DIR_ERROR || who->GetTypeId() != TYPEID_PLAYER)
+                if (SlipstreamPosition >= DIR_TO_MIDDLE)
                     return;
 
-                if (who->GetExactDist(me) <= 10.f && !who->HasAura(SPELL_SLIPSTREAM_BUFF))
+                SlipstreamPosition += (SlipstreamPosition % 2) ? -1 : 1;
+            }
+
+            void OnSpellClick(Unit* clicker, bool& result) override
+            {
+                SetGUID(clicker->GetGUID(), 0);
+                result = true;
+            }
+
+            void SetGUID(uint64 guid, int32 /*type*/) override
+            {
+                if (!isActive)
+                    return;
+
+                if (Player* target = ObjectAccessor::GetPlayer(*me, guid))
                 {
-                    me->AddAura(SPELL_SLIPSTREAM_BUFF, who);
-                    me->AddAura(SPELL_SLIPSTREAM_PLAYER_VISUAL,who);
+                    DoCast(target, SPELL_SLIPSTREAM_BUFF, true);
+                    if (SlipstreamPosition == DIR_TO_MIDDLE)
+                    {
+                        float x, y, z;
+                        me->GetPosition(x, y, z);
+                        z = 345;
+                        target->GetMotionMaster()->MoveJump(x, y, z, 1, (z - target->GetPositionZ()) * 1.75f);
+                        target->m_Events.AddEvent(new MovementEvent(target), target->m_Events.CalculateTime(3000));
+                    }
+                    else
+                    {
+                        float x, y, z;
+                        SlipstreamPositions[SlipstreamPosition].GetPosition(x, y, z);
+                        target->GetMotionMaster()->MoveJump(x, y, 200, 100, 15);
+                    }
+                }
+            }
 
-                    // if we use the motion master only to relocate the player
-                    // it will cause bugs
-                    if (who->GetOrientation() != SlipstreamPositions[m_uiSlipstreamPosition].GetOrientation())
-				        who->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_TURNING);
+            void UpdateAI(uint32 /*diff*/) override
+            {
+                if (!linkedBossGuid)
+                {
+                    Creature* boss = NULL;
+                    if (!(boss = me->FindNearestCreature(BOSS_ANSHAL, 100)))
+                        if (!(boss = me->FindNearestCreature(BOSS_NEZIR, 100)))
+                            if (!(boss = me->FindNearestCreature(BOSS_ROHASH, 100))) { }
+                    if (boss)
+                        linkedBossGuid = boss->GetGUID();
+                }
+                if (!linkedSlipstreamObjectGuid)
+                {
+                    GameObject* go = NULL;
+                    if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_1, 50)))
+                        if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_2, 50)))
+                            if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_3, 50)))
+                                if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_4, 50)))
+                                    if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_5, 50)))
+                                        if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_6, 50)))
+                                            if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_7, 50)))
+                                                if (!(go = me->FindNearestGameObject(GO_WIND_DRAFTEFFECT_8, 50))) { }
+                    if (go)
+                        linkedSlipstreamObjectGuid = go->GetGUID();
+                }
 
-				    me->GetMap()->PlayerRelocation(who->ToPlayer(),SlipstreamPositions[m_uiSlipstreamPosition].GetPositionX(), SlipstreamPositions[m_uiSlipstreamPosition].GetPositionY(),SlipstreamPositions[m_uiSlipstreamPosition].GetPositionZ(), SlipstreamPositions[m_uiSlipstreamPosition].GetOrientation());
+                // The Slipstreams are Deactivated before each Ultimate ability
+                if (instance && instance->GetBossState(DATA_ALAKIR) == IN_PROGRESS && SlipstreamPosition != DIR_TO_MIDDLE)
+                    isUltimate = true;
+                else if (Creature* boss = ObjectAccessor::GetCreature(*me, linkedBossGuid))
+                    isUltimate = boss->AI()->GetData(0);
+                else if (isUltimate)
+                    isUltimate = false;    
 
-                    who->GetMotionMaster()->MoveJump(SlipstreamPositions[m_uiSlipstreamPosition].GetPositionX(), SlipstreamPositions[m_uiSlipstreamPosition].GetPositionY(), 198.458481f, 1 ,6);
+                if (!isUltimate != isActive)
+                {
+                    isActive = !isActive;
+                    if (GameObject* go = ObjectAccessor::GetGameObject(*me, linkedSlipstreamObjectGuid))
+                        go->SetGoState(isActive ? GO_STATE_READY : GO_STATE_ACTIVE);
                 }
             }
 
         private:
+            InstanceScript* instance;
+            uint8 SlipstreamPosition;
+            bool isUltimate;
+            bool isActive;
 
-            uint8 m_uiSlipstreamPosition;
+            uint64 linkedSlipstreamObjectGuid;
+            uint64 linkedBossGuid;
+
+            class MovementEvent : public BasicEvent
+            {
+                public:
+                    MovementEvent(Unit* target) : _target(target) { }
+
+                    bool Execute(uint64 execTime, uint32 diff)
+                    {
+                        const float distance = 50;
+                        float angle = conclaveHomePositions[4].GetAngle(_target);
+                        float x, y, z;
+                        conclaveHomePositions[4].GetPosition(x, y, z);
+                        x += cosf(angle) * distance;
+                        y += sinf(angle) * distance;
+                        _target->GetMotionMaster()->MoveJump(x, y, z, 100, 20);
+                        return true;
+                    }
+
+                private:
+                    Unit* _target;
+            };
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_slipstream_raidAI>(creature);
+        }
+};
+
+class npc_fall_catcher : public CreatureScript
+{
+    public:
+        npc_fall_catcher() : CreatureScript("npc_fall_catcher") { }
+
+        struct npc_fall_catcherAI : public CreatureAI
+        {
+            npc_fall_catcherAI(Creature* creature) : CreatureAI(creature) { }
+
+            void IsSummonedBy(Unit* summoner) override
+            {
+                summoner->SetDisableGravity(true, true);
+                summoner->SendMovementFlagUpdate(true);
+
+                float x, y, z, o;
+                summoner->GetPosition(x, y, z, o);
+                summoner->NearTeleportTo(x, y, z + 1, o);
+                summoner->CastSpell(me, SPELL_CATCH_FALL_VEHICLE, true);
+                me->GetPosition(x, y, z);
+                me->GetMotionMaster()->MovePoint(1, x, y, 210);
+
+                summoner->SetDisableGravity(false, true);
+                summoner->SendMovementFlagUpdate(true);
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type == POINT_MOTION_TYPE && pointId == 1)
+                {
+                    Unit* summoner = me->ToTempSummon()->GetSummoner();
+                    summoner->ExitVehicle(me);
+                    summoner->CastSpell(summoner, SPELL_SLIPSTREAM_BUFF, true);
+                    summoner->CastSpell(summoner, SPELL_CATCH_FALL_JUMP_TRIGGER, true);
+                }
+            }
+
+            void UpdateAI(uint32 /*diff*/) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_fall_catcherAI>(creature);
+        }
+};
+
+class at_slipstream : public AreaTriggerScript
+{
+    public:
+        at_slipstream() : AreaTriggerScript("at_slipstream") { }
+
+        bool OnTrigger(Player* player, const AreaTriggerEntry* /*trigger*/) override
+        {
+            if (!player->HasAura(SPELL_SLIPSTREAM_BUFF) && !player->HasAura(SPELL_CATCH_FALL_SUMMON_AURA))
+                if (Creature* slipstream = player->FindNearestCreature(NPC_SLIPSTREAM, 100))
+                    slipstream->AI()->SetGUID(player->GetGUID());
+            return true;
+        }
+};
+
+class at_catch_fall : public AreaTriggerScript
+{
+    public:
+        at_catch_fall() : AreaTriggerScript("at_catch_fall") { }
+
+        bool OnTrigger(Player* player, const AreaTriggerEntry* /*trigger*/) override
+        {
+            if (player->HasAura(SPELL_CATCH_FALL_SUMMON_AURA) || player->HasAura(SPELL_EYE_OF_THE_STORM))
+                return true;
+
+            if (Creature* trigger = player->FindNearestCreature(NPC_WORLD_TRIGGER_CATCH_FALL, 50000))
+                trigger->CastSpell(player, SPELL_CATCH_FALL_SUMMON_TRIGGER, true);
+
+            return true;
+        }
 };
 
 void AddSC_throne_of_the_four_winds()
 {
-    new npc_throne_of_the_four_winds_slipstream();
+    new npc_slipstream_raid();
+    new npc_fall_catcher();
+    new at_slipstream();
+    new at_catch_fall();
 }

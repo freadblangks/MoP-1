@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -17,6 +18,15 @@
  */
 
 #include "EventProcessor.h"
+
+bool RepeatableFunctionEvent::Execute(uint64, uint32)
+{
+    if (m_function())
+        return true;
+
+    m_events->Schedule(m_repeat, this);
+    return false;
+}
 
 EventProcessor::EventProcessor()
 {
@@ -90,6 +100,19 @@ void EventProcessor::AddEvent(BasicEvent* Event, uint64 e_time, bool set_addtime
     if (set_addtime) Event->m_addTime = m_time;
     Event->m_execTime = e_time;
     m_events.insert(std::pair<uint64, BasicEvent*>(e_time, Event));
+}
+
+void EventProcessor::RescheduleEvent(BasicEvent* event, uint64 e_time)
+{
+    for (auto itr = m_events.begin(); itr != m_events.end(); ++itr)
+    {
+        if (itr->second == event)
+        {
+            m_events.erase(itr);
+            m_events.insert(std::pair<uint64, BasicEvent*>(e_time, event));
+            break;
+        }
+    }
 }
 
 uint64 EventProcessor::CalculateTime(uint64 t_offset) const

@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -16,8 +17,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _PLAYER_DUMP_H
-#define _PLAYER_DUMP_H
+#ifndef SF_PLAYER_DUMP_H
+#define SF_PLAYER_DUMP_H
 
 #include <string>
 #include <map>
@@ -27,12 +28,13 @@ enum DumpTableType
 {
     DTT_CHARACTER,      //                                  // characters
 
+    DTT_CHARACTER_DECL, //                                  // character_declinedname
+
     DTT_CHAR_TABLE,     //                                  // character_achievement, character_achievement_progress,
                                                             // character_action, character_aura, character_homebind,
                                                             // character_queststatus, character_queststatus_rewarded, character_reputation,
                                                             // character_spell, character_spell_cooldown, character_ticket, character_talent.
                                                             // character_cuf_profiles, character_currency
-    DTT_VS_TABLE,       // Void Storage Table <- playerGuid
 
     DTT_EQSET_TABLE,    // <- guid                          // character_equipmentsets
 
@@ -51,6 +53,12 @@ enum DumpTableType
 
     DTT_PET,            //    -> pet guids collection       // character_pet
     DTT_PET_TABLE,      // <- pet guids                     // pet_aura, pet_spell, pet_spell_cooldown
+
+    DTT_SPELL,          // need sort by tables              // character_spell, account_spell
+
+    DTT_ACHIEVEMENT,    //                                  // character_achievemnt
+    DTT_CRITERIA,       //                                  // character_achievement_criteria
+    DTT_VOID_STORAGE,   //                                  // character_void_storage
 };
 
 enum DumpReturn
@@ -60,23 +68,22 @@ enum DumpReturn
     DUMP_TOO_MANY_CHARS,
     DUMP_UNEXPECTED_END,
     DUMP_FILE_BROKEN,
-    DUMP_CHARACTER_DELETED,
-    DUMP_SYSTEM_LOCKED
+    DUMP_CHARACTER_DELETED
 };
 
 class PlayerDump
 {
     protected:
-        PlayerDump() {}
+        PlayerDump() { }
 };
 
 class PlayerDumpWriter : public PlayerDump
 {
     public:
-        PlayerDumpWriter() {}
+        PlayerDumpWriter() { }
 
         bool GetDump(uint32 guid, std::string& dump);
-        DumpReturn WriteDump(const std::string& file, uint32 guid);
+        DumpReturn WriteDump(std::string const& file, uint32 guid);
     private:
         typedef std::set<uint32> GUIDs;
 
@@ -92,13 +99,9 @@ class PlayerDumpWriter : public PlayerDump
 class PlayerDumpReader : public PlayerDump
 {
     public:
-        PlayerDumpReader() {}
+        PlayerDumpReader() { }
 
-        DumpReturn LoadDump(const std::string& file, uint32 account, std::string name, uint32 guid, bool onlyBoundedItems = false);
+        DumpReturn LoadDump(std::string const& file, uint32 account, std::string name, uint32 guid, SQLTransaction& trans);
 };
 
-#define sInterRealmTransfertReader ACE_Singleton<PlayerDumpReader, ACE_Thread_Mutex>::instance()
-#define sInterRealmTransfertWriter ACE_Singleton<PlayerDumpWriter, ACE_Thread_Mutex>::instance()
-
 #endif
-

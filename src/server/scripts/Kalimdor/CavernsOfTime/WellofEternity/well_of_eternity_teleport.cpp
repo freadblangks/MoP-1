@@ -21,45 +21,47 @@ class go_well_of_eternity_teleport : public GameObjectScript
     public:
         go_well_of_eternity_teleport() : GameObjectScript("go_well_of_eternity_teleport") { }
 
-        bool OnGossipHello(Player* pPlayer, GameObject* pGo)
+        bool OnGossipHello(Player* player, GameObject* go) override
         {
-            if (pPlayer->isInCombat())
+            bool ru = player->GetSession()->GetSessionDbLocaleIndex() == LOCALE_ruRU;
+
+            if (player->IsInCombat())
                 return true;
 
-            if (InstanceScript* pInstance = pGo->GetInstanceScript())
+            if (InstanceScript* instance = go->GetInstanceScript())
             {
-                pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Teleport to Start.", GOSSIP_SENDER_MAIN, START_TELEPORT);
+                player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Телепорт ко входу в сад.":"Teleport to Start.", GOSSIP_SENDER_MAIN, START_TELEPORT);
 
-                if (pPlayer->isGameMaster())
+                if (player->IsGameMaster())
                 {
-                    pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Teleport to Azshara's Palace.", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
-                    pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Teleport to Well of Eternity.", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись во дворец Азшары.": "Teleport to Azshara's Palace.", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
+                    player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись в Источник Вечности.": "Teleport to Well of Eternity.", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
                 }
                 else
                 {
-                    if (pInstance->GetBossState(DATA_PEROTHARN) == DONE)
-                        pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Teleport to Azshara's Palace.", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
-                    if (pInstance->GetBossState(DATA_AZSHARA) == DONE)
-                        pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Teleport to Well of Eternity.", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
+                    if (instance->GetBossState(DATA_PEROTHARN) == DONE)
+                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись во дворец Азшары.": "Teleport to Azshara's Palace.", GOSSIP_SENDER_MAIN, AZSHARA_TELEPORT);
+                    if (instance->GetBossState(DATA_AZSHARA) == DONE)
+                        player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, ru ? "Перенестись в Источник Вечности.": "Teleport to Well of Eternity.", GOSSIP_SENDER_MAIN, WOE_TELEPORT);
                 }
             }
         
-            pPlayer->SEND_GOSSIP_MENU(pPlayer->GetGossipTextId(pGo), pGo->GetGUID());
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(go), go->GetGUID());
             return true;
         }
 
-        bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 action) 
-		{
+        bool OnGossipSelect(Player* player, GameObject* go, uint32 sender, uint32 action) override
+        {
             //player->PlayerTalkClass->ClearMenus();
-            if (player->isInCombat())
+            if (player->IsInCombat())
                 return true;
 
-            InstanceScript* pInstance = player->GetInstanceScript();
-            if (!pInstance)
+            InstanceScript* instance = player->GetInstanceScript();
+            if (!instance)
                 return true;
             
             switch (action) 
-		    {
+            {
                 case START_TELEPORT:
                     player->CastSpell(player, SPELL_TELEPORT_TO_START, true);
                     player->CLOSE_GOSSIP_MENU();

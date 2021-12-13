@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -24,7 +26,7 @@ bool SQLQueryHolder::SetQuery(size_t index, const char *sql)
 {
     if (m_queries.size() <= index)
     {
-        sLog->outError(LOG_FILTER_SQL, "Query index (%u) out of range (size: %u) for query: %s", uint32(index), (uint32)m_queries.size(), sql);
+        TC_LOG_ERROR("sql.sql", "Query index (%u) out of range (size: %u) for query: %s", uint32(index), (uint32)m_queries.size(), sql);
         return false;
     }
 
@@ -44,7 +46,7 @@ bool SQLQueryHolder::SetPQuery(size_t index, const char *format, ...)
 {
     if (!format)
     {
-        sLog->outError(LOG_FILTER_SQL, "Query (index: %u) is empty.", index);
+        TC_LOG_ERROR("sql.sql", "Query (index: %u) is empty.", uint32(index));
         return false;
     }
 
@@ -56,7 +58,7 @@ bool SQLQueryHolder::SetPQuery(size_t index, const char *format, ...)
 
     if (res == -1)
     {
-        sLog->outError(LOG_FILTER_SQL, "SQL Query truncated (and not execute) for format: %s", format);
+        TC_LOG_ERROR("sql.sql", "SQL Query truncated (and not execute) for format: %s", format);
         return false;
     }
 
@@ -67,7 +69,7 @@ bool SQLQueryHolder::SetPreparedQuery(size_t index, PreparedStatement* stmt)
 {
     if (m_queries.size() <= index)
     {
-        sLog->outError(LOG_FILTER_SQL, "Query index (%u) out of range (size: %u) for prepared statement", index, (uint32)m_queries.size());
+        TC_LOG_ERROR("sql.sql", "Query index (%u) out of range (size: %u) for prepared statement", uint32(index), (uint32)m_queries.size());
         return false;
     }
 
@@ -118,9 +120,10 @@ void SQLQueryHolder::SetResult(size_t index, ResultSet* result)
 {
     if (result && !result->GetRowCount())
     {
-         delete result;
-         result = NULL;
+        delete result;
+        result = NULL;
     }
+
     /// store the result in the holder
     if (index < m_queries.size())
         m_queries[index].second.qresult = result;
@@ -133,6 +136,7 @@ void SQLQueryHolder::SetPreparedResult(size_t index, PreparedResultSet* result)
         delete result;
         result = NULL;
     }
+
     /// store the result in the holder
     if (index < m_queries.size())
         m_queries[index].second.presult = result;
@@ -165,15 +169,11 @@ void SQLQueryHolder::SetSize(size_t size)
     m_queries.resize(size);
 }
 
-SQLQueryHolderTask::~SQLQueryHolderTask()
-{
-    if (!m_executed)
-        delete m_holder;
-}
-
 bool SQLQueryHolderTask::Execute()
 {
-    m_executed = true;
+    //the result can't be ready as we are processing it right now
+    ASSERT(!m_result.ready());
+
     if (!m_holder)
         return false;
 

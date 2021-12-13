@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -25,8 +27,10 @@ EndScriptData */
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "SpellAuraEffects.h"
+#include "Language.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "Player.h"
 #include <iostream>
 
 class list_commandscript : public CommandScript
@@ -34,21 +38,23 @@ class list_commandscript : public CommandScript
 public:
     list_commandscript() : CommandScript("list_commandscript") { }
 
-    ChatCommand* GetCommands() const
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommand listCommandTable[] =
+        static std::vector<ChatCommand> listCommandTable =
         {
-            { "creature",       SEC_ADMINISTRATOR,  true,  &HandleListCreatureCommand,          "", NULL },
-            { "item",           SEC_ADMINISTRATOR,  true,  &HandleListItemCommand,              "", NULL },
-            { "object",         SEC_ADMINISTRATOR,  true,  &HandleListObjectCommand,            "", NULL },
-            { "auras",          SEC_ADMINISTRATOR,  false, &HandleListAurasCommand,             "", NULL },
-            { "mail",           SEC_ADMINISTRATOR,  true,  &HandleListMailCommand,              "", NULL },
-            { NULL,             0,                  false, NULL,                                "", NULL }
+            { "creature",   SEC_ADMINISTRATOR,  true,   &HandleListCreatureCommand, },
+            { "item",       SEC_ADMINISTRATOR,  true,   &HandleListItemCommand,     },
+            { "object",     SEC_ADMINISTRATOR,  true,   &HandleListObjectCommand,   },
+            { "auras",      SEC_ADMINISTRATOR,  false,  &HandleListAurasCommand,    },
+            { "mail",       SEC_ADMINISTRATOR,  true,   &HandleListMailCommand,     },
+            { "scenes",     SEC_ADMINISTRATOR,  false,  &HandleListScenesCommand,   },
+            { "aggro",      SEC_ADMINISTRATOR,  false,  &HandleListAggroCommand,    },
+            { "hostiles",   SEC_ADMINISTRATOR,  false,  &HandleListHostilesCommand, },
+            { "threat",     SEC_ADMINISTRATOR,  false,  &HandleListThreatCommand,   },
         };
-        static ChatCommand commandTable[] =
+        static std::vector<ChatCommand> commandTable =
         {
-            { "list",          SEC_ADMINISTRATOR,   true, NULL,                                 "", listCommandTable },
-            { NULL,            0,                   false, NULL,                                "", NULL }
+            { "list",       SEC_ADMINISTRATOR,  true,   listCommandTable            },
         };
         return commandTable;
     }
@@ -433,11 +439,11 @@ public:
         handler->PSendSysMessage(LANG_COMMAND_TARGET_LISTAURAS, auras.size());
         for (Unit::AuraApplicationMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
         {
-            bool talent = false;// GetTalentSpellCost(itr->second->GetBase()->GetId()) > 0;
+            bool talent = GetTalentSpellCost(itr->second->GetBase()->GetId()) > 0;
 
             AuraApplication const* aurApp = itr->second;
-            constAuraPtr aura = aurApp->GetBase();
-            char const* name = aura->GetSpellInfo()->SpellName;
+            Aura const* aura = aurApp->GetBase();
+            char const* name = aura->GetSpellInfo()->SpellName[handler->GetSessionDbcLocale()];
 
             std::ostringstream ss_name;
             ss_name << "|cffffffff|Hspell:" << aura->GetId() << "|h[" << name << "]|h|r";
@@ -463,7 +469,6 @@ public:
 
         return true;
     }
-
     // handle list mail command
     static bool HandleListMailCommand(ChatHandler* handler, char const* args)
     {
@@ -517,7 +522,7 @@ public:
                     uint32 copp = (money % GOLD) % SILVER;
                     std::string receiverStr = handler->playerLink(receiver);
                     std::string senderStr = handler->playerLink(sender);
-                    handler->PSendSysMessage(LANG_LIST_MAIL_INFO_1 , messageId, subject.c_str(),gold, silv, copp);
+                    handler->PSendSysMessage(LANG_LIST_MAIL_INFO_1, messageId, subject.c_str(), gold, silv, copp);
                     handler->PSendSysMessage(LANG_LIST_MAIL_INFO_2, senderStr.c_str(), senderId, receiverStr.c_str(), receiverId);
                     handler->PSendSysMessage(LANG_LIST_MAIL_INFO_3, TimeToTimestampStr(deliverTime).c_str(), TimeToTimestampStr(expireTime).c_str());
                     if (hasItem == 1)
@@ -540,7 +545,7 @@ public:
                                         uint32 item_entry       = fields[0].GetUInt32();
                                         uint32 item_count       = fields[1].GetUInt32();
                                         QueryResult result4;
-                                        result4 = WorldDatabase.PQuery("SELECT name,quality FROM item_template WHERE entry = '%u'", item_entry);
+                                        result4 = WorldDatabase.PQuery("SELECT name, quality FROM item_template WHERE entry = '%u'", item_entry);
                                         Field* fields1          = result4->Fetch();
                                         std::string item_name   = fields1[0].GetString();
                                         int item_quality        = fields1[1].GetUInt8();
@@ -570,6 +575,195 @@ public:
         }
         else
             handler->PSendSysMessage(LANG_LIST_MAIL_NOT_FOUND);
+        return true;
+    }
+
+    static bool HandleListScenesCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        Player* target = handler->getSelectedPlayer();
+
+        if (!target)
+             target = handler->GetSession()->GetPlayer();
+
+        if (!target)
+        {
+            handler->SendSysMessage(LANG_PLAYER_NOT_FOUND);
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        SceneTemplateByInstance const& instanceByPackageMap = target->GetSceneMgr().GetSceneTemplateByInstanceMap();
+
+        handler->PSendSysMessage(LANG_DEBUG_SCENE_OBJECT_LIST, target->GetSceneMgr().GetActiveSceneCount());
+
+        for (auto instanceByPackage : instanceByPackageMap)
+            handler->PSendSysMessage(LANG_DEBUG_SCENE_OBJECT_DETAIL, instanceByPackage.second->ScenePackageId, instanceByPackage.first);
+
+        return true;
+    }
+
+    static bool HandleListAggroCommand(ChatHandler* handler, const char * /*args*/)
+    {
+        try
+        {
+            Unit* unit = handler->getSelectedUnit();
+            if (!unit)
+                unit = handler->GetSession()->GetPlayer();
+
+            uint32 unitGuid = unit->GetGUIDLow();
+            if (Creature* creature = unit->GetCreature(*unit, unit->GetGUID()))
+            {
+                uint32 dbGuid = creature->GetDBTableGUIDLow();
+                if (unitGuid != dbGuid)
+                    unitGuid = dbGuid;
+            }
+            if (unit->GetTypeId() == TYPEID_PLAYER)
+                handler->PSendSysMessage("Listing attackers of player |cffffffff%s|r (guid: |cffffffff%u|r)", unit->GetName().c_str(), unitGuid);
+            else
+                handler->PSendSysMessage("Listing attackers of creature |cffffffff%s|r (guid: |cffffffff%u|r id: |cffffffff%u|r)", unit->GetName().c_str(), unitGuid, unit->GetEntry());
+
+            uint32 attackersCount = 0;
+            Unit::AttackerSet const& attackers = unit->getAttackers();
+            for (Unit::AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
+            {
+                if (!(*itr))
+                    break;
+                Unit* attacker = (*itr);
+                uint32 guid = attacker->GetGUIDLow();
+                if (attacker->GetTypeId() == TYPEID_PLAYER)
+                    handler->PSendSysMessage("guid: |cffffffff%u|r - player - |cffffffff%s|r", guid, attacker->GetName().c_str());
+                else
+                {
+                    if (Creature* creature = attacker->GetCreature(*attacker, attacker->GetGUID()))
+                    {
+                        uint32 dbGuid = creature->GetDBTableGUIDLow();
+                        if (guid != dbGuid)
+                            guid = dbGuid;
+                    }
+                    float threat = attacker->getThreatManager().getThreat(unit, false);
+                    handler->PSendSysMessage("guid: |cffffffff%u|r - id: |cffffffff%u|r - |cffffffff%s|r (%.2f)", guid, attacker->GetEntry(), attacker->GetName().c_str(), threat);
+                }
+                ++attackersCount;
+            }
+            handler->PSendSysMessage("%u attackers total", attackersCount);
+        }
+        catch (...)
+        {
+            handler->PSendSysMessage("Error happened while executing the command");
+        }
+
+        return true;
+    }
+
+    static bool HandleListHostilesCommand(ChatHandler* handler, const char * /*args*/)
+    {
+        try
+        {
+            Unit* unit = handler->getSelectedUnit();
+            if (!unit)
+                unit = handler->GetSession()->GetPlayer();
+
+            uint32 unitGuid = unit->GetGUIDLow();
+            if (Creature* creature = unit->GetCreature(*unit, unit->GetGUID()))
+            {
+                uint32 dbGuid = creature->GetDBTableGUIDLow();
+                if (unitGuid != dbGuid)
+                    unitGuid = dbGuid;
+            }
+            if (unit->GetTypeId() == TYPEID_PLAYER)
+                handler->PSendSysMessage("Listing hostiles towards player |cffffffff%s|r (guid: |cffffffff%u|r)", unit->GetName().c_str(), unitGuid);
+            else
+                handler->PSendSysMessage("Listing hostiles towards creature |cffffffff%s|r (guid: |cffffffff%u|r id: |cffffffff%u|r)", unit->GetName().c_str(), unitGuid, unit->GetEntry());
+
+            uint32 hostilesCount = 0;
+            for (RefManager<Unit, ThreatManager>::iterator itr = unit->getHostileRefManager().begin(); itr != unit->getHostileRefManager().end(); ++itr)
+            {
+                Unit* hostile = itr->GetSource()->GetOwner();
+                uint32 guid = hostile->GetGUIDLow();
+                if (hostile->GetTypeId() == TYPEID_PLAYER)
+                    handler->PSendSysMessage("guid: |cffffffff%u|r - player - |cffffffff%s|r", guid, hostile->GetName().c_str());
+                else
+                {
+                    if (Creature* creature = hostile->GetCreature(*hostile, hostile->GetGUID()))
+                    {
+                        uint32 dbGuid = creature->GetDBTableGUIDLow();
+                        if (guid != dbGuid)
+                            guid = dbGuid;
+                    }
+                    float threat = hostile->getThreatManager().getThreat(unit, false);
+                    handler->PSendSysMessage("guid: |cffffffff%u|r - id: |cffffffff%u|r - |cffffffff%s|r (%.2f)", guid, hostile->GetEntry(), hostile->GetName().c_str(), threat);
+                }
+                ++hostilesCount;
+            }
+            handler->PSendSysMessage("%u hostiles total", hostilesCount);
+        }
+        catch (...)
+        {
+            handler->PSendSysMessage("Error happened while executing the command");
+        }
+
+        return true;
+    }
+
+    static bool HandleListThreatCommand(ChatHandler* handler, const char * /*args*/)
+    {
+        try
+        {
+            Unit* unit = handler->getSelectedUnit();
+            if (!unit)
+                unit = handler->GetSession()->GetPlayer();
+
+            uint32 unitGuid = unit->GetGUIDLow();
+            if (Creature* creature = unit->GetCreature(*unit, unit->GetGUID()))
+            {
+                uint32 dbGuid = creature->GetDBTableGUIDLow();
+                if (unitGuid != dbGuid)
+                    unitGuid = dbGuid;
+            }
+            if (unit->GetTypeId() == TYPEID_PLAYER)
+                handler->PSendSysMessage("Displaying threatlist of player |cffffffff%s|r (guid: |cffffffff%u|r)", unit->GetName().c_str(), unitGuid);
+            else
+                handler->PSendSysMessage("Displaying threatlist of creature |cffffffff%s|r (guid: |cffffffff%u|r id: |cffffffff%u|r)", unit->GetName().c_str(), unitGuid, unit->GetEntry());
+
+            for (uint8 listType = 0; listType < 2; ++listType)
+            {
+                ThreatContainer::StorageType const* list = listType ? &unit->getThreatManager().getOfflineThreatList() : &unit->getThreatManager().getThreatList();
+                char const* color = listType ? "|cff808080" : "";
+                char const* summary = listType ? "%u offline hostiles" : "%u online hostiles";
+
+                uint32 hostilesCount = 0;
+                for (HostileReference* ref : *list)
+                {
+                    Unit* hostile = ref->getTarget();
+                    if (!hostile)
+                    {
+                        handler->PSendSysMessage("|cff404040guid: %u - player (%.2f)|r", GUID_LOPART(ref->getUnitGuid()), ref->getThreat());
+                        continue;
+                    }
+
+                    uint32 guid = hostile->GetGUIDLow();
+                    if (hostile->GetTypeId() == TYPEID_PLAYER)
+                        handler->PSendSysMessage("%sguid: |cffffffff%u|r%s - player - |cffffffff%s|r%s (%.2f)|r", color, guid, color, hostile->GetName().c_str(), color, ref->getThreat());
+                    else
+                    {
+                        if (Creature* creature = hostile->ToCreature())
+                        {
+                            uint32 dbGuid = creature->GetDBTableGUIDLow();
+                            if (guid != dbGuid)
+                                guid = dbGuid;
+                        }
+                        handler->PSendSysMessage("%sguid: |cffffffff%u|r%s - id: |cffffffff%u|r%s - |cffffffff%s|r%s (%.2f)|r", color, guid, color, hostile->GetEntry(), color, hostile->GetName().c_str(), color, ref->getThreat());
+                    }
+                    ++hostilesCount;
+                }
+                handler->PSendSysMessage(summary, hostilesCount);
+            }
+        }
+        catch (...)
+        {
+            handler->PSendSysMessage("Error happened while executing the command");
+        }
+
         return true;
     }
 };

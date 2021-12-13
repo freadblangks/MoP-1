@@ -1,904 +1,2212 @@
-/*
-    Dungeon : Stormstout Brewery 85-87
-    Boss: Yan-Zhu the Uncasked
-	www.pandawow.ir
-	stefan2008@ymail.com
-	it's a work of me and my friend
-*/
-
-#include "ObjectMgr.h"
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "CreatureTextMgr.h"
-#include "SpellScript.h"
-#include "SpellAuras.h"
-#include "SpellAuraEffects.h"
-#include "Player.h"
-
 #include "stormstout_brewery.h"
 
-/*
-Intro
-    Uncle Gao yells: Yes yes yes! So close! Just a pinch of...oops...
-    Uncle Gao yells: Too bitter! Just a drop of honey, and a cane of sugar, and maybe some corn? Yes, more corn!
-    Uncle Gao yells: Yes, yes, yes...no, no, no no no! Yes! No! Peppers!
-    Uncle Gao yells: Ahh! Help! What is that thing? It doesn't matter, nothing will stop me now, not when I'm so close! Maybe if I don't look at it...?
-
-Outro
-    Uncle Gao says: Is it... can it be???
-    * Gao runs over and kneels down by Yan-Zhu's remains and speaks reverently. *
-    Uncle Gao says: Such harmony of flavor, such heady aroma! It is...the perfect brew!
-    Uncle Gao yells: The name of Stormstout will be sung once again throughout the hills!
-    * As he proclaims this, Chen runs into the Tasting Room and over to Yan-Zhu. *
-    Chen Stormstout says: Uncle Gao, this brewery was left in your care! What have you done?
-    Uncle Gao yells: You again! Don't you see? I have made a name for myself at last: I have brewed perfection!
-    * Chen is dismayed with Gao's attitude. *
-    Chen Stormstout says: At what cost? The Brewery is trashed! Infested!
-    Uncle Gao says: Details, details.
-    Chen Stormstout says: And there are Virmen in the main store!
-    * Gao walks over to stand behind the stove as Chen follows to stand in front of it. *
-    Uncle Gao says: Look, "Chen Stormstout", we can't all be heroes, running from our responsibilities, tromping around the Dread Wastes, saving the world. Some of us are "Artists".
-    Chen Stormstout says: I think the brewery might be on fire.
-    * Although Chen points this out, Gao's tone is dismissive, even bored. *
-    Uncle Gao says: Yes, yes. That happens. 
-*/
-
-enum Yells
+struct ValuePair
 {
-    // Intro / Outro.
+    uint32 entry_1;
+    uint32 entry_2;
 };
 
-enum Spells
+static const ValuePair yanzhuPairs[3] =
 {
-    // Boss
-    SPELL_BREW_BOLT           = 114548,
-
-    // One of two from each category of the following abilities:
-
-    // Bremastery: Wheat.
-    SPELL_BLOAT               = 106546, // (1).
-    SPELL_BLOAT_DUMMY         = 114929, // Tooltip says "Can use the Bloat ability."
-    SPELL_BLOATED             = 106549, // Player aura triggering 106560 Gushing Brew - damage.
-    SPELL_BLACKOUT_BREW       = 106851, // (2).
-    SPELL_BLACKOUT_BREW_DUMMY = 114930, // Tooltip says "Can use the Blackout Brew ability."
-    SPELL_BLACKOUT_DRUNK      = 106857, // At 10 stacks of SPELL_BLACKOUT_BREW.
-
-    // Bremastery: Ale.
-    SPELL_BUBBLE_SHIELD       = 106563, // (1).
-    SPELL_BUBBLE_SHIELD_DUMMY = 114931, // Tooltip says "Can use the Bubble Shield ability."
-    // Summons multiple NPC_YEASTY_BREW_ALEMENTAL_Y (2).
-    SPELL_YEASTY_BREW_DUMMY   = 114932, // Tooltip says "Can summon Yeasty Brew minions."
-
-    // Brewmastery: Stout.
-    SPELL_CARBONATION         = 115003, // Triggers 114386 damage (1).
-    SPELL_CARBONATION_DUMMY   = 114934, // Tooltip says "Can use the Carbonation ability."
-    // Summons multiple NPC_FIZZY_BUBBLE (if uses Carbonation).
-    SPELL_FIZZY_BUBBLE_VISUAL = 114458, // Dummy visual for NPC.
-    SPELL_FIZZY_BUBBLE        = 114459, // Player fly aura on spellclick.
-    // Summons multiple NPC_WALL_OF_SUDS (if uses Wall of Suds) (2).
-    SPELL_SUDSY               = 114468, // If uses Wall of Suds. Triggers 114470 multiple Jump height at Jumping. Player aura.
-
-    // NPCs
-    SPELL_YEASTY_BREW_BOLT    = 116155, // Yeasty Brew Alementals can cast a less powerful version of Brew Bolt, inflicting 9750 to 10250 Frost damage.
-    SPELL_YEASTY_SUMMON_VIS   = 116259, // Yeasty Brew Alemental spawn visual.
-    SPELL_FERMENT             = 106859, // Channeled beam, triggers 114451 - 1% Hp / Mana restore on target.
-    SPELL_WALL_OF_SUDS        = 114467, // Triggers 114466 damage and stun.
-    SPELL_WALL_OF_SUDS_DUMMY  = 114933  // Tooltip says "Can summon walls of suds."
+    { NPC_YEASTY_ALEMENTAL,  NPC_BUBBLING_ALEMENTAL },
+    { NPC_FIZZY_ALEMENTAL,   NPC_SUDSY_ALEMENTAL    },
+    { NPC_BLOATED_ALEMENTAL, NPC_STOUT_ALEMENTAL    },
 };
 
-enum Events
+static const Position gaoWaypoints[] = 
 {
-    // Boss
-    EVENT_BREW_BOLT           = 1,
-
-    // Bremastery: Wheat.
-    EVENT_BLOAT,
-    EVENT_BLACKOUT_BREW,
-
-    // Bremastery: Ale.
-    EVENT_BUBBLE_SHIELD,
-    EVENT_SET_BUBBLE_SHIELD_STACKS,
-    EVENT_YEASTY_BREW_ELEMENTALS,
-
-    // Brewmastery: Stout.
-    EVENT_CARBONATION,
-    EVENT_WALL_OF_SUDS,
-
-    // NPCs
-
-    // Yeasty Brew Alemental
-    EVENT_YEASTY_BREW_BOLT,
-    EVENT_FERMENT
+    { 0.f, 0.f, 0.f                    },
+    { -703.3f, 1187.5f, 166.7f         },
+    { -707.4f, 1189.8f, 166.7f         },
+    { -709.6f, 1185.0f, 166.7f, 4.905f }
 };
 
-enum Abilities
+static const Position chenWaypoints[] =
 {
-    // Bremastery: Wheat.
-    ABILITY_BLOAT              = 0,
-    ABILITY_BLACKOUT_BREW,
-
-    // Bremastery: Ale.
-    ABILITY_BUBBLE_SHIELD,
-    ABILITY_YEASTY_BREW_ELEMENTALS,
-
-    // Brewmastery: Stout.
-    ABILITY_CARBONATION,
-    ABILITY_WALL_OF_SUDS
+    { -673.7f, 1155.7f, 166.7f          },
+    { 0.f,     0.f,     0.f             }, // empty
+    { -708.1f, 1180.2f, 166.7f, 1.832f  }
 };
 
-// TODO.
-Position SudPositions[2][2] =
+static const Position largeBrewPos[] =
 {
-    {
-        // Left side
-        {0,0,0,0}, // Start
-        {0,0,0,0},  // End
-    },
-    {
-        // Right side
-        {0,0,0,0}, // Start
-        {0,0,0,0},  // End
-    }
+    { -702.09f, 1158.76f, 166.22f, 0.24f },
+    { -704.20f, 1166.94f, 166.22f, 0.24f }
 };
 
-class boss_yan_zhu_the_uncasked : public CreatureScript
+static const Position smallBrewPos[] =
 {
-    public :
-        boss_yan_zhu_the_uncasked() : CreatureScript("boss_yan_zhu_the_uncasked") { }
-
-        struct boss_yan_zhu_the_uncasked_AI : public BossAI
-        {
-            boss_yan_zhu_the_uncasked_AI(Creature* creature) : BossAI(creature, DATA_YANZHU_THE_UNCASKED_EVENT), summons(me)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            EventMap events;
-            SummonList summons;
-            uint8 RandomWheatAbility;
-            uint8 RandomAleAbility;
-            uint8 RandomStoutAbility;
-
-            void InitializeAI()
-            {
-                if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
-            {
-                events.Reset();
-                summons.DespawnAll();
-
-                if (instance)
-                    instance->SetData(DATA_YANZHU_THE_UNCASKED_EVENT, NOT_STARTED);
-
-                RandomWheatAbility = RAND(ABILITY_BLOAT, ABILITY_BLACKOUT_BREW);
-                RandomStoutAbility = RAND(ABILITY_BUBBLE_SHIELD, ABILITY_YEASTY_BREW_ELEMENTALS);
-                RandomAleAbility   = RAND(ABILITY_CARBONATION, ABILITY_WALL_OF_SUDS);
-
-                _Reset();
-            }
-
-            void EnterCombat(Unit* /*who*/)
-			{
-                if (instance)
-                {
-                    instance->SetData(DATA_YANZHU_THE_UNCASKED_EVENT, IN_PROGRESS);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me); // Add
-                }
-
-                // Melee range check.
-                events.ScheduleEvent(EVENT_BREW_BOLT, 5000);
-
-                // Bremastery: Wheat.
-                if (RandomWheatAbility == ABILITY_BLOAT)
-                {
-                    me->AddAura(SPELL_BLOAT_DUMMY, me); // Add the visual tooltip.
-                    events.ScheduleEvent(EVENT_BLOAT, urand(11000, 13000));
-                }
-                else
-                {
-                    me->AddAura(SPELL_BLACKOUT_BREW_DUMMY, me); // Add the visual tooltip.
-                    events.ScheduleEvent(EVENT_BLACKOUT_BREW, urand(9000, 11000));
-                }
-
-                // Bremastery: Ale.
-                if (RandomWheatAbility == ABILITY_BUBBLE_SHIELD)
-                {
-                    me->AddAura(SPELL_BUBBLE_SHIELD_DUMMY, me); // Add the visual tooltip.
-                    events.ScheduleEvent(EVENT_BUBBLE_SHIELD, urand(16000, 19000));
-                }
-                else
-                {
-                    me->AddAura(SPELL_YEASTY_BREW_DUMMY, me); // Add the visual tooltip.
-                    events.ScheduleEvent(EVENT_YEASTY_BREW_ELEMENTALS, urand(18000, 20000));
-                }
-
-                // Brewmastery: Stout.
-                if (RandomWheatAbility == ABILITY_CARBONATION)
-                {
-                    me->AddAura(SPELL_CARBONATION_DUMMY, me); // Add the visual tooltip.
-                    events.ScheduleEvent(EVENT_CARBONATION, urand(22500, 24500));
-                }
-                else
-                {
-                    me->AddAura(SPELL_WALL_OF_SUDS_DUMMY, me); // Add the visual tooltip.
-                    events.ScheduleEvent(ABILITY_WALL_OF_SUDS, urand(25000, 27000));
-                }
-
-                _EnterCombat();
-            }
-
-            void EnterEvadeMode()
-            {
-                Reset();
-                me->DeleteThreatList();
-                me->CombatStop(false);
-                me->GetMotionMaster()->MoveTargetedHome();
-
-                if (instance)
-                {
-                    instance->SetData(DATA_YANZHU_THE_UNCASKED_EVENT, FAIL);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
-                }
-
-                _EnterEvadeMode();
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                summons.DespawnAll();
-
-                if (instance)
-                {
-                    instance->SetData(DATA_YANZHU_THE_UNCASKED_EVENT, DONE);
-                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove
-                }
-
-                _JustDied();
-            }
-
-            void JustSummoned(Creature* summon)
-            {
-                summons.Summon(summon);
-                summon->setActive(true);
-
-		        if (me->isInCombat())
-                    summon->SetInCombatWithZone();
-
-                if (summon->GetEntry() == NPC_FIZZY_BUBBLE)
-                {
-                    summon->SetReactState(REACT_PASSIVE);
-                    summon->AddAura(SPELL_FIZZY_BUBBLE_VISUAL, summon);
-                    summon->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-
-                    summon->SetCanFly(true);
-                    summon->SetSpeed(MOVE_WALK, 0.7f);
-                    summon->SetSpeed(MOVE_RUN, 0.7f);
-                    summon->SetSpeed(MOVE_FLIGHT, 0.7f);
-
-                    float x, y, z;
-                    summon->GetClosePoint(x, y, z, summon->GetObjectSize() / 3, 2.0f);
-                    summon->GetMotionMaster()->MovePoint(1, x, y, z + 30.0f); // Move up 30y slowly, and disappear.
-                    summon->DespawnOrUnsummon(20000);
-                }
-
-                if (summon->GetEntry() == NPC_WALL_OF_SUDS)
-                {
-                    summon->SetReactState(REACT_PASSIVE);
-                    summon->AddAura(SPELL_WALL_OF_SUDS, summon);
-                    summon->SetFlag(UNIT_NPC_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-                    summon->SetSpeed(MOVE_WALK, 1.2f);
-                    summon->SetSpeed(MOVE_RUN, 1.2f);
-
-                    float x, y, z;
-                    summon->GetClosePoint(x, y, z, summon->GetObjectSize() / 3, 50.0f);
-                    summon->GetMotionMaster()->MovePoint(1, x, y, z); // Move 50 yards across the room, to the other side.
-                }
-            }
-
-            void UpdateAI(const uint32 diff)
-            {
-                if (!UpdateVictim())
-                    return;
-
-                events.Update(diff);
-
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
-                {
-                    switch(eventId)
-                    {
-                        // Melee range check.
-                        case EVENT_BREW_BOLT:
-                            if (!HasHostileInMeleeRange())
-                                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                    DoCast(target, SPELL_BREW_BOLT);
-                            events.ScheduleEvent(EVENT_BREW_BOLT, 2500);
-                            break;
-
-                        // Bremastery: Wheat.
-                        case EVENT_BLOAT:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_BLOAT);
-                            events.ScheduleEvent(EVENT_BLOAT, urand(15500, 17500)); // every 14.5 seconds + 2c.
-                            break;
-                        case EVENT_BLACKOUT_BREW:
-                            DoCast(me, SPELL_BLACKOUT_BREW);
-                            events.ScheduleEvent(EVENT_BLACKOUT_BREW, urand(10500, 12500)); // every 10.5 seconds + 1c.
-                            break;
-
-                        // Bremastery: Ale.
-                        case EVENT_BUBBLE_SHIELD:
-                            SpawnInCircle(1.0f, 8, NPC_BUBBLE_SHIELD, TEMPSUMMON_MANUAL_DESPAWN);
-                            DoCast(me, SPELL_BUBBLE_SHIELD);
-                            events.ScheduleEvent(EVENT_SET_BUBBLE_SHIELD_STACKS, 2100); // 2s cast time.
-                            events.ScheduleEvent(EVENT_BUBBLE_SHIELD, urand(43000, 45000)); // every 42 seconds + 2c.
-                            break;
-                        case EVENT_SET_BUBBLE_SHIELD_STACKS:
-                            if (AuraPtr aura = me->GetAura(SPELL_BUBBLE_SHIELD))
-					            me->SetAuraStack(SPELL_BUBBLE_SHIELD, me, 8);
-                            break;
-                        case EVENT_YEASTY_BREW_ELEMENTALS:
-                            for (uint8 i = 0; i < 4; i++)
-                                me->SummonCreature(NPC_YEASTY_BREW_ALEMENTAL_Y, me->GetPositionX() + frand(-4.0f, 4.0f), me->GetPositionY() + frand(-4.0f, 4.0f), me->GetPositionZ() + 1.0f, me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                            events.ScheduleEvent(EVENT_YEASTY_BREW_ELEMENTALS, urand(69000, 73000)); // every 71 seconds.
-                            break;
-
-                        // Brewmastery: Stout.
-                        case EVENT_CARBONATION:
-                            DoCast(me, SPELL_CARBONATION);
-                            events.ScheduleEvent(EVENT_CARBONATION, urand(66000, 68000)); // every 64 seconds + 3c.
-                            break;
-                        case EVENT_WALL_OF_SUDS:
-                            // SummonSuds(); TODO.
-                            events.ScheduleEvent(EVENT_WALL_OF_SUDS, urand(70000, 75000)); // every 72.5 seconds.
-                            break;
-
-                        default: break;
-                    }
-                }
-
-                DoMeleeAttackIfReady();
-            }
-
-    // Particular AI functions.
-    private:
-        // Check for pets or players in Melee range.
-        bool HasHostileInMeleeRange()
-        {
-            // Check for tank.
-            if (Unit* tank = me->getVictim())
-                if (tank->IsWithinDistInMap(me, MELEE_RANGE))
-                    return true;
-
-            // Check for pets.
-            if (Unit* unit = me->SelectNearbyTarget(NULL, MELEE_RANGE))
-                if (unit->isPet())
-                    return true;
-
-            // Check for players.
-            if (Player* nearPlayer = me->FindNearestPlayer(MELEE_RANGE))
-                if (nearPlayer->IsWithinDistInMap(me, MELEE_RANGE))
-                    if (!nearPlayer->isGameMaster())
-                        return true;
-
-            return false;
-        }
-
-        // Used for spawning NPC's in a circle around the caster.
-        void SpawnInCircle(float row, uint8 summonNumber, uint32 unitEntry, TempSummonType summonType = TEMPSUMMON_MANUAL_DESPAWN, uint32 despawnTimer = 30000)
-        {
-            float teta = (2 * M_PI) / summonNumber;
-
-            for (uint8 i = 0 ; i < summonNumber ; i++)
-            {
-                float x = cos(i * teta) * row + me->GetPositionX();
-                float y = sin(teta * i) * row + me->GetPositionY();
-
-                if (summonType = TEMPSUMMON_MANUAL_DESPAWN)
-                    me->SummonCreature(unitEntry, x, y, me->GetPositionZ() + 2.0f, 0, summonType);
-                else
-                    me->SummonCreature(unitEntry, x, y, me->GetPositionZ() + 2.0f, 0, summonType, despawnTimer);
-            }
-        }
-
-        // Used for summoning the Wall of Suds.
-        void SummonSuds()
-        {
-            bool justOnce = false;
-            uint32 j = 4;
-
-            for (uint8 i = 1; i < 41; i += 5)
-            {
-                if (!justOnce)
-                {
-                    justOnce = true;
-                    SpawnInLine(&(SudPositions[0][0]), &(SudPositions[0][1]), NPC_WALL_OF_SUDS, j);
-                    SpawnInLine(&(SudPositions[1][0]), &(SudPositions[1][1]), NPC_WALL_OF_SUDS, j);
-                }
-                else
-                {
-                    justOnce = false;
-                    j += 2;
-                    SpawnInLine(&(SudPositions[0][0]), &(SudPositions[0][1]), NPC_WALL_OF_SUDS, j);
-                    SpawnInLine(&(SudPositions[1][0]), &(SudPositions[1][1]), NPC_WALL_OF_SUDS, j);
-                }
-            }
-
-            // Add Sudsy aura to players.
-            Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
-            if (!playerList.isEmpty())
-                for (Map::PlayerList::const_iterator c_iter = playerList.begin(); c_iter != playerList.end(); ++c_iter)
-                    if (Player* player = c_iter->getSource())
-                        me->AddAura(SPELL_SUDSY, player);
-        }
-
-        void SpawnInLine(Position* posStart, Position* posEnd, uint32 entry, uint32 number)
-        {
-            float coeff = (posStart->GetPositionY() - posEnd->GetPositionY()) / (posStart->GetPositionX() - posEnd->GetPositionX()); // Coefficient direction from right
-            float ord = posStart->GetPositionY() - posStart->GetPositionX() * coeff; // Order
-
-            float distBetween = (std::max(posStart->GetPositionX(), posEnd->GetPositionX()) - std::min(posStart->GetPositionX(), posEnd->GetPositionX())) / number;
-
-            for (float x = posStart->GetPositionX(); x < posEnd->GetPositionX(); x += distBetween)
-                me->SummonCreature(entry, x, coeff * x + ord, me->GetPositionZ() + 2.0f, 0);
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new boss_yan_zhu_the_uncasked_AI(creature);
-    }
+    { -709.23f, 1152.57f, 166.22f, 0.17f },
+    { -711.52f, 1160.55f, 166.22f, 0.17f },
+    { -713.58f, 1168.67f, 166.22f, 0.17f },
+    { -701.03f, 1154.85f, 166.22f, 0.17f },
+    { -703.38f, 1162.76f, 166.22f, 0.17f },
+    { -705.75f, 1170.97f, 166.22f, 0.17f },
+    { -693.20f, 1157.04f, 166.22f, 0.17f },
+    { -695.33f, 1165.07f, 166.22f, 0.17f },
+    { -697.44f, 1173.05f, 166.22f, 0.17f },
 };
 
-// Bubble Shield 65522.
-class npc_bubble_shield_yanzhu : public CreatureScript
+static const Position middleBrewPos[] =
 {
-    public :
-        npc_bubble_shield_yanzhu() : CreatureScript("npc_bubble_shield_yanzhu") { }
-
-        struct npc_bubble_shield_yanzhu_AI : public ScriptedAI
-        {
-            npc_bubble_shield_yanzhu_AI(Creature* creature) : ScriptedAI(creature)
-            {
-                instance = creature->GetInstanceScript();
-            }
-
-            InstanceScript* instance;
-            Creature* bossYanzhu;
-
-            void IsSummonedBy(Unit* summoner)
-            {
-                bossYanzhu = summoner->ToCreature();
-                Reset();
-            }
-
-            void Reset()
-            {
-                me->SetReactState(REACT_PASSIVE);
-                me->SetFacingTo(bossYanzhu->GetOrientation());
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISABLE_MOVE);
-            }
-
-            void JustDied(Unit* /*killer*/)
-            {
-                if (bossYanzhu)
-                {
-                    if (AuraPtr bubble = bossYanzhu->GetAura(SPELL_BUBBLE_SHIELD))
-                    {
-                        if (bubble->GetStackAmount() > 1)
-                            bubble->SetStackAmount(bubble->GetStackAmount() - 1);
-                        else
-                            bossYanzhu->RemoveAurasDueToSpell(SPELL_BUBBLE_SHIELD);
-                    }
-                }
-            }
-
-            void UpdateAI(const uint32 diff) { } // No melee.
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
-        {
-            return new npc_bubble_shield_yanzhu_AI(creature);
-        }
+    { -700.52f, 1167.84f, 166.22f, 0.25f },
+    { -698.25f, 1159.97f, 166.22f, 0.25f },
+    { -708.61f, 1165.69f, 166.22f, 0.25f },
+    { -706.43f, 1157.70f, 166.22f, 0.25f },
 };
 
-// Fizzy Bubble 59799.
-class npc_fizzy_bubble_yanzhu : public CreatureScript
+static const Position yanzhuPos[] = { -703.44f, 1162.43f, 166.22f, 0.24f };
+static const Position gaoPotPos[] = { -676.96f, 1193.96f, 166.79f, 1.82f };
+
+static const Position sudsPos[2] = 
+{ 
+    { -696.25f, 1138.78f, 166.75f, 1.82f },
+    { -663.20f, 1172.84f, 166.74f, 3.38f }
+};
+
+const uint32 brewSpells[3] =
+{
+    128253,
+    128255,
+    128257,
+};
+
+class AliveCheck
 {
     public:
-        npc_fizzy_bubble_yanzhu() : CreatureScript("npc_fizzy_bubble_yanzhu") { }
+        AliveCheck(Creature* creature) : _creature(creature) { }
 
-        struct npc_fizzy_bubble_yanzhuAI : public PassiveAI
+        bool operator()(uint64 guid) 
         {
-            npc_fizzy_bubble_yanzhuAI(Creature* creature) : PassiveAI(creature) { }
+            return (GetAffectedCreature(guid) && !GetAffectedCreature(guid)->IsAlive());
+        }
 
-            void OnSpellClick(Unit* clicker)
-            {
-                clicker->AddAura(SPELL_FIZZY_BUBBLE, clicker);
-                me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
-                me->DespawnOrUnsummon(100);
-            }
-        };
-
-        CreatureAI* GetAI(Creature* creature) const
+    private:
+        Creature* _creature;
+        Creature* GetAffectedCreature(uint64 guid)
         {
-            return new npc_fizzy_bubble_yanzhuAI(creature);
+            Creature* creature = ObjectAccessor::GetCreature(*_creature, guid);
+            return creature ? creature : nullptr;
         }
 };
 
-// Yeasty Brew Alemental 66413.
-class npc_yeasty_brew_elemental_yanzhu : public CreatureScript
+class npc_uncle_gao : public CreatureScript
 {
-    public :
-        npc_yeasty_brew_elemental_yanzhu() : CreatureScript("mob_yeast_brew_elemental") { }
+    public:
+        npc_uncle_gao() : CreatureScript("npc_uncle_gao") { }
 
-        struct npc_yeasty_brew_elemental_yanzhu_AI : public ScriptedAI
+        enum EncounterStage
         {
-            npc_yeasty_brew_elemental_yanzhu_AI(Creature* creature) : ScriptedAI(creature)
+            STAGE_MIDDLE_ADDS,
+            STAGE_SMALL_ADDS,
+            STAGE_LARGE_ADDS,
+            STAGE_BOSS
+        };
+
+        enum Talks
+        {
+            TALK_SUMMON1,
+            TALK_SUMMON2,
+            TALK_SUMMON3,
+            TALK_SUMMON_BOSS,
+            TALK_BOSS_DEATH,
+            TALK_OUTRO_1,
+            TALK_OUTRO_2,
+            TALK_OUTRO_3,
+            TALK_OUTRO_4,
+            TALK_OUTRO_5,
+            TALK_OUTRO_6
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_HANDLE_SUMMONING,
+            EVENT_HANDLE_SPELLCASTING,
+            EVENT_HANDLE_CRAFT_ANIMATION,
+            EVENT_NEXT_POT,
+            EVENT_OUTRO_1, // such flavor
+            EVENT_OUTRO_2, // name of stormstout
+            EVENT_OUTRO_3,
+            EVENT_OUTRO_4,
+            EVENT_OUTRO_5,
+            EVENT_OUTRO_6,
+            EVENT_OUTRO_7,
+            EVENT_MOVECHECK,
+            EVENT_UPDATE_ENCOUNTER,
+        };
+
+        enum Actions
+        {
+            ACTION_START_OUTRO,
+            ACTION_OUTRO_3,
+            ACTION_OUTRO_4,
+            ACTION_OUTRO_6,
+            ACTION_START_BOSS,
+            ACTION_SUMMON_BOSS
+        };
+
+        enum Spells
+        {
+            SPELL_BREW_FINALE_WHEAT    = 128253,
+            SPELL_BREW_FINALE_MEDIUM   = 128255,
+            SPELL_BREW_FINALE_DARK     = 128257,
+
+            SPELL_SMALL_SPAWN          = 128242,
+            SPELL_MEDIUM_SPAWN         = 128243,
+            SPELL_LARGE_SPAWN          = 128244
+        };
+
+        struct npc_uncle_gaoAI : public ScriptedAI
+        {
+            npc_uncle_gaoAI(Creature* creature) : ScriptedAI(creature)
             {
-                instance = creature->GetInstanceScript();
+                encounterStarted = false;
             }
 
+            bool encounterStarted;
+            uint32 encounterStage;
+            uint32 waypoint;
+            uint32 addStore[3];
+            std::list<uint64> currentStageGuidList;
             EventMap events;
             InstanceScript* instance;
-            Creature* bossYanzhu;
-            Unit* fermentTarget;
 
-            void IsSummonedBy(Unit* summoner)
+            void InitializeAI() override
             {
-                if (summoner)
-                    bossYanzhu = summoner->ToCreature();
-
-                DoCast(me, SPELL_YEASTY_SUMMON_VIS);
+                instance = me->GetInstanceScript();
                 Reset();
             }
 
-            void Reset()
+            void Reset() override
             {
-                events.Reset();
-                fermentTarget = NULL;
+                if (instance && instance->GetBossState(DATA_YAN_ZHU) == DONE)
+                {
+                    encounterStarted = true;
+
+                    me->NearTeleportTo(gaoWaypoints[3].m_positionX, gaoWaypoints[3].m_positionY, gaoWaypoints[3].m_positionZ, gaoWaypoints[3].m_orientation);
+
+                    GetChenAndDoAction(4);
+                    return;
+                }
             }
 
-            void EnterCombat(Unit* /*who*/)
+            uint32 GetAddToSummonEntry(uint32 type)
             {
-                events.ScheduleEvent(EVENT_YEASTY_BREW_BOLT, urand(3000, 5500));
-                events.ScheduleEvent(EVENT_FERMENT, urand(8000, 19000));
+                if (instance) // always uses second value, broken in 24459 FIXME
+                    return instance->GetData(type) ? yanzhuPairs[type - 3].entry_2 : yanzhuPairs[type - 3].entry_1;
+
+                return 0;
             }
 
-            void UpdateAI(const uint32 diff)
+            void MoveInLineOfSight(Unit* who) override
             {
-                if (!UpdateVictim())
+                if (!encounterStarted)
+                    if (who && who->ToPlayer() && who->GetDistance(me) < 30.f && who->GetPositionZ() > 160.f)
+                        StartEncounter();
+            }
+
+            void StartEncounter()
+            {
+                encounterStarted = true;
+                encounterStage = 0;
+
+                for (int i = 3; i < 5 + 1; i++)
+                    addStore[i - 3] = GetAddToSummonEntry(i);
+
+                AdvanceEncounter();
+            }
+
+            bool DoSummonSmallAdds(int n)
+            {
+                if (n < 0)
+                    return false;
+
+                if (Creature* creature = me->SummonCreature(addStore[0], smallBrewPos[n], TEMPSUMMON_CORPSE_TIMED_DESPAWN, urand(14000, 24000)))
+                {
+                    currentStageGuidList.push_back(creature->GetGUID());
+                    creature->CastSpell(creature, SPELL_SMALL_SPAWN);
+                }
+
+                return DoSummonSmallAdds(n - 1);
+            }
+
+            bool DoSummonMediumAdds(int n)
+            {
+                if (n < 0)
+                    return false;
+
+                if (Creature* creature = me->SummonCreature(addStore[1], middleBrewPos[n], TEMPSUMMON_CORPSE_TIMED_DESPAWN, urand(14000, 24000)))
+                {
+                    currentStageGuidList.push_back(creature->GetGUID());
+                    creature->CastSpell(creature, SPELL_MEDIUM_SPAWN);
+                }
+
+                return DoSummonMediumAdds(n - 1);
+            }
+
+            bool DoSummonLargeAdds(int n)
+            {
+                if (n < 0)
+                    return false;
+
+                if (Creature* creature = me->SummonCreature(addStore[2], largeBrewPos[n], TEMPSUMMON_CORPSE_TIMED_DESPAWN, urand(14000, 24000)))
+                {
+                    currentStageGuidList.push_back(creature->GetGUID());
+                    creature->CastSpell(creature, SPELL_LARGE_SPAWN);
+                }
+
+                return DoSummonLargeAdds(n - 1);
+            }
+
+            void GetChenAndDoAction(int32 action)
+            {
+                if (instance)
+                    if (Creature* chen = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_CHEN_YANZHU)))
+                        chen->AI()->DoAction(action);
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE)
                     return;
 
+                switch (pointId)
+                {
+                    case 0:
+                        waypoint++;
+                        me->SetStandState(UNIT_STAND_STATE_KNEEL);
+                        events.ScheduleEvent(EVENT_OUTRO_1, 3300);
+                        break;
+                    case 1:
+                    case 2:
+                        waypoint++;
+                        events.ScheduleEvent(EVENT_MOVECHECK, 100);
+                        break;
+                    case 3:
+                        waypoint++;
+                        events.ScheduleEvent(EVENT_OUTRO_7, 3400);
+                        me->SetFacingTo(gaoWaypoints[pointId].m_orientation);
+                        break;
+                    case 101:
+                        me->SetFacingTo(gaoPotPos->m_orientation);
+                        me->HandleEmoteCommand(EMOTE_STATE_USE_STANDING);
+                        break;
+                }
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                switch (actionId)
+                {
+                    case ACTION_START_OUTRO:
+                    {
+                        me->HandleEmoteCommand(EMOTE_STATE_NONE);
+
+                        if (instance)
+                        {
+                            if (Creature* yanZhu = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_YAN_ZHU)))
+                            {
+                                float x, y;
+                                GetPositionWithDistInOrientation(me, (me->GetDistance(yanZhu) - 1.5f), me->GetAngle(yanZhu), x, y);
+
+                                waypoint = 0;
+                                me->SetWalk(false);
+                                me->GetMotionMaster()->MovePoint(waypoint, x, y, me->GetMap()->GetHeight(x, y, me->GetPositionZ(), true, 100.0f));
+                            }
+                        }
+
+                        events.Reset();
+                        Talk(TALK_BOSS_DEATH);
+                        break;
+                    }
+                    case ACTION_OUTRO_3:
+                        events.ScheduleEvent(EVENT_OUTRO_3, 6000);
+                        break;
+                    case ACTION_OUTRO_4:
+                        events.ScheduleEvent(EVENT_OUTRO_4, 5300);
+                        break;
+                    case ACTION_OUTRO_6:
+                        events.ScheduleEvent(EVENT_OUTRO_6, 3800);
+                        break;
+                    case ACTION_START_BOSS:
+                        if (encounterStarted)
+                            return;
+                        StartEncounter();
+                        break;
+                    case ACTION_SUMMON_BOSS:
+                        AdvanceEncounter();
+                        break;
+                }
+            }
+
+            bool UpdateCurrentEncounterState(bool isBoss)
+            {
+                if (!isBoss)
+                {
+                    if (currentStageGuidList.empty())
+                        return AdvanceEncounter();
+
+                    currentStageGuidList.remove_if(AliveCheck(me));
+                }
+
+                return true;
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon)
+                    summon->AI()->DoZoneInCombat();
+            }
+
+            bool AdvanceEncounter()
+            {
+                events.CancelEvent(EVENT_UPDATE_ENCOUNTER);
+
+                switch (encounterStage)
+                {
+                    case 0:
+                        events.ScheduleEvent(EVENT_HANDLE_SUMMONING, 9000);
+                        events.ScheduleEvent(EVENT_HANDLE_SPELLCASTING, 5000);
+                        events.ScheduleEvent(EVENT_NEXT_POT, 20000);
+                        DoTalk(TALK_SUMMON1);
+                        break;
+                    case 1:
+                        events.ScheduleEvent(EVENT_HANDLE_SUMMONING, 12000);
+                        events.ScheduleEvent(EVENT_HANDLE_SPELLCASTING, 7000);
+                        DoTalk(TALK_SUMMON2);
+                        break;
+                    case 2:
+                        events.ScheduleEvent(EVENT_HANDLE_SUMMONING, 9000);
+                        events.ScheduleEvent(EVENT_HANDLE_SPELLCASTING, 5000);
+                        DoTalk(TALK_SUMMON3);
+                        break;
+                    case 3:
+                        events.ScheduleEvent(EVENT_HANDLE_SPELLCASTING, 100);
+                        events.ScheduleEvent(EVENT_HANDLE_SUMMONING, 5100);
+                        break;
+                }
+
+                encounterStage++;
+                return true;
+            }
+
+            void DoHandleSpellcasting()
+            {
+                if (Creature* caster = GetClosestCreatureWithEntry(me, NPC_BARREL_TOSS_BUNNY, 10.f))
+                {
+                    uint32 spell = 0;
+                    switch (encounterStage-1)
+                    {
+                        case 0:
+                        case 1:
+                        case 2:
+                            spell = brewSpells[encounterStage - 1];
+                            break;
+                        case 3:
+                            for (int i = 0; i < 2; i++)
+                                caster->CastSpell(caster, brewSpells[i], true);
+                            break;
+                    }
+
+                    caster->CastSpell(caster, spell, true);
+                }
+            }
+
+            void DoTalk(uint8 id)
+            {
+                Talk(id);
+                events.ScheduleEvent(EVENT_HANDLE_CRAFT_ANIMATION, 2100);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
                 events.Update(diff);
 
-                if (me->HasUnitState(UNIT_STATE_CASTING))
-                    return;
-
-                while(uint32 eventId = events.ExecuteEvent())
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    switch(eventId)
+                    switch (eventId)
                     {
-                        case EVENT_YEASTY_BREW_BOLT:
-                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(target, SPELL_YEASTY_BREW_BOLT);
-                            events.ScheduleEvent(EVENT_YEASTY_BREW_BOLT, urand(5000, 7500));
+                        case EVENT_OUTRO_1:
+                            Talk(TALK_OUTRO_1);
+                            events.ScheduleEvent(EVENT_OUTRO_2, 8900);
                             break;
+                        case EVENT_OUTRO_2:
+                            Talk(TALK_OUTRO_2);
+                            me->SetStandState(UNIT_STAND_STATE_STAND);
 
-                        case EVENT_FERMENT:
-                            DoChooseFermentVictim();
-                            events.ScheduleEvent(EVENT_FERMENT, urand(21000, 29000));
+                            // Start Chen's part of the script
+                            if (Creature* chen = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_CHEN_YANZHU)))
+                            {
+                                chen->SetVisible(true);
+                                chen->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
+                            }
+                            GetChenAndDoAction(0);
+                            break;
+                        case EVENT_OUTRO_3:
+                            Talk(TALK_OUTRO_3);
+
+                            // Set Chen's next timer (EVENT_OUTRO_1) 10k
+                            GetChenAndDoAction(1);
+                            break;
+                        case EVENT_OUTRO_4:
+                            Talk(TALK_OUTRO_4);
+
+                            GetChenAndDoAction(2);
+                            // call action to chens script setting his timer to 2500
+                            // and move timer to 6500
+                            // also set our own move timer (which also is timer for next event) to 6700
+                            // "and there are virmen"
+                            events.ScheduleEvent(EVENT_OUTRO_5, 6600);
+                            break;
+                        case EVENT_OUTRO_5:
+                            Talk(TALK_OUTRO_5);
+                            me->SetWalk(true);
+                            events.ScheduleEvent(EVENT_MOVECHECK, 100);
+                            break;
+                        case EVENT_OUTRO_6:
+                            Talk(TALK_OUTRO_6);
+                            break;
+                        case EVENT_OUTRO_7:
+                            GetChenAndDoAction(3);
+                            break;
+                        case EVENT_MOVECHECK:
+                            me->GetMotionMaster()->MovePoint(waypoint, gaoWaypoints[waypoint]);
+                            break;
+                        case EVENT_HANDLE_SUMMONING:
+                            events.ScheduleEvent(EVENT_UPDATE_ENCOUNTER, 3000);
+
+                            switch (encounterStage - 1)
+                            {
+                                case STAGE_MIDDLE_ADDS:
+                                    DoSummonMediumAdds(3);
+                                    break;
+                                case STAGE_SMALL_ADDS:
+                                    DoSummonSmallAdds(8);
+                                    break;
+                                case STAGE_LARGE_ADDS:
+                                    DoSummonLargeAdds(1);
+                                    break;
+                                case STAGE_BOSS:
+                                {
+                                    events.CancelEvent(EVENT_UPDATE_ENCOUNTER);
+
+                                    DoTalk(TALK_SUMMON_BOSS);
+                                    if (Creature* creature = me->SummonCreature(NPC_YAN_ZHU, *yanzhuPos, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 5 * MINUTE*IN_MILLISECONDS))
+                                    {
+                                        currentStageGuidList.push_back(creature->GetGUID());
+                                        creature->CastSpell(creature, SPELL_LARGE_SPAWN);
+                                        creature->CastSpell(creature, SPELL_MEDIUM_SPAWN);
+                                        creature->CastSpell(creature, SPELL_SMALL_SPAWN);
+                                    }
+                                    break;
+                                }
+                            }
+                            break;
+                        case EVENT_HANDLE_SPELLCASTING:
+                            DoHandleSpellcasting();
+                            break;
+                        case EVENT_UPDATE_ENCOUNTER:
+                            events.ScheduleEvent(EVENT_UPDATE_ENCOUNTER, 1000);
+                            UpdateCurrentEncounterState(encounterStage > STAGE_BOSS);
+                            break;
+                        case EVENT_NEXT_POT:
+                            me->GetMotionMaster()->MovePoint(101, *gaoPotPos);
+                            break;
+                        case EVENT_HANDLE_CRAFT_ANIMATION:
+                            me->HandleEmoteCommand(EMOTE_STATE_USE_STANDING);
                             break;
                     }
                 }
+            }
+        };
 
-                DoMeleeAttackIfReady();
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_uncle_gaoAI(creature);
         }
+};
 
-        // Particular AI functions
-        private:
-            // For casting Ferment.
-            void DoChooseFermentVictim()
+class npc_chen_yanzhu : public CreatureScript
+{
+    public:
+        npc_chen_yanzhu() : CreatureScript("npc_chen_yanzhu") { }
+
+        enum Talks
+        {
+            TALK_CARE,
+            TALK_COST,
+            TALK_VIRMEN,
+            TALK_FIRE
+        };
+
+        enum Actions
+        {
+            ACTION_INIT,
+            ACTION_OUTRO_1,
+            ACTION_OUTRO_2,
+            ACTION_OUTRO_3,
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_MOVECHECK,
+            EVENT_MOVEBOSS,
+            EVENT_CARE,
+            EVENT_OUTRO_1,
+            EVENT_OUTRO_2
+        };
+
+        struct npc_chen_yanzhuAI : public ScriptedAI
+        {
+            npc_chen_yanzhuAI(Creature* creature) : ScriptedAI(creature)
             {
-                bool hasPlayer = false;
+                instance = me->GetInstanceScript();
+            }
 
-                if (bossYanzhu)
+            uint32 waypoint;
+            EventMap events;
+            InstanceScript* instance;
+
+            void Reset() override
+            {
+                InitializeMyself();
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                switch (actionId)
                 {
-                    Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
-                    if (!playerList.isEmpty())
+                    case ACTION_INIT:
                     {
-                        for (Map::PlayerList::const_iterator c_iter = playerList.begin(); c_iter != playerList.end(); ++c_iter)
-                        {
-                            if (Player* player = c_iter->getSource())
+                        waypoint = 0;
+                        me->SetWalk(false);
+                        events.ScheduleEvent(EVENT_MOVECHECK, 100);
+                        me->SetVisible(true);
+                        break;
+                    }
+                    case ACTION_OUTRO_1:
+                        events.ScheduleEvent(EVENT_OUTRO_1, 10000);
+                        break;
+                    case ACTION_OUTRO_2:
+                        events.ScheduleEvent(EVENT_OUTRO_2, 2500);
+                        events.ScheduleEvent(EVENT_MOVECHECK, 6500);
+                        me->SetWalk(true);
+                        break;
+                    case ACTION_OUTRO_3:
+                        Talk(TALK_FIRE);
+                        GetGaoAndDoAction(3);
+                        break;
+                    case 4:
+                        InitializeMyself();
+                        break;
+                }
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE)
+                    return;
+
+                switch (pointId)
+                {
+                    case 0:
+                        events.ScheduleEvent(EVENT_MOVEBOSS, 100);
+                        break;
+                    case 1:
+                        events.ScheduleEvent(EVENT_CARE, 2400);
+                        break;
+                    case 2:
+                        me->SetFacingTo(chenWaypoints[pointId].m_orientation);
+                        break;
+                }
+
+                waypoint++;
+            }
+
+            void GetGaoAndDoAction(int32 action)
+            {
+                if (instance)
+                    if (Creature* gao = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_UNCLE_GAO)))
+                        gao->AI()->DoAction(action);
+            }
+            
+            void InitializeMyself()
+            {
+                if (instance)
+                {
+                    if (instance->GetBossState(DATA_YAN_ZHU) == DONE)
+                    {
+                        me->NearTeleportTo(chenWaypoints[2].m_positionX, chenWaypoints[2].m_positionY, chenWaypoints[2].m_positionZ, chenWaypoints[2].m_orientation);
+                        me->SetVisible(true);
+                    }
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_CARE:
+                            Talk(TALK_CARE);
+                            GetGaoAndDoAction(1); // Start Gao's next timer
+                            break;
+                        case EVENT_OUTRO_1:
+                            Talk(TALK_COST);
+                            GetGaoAndDoAction(2); // Start Gao's next timer
+                            break;
+                        case EVENT_OUTRO_2:
+                            Talk(TALK_VIRMEN);
+                            break;
+                        case EVENT_MOVECHECK:
+                            me->GetMotionMaster()->MovePoint(waypoint, chenWaypoints[waypoint]);
+                            break;
+                        case EVENT_MOVEBOSS:
+                            if (instance)
                             {
-                                if (player->IsInBetween(me, bossYanzhu, 1.0f))
+                                if (Creature* yanzhu = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_YAN_ZHU)))
                                 {
-                                    hasPlayer = true;
-                                    fermentTarget = player;
-                                    DoCast(player, SPELL_FERMENT, true);
-                                    break;
+                                    float x, y;
+                                    GetPositionWithDistInOrientation(me, (me->GetDistance(yanzhu) - 1.5f), me->GetAngle(yanzhu), x, y);
+                                    me->GetMotionMaster()->MovePoint(1, x, y, me->GetMap()->GetHeight(x, y, me->GetPositionZ(), true, 100.f));
                                 }
-                                else continue;
+                            }
+                            break;
+                    }
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_chen_yanzhuAI(creature);
+        }
+};
+
+class boss_yanzhu : public CreatureScript
+{
+    public:
+        boss_yanzhu() : CreatureScript("boss_yanzhu") { }
+
+        enum Spells
+        {
+            SPELL_BLACKOUT             = 106851,
+            SPELL_BREW_BOLT            = 114548,
+            SPELL_BLOAT                = 106546,
+            SPELL_CARBONATION          = 115003,
+            SPELL_BUBBLE_SHIELD        = 106563,
+            SPELL_SUDSY                = 114468,
+            SPELL_SUDSY_JUMP           = 114470,
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_WALL_OF_SUDS,
+            EVENT_BLOAT,
+            EVENT_BLACKOUT,
+            EVENT_ADDS,
+            EVENT_BUBBLE_SHIELD,
+            EVENT_CARBONATION
+        };
+
+        enum Creatures
+        {
+            NPC_BUBBLE_SHIELD           = 65522
+        };
+
+        struct boss_yanzhuAI : public BossAI
+        {
+            boss_yanzhuAI(Creature* creature) : BossAI(creature, DATA_YAN_ZHU) { }
+
+            std::vector<uint64> guidsVector;
+            float bubleFacing;
+            uint32 largeEventType, lowEventType;
+
+            void InitializeAI() override
+            {
+                SetCombatMovement(false);
+                largeEventType = EVENT_CARBONATION; // temp while wall and jumps in construction...
+                lowEventType = EVENT_BLACKOUT;
+                Reset();
+            }
+
+            void EnterCombat(Unit* who) override
+            {
+                _EnterCombat();
+
+                // Disabled until targeting type is fixed
+                /* if (me->HasAura(SPELL_SUDSY_BREW))
+                    events.ScheduleEvent(EVENT_WALL_OF_SUDS, urand(9000,17000)); */
+
+                if (me->HasAura(SPELL_YEASTY_BREW))
+                    events.ScheduleEvent(EVENT_ADDS, urand(9000, 17000));
+
+                if (me->HasAura(SPELL_BUBBLING_BREW))
+                {
+                    me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+                    events.ScheduleEvent(EVENT_BUBBLE_SHIELD, 6000, 14000);
+                }
+
+                events.ScheduleEvent(lowEventType, 8000);
+                events.ScheduleEvent(EVENT_BLOAT, 8000);
+                events.ScheduleEvent(largeEventType, urand(9000, 17000));
+
+                if (largeEventType == EVENT_WALL_OF_SUDS)
+                    instance->DoAddAuraOnPlayers(SPELL_SUDSY);
+            }
+
+            void Reset() override
+            {
+                _Reset();
+
+                if (instance)
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SUDSY);
+
+                events.Reset();
+                summons.DespawnAll();
+                bubleFacing = -M_PI / 4;
+            }
+
+            // Hack, but we haven`t movement flag jump...
+            void SudsyAreaController()
+            {
+                std::list<Player*> playersInAreaList;
+                GetPlayerListInGrid(playersInAreaList, me, 100.0f);
+
+                for (auto&& itr : playersInAreaList)
+                {
+                    if (SudsyInCenterQuadr(itr->GetGUID()))
+                    {
+                        if (itr->GetPositionZ() > 166.15f + 0.1f && itr->HasAura(SPELL_SUDSY))
+                        {
+                            // not send jump to player whos falling
+                            if (itr->HasUnitMovementFlag(MOVEMENTFLAG_FALLING) && itr->GetPositionZ() > 166.72f)
+                                continue;
+
+                            itr->CastSpell(itr, SPELL_SUDSY_JUMP, false);
+                        }
+                    }
+                    else
+                        if (itr->GetPositionZ() > 166.72f + 0.1f && itr->HasAura(SPELL_SUDSY))
+                        {
+                            // not send jump to player whos falling
+                            if (itr->HasUnitMovementFlag(MOVEMENTFLAG_FALLING) && itr->GetPositionZ() > 167.32f)
+                                continue;
+
+                            itr->CastSpell(itr, SPELL_SUDSY_JUMP, false);
+                        }
+                }
+            }
+
+            bool SudsyInCenterQuadr(uint64 playerGUID)
+            {
+                Player* itr = ObjectAccessor::FindPlayer(playerGUID);
+                if (!itr)
+                    return false;
+
+                if (itr->GetPositionX() > -718.98f  && itr->GetPositionX() < -687.76f &&
+                    itr->GetPositionY() > 1147.53f && itr->GetPositionY() < 1178.26f)
+                    return true;
+
+                return false;
+            }
+
+            void EnterEvadeMode() override
+            {
+                _EnterEvadeMode();
+
+                for (auto&& guid : guidsVector)
+                {
+                    if (Creature* bubble = ObjectAccessor::GetCreature(*me, guid))
+                    {
+                        bubble->ExitVehicle();
+                        bubble->AddObjectToRemoveList();
+                    }
+                }
+
+                guidsVector.clear();
+
+                me->AttackStop();
+                me->RemoveAllAurasExceptType(SPELL_AURA_DUMMY);
+
+                me->GetMotionMaster()->MoveTargetedHome();
+                instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SUDSY);
+
+                Reset();
+            }
+
+            void JustDied(Unit* killer) override
+            {
+                _JustDied();
+
+                if (instance)
+                {
+                    if (Creature* gao = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_UNCLE_GAO)))
+                        gao->AI()->DoAction(0);
+
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SUDSY);
+                }
+
+                for (auto&& guid : guidsVector)
+                    if (Creature* bubble = ObjectAccessor::GetCreature(*me, guid))
+                        bubble->AddObjectToRemoveList();
+
+                guidsVector.clear();
+            }
+
+            void DoSummonWallOfSuds()
+            {
+                for (int i = 0; i < 2; ++i)
+                    if (Creature* suds = me->SummonCreature(NPC_WALL_OF_SUDS, sudsPos[i]))
+                        suds->SetCanFly(true);
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon)
+                    summons.Summon(summon);
+            }
+
+            bool DoSummonFizzyBubbles(int n)
+            {
+                if (n < 0)
+                    return false;
+
+                Position pos;
+                me->GetRandomNearPosition(pos, 20.f);
+                pos.m_positionZ += frand(1.5f, 3.0f);
+
+                me->SummonCreature(NPC_FIZZY_BUBBLE, pos, TEMPSUMMON_TIMED_DESPAWN, 12 * IN_MILLISECONDS);
+
+                return DoSummonFizzyBubbles(n - 1);
+            }
+
+            // function should return false if it does what we want it to do
+            bool UpdateAttackState()
+            {
+                if (me->isAttackReady() && !me->HasUnitState(UNIT_STATE_CASTING))
+                {
+                    if (me->GetVictim())
+                    {
+                        if (me->IsWithinMeleeRange(me->GetVictim()))
+                        {
+                            me->AttackerStateUpdate(me->GetVictim());
+                            me->resetAttackTimer();
+                            return false;
+                        }
+                        else
+                        {
+                            if (!DoSpellAttackIfReady(SPELL_BREW_BOLT) && !IsCombatMovementAllowed())
+                            {
+                                std::list<Unit*> targetList;
+                                me->GetAttackableUnitListInRange(targetList, 35.f);
+
+                                if (targetList.empty())
+                                    return true;
+
+                                std::list<Unit*>::iterator itr = targetList.begin();
+                                Unit* unit;
+
+                                for (; itr != targetList.end();)
+                                {
+                                    unit = *itr;
+
+                                    if (unit)
+                                    {
+                                        AttackStart(unit);
+                                        return false;
+                                    }
+                                    else
+                                        itr++;
+                                }
+
+                                for (auto&& itr : me->getThreatManager().getThreatList())
+                                {
+                                    if (Unit* unit = ObjectAccessor::GetUnit(*me, (*itr).getUnitGuid()))
+                                    {
+                                        if (me->GetDistance(unit) < 70.f)
+                                        {
+                                            AttackStart(unit);
+                                            return false;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+                    return true;
+                }
+                return false;
+            }
 
-                    if (!hasPlayer)
+            Position GetBubleShieldPos(float prevOri)
+            {
+                float x, y;
+                GetPositionWithDistInOrientation(me, 3.0f, prevOri + M_PI / 4, x, y);
+
+                Position pos = { x, y, me->GetPositionZ() + 8.0f, float(prevOri + M_PI / 4) };  // Fuck GCC
+
+                return pos;
+            }
+
+            void ApplyBubbleShield(int n)
+            {
+                for (int i = n; i < 8; i++)
+                {
+                    if (Creature* bubbleShield = me->SummonCreature(NPC_BUBBLE_SHIELD, GetBubleShieldPos(bubleFacing), TEMPSUMMON_CORPSE_DESPAWN))
                     {
-                        fermentTarget = bossYanzhu;
-                        DoCast(bossYanzhu, SPELL_FERMENT);
+                        me->AddAura(SPELL_BUBBLE_SHIELD, me);
+                        bubleFacing += M_PI / 4;
+                        guidsVector.push_back(bubbleShield->GetGUID());
                     }
                 }
             }
-    };
 
-    CreatureAI* GetAI(Creature* creature) const
-    {
-        return new npc_yeasty_brew_elemental_yanzhu_AI(creature);
-    }
-};
-
-// Check for intercepting Ferment beam.
-class FermentCheck : public std::unary_function<Unit*, bool>
-{
-    public:
-        FermentCheck(Unit* caster, Unit* target) : _caster(caster), _target(target) { }
-
-        bool operator()(WorldObject* object)
-        {
-            if (object != _target)
-                return true;
-
-            return false;
-        }
-
-    private:
-        WorldObject* _caster;
-        WorldObject* _target;
-};
-
-// Ferment triggered spell 114451.
-class spell_yeasty_alemental_ferment : public SpellScriptLoader
-{
-    public:
-        spell_yeasty_alemental_ferment() : SpellScriptLoader("spell_yeasty_alemental_ferment") { }
-
-        class spell_yeasty_alemental_ferment_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_yeasty_alemental_ferment_SpellScript);
-
-            void FilterTargets(std::list<WorldObject*>& targets)
+            bool DoSummonAdds(int n)
             {
-                if (targets.empty())
-                    return;
-
-                // Select the only target needed.
-                if (Unit* target = CAST_AI(npc_yeasty_brew_elemental_yanzhu::npc_yeasty_brew_elemental_yanzhu_AI, GetCaster()->ToCreature()->AI())->fermentTarget)
-                    targets.remove_if(FermentCheck(GetCaster(), target));
-            }
-
-            void Register()
-            {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yeasty_alemental_ferment_SpellScript::FilterTargets, EFFECT_0, TARGET_UNK_130);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yeasty_alemental_ferment_SpellScript::FilterTargets, EFFECT_1, TARGET_UNK_130);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yeasty_alemental_ferment_SpellScript::FilterTargets, EFFECT_2, TARGET_UNK_130);
-            }
-        };
-
-        SpellScript* GetSpellScript() const
-        {
-            return new spell_yeasty_alemental_ferment_SpellScript();
-        }
-};
-
-class spell_yanzhu_blackout_brew : public SpellScriptLoader
-{
-    public :
-        spell_yanzhu_blackout_brew() : SpellScriptLoader("spell_yan_zhu_blackout_brew") { }
-
-        class spell_yanzhu_blackout_brew_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_yanzhu_blackout_brew_SpellScript)
-
-            bool Validate(const SpellInfo* spellInfo)
-            {
-                if (!sSpellMgr->GetSpellInfo(SPELL_BLACKOUT_BREW) || !sSpellMgr->GetSpellInfo(SPELL_BLACKOUT_DRUNK))
+                if (n < 0)
                     return false;
 
-                return true;
+                Position pos;
+                me->GetRandomNearPosition(pos, frand(5.f, 11.f));
+
+                if (Creature* pAdd = me->SummonCreature(NPC_YEASTY_ALEMENTAL, pos, TEMPSUMMON_CORPSE_TIMED_DESPAWN, urand(6000, 14000)))
+                {
+                    if (pAdd->AI())
+                        pAdd->AI()->DoZoneInCombat();
+                }
+
+                return DoSummonAdds(n - 1);
             }
 
-            void HandleOnHit()
+            void UpdateAI(uint32 diff) override
             {
-                // PreventDefaultAction();
+                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
 
-                if (AuraPtr blackoutBrew = GetHitUnit()->GetAura(SPELL_BLACKOUT_BREW))
+                events.Update(diff);
+
+                SudsyAreaController();
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    blackoutBrew->SetStackAmount(blackoutBrew->GetStackAmount() + 3); // Increase the stacks by 3.
-
-                    if (blackoutBrew->GetStackAmount() >= 10)
+                    switch (eventId)
                     {
-                        GetCaster()->AddAura(SPELL_BLACKOUT_DRUNK, GetHitUnit()); // Stun the player.
-                        GetHitUnit()->RemoveAurasDueToSpell(SPELL_BLACKOUT_BREW); // Remove all the aura stacks.
+                        case EVENT_WALL_OF_SUDS:
+                            DoSummonWallOfSuds();
+                            events.ScheduleEvent(EVENT_WALL_OF_SUDS, 13000);
+                            break;
+                        case EVENT_BLOAT:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
+                            {
+                                DoCast(unit, SPELL_BLOAT);
+                                events.ScheduleEvent(EVENT_BLOAT, urand(10000, 18000));
+                            }
+                            else
+                                events.ScheduleEvent(EVENT_BLOAT, 1000);
+                            break;
+                        case EVENT_BLACKOUT:
+                            DoCast(SPELL_BLACKOUT);
+                            events.ScheduleEvent(EVENT_BLACKOUT, 8000);
+                            break;
+                        case EVENT_BUBBLE_SHIELD:
+                            if (me->HasAura(SPELL_BUBBLE_SHIELD))
+                            {
+                                events.RescheduleEvent(EVENT_BUBBLE_SHIELD, 10 * IN_MILLISECONDS);
+                                break;
+                            }
+
+                            bubleFacing = -M_PI / 4;
+                            ApplyBubbleShield(0);
+                            events.ScheduleEvent(EVENT_BUBBLE_SHIELD, 30000);
+                            break;
+                        case EVENT_ADDS:
+                            DoSummonAdds(7);
+                            events.ScheduleEvent(EVENT_ADDS, 30000);
+                            break;
+                        case EVENT_CARBONATION:
+                            events.ScheduleEvent(EVENT_CARBONATION, urand(35000, 48000));
+                            DoCast(SPELL_CARBONATION);
+                            DoSummonFizzyBubbles(5);
+                            break;
                     }
                 }
-                else
-                {
-                    GetHitUnit()->AddAura(SPELL_BLACKOUT_BREW, GetHitUnit()); // Add the aura.
-                    GetHitUnit()->SetAuraStack(SPELL_BLACKOUT_BREW, GetHitUnit(), 3); // Set it to three stacks.
-                }
-            }
 
-            void Register()
-            {
-                OnHit += SpellHitFn(spell_yanzhu_blackout_brew_SpellScript::HandleOnHit);
+                SetCombatMovement(UpdateAttackState());
             }
         };
 
-        SpellScript* GetSpellScript() const
+        CreatureAI* GetAI(Creature* creature) const override
         {
-            return new spell_yanzhu_blackout_brew_SpellScript();
-        }
-
-        class spell_yanzhu_blackout_brew_AuraScript : public AuraScript
-        {
-            PrepareAuraScript(spell_yanzhu_blackout_brew_AuraScript)
-
-            void OnPeriodic(constAuraEffectPtr /*aurEff*/)
-            {
-                // Remove a stack if the player is moving or jumping (Jumping checked by MOVEMENTFLAG_FALLING and PositionZ compared to boss one plus a small margin).
-                if (GetTarget()->isMoving() || GetTarget()->HasUnitMovementFlag(MOVEMENTFLAG_FALLING) || GetTarget()->GetPositionZ() > GetCaster()->GetPositionZ() + 0.1f)
-                {
-                    if (AuraPtr blackoutBrew = GetTarget()->GetAura(SPELL_BLACKOUT_BREW))
-                    {
-                        if (blackoutBrew->GetStackAmount() > 1)
-                            blackoutBrew->SetStackAmount(blackoutBrew->GetStackAmount() - 1);
-                        else
-                            GetTarget()->RemoveAurasDueToSpell(SPELL_BUBBLE_SHIELD);
-                    }
-                }
-            }
-
-            void Register()
-            {
-                OnEffectPeriodic += AuraEffectPeriodicFn(spell_yanzhu_blackout_brew_AuraScript::OnPeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
-            }
-        };
-
-        AuraScript* GetAuraScript() const
-        {
-            return new spell_yanzhu_blackout_brew_AuraScript();
+            return new boss_yanzhuAI(creature);
         }
 };
 
-// Bloat 106546.
-class spell_yanzhu_bloat : public SpellScriptLoader
+class npc_yeasty_alemental : public CreatureScript
 {
     public:
-        spell_yanzhu_bloat() :  SpellScriptLoader("spell_yanzhu_bloat") { }
+        npc_yeasty_alemental() : CreatureScript("npc_yeasty_alemental") { }
 
-        class spell_yanzhu_bloat_AuraScript : public AuraScript
+        enum Spells
         {
-            PrepareAuraScript(spell_yanzhu_bloat_AuraScript);
+            SPELL_BREW_BOLT     = 116155,
+            SPELL_FERMENT       = 106859
+        };
 
-            void OnApply(constAuraEffectPtr /*aurEff*/, AuraEffectHandleModes /*mode*/)
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_FERMENT
+        };
+
+        struct npc_yeasty_alementalAI : public ScriptedAI
+        {
+            npc_yeasty_alementalAI(Creature* creature) : ScriptedAI(creature)
             {
-                if (GetCaster() && GetTarget())
+                instance = me->GetInstanceScript();
+                SetCombatMovement(false);
+            }
+
+            EventMap events;
+            InstanceScript* instance;
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                events.ScheduleEvent(EVENT_FERMENT, 10000);
+
+                std::list<Creature*>temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 10.f);
+
+                for (auto&& itr : temp)
+                    itr->AI()->DoZoneInCombat();
+            }
+
+            void Reset() override { }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    if (Unit* target = GetTarget())
+                    switch (eventId)
                     {
-                        if (AuraPtr bloat = GetCaster()->AddAura(SPELL_BLOATED, target))
+                        case EVENT_FERMENT:
+                            if (instance)
+                            {
+                                if (Creature* boss = ObjectAccessor::GetCreature(*me, instance->GetData64(DATA_YAN_ZHU)))
+                                    DoCast(boss, SPELL_FERMENT);
+
+                                events.ScheduleEvent(EVENT_FERMENT, 15000);
+                            }
+                            break;
+                    }
+                }
+
+                if (!DoSpellAttackIfReady(SPELL_BREW_BOLT))
+                {
+                    SetCombatMovement(true);
+                    AttackStart(me->GetVictim());
+                    DoMeleeAttackIfReady();
+                    return;
+                }
+
+                SetCombatMovement(false);
+            }
+
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_yeasty_alementalAI(creature);
+        }
+};
+
+class npc_sudsy_alemental : public CreatureScript
+{
+    public:
+        npc_sudsy_alemental() : CreatureScript("npc_sudsy_alemental") { }
+        
+        enum Spells
+        {
+            SPELL_BREW_BOLT   = 115650,
+            SPELL_SUDS        = 116178,
+            SPELL_SUDS_AURA   = 116179
+        };
+
+        enum Creatures
+        {
+            NPC_SUDS_TRIGGER = 56748
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_SUDS,
+            EVENT_BREW_BOLT
+        };
+
+        struct npc_sudsy_alementalAI : public ScriptedAI
+        {
+            npc_sudsy_alementalAI(Creature* creature) : ScriptedAI(creature) {  }
+
+            EventMap events;
+
+            void EnterCombat(Unit* who) override
+            {
+                events.ScheduleEvent(EVENT_SUDS, urand(5000, 15000));
+                events.ScheduleEvent(EVENT_BREW_BOLT, urand(4000, 11000));
+
+                std::list<Creature*>temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 10.f);
+
+                for (auto&& itr : temp)
+                    itr->AI()->DoZoneInCombat();
+            }
+
+            void Reset() override { }
+
+            void JustSummoned(Creature* summon) override
+            {
+                if (summon)
+                    summon->CastSpell(summon, SPELL_SUDS_AURA, true);
+            }
+
+            void EnterEvadeMode() override
+            {
+                me->AttackStop();
+                me->CombatStop(true);
+                me->RemoveAllAurasExceptType(SPELL_AURA_DUMMY);
+                me->SetLootRecipient(NULL);
+                me->GetMotionMaster()->MoveTargetedHome();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_SUDS:
+                            DoCast(SPELL_SUDS);
+                            events.ScheduleEvent(EVENT_SUDS, urand(10000, 16000));
+                            break;
+                        case EVENT_BREW_BOLT:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
+                                DoCast(unit, SPELL_BREW_BOLT);
+                            events.ScheduleEvent(EVENT_BREW_BOLT, urand(6000, 14000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_sudsy_alementalAI(creature);
+        }
+};
+
+class npc_fizzy_alemental : public CreatureScript
+{
+    public:
+        npc_fizzy_alemental() : CreatureScript("npc_fizzy_alemental") { }
+
+        enum Spells
+        {
+            SPELL_CARBONATION    = 116162,
+            SPELL_BREW_BOLT      = 115650,
+            SPELL_CARBONATE      = 116170
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_BREW_BOLT,
+            EVENT_CARBONATION
+        };
+
+        struct npc_fizzy_alementalAI : public ScriptedAI
+        {
+            npc_fizzy_alementalAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+
+            void EnterCombat(Unit* who) override
+            {
+                events.ScheduleEvent(EVENT_CARBONATION, urand(5000, 15000));
+                events.ScheduleEvent(EVENT_BREW_BOLT, urand(4000, 11000));
+
+                std::list<Creature*>temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 10.f);
+
+                for (auto&& itr : temp)
+                    itr->AI()->DoZoneInCombat();
+            }
+
+            void Reset() override { }
+
+            void EnterEvadeMode() override
+            {
+                me->AttackStop();
+                me->CombatStop(true);
+                me->RemoveAllAurasExceptType(SPELL_AURA_DUMMY);
+                me->SetLootRecipient(NULL);
+
+                me->GetMotionMaster()->MoveTargetedHome();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BREW_BOLT:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
+                                DoCast(unit, SPELL_BREW_BOLT);
+
+                            events.ScheduleEvent(EVENT_BREW_BOLT, urand(6000, 14000));
+                            break;
+                        case EVENT_CARBONATION:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
+                                DoCast(unit, SPELL_CARBONATION);
+
+                            events.ScheduleEvent(EVENT_CARBONATION, urand(1600, 10000)); // i love this crash type
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_fizzy_alementalAI(creature);
+        }
+};
+
+class npc_bloated_alemental : public CreatureScript
+{
+    public:
+        npc_bloated_alemental() : CreatureScript("npc_bloated_alemental") { }
+
+        enum Spells
+        {
+            SPELL_BLOAT        = 106546,
+            SPELL_BREW_BOLT    = 115652
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_BLOAT,
+            EVENT_BREW_BOLT
+        };
+
+        struct npc_bloated_alementalAI : public ScriptedAI
+        {
+            npc_bloated_alementalAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+
+            void EnterCombat(Unit* who) override
+            {
+                events.ScheduleEvent(EVENT_BLOAT, urand(5000, 15000));
+                events.ScheduleEvent(EVENT_BREW_BOLT, urand(4000, 11000));
+
+                std::list<Creature*>temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 10.f);
+
+                for (auto&& itr : temp)
+                    itr->AI()->DoZoneInCombat();
+            }
+
+            void Reset() override { }
+
+            void EnterEvadeMode() override
+            {
+                me->AttackStop();
+                me->CombatStop(true);
+                me->RemoveAllAurasExceptType(SPELL_AURA_DUMMY);
+                me->SetLootRecipient(NULL);
+                me->GetMotionMaster()->MoveTargetedHome();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BREW_BOLT:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
+                                DoCast(unit, SPELL_BREW_BOLT);
+
+                            events.ScheduleEvent(EVENT_BREW_BOLT, urand(6000, 14000));
+                            break;
+                        case EVENT_BLOAT:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 99.f, true))
+                                DoCast(unit, SPELL_BLOAT);
+
+                            events.ScheduleEvent(EVENT_BLOAT, urand(8000,16000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_bloated_alementalAI(creature);
+        }
+};
+
+class npc_stout_alemental : public CreatureScript
+{
+    public:
+        npc_stout_alemental() : CreatureScript("npc_stout_alemental") { }
+
+        enum Spells
+        {
+            SPELL_BLACKOUT     = 106851,
+            SPELL_BREW_BOLT    = 115652
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_BLACKOUT,
+            EVENT_BREW_BOLT
+        };
+
+        struct npc_stout_alementalAI : public ScriptedAI
+        {
+            npc_stout_alementalAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+
+            void EnterCombat(Unit* who) override
+            {
+                events.ScheduleEvent(EVENT_BLACKOUT, 8000);
+                events.ScheduleEvent(EVENT_BREW_BOLT, urand(4000, 11000));
+
+                std::list<Creature*> temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 10.f);
+
+                for (auto&& itr : temp)
+                    itr->AI()->DoZoneInCombat();
+            }
+
+            void Reset() override { }
+
+            void EnterEvadeMode() override
+            {
+                me->AttackStop();
+                me->CombatStop(true);
+                me->RemoveAllAurasExceptType(SPELL_AURA_DUMMY);
+                me->SetLootRecipient(NULL);
+                me->GetMotionMaster()->MoveTargetedHome();
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BREW_BOLT:
+                            if (Unit* unit = SelectTarget(SELECT_TARGET_RANDOM, 0, 50.f, true))
+                                DoCast(unit, SPELL_BREW_BOLT);
+
+                            events.ScheduleEvent(EVENT_BREW_BOLT, urand(6000, 14000));
+                            break;
+                        case EVENT_BLACKOUT:
+                            DoCast(SPELL_BLACKOUT);
+                            events.ScheduleEvent(EVENT_BLACKOUT, urand(6000, 10000));
+                            break;
+                    }
+                }
+
+                DoMeleeAttackIfReady();
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_stout_alementalAI(creature);
+        }
+};
+
+class npc_bubbling_alemental : public CreatureScript
+{
+    public:
+        npc_bubbling_alemental() : CreatureScript("npc_bubbling_alemental") { }
+
+        enum Spells
+        {
+            SPELL_FORCE_VEHICLE = 46598,
+            SPELL_BUBBLE_SHIELD = 128708,
+            SPELL_BREW_BOLT     = 116155
+        };
+
+        enum Creatures
+        {
+            NPC_BUBBLE_SHIELD   = 65522
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_BUBBLE_SHIELD,
+            EVENT_MOVE,
+        };
+
+        struct npc_bubbling_alementalAI : public ScriptedAI
+        {
+            npc_bubbling_alementalAI(Creature* creature) : ScriptedAI(creature) { }
+
+            std::vector<uint64> guidsVector;
+            EventMap events, cosmeticEvents;
+            uint32 wp;
+
+            void InitializeAI() override
+            {
+                me->GetMotionMaster()->Clear();
+
+                if (!me->GetDBTableGUIDLow())
+                    SetCombatMovement(false);
+
+                cosmeticEvents.ScheduleEvent(EVENT_MOVE, 1500);
+                wp = 0;
+            }
+
+            void IsSummonedBy(Unit* summoner) override
+            {
+                cosmeticEvents.Reset();
+            }
+
+            void EnterCombat(Unit* who) override
+            {
+                events.ScheduleEvent(EVENT_BUBBLE_SHIELD, 5000);
+                me->GetMotionMaster()->Clear();
+                std::list<Creature*>temp;
+                GetCreatureListWithEntryInGrid(temp, me, me->GetEntry(), 10.f);
+
+                for (auto&& itr : temp)
+                    itr->AI()->DoZoneInCombat();
+            }
+
+            void ApplyBubbleShield(int n)
+            {
+                for (int i = n; i < 2; i++)
+                {
+                    if (Creature* bubbleShield = me->SummonCreature(NPC_BUBBLE_SHIELD, me->GetPositionX() + frand(-1.5f, 1.5f), me->GetPositionY() + frand(-0.8f, 0.8f), me->GetPositionZ() + 3.0f, me->GetOrientation(), TEMPSUMMON_CORPSE_DESPAWN))
+                    {
+                        me->AddAura(SPELL_BUBBLE_SHIELD, me);
+                        guidsVector.push_back(bubbleShield->GetGUID());
+                    }
+                }
+            }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE)
+                    return;
+
+                wp++;
+
+                if (wp > 3) // Reset our path
+                    wp = 0;
+
+                cosmeticEvents.ScheduleEvent(EVENT_MOVE, urand(100, 200));
+            }
+
+            void EnterEvadeMode() override
+            {
+                for (auto&& guid : guidsVector)
+                {
+                    if (Creature* bubble = ObjectAccessor::GetCreature(*me, guid))
+                    {
+                        bubble->ExitVehicle();
+                        bubble->AddObjectToRemoveList();
+                    }
+                }
+
+                guidsVector.clear();
+
+                me->AttackStop();
+                me->CombatStop(true);
+                me->RemoveAllAurasExceptType(SPELL_AURA_DUMMY);
+                me->SetLootRecipient(NULL);
+
+                me->GetMotionMaster()->MoveTargetedHome();
+            }
+
+            void JustDied(Unit* killer) override
+            {
+                for (auto&& guid : guidsVector)
+                    if (Creature* bubble = ObjectAccessor::GetCreature(*me, guid))
+                        bubble->AddObjectToRemoveList();
+
+                guidsVector.clear();
+
+                ScriptedAI::JustDied(killer);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                cosmeticEvents.Update(diff);
+
+                while (uint32 eventId = cosmeticEvents.ExecuteEvent())
+                {
+                    if (eventId == EVENT_MOVE)
+                    {
+                        me->GetMotionMaster()->MovementExpired();
+                        me->GetMotionMaster()->Clear();
+
+                        Position pos;
+                        float x = bublingAlementalPath[wp].GetPositionX() + frand(-2.0f, 2.0f), y = bublingAlementalPath[wp].GetPositionY() + frand(-1.0f, 4.0f);
+                        pos.Relocate(x, y, bublingAlementalPath[wp].GetPositionZ(), bublingAlementalPath[wp].GetOrientation());
+                        me->GetMotionMaster()->MovePoint(wp, pos);
+                    }
+                    break;
+                }
+
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_BUBBLE_SHIELD:
+                            if (me->GetAura(SPELL_BUBBLE_SHIELD))
+                                ApplyBubbleShield(0 + me->GetAura(SPELL_BUBBLE_SHIELD)->GetStackAmount());
+                            else
+                                ApplyBubbleShield(0);
+
+                            events.ScheduleEvent(EVENT_BUBBLE_SHIELD, 12000);
+                            break;
+                    }
+                }
+
+                if (!DoSpellAttackIfReady(SPELL_BREW_BOLT))
+                {
+                    SetCombatMovement(true);
+                    AttackStart(me->GetVictim());
+                    DoMeleeAttackIfReady();
+                    return;
+                }
+
+                SetCombatMovement(false);
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_bubbling_alementalAI(creature);
+        }
+};
+
+class npc_carbonate_trigger : public CreatureScript
+{
+    public:
+        npc_carbonate_trigger() : CreatureScript("npc_carbonate_trigger") { }
+
+        enum Spells
+        {
+            SPELL_CARBONATE_AURA  = 116168
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_DESPAWN,
+            EVENT_CARBONATE
+        };
+
+        struct npc_carbonate_triggerAI : public ScriptedAI
+        {
+            npc_carbonate_triggerAI(Creature* creature) : ScriptedAI(creature)
+            {
+                me->SetReactState(REACT_PASSIVE);
+            }
+
+            EventMap events;
+
+            void Reset() override
+            {
+                if (me->HasAura(SPELL_CARBONATE_AURA))
+                    return;
+
+                events.ScheduleEvent(EVENT_DESPAWN, 8200);
+                events.ScheduleEvent(EVENT_CARBONATE, 100);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_DESPAWN:
+                            me->AddObjectToRemoveList();
+                            break;
+                        case EVENT_CARBONATE:
+                            DoCast(SPELL_CARBONATE_AURA);
+                            break;
+                    }
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_carbonate_triggerAI(creature);
+        }
+};
+
+class npc_suds_trigger : public CreatureScript
+{
+    public:
+        npc_suds_trigger() : CreatureScript("npc_suds_trigger") { }
+
+        enum Spells
+        {
+            SPELL_SUDS_AURA = 116179
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_DESPAWN,
+            EVENT_SUDS
+        };
+
+        struct npc_suds_triggerAI : public ScriptedAI
+        {
+            npc_suds_triggerAI(Creature* creature) : ScriptedAI(creature)
+            {
+                me->SetReactState(REACT_PASSIVE);
+            }
+
+            EventMap events;
+
+            void Reset() override
+            {
+                if (me->HasAura(SPELL_SUDS_AURA))
+                    return;
+
+                events.ScheduleEvent(EVENT_DESPAWN, 8200);
+                events.ScheduleEvent(EVENT_SUDS, 100);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_DESPAWN:
+                            me->AddObjectToRemoveList();
+                            break;
+                        case EVENT_SUDS:
+                            me->AddAura(SPELL_SUDS_AURA, me);
+                            break;
+                    }
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_suds_triggerAI(creature);
+        }
+};
+
+class npc_bubble_shield : public CreatureScript
+{
+    public:
+        npc_bubble_shield() : CreatureScript("npc_bubble_shield") { }
+
+        enum Spells
+        {
+            SPELL_REMOVE_SHIELD     = 106563,
+            SPELL_REMOVE_SHIELD2    = 128708
+        };
+
+        struct npc_bubble_shieldAI : public ScriptedAI
+        {
+            npc_bubble_shieldAI(Creature* creature) : ScriptedAI(creature)
+            {
+                instance = me->GetInstanceScript();
+                SetCombatMovement(false);
+            }
+
+            uint64 summonerGUID;
+            InstanceScript* instance;
+
+            void IsSummonedBy(Unit* summoner) override
+            {
+                summonerGUID = summoner->GetGUID();
+            }
+            
+            void DamageTaken(Unit* /*attacker*/, uint32& damage) override
+            {
+                if (damage >= me->GetHealth())
+                {
+                    damage = 0;
+                    if (instance)
+                        if (Unit* alemental = ObjectAccessor::GetUnit(*me, summonerGUID))
+                            alemental->RemoveAuraFromStack(alemental->GetEntry() == NPC_YAN_ZHU ? SPELL_REMOVE_SHIELD : SPELL_REMOVE_SHIELD2);
+
+                    me->AddObjectToRemoveList();
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_bubble_shieldAI(creature);
+        }
+};
+
+class npc_fizzy_bubble : public CreatureScript
+{
+    public:
+        npc_fizzy_bubble() : CreatureScript("npc_fizzy_bubble") { }
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_DESPAWN
+        };
+
+        enum eSpells :uint32
+        {
+            SPELL_FIZZI_BUBLE_AUR        = 114458,
+            SPELL_FIZZI_BUBLE_PLAYER_AUR = 114459,
+        };
+
+        struct npc_fizzy_bubbleAI : public ScriptedAI
+        {
+            npc_fizzy_bubbleAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+
+            void InitializeAI() override
+            {
+                me->CastSpell(me, SPELL_FIZZI_BUBLE_AUR, false);
+                me->AddUnitMovementFlag(MOVEMENTFLAG_DISABLE_GRAVITY);
+                me->SetCanFly(true);
+            }
+
+            void OnSpellClick(Unit* clicker, bool& /*result*/) override
+            {
+                clicker->AddAura(SPELL_FIZZI_BUBLE_PLAYER_AUR, clicker);
+
+                me->AddObjectToRemoveList();
+                return;
+            }
+
+            void Reset() override
+            {
+                events.ScheduleEvent(EVENT_DESPAWN, 20000);
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                events.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_DESPAWN:
+                            me->AddObjectToRemoveList();
+                            return;
+                    }
+                }
+            }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_fizzy_bubbleAI(creature);
+        }
+};
+
+class npc_wall_of_suds : public CreatureScript
+{
+    public:
+        npc_wall_of_suds() : CreatureScript("npc_wall_of_suds") { }
+
+        enum Spells
+        {
+            SPELL_WALL_OF_SUDS    = 114467,
+        };
+
+        enum Events
+        {
+            EVENT_NONE,
+            EVENT_INITIALIZE,
+            EVENT_MOVE_NEXT
+        };
+
+        struct npc_wall_of_sudsAI : public ScriptedAI
+        {
+            npc_wall_of_sudsAI(Creature* creature) : ScriptedAI(creature) { }
+
+            EventMap events;
+
+            void IsSummonedBy(Unit* /*summoner*/) override
+            {
+                //me->SetDisplayId(11686); have aura like 90 angle, maybe need use apply movement force?
+                //me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+                me->SetReactState(REACT_PASSIVE);
+                me->CastSpell(me, SPELL_WALL_OF_SUDS, false);
+                me->SetWalk(true);
+                me->SetSpeed(MOVE_WALK, 0.9f);
+                MoveNextOrientatedPosition();
+            }
+
+            void DoAction(int32 /*actionId*/) override { }
+
+            void MovementInform(uint32 type, uint32 pointId) override
+            {
+                if (type != POINT_MOTION_TYPE)
+                    return;
+
+                if (pointId == 0)
+                    me->DespawnOrUnsummon();
+            }
+
+            void MoveNextOrientatedPosition()
+            {
+                float newX, newY;
+                GetPositionWithDistInOrientation(me, 90.0f, me->GetOrientation(), newX, newY);
+
+                me->GetMotionMaster()->MovePoint(0, newX, newY, me->GetPositionZ(), me->GetOrientation());
+
+            }
+
+            void UpdateAI(uint32 /*diff*/) override { }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new npc_wall_of_sudsAI(creature);
+        }
+};
+
+class spell_brew_finale : public SpellScriptLoader
+{
+    public:
+        spell_brew_finale() : SpellScriptLoader("spell_brew_finale") { }
+
+        class spell_brew_finale_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_brew_finale_SpellScript);
+
+            void OnBeforeCast()
+            {
+                if (!GetCaster())
+                    return;
+
+                std::list<Creature*>temps;
+                GetCreatureListWithEntryInGrid(temps, GetCaster(), NPC_BARREL_TOSS_BUNNY, 50.f);
+
+                temps.remove_if([=](WorldObject* obj) { return obj->GetDistance(GetCaster()) > 15.f && obj->GetDistance(GetCaster()) < 38.f; });
+
+                if (!temps.empty())
+                    std::list<Creature*>::iterator itr = temps.begin();
+            }
+
+            void Register() override
+            {
+                BeforeCast += SpellCastFn(spell_brew_finale_SpellScript::OnBeforeCast);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_brew_finale_SpellScript();
+        }
+};
+
+class spell_wall_of_suds : public SpellScriptLoader
+{
+    public:
+        spell_wall_of_suds() : SpellScriptLoader("spell_wall_of_suds") { }
+
+        class spell_wall_of_suds_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_wall_of_suds_SpellScript);
+
+            void SelectTargets(std::list<WorldObject*>&targets)
+            {
+                targets.remove_if([=](WorldObject* obj) { return obj->GetGUID() == GetCaster()->GetGUID(); });
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_wall_of_suds_SpellScript::SelectTargets, EFFECT_0, 130);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_wall_of_suds_SpellScript::SelectTargets, EFFECT_1, 130);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_wall_of_suds_SpellScript::SelectTargets, EFFECT_2, 130);
+            }
+        };
+};
+
+class spell_blackout_brew : public SpellScriptLoader
+{
+    public:
+        spell_blackout_brew() : SpellScriptLoader("spell_blackout_brew") { }
+
+        enum Spells
+        {
+            SPELL_BLACKOUT_BREW  = 106851,
+            SPELL_BLACKOUT_DRUNK = 106857
+        };
+
+        class spell_blackout_brew_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_blackout_brew_AuraScript);
+
+            void HandleEffectPeriodic(const AuraEffect* aurEff)
+            {
+                if (GetOwner() && GetOwner()->ToUnit())
+                {
+                    // if jumping or moving, we should take a stack away
+                    if (GetOwner()->ToUnit()->isMoving() || GetOwner()->ToUnit()->HasUnitMovementFlag(MOVEMENTFLAG_FALLING))
+                    {
+                        if (GetStackAmount() - 1 <= 0)
+                            Remove(AURA_REMOVE_BY_EXPIRE);
+                        else
+                            SetStackAmount(GetStackAmount() - 1);
+                    }
+                    else
+                    {
+                        if (GetStackAmount() + 1 >= 10)
                         {
-                            bloat->SetMaxDuration(GetMaxDuration());
-                            bloat->SetDuration(GetDuration());
+                            GetOwner()->ToUnit()->AddAura(SPELL_BLACKOUT_DRUNK, GetOwner()->ToUnit());
+                            Remove(AURA_REMOVE_BY_EXPIRE);
+                        }
+                        else
+                            SetStackAmount(GetStackAmount() + 1);
+                    }
+                }
+            }
+
+            void Register() override
+            {
+                OnEffectPeriodic += AuraEffectPeriodicFn(spell_blackout_brew_AuraScript::HandleEffectPeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_blackout_brew_AuraScript();
+        }
+};
+
+class spell_bloat_aura : public SpellScriptLoader
+{
+    public:
+        spell_bloat_aura() : SpellScriptLoader("spell_bloat_aura") { }
+
+        enum Creatures
+        {
+            NPC_BLOATED_STALKER      = 59482,
+            SPELL_FORCE_VEHICLE      = 46598,
+            SPELL_GUSHING_BREW       = 106549
+        };
+
+        class spell_bloat_aura_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_bloat_aura_AuraScript);
+
+            void HandleOnApply(const AuraEffect* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (GetOwner() && GetOwner()->ToUnit())
+                {
+                    Position pos = GetOwner()->GetPosition();
+                    for (int i = 0; i < 2; ++i)
+                    {
+                        if (Creature* stalker = GetOwner()->SummonCreature(NPC_BLOATED_STALKER, GetOwner()->GetPositionX(), GetOwner()->GetPositionY(), GetOwner()->GetPositionZ(), 0.0f, TEMPSUMMON_TIMED_DESPAWN, 30000))
+                        {
+                            stalker->CastSpell(GetOwner()->ToUnit(), SPELL_FORCE_VEHICLE, true);
+                            stalker->CastSpell(stalker, SPELL_GUSHING_BREW, true);
                         }
                     }
                 }
             }
 
-            void Register()
+            void Register() override
             {
-                OnEffectApply += AuraEffectApplyFn(spell_yanzhu_bloat_AuraScript::OnApply, EFFECT_0, SPELL_AURA_MOD_SCALE, AURA_EFFECT_HANDLE_REAL_OR_REAPPLY_MASK);
+                AfterEffectApply += AuraEffectApplyFn(spell_bloat_aura_AuraScript::HandleOnApply, EFFECT_1, SPELL_AURA_SET_VEHICLE_ID, AURA_EFFECT_HANDLE_REAL);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        AuraScript* GetAuraScript() const override
         {
-            return new spell_yanzhu_bloat_AuraScript();
+            return new spell_bloat_aura_AuraScript();
         }
 };
 
-// Bloated player target check.
-class PlayerCheck : public std::unary_function<Unit*, bool>
+class spell_carbonation : public SpellScriptLoader
 {
     public:
-        explicit PlayerCheck(Unit* _caster) : caster(_caster) { }
-        bool operator()(WorldObject* object)
+        spell_carbonation() : SpellScriptLoader("spell_carbonation") { }
+
+        class spell_carbonation_SpellScript : public SpellScript
         {
-            return object->GetTypeId() != TYPEID_PLAYER;
-        }
+            PrepareSpellScript(spell_carbonation_SpellScript);
 
-    private:
-        Unit* caster;
-};
-
-// Gushing Brew (Bloated trigger spell) 106560.
-class spell_yanzhu_gushing_brew : public SpellScriptLoader
-{
-    public:
-        spell_yanzhu_gushing_brew() : SpellScriptLoader("spell_yanzhu_gushing_brew") { }
-
-        class spell_yanzhu_gushing_brew_SpellScript : public SpellScript
-        {
-            PrepareSpellScript(spell_yanzhu_gushing_brew_SpellScript);
-
-            void FilterTargets(std::list<WorldObject*>& targets)
+            void SelectTargets(std::list<WorldObject*>&targets)
             {
-                if (targets.empty())
-                    return;
-
-                // Set targets.
-                targets.remove_if(PlayerCheck(GetCaster()));
+                targets.remove_if([=](WorldObject* obj) { return obj && (obj->GetPositionZ() > (GetCaster()->GetPositionZ() + 4.9f)); });
             }
 
-            void Register()
+            void Register() override
             {
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yanzhu_gushing_brew_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_CONE_ENTRY);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yanzhu_gushing_brew_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_CONE_ENTRY);
-                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_yanzhu_gushing_brew_SpellScript::FilterTargets, EFFECT_2, TARGET_UNIT_CONE_ENTRY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_carbonation_SpellScript::SelectTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_carbonation_SpellScript::SelectTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
             }
         };
 
-        SpellScript* GetSpellScript() const
+        SpellScript* GetSpellScript() const override
         {
-            return new spell_yanzhu_gushing_brew_SpellScript();
+            return new spell_carbonation_SpellScript();
         }
 };
 
-// Carbonation 115003 - Summon Fizzy Bubbles script.
-class spell_yanzhu_carbonation : public SpellScriptLoader
+// Brew Finale Wheat Effect 128254, 128256, 128258
+class spell_brew_finale_wheat_effect : public SpellScriptLoader
 {
     public:
-        spell_yanzhu_carbonation() : SpellScriptLoader("spell_yanzhu_carbonation") { }
+        spell_brew_finale_wheat_effect() : SpellScriptLoader("spell_brew_finale_wheat_effect") { }
 
-        class spell_yanzhu_carbonation_AuraScript : public AuraScript
+        class spell_brew_finale_wheat_effect_SpellScript : public SpellScript
         {
-            PrepareAuraScript(spell_yanzhu_carbonation_AuraScript)
+            PrepareSpellScript(spell_brew_finale_wheat_effect_SpellScript);
 
-            void PeriodicTick(constAuraEffectPtr /*aurEff*/)
+            void SelectTargets(SpellDestination& dest)
             {
-                for (uint8 i = 0; i < 2; i++)
-                    if (Unit* caster = GetCaster())
-                        caster->SummonCreature(NPC_FIZZY_BUBBLE, caster->GetPositionX() + frand(-13.0f, 13.0f), caster->GetPositionY() + frand(-13.0f, 13.0f), caster->GetPositionZ() + 1.0f,  caster->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                float x = frand(-718.97f, -687.75f);
+                float y = frand(1147.53f, 1178.26f);
+                float z = 166.14f;
+
+                Position newPos = { x, y, z, 0 };
+                dest.Relocate(newPos);
             }
 
-            void Register()
+
+            void Register() override
             {
-                OnEffectPeriodic += AuraEffectPeriodicFn(spell_yanzhu_carbonation_AuraScript::PeriodicTick, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+                OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_brew_finale_wheat_effect_SpellScript::SelectTargets, EFFECT_0, TARGET_DEST_DEST_RANDOM);
             }
         };
 
-        AuraScript* GetAuraScript() const
+        SpellScript* GetSpellScript() const override
         {
-            return new spell_yanzhu_carbonation_AuraScript();
+            return new spell_brew_finale_wheat_effect_SpellScript();
         }
 };
 
-void AddSC_boss_yan_zhu_the_uncasked()
+// Fizzi Buble 114459
+class spell_fizzi_buble : public SpellScriptLoader
 {
-	new boss_yan_zhu_the_uncasked();
-	new npc_bubble_shield_yanzhu();
-    new npc_fizzy_bubble_yanzhu();
-	new npc_yeasty_brew_elemental_yanzhu();
-    new spell_yeasty_alemental_ferment();
-	new spell_yanzhu_blackout_brew();
-    new spell_yanzhu_bloat();
-    new spell_yanzhu_gushing_brew();
-	new spell_yanzhu_carbonation();
+    public:
+        spell_fizzi_buble() : SpellScriptLoader("spell_fizzi_buble") { }
+
+        class spell_fizzi_buble_AuraScript : public AuraScript
+        {
+            PrepareAuraScript(spell_fizzi_buble_AuraScript);
+
+            void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (Player* owner = GetOwner()->ToPlayer())
+                    owner->SetCanFly(false);
+            }
+
+            void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+            {
+                if (Player* owner = GetOwner()->ToPlayer())
+                    owner->SetCanFly(true);
+            }
+
+            void Register() override
+            {
+                OnEffectRemove += AuraEffectRemoveFn(spell_fizzi_buble_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_FLY, AURA_EFFECT_HANDLE_REAL);
+                OnEffectApply += AuraEffectApplyFn(spell_fizzi_buble_AuraScript::OnApply, EFFECT_0, SPELL_AURA_FLY, AURA_EFFECT_HANDLE_REAL);
+            }
+        };
+
+        AuraScript* GetAuraScript() const override
+        {
+            return new spell_fizzi_buble_AuraScript();
+        }
+};
+
+void AddSC_boss_yanzhu()
+{
+    new npc_uncle_gao();
+    new npc_chen_yanzhu();
+    new boss_yanzhu();
+    new npc_bubble_shield();
+    new npc_yeasty_alemental();
+    new npc_sudsy_alemental();
+    new npc_fizzy_alemental();
+    new npc_bloated_alemental();
+    new npc_stout_alemental();
+    new npc_bubbling_alemental();
+    new npc_carbonate_trigger();
+    new npc_suds_trigger();
+    new npc_fizzy_bubble();
+    new npc_wall_of_suds();
+    new spell_blackout_brew();
+    new spell_bloat_aura();
+    new spell_carbonation();
+    new spell_brew_finale_wheat_effect();
+    new spell_fizzi_buble();
 }

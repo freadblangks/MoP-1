@@ -1,3163 +1,2524 @@
-////////////////////////////////////////////////////////////////////
-///
-///    Heroes 2015(C)
-///    Coded by DavetheBrave <3
-///    Norushen: 100% Progress
-////////////////////////////////////////////////////////////////////
-
-
-#include "siege_of_orgrimmar.h"  
+#include "ObjectMgr.h"
+#include "ScriptMgr.h"
+#include "ScriptedCreature.h"
+#include "SpellScript.h"
+#include "SpellAuraEffects.h"
+#include "SpellAuras.h"
+#include "MapManager.h"
+#include "Spell.h"
+#include "Vehicle.h"
+#include "Cell.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
+#include "CreatureTextMgr.h"
+#include "Unit.h"
+#include "Player.h"
+#include "Creature.h"
+#include "InstanceScript.h"
+#include "Map.h"
+#include "VehicleDefines.h"
+#include "SpellInfo.h"
 #include "MoveSplineInit.h"
-#include "Group.h"
+#include "siege_of_orgrimmar.h"
 
-/*
-General Information: (Icy-veins.com):
-
-p_Difficulty	Amalgam of Corruption	Manifestation of Corruption	Essence of Corruption	Greater Corruption
-10-man	261M	1.3M	600K	3M
-10-man Heroic	702M	6M	1M	1.3M
-25-man	1.1B	900K	675K	???
-25-man Heroic	1.95B	1.3M	1M	???
-LFR	???M	???	???	???
-p_Difficulty	Titanic Corruption	Unleashed Manifestation of Corruption	Unleashed Essence of Corruption
-10-man	???	5M	2M
-10-man Heroic	6.5M	6M	3.1M
-25-man	???	4M	2M
-25-man Heroic	???	6M	3.16M
-LFR	???	???	???
-
-1.2. Enrage Timer
-The fight has a hard enrage timer of 7 minutes, at which point your raid will instantly wipe.
-*/
-
-enum eSpells
+enum Yells
 {
-    // Visuals
-    SPELL_ALMEGALEM_EMOTE_ROAR        = 34999,
-    SPELL_NORUSHEN_LIGHT_CIRCLE       = 149634,
-    SPELL_NORUSHEN_LIGHT_TELEPORT     = 145188,
-    SPELL_NORUSHEN_SHA_VISUALS        = 145144,
-    SPELL_NORUSHEN_FULL_PRE_BOSS_VISUAL = 145143,
-    SPELL_NORUSHEN_UNKNOWN_HOLY_PALM    = 145145,
-    SPELL_NORUSHEN_SUMMON_BOSS          = 145149,
-    SPELL_NORUSHEN_COLOR                = 145140,
-    SPELL_NORUSHEN_EXTRACT_CORRUPTION   = 145139,
-    SPELL_AMAGALAM_EMERGE               = 120475,
-    SPELL_SERENITY_PHASE_MOBS_COSMETIC  = 145571, // Upon summon on real realm.
-    // Mechanique 
-    SPELL_PURIFIED                      = 144452,
-    SPELL_CORRUPTION                    = 144421,
-    //SPELL_CORRUPTION = 144421,
-    SPELL_QUARNTINE_SAFETY_MEASURES     = 145779,
     // Amalgam of Corruption
-    SPELL_UNLEASHED_ANGER               = 145212,
-    SPELL_SELF_DOUBT                    = 146124,
-    SPELL_FUSION                        = 145132,
-    SPELL_ICY_FEAR_AURA                 = 145733,
-    SPELL_ICY_FEAR_DAMAGE               = 145735,
-    SPELL_FRAYED                        = 146179,
-    SPELL_BLIND_HATRED_FULL             = 145226,
-    SPELL_BLIND_HATRED_DAMAGE           = 145227,
-    SPELL_UNLEASHED_MANIFESTATION       = 144739,
-    SPELL_FOUL_LINK_AURA                = 149189,
-    // Look Within -- Most likely will get hardcoded.
-    SPELL_LOOK_WITHIN_VISUAL_BALL       = 144717,
-    SPELL_LOOK_WITHIN_PHASEDPS          = 144724,
-    SPELL_LOOK_WITHIN_PHASEHEAL         = 144726,
-    SPELL_LOOK_WITHIN_PHASETANK         = 144727,
-    // DPS
-    SPELL_TEST_OF_SERENITY              = 144849,
-    SPELL_TEAR_REALITY                  = 144482,
-    // -- Essence Of Corruption 
-    SPELL_EXPEL_CORRUPTION_AREATRIGGER  = 144479,
-    SPELL_EXPELLED_CORRUPTION           = 145134,
-    // -- Manifestation of Corruption
-    SPELL_BURST_OF_ANGER                = 147082,
-    SPELL_RESIDUAL_CORRUPTION_DAMAGE    = 145073,
-    SPELL_RESIDUAL_CORRUPTION_AURA      = 145074,
-    SPELL_SUMMON_MANIFESTATION          = 144739,
-    SPELL_SUMMON_ESSENCE                = 144733,
-    // Heal
-    SPELL_TEST_OF_RELIANCE              = 144850,
-    // -- Greater Corruption
-    SPELL_DISHEARTENING_LAUGH           = 146707,
-    SPELL_BOTTOMLESS_PIT_DUMMY          = 146705,
-    SPELL_BOTTOMLESS_DOT                = 146703,
-    SPELL_BOTTOMLESS_AREATRIGGER        = 146793,
-    SPELL_LINGERING_CORRUPTION          = 144514,
-    // Tank
-    SPELL_TEST_OF_CONFIDENCE            = 144851,
-    // -- Titanic Corruption
-    SPELL_TITANIC_SMASH                 = 144628,
-    SPELL_TITANIC_CORRUPTION            = 144639,
-    SPELL_HURL_CORRUPTION               = 144649,
-    SPELL_BURST_OF_CORRUPTION           = 144507,
-    SPELL_PIERCING_CORRUPTION           = 144657,   
-    // -- Manifestation Of Corruption
-    SPELL_GREATER_CORRUPTION_SUMMON     = 144980,
-    SPELL_TITANIC_CORRUPTION_SUMMON     = 144848,
-    SPELL_ESSENCE_OF_CORRUPTION         = 144733,
-    SPELL_MANIFESTATION_OF_CORRUPTION   = 144739,
-    SPELL_ALMAGLEM_DEBUFF               = 145118,
-    // -- Sun Tenderheart
-    SPELL_FIRE_BOLT                     = 144522,
-    // -- Leven Dawnblade
-    SPELL_THREATENING_STRIKES           = 144527,
-    SPELL_EXHAUSTED                     = 148424,
-    SPELL_DAMAGE_DEALER                 = 144521
+    SAY_NORUSHEN_AGGRO_1         = 7,  // Very well, I will create a field to keep your corruption quarantined.
+    SAY_NORUSHEN_AGGRO_2         = 8,  // Prove yourselves worthy and I will let you pass.
+    SAY_NORUSHEN_AGGRO_3         = 9,  // The light cleanses; but it is not gentle. Gird yourselves and be purified!
+    SAY_NORUSHEN_WIPE            = 13  // The light will not suffer your taint.
 };
 
-enum eEvents
+enum Spells
 {
-    // -- Tests
-    EVENT_TEST_OF_RELIANCE,
-    EVENT_TEST_OF_SERENITY,
-    EVENT_TEST_OF_CONFIDENCE,
-    // -- Look Within
-    EVENT_SPELL_LOOK_WITHIN,
-    EVENT_FIRE_BOLT,
-    EVENT_TAUNT,
-    EVENT_THREATENING_STRIKES,
-    EVENT_REACTIVATE_LOOK_WITHIN_TRIGGERS,
-    // -- Titanic Corruption
-    EVENT_PIERCING_CORRUPTION,
-    EVENT_BURST_OF_CORRUPTION,
-    EVENT_HURL_CORRUPTION,
-    EVENT_TITANIC_SMASH,
-    EVENT_CORRUPTION,
-    // -- Greater Corruption
+    // Norushen
+    SPELL_TELEPORT_PLAYERS       = 145188,
+    SPELL_SHA_PRESUMMON          = 145143, // Triggers 145144 visuals and some other stuff.
+    SPELL_SHA_SUMMON             = 145149, // Summon spell.
+
+    // Amalgam of Corruption
+    SPELL_AMALGAM                = 145118, // Players with Corruption inflict less damage to this creature. 7 mins duration -> Berserk.
+
+    SPELL_CORRUPTION_BAR         = 144421, // Apply bar + Aura 303 (-50%) dmg decrease to Amalgamation + Periodic Dummy (Effect 2) - 1 second.
+    SPELL_CORRUPTION_BAR_HIGH    = 147800, // 50% less damage inflicted to the Amalgam of Corruption. Periodic dummy (Effect 0) - 1 second + Aura 303 (- 50%).
+
+    SPELL_DESPAIR                = 145725, // In LFR, there are no Purifying Light orbs and players are randomly selected to do the trial. This is their aura.
+
+    SPELL_UNLEASHED_ANGER_PRECST = 145214,
+    SPELL_UNLEASHED_ANGER        = 145216, // Dummy 0.8 second cast, linked to above 145214 (no usage).
+    SPELL_UNLEASHED_ANGER_DAMAGE = 145212, // Cast Time + Damage. This is the used spell.
+
+    SPELL_SELF_DOUBT             = 146124, // Stacks, Infected mechanic + 50% per app.
+    SPELL_FUSION                 = 145132,
+
+    SPELL_ICY_FEAR_AURA          = 145733, // Periodic damage aura.
+    SPELL_ICY_FEAR_DAMAGE        = 145735, // Damage triggered by above, calculation script.
+
+    SPELL_FRAYED                 = 146179, // Dummy visual. Effect is handled through script.
+    SPELL_UNLEASH_CORRUPTION_MIS = 145769, // Missile trigger.
+    SPELL_UNLEASH_CORRUPTION_SUM = 145007, // Triggered by above, spawns the Manifestation of Corruption NPC.
+
+    SPELL_UNCHECKED_CORRUPTION   = 145679,
+
+    // Blind Hatred
+    SPELL_BLIND_HATRED           = 145226, // Actual channeled spell, triggers 145573 periodic dummy check.
+    SPELL_BLIND_HATRED_NPC_VIS   = 145571, // Sha visual on far end npc.
+    SPELL_BLIND_HATRED_BEAM_VIS  = 145613, // Beam visual boss on far end npc.
+    SPELL_BLIND_HATRED_DMG       = 145227, // Damage for players between boss - far end npc.
+    SPELL_BLIND_HATRED_PERIODIC  = 145573,
+
+    // Foul Link
+    SPELL_UNLEASHED_ESSENCE      = 146173, // Casted by boss on Essence in Normal realm spawn. SE (Effect 0) for SPELL_FOUL_LINK_ADDS. Spawn Effect.
+    SPELL_UNLEASHED_MANIFEST     = 146174, // Casted by boss on Manifestation in Normal realm spawn. SE (Effect 0). Spawn Effect. Anim replacements. Eff 160.
+
+    SPELL_FOUL_LINK_TRIGGER      = 149189, // Triggered by Unleashed spell. Applies dummy aura, visual.
+    SPELL_FOUL_LINK_ADDS         = 148974, // Applies Share Damage aura 300 between Amalgamation and Adds. Casted Boss -> Adds.
+
+    // Creatures
+    SPELL_SPAWN_ESSENCE_N        = 144490, // Spawn effect + trigger 145006 summoning Normal realm NPC_ESSENCE_OF_CORRUPTION_N. Creates Areatrigger 1081 (NN). 145768
+    SPELL_SPAWN_MANIF_N          = 144491, // Spawn effect + trigger 145007 summoning Normal realm NPC_MANIFEST_OF_CORRUPTION_N. Creates Areatrigger 1082 (NN). 145769
+
+    SPELL_MIS_SPAWN_ESSENCE_N    = 145768, // Missile. Actual spell to use.
+    SPELL_MIS_SPAWN_MANIF_N      = 145769, // Missile. Actual spell to use.
+
+    SPELL_SPAWN_ESSENCE_L        = 144733, // Summons Look Within realm NPC_ESSENCE_OF_CORRUPTION_L.
+    SPELL_SPAWN_MANIF_L          = 144739, // Summons Look Within realm NPC_MANIFEST_OF_CORRUPTION_L.
+
+    SPELL_SPAWN_TITANIC_CORR     = 144848, // Summons Look Within realm NPC_TITANIC_CORRUPTION.
+    SPELL_SPAWN_GREATER_CORR     = 144980, // Summons Look Within realm NPC_GREATER_CORRUPTION.
+
+    SPELL_QUARANTINE_MEASURES    = 145779, // Instakill in 500yd + some Dummy triggering.
+
+    // Purifying Light (seems like 16 phases by one time)
+    SPELL_LOOK_WITHIN_1          = 146827, // 1 minute duration and timer to stand in realm. Phase, Dummy (Effect 1), Screen Effect.
+    SPELL_LOOK_WITHIN_2          = 144724,
+    SPELL_LOOK_WITHIN_3          = 144725,
+    SPELL_LOOK_WITHIN_4          = 144726,
+    SPELL_LOOK_WITHIN_5          = 144727,
+    SPELL_LOOK_WITHIN_6          = 146826,
+    SPELL_LOOK_WITHIN_7          = 146828,
+    SPELL_LOOK_WITHIN_8          = 146829,
+    SPELL_LOOK_WITHIN_9          = 146830,
+    SPELL_LOOK_WITHIN_10         = 146831,
+    SPELL_LOOK_WITHIN_11         = 146832,
+    SPELL_LOOK_WITHIN_12         = 146833,
+    SPELL_LOOK_WITHIN_13         = 146834,
+    SPELL_LOOK_WITHIN_14         = 146835,
+    SPELL_LOOK_WITHIN_15         = 146836,
+    SPELL_LOOK_WITHIN_16         = 146837,
+    SPELL_LOOK_WITHIN_PERIODIC   = 144717, // Triggered by above. NPC visual.
+
+    SPELL_TEST_OF_SERENITY_DPS   = 144849, // DPS spec test Look Within realm aura.
+    SPELL_TEST_OF_RELIANCE_HEAL  = 144850, // Healer spec test Look Within realm aura.
+    SPELL_TEST_OF_CONFIDENCE_TK  = 144851, // Tank spec test Look Within realm aura.
+
+    // Trial adds - General.
+
+    SPELL_MANIFEST_SPAWN_VIS     = 144778, // Spell used for Emerge visual.
+    SPELL_CLEANSE_TRIAL          = 147657, // Used by Greater Corruption and Titanic Corruption.
+    SPELL_PURIFIED_DMG_IMMUNE    = 146022, // Casted on the player when he leaves Look Within realm.
+    SPELL_PURIFIED_DMG_INCREASE  = 144452, // Stays on the player from 0 - 25% Corruption, aura spell.
+
+    SPELL_LINGERING_CORRUPTION   = 144514,
+    SPELL_DISHEARTENING_LAUGH    = 146707, // Periodic damage aura apply, dmg each 2 s.
+    SPELL_BOTTOMLESS_PIT_DUMMY   = 146701, // Dummy cast spell to create the Areatrigger.
+    SPELL_BOTTOMLESS_PIT_EFF     = 146705, // To Players
+    SPELL_BOTTOMLESS_PIT_AT      = 146793, // Creates Areatrigger 1257.
+    SPELL_BOTTOMLESS_PIT_DMG     = 146703, // Applies periodic damage each 1 second.
+    SPELL_CORRUPTION             = 144639,
+    SPELL_HURL_CORRUPTION        = 144649, // Must be interrupted or tank dies.
+    SPELL_BURST_OF_CORRUPTION    = 144654,
+
+    SPELL_PIERCING_CORRUPTION    = 144657,
+    SPELL_TITANIC_SMASH          = 144628,
+    SPELL_CLEANSE_MANIF_L        = 144450, // Used by the manifestation when it dies, on the attacking player facing the trial.
+
+    SPELL_TEAR_REALITY           = 144482, // Cone weapon dmg %. Nice visual :).
+
+    // 2. For NPC_MANIFEST_OF_CORRUPTION_N:
+    SPELL_BURST_OF_ANGER         = 147082,
+
+    // Spawns NPC_RESIDUAL_CORRUPTION when it dies
+    SPELL_CLEANSE_ESSENCE_L      = 144449, // Used by the essence when it dies, on the attacking player facing the trial.
+    SPELL_ESSENCE_OF_CORRUPTION  = 148452, // Spawn visual, Stealth Detection, triggers Dark Bulwark.
+    SPELL_DARK_BULWARK           = 149601, // Block / Parry / Dodge increase by 100% from the front.
+
+    SPELL_EXPEL_CORRUPTION       = 144548, // Effect 0 Dummy. Effect 1 creates moving Areatrigger 1106.
+    SPELL_EXPEL_CORRUPTION_REALM = 145064,
+    SPELL_EXPELLED_CORRUPTION_EFF = 144547, // Damage to the target in the Expelled Corruption's path.
+
+    SPELL_RESIDUAL_CORUPTION     = 145052, // Gives Corruption and triggers below.
+    SPELL_RESIDUAL_CORRUPTION_A  = 145074, // Cast time, spawn effect on NPC and adds periodic dmg aura. Creates Areatrigger 1107, despawns NPC @ touch + 25 C.
+    SPELL_RESIDUAL_CORRUPTION_D  = 145073,  // Damage to all players.
+
+    // Friendly in Heal Phase
+    SPELL_FIRE_BALL              = 144522,
+    SPELL_THREATING_STRIKE       = 144527,
+    SPELL_DAMAGE_DEALER          = 144521,
+
+    // Misc
+    SPELL_NONE_SHALL_PASS_ACHIEV = 146880,
+};
+
+enum Events
+{
+    // Norushen / General
+    EVENT_INTRO_1                = 1,
+    EVENT_INTRO_2,
+    EVENT_INTRO_3,
+    EVENT_INTRO_4,
+    EVENT_INTRO_5,
+    EVENT_INTRO_6,
+    EVENT_INTRO_7,
+    EVENT_INTRO_8,
+    EVENT_INTRO_9,
+    EVENT_INTRO_10,
+    EVENT_INTRO_11,
+    EVENT_INTRO_DONE,
+    EVENT_ENCOUNTER_1,
+    EVENT_ENCOUNTER_2,
+    EVENT_ENCOUNTER_3,
+    EVENT_START_COMBAT,
+    EVENT_START_OUTRO,
+    EVENT_OUTRO_SAY_OPEN_DOOR,
+    EVENT_SPAWN_NORUSHEN_PRIDE,
+
+    // Amalgam of Corruption
+    EVENT_UNLEASHED_ANGER,
+    EVENT_BLIND_HATRED,
+    EVENT_CHECK_UNCHECKED_CORRUPTION,
+    EVENT_SAFETY_MEASURES,
+    EVENT_CHECK_EVADE,
+
+    EVENT_SPAWN_PURIF_LIGHT_ORB,
+
+    // Lorewalker Cho
+    EVENT_CHO_MOVE_1,
+    EVENT_CHO_MOVE_2,
+    EVENT_CHO_MOVE_3,
+    EVENT_CHO_MOVE_4,
+    EVENT_CHO_MOVE_5,
+
+    // Manifestation of Corruption
+    EVENT_TEAR_REALITY,
+    EVENT_BURST_OF_ANGER,
+
+    // Essence of Corruption
+    EVENT_EXPEL_CORRUPTION,
+
+    // Greater Corruption
+    EVENT_DISHEARTENING_LAUGH,
     EVENT_LINGERING_CORRUPTION,
     EVENT_BOTTOMLESS_PIT,
-    EVENT_DISHEARTNING_LAUGH,
-    // -- Amalgam Of Corruption
-    EVENT_BLIND_HATRED_DAMAGE,
-    EVENT_BLIND_HATRED_FULL,
-    EVENT_FRAYED,
-    EVENT_ICY_FEAR,
-    EVENT_SELF_DOUBT,
-    EVENT_UNLEASHED_ANGER,
-    EVENT_FUSION,
-    // -- Manifestation Of Corruption
-    EVENT_BURST_ANGER,
-    EVENT_RESIDUAL_CORRUPTION,
-    EVENT_TEAR_REALITY,
-    // -- Essence of Corruption
-    EVENT_EXPEL_CORRUPTION,
-    EVENT_QUARNTINE_MEASURES
+
+    // Titanic Corruption.
+    EVENT_CORRUPTION,
+    EVENT_HURL_CORRUPTION,
+    EVENT_BURST_OF_CORRUPTION,
+    EVENT_PIERCING_CORRUPTION,
+    EVENT_TITANIC_SMASH,
+    EVENT_ADDITIONAL_HURL,
+
+    // Blind Hatred.
+    EVENT_MOVE_CIRCLE,
+    EVENT_HATRED_TARGET_CHECK,
+
+    // Helpers
+    EVENT_FIRE_BALL,
+    EVENT_THREATING_STRIKE,
 };
 
-enum eActions
+enum Actions
 {
-    // -- Look Within
-    ACTION_LOOK_WITHIN_ACTIVATE,
-    ACTION_LOOK_WITHIN_DEACTIVATE,
+    // Norushen / General.
+    ACTION_START_NORUSHEN_INTRO  = 1, // Intro with Norushen.
+    ACTION_START_LOREWALKER_INTRO,    // Intro with Lorewalker Cho.
+    ACTION_START_EVENT,               // Gossip select.
+    ACTION_RESET_EVENT,               // Encounter failed / other reasons.
+    ACTION_FINISHED_EVENT,            // Encounter succedeed.
+    ACTION_HEAL_CHALLENGE_FAIL,
 
-    // -- Look Within (Spec category)
-    ACTION_SUMMON_LOOK_WITHIN_TANK,
-    ACTION_SUMMON_LOOK_WITHIN_DPS,
-    ACTION_SUMMON_LOOK_WITHIN_HEAL,
-    ACTION_COUNT_SERENITY_PHASE_KILLS,
-
-    // -- Encounter Flow 
-    ACTION_BOOLEANS_BASIC_EVENT,
-    ACTION_BOOLEANS_BASIC_EVENT01
+    // Quarantine Measures.
+    ACTION_QUARANTINE_MEASURES
 };
 
-enum eCreatures
+/*
+    Players start the encounter with 75 points of Corruption. While at this level of Corruption they will inflict 50% less damage to the Amalgam of Corruption.
+    When players reach 0 points of Corruption remaining, they become Purified and will inflict 25% more damage to the Amalgam. 
+    With each 25 corruption their damage decreases by 25%.
+*/
+enum CorruptionLevels
 {
-    BOSS_AMAGLAM_OF_CORRUPTION                        = 72276,
-    CREATURE_BOSS_NORUSHEN                            = 71967,
-    CREATURE_LORE_WALKER_CHO                          = 72872,
-    CREATURE_TITANIC_CORRUPTION                       = 72051,
-    CREATURE_ESSENCE_OF_CORRUPTION                    = 71976,  // Look Within
-    CREATURE_UNLEASHED_ESSENCE_OF_CORRUPTION          = 72263,  // Unleahsed Corruption
-    CREATURE_MANIFESTATION_OF_CORRUPTION              = 72264,  // Look Within
-    CREATURE_UNLEASHED_MANIFESTATION_OF_CORRUPTION    = 71977,  // Unleahsed Corruption
-    CREATURE_GREATER_CORRUPTION                       = 72001,
-    CREATURE_BLIND_HATRED_TRIGGER                     = 72595,  // Custom
-    CREATURE_LOOK_WITHIN_TEST_TRIGGER                 = 765321, // Custom    
-    CREATURE_ROOK_STONE_TOE                           = 71996,
-    CREATURE_SUN_TENDER_HEART                         = 72000,
-    CREATURE_LEVEN_DAWN                               = 71995,
-    CREATURE_RESIDUAL_CORRUPTION                      = 72550,
-    CREATURE_BOTTOMLESS_PIT                           = 954313  // Custom
+    CORRUPTION_LEVEL_NONE =   0, // Purified, 125% damage done.
+    CORRUPTION_LEVEL_LOW  =  25, // Purified removal, 100% damage done.
+    CORRUPTION_LEVEL_MED  =  50, // 75% damage done.
+    CORRUPTION_LEVEL_HIGH =  75, // Encounter start, 50% damage done.
+    CORRUPTION_LEVEL_FULL = 100  // No side-effect, but 0 damage done.
 };
 
-enum eTalks
+enum MovementPoints
 {
-    // -- Norushen
-    TALK_NORUSHEN_PRE_WIN01                  = 10, ///< Halt!
-    TALK_NORUSHEN_PRE_WIN02                  = 11, ///< No further corruption will enter the Hearth Chamber
-    TALK_NORUSHEN_PRE_WIN03                  = 12, ///< You wish to purge the corruption?
-    TALK_NORUSHEN_PRE_WIN04                  = 13, ///< Should you pass this door at this door, at this time.. you will fail. You.. all of you are corrupted with the incidious plague known as Pride. You stand tall and pround at top of your accomplishment.. and this will be your downfall. Should you wish to defeat the Corruption.. you first will need to defeat the Corruption within yourself.
-    TALK_NORUSHEN_PRE_WIN05                  = 14, ///< Speak to me again when you're prepared to face your inner demons.
-    TALK_NORUSHEN_PRE_WIN06                  = 15, ///< Very well, I will create a field to keep your corruption maintained.
-    TALK_NORUSHEN_PRE_WIN07                  = 16, ///< Prove yourself worthy, and I will let you pass!
-    TALK_NORUSHEN_POST_WIN01                 = 17, ///< The light will not suffer your taint!
-    TALK_NORUSHEN_POST_WIN02                 = 18, ///< You have been judged, and proving yourself worthy.. but be warned, what rise beyond will tie your soul to the utmost.. when you're fully prepared, you may enter the chamber.
-    TALK_NORUSHEN_SPELL01                    = 19, ///< Look inside yourself and cleanse the Darkness within!
-    TALK_NORUSHEN_SPELL02                    = 20, ///< Face your inner demons!
-    TALK_NORUSHEN_SPELL03                    = 21, ///< Be purified by the light!
-    TALK_NORUSHEN_SPELL04                    = 22, ///< Stand in the light and be judged!
-    TALK_NORUSHEN_KILL01                     = 23, ///< Unworthy!
-    TALK_NORUSHEN_KILL02                     = 24, ///< Only the pure of heart may pass!
-    TALK_NORUSHEN_AGGRO                      = 25, ///< The light cleanses, but it is not gentle, courage yourself and be purified!
-    
-    // -- Lorewalker Cho
-    TALK_LORE_WALKER_CHO_PRE_FIGHT_INTRO01  = 26, ///< Oh my.. what is this? I am Lorewalker Cho!
-    TALK_LORE_WALKER_CHO_PRE_FIGHT_INTRO02  = 27, ///< Further.. corruption? Oh, no we're here to stop the corruption and save Pandaria!
-    TALK_LORE_WALKER_CHO_PRE_FIGHT_INTRO03  = 28  ///< Yes.. please let us pass!
+    // Lorewalker Cho (Intro).
+    POINT_CHO_MOVE_1             = 1,
+    POINT_CHO_MOVE_2             = 2,
+    POINT_CHO_MOVE_3             = 3,
+    POINT_CHO_MOVE_4             = 4,
+    POINT_CHO_MOVE_5             = 5,
+
+    // Norushen (Outro).
+    POINT_NORUSHEN_OUTRO_MID     = 1
 };
 
-enum eObjects
+enum LookWithinRealmsCount
 {
-    GobjectSmallShaWall           = 221602,
-    GobjectPrideDoor              = 221446,
-    GobjectNorushenDoor           = 221447,
-    GobjectLightContainmentFront  = 223142,
-    GobjectLightContainmentRight  = 223143,
-    GobjectLightContainentBottom  = 223144,
-    GobjectLightContainmentLeft   = 223145,
-    GobjectLightContainmentTop    = 223146,
-    GobjectLightContainmentBack   = 223147,
-    GobjectNorushenLoot10         = 10,
-    GobjectNorushenLoot10Hc       = 11,
-    GobjectNorushenLoot25         = 12,
-    GobjectNorushenLoot25Hc       = 13
+    // Max. 20% of the players at once, depending on difficulty.
+    LW_REALM_COUNT_10MAN         = 2,
+    LW_REALM_COUNT_25MAN         = 5,
 };
 
-enum eMovementInformed
+const std::vector<uint32> realthWithin =
 {
-    MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT = 1,
+    SPELL_LOOK_WITHIN_1,
+    SPELL_LOOK_WITHIN_2,
+    SPELL_LOOK_WITHIN_3,
+    SPELL_LOOK_WITHIN_4,
+    SPELL_LOOK_WITHIN_5,
+    SPELL_LOOK_WITHIN_6,
+    SPELL_LOOK_WITHIN_7,
+    SPELL_LOOK_WITHIN_8,
+    SPELL_LOOK_WITHIN_9,
+    SPELL_LOOK_WITHIN_10,
+    SPELL_LOOK_WITHIN_11,
+    SPELL_LOOK_WITHIN_12,
+    SPELL_LOOK_WITHIN_13,
+    SPELL_LOOK_WITHIN_14,
+    SPELL_LOOK_WITHIN_15,
+    SPELL_LOOK_WITHIN_16,
 };
 
-Position const g_NorushenResetPoint          = { 769.62f,   1008.693f, 356.07f };
-
-Position const g_ChoMovementPostConversation = { 804.78f,   845.828f,  371.16f };
-
-Position const g_AmagalamOfCorruptionSpawn   = { 777.35f,   974.478f,  356.34f, 4.938567f };
-
-Position const g_NorushenTeleport            = { 795.73f,   888.074f,  371.12f, 1.764025f };
-
-Position const g_PrideDoor                   = { 762.31f,   1046.564f, 357.15f, 1.752039f };
-
-Position const g_NorushenDoor                = { 848.50f,   880.338f,  371.80f, 3.368406f };
-
-Position const g_LightContainment[5] =
+const std::map<uint32, uint32> invTestAmalgamType =
 {
-    { 809.661f, 1024.667f, 356.29f, 4.908488f }, /// l_LightContainmentFront01
-    { 809.661f, 1024.667f, 356.29f, 4.908488f }, /// l_LightContainmentRight02 
-    { 809.6614f, 1024.668f, 356.3f, 4.936758f }, /// l_LightContainmentBottom03  
-    { 745.756f, 919.943f, 356.00f, 4.882205f },  /// l_LightContainmentLeft04 
-    { 811.42f, 1027.071f, 356.00f, 4.936758f }   /// l_LightContainmentTop05
+    { NPC_MANIFEST_OF_CORRUPTION_L, SPELL_MIS_SPAWN_MANIF_N   },
+    { NPC_ESSENCE_OF_CORRUPTION_L,  SPELL_MIS_SPAWN_ESSENCE_N },
 };
 
-Position const g_BlindRayTrigger[2]          = 
-{ 
-    { 738.875f, 964.258f, 356.0176f, 6.032867f }, /// Clock wise
-    { 815.578f, 978.278f, 356.032f, 3.380130f  }, /// Counter Clockwise
-};
-
-Position const g_TestsOrbSpawnLocs[4]        = 
+// values confirmed by sniffs (not sure, in heroic maybe changed)
+const std::map<uint32, std::array<int32, 2>> invPurificationType =
 {
-    { 803.52f, 963.911f, 356.340f, 1.943064f  },
-    { 767.16f, 949.509f, 356.340f, 1.719070f  },
-    { 751.17f, 984.284f, 356.339f, 0.085333f  },
-    { 788.83f, 1000.290f, 356.340f, 4.966589f },
+    { ROLES_DPS,    { 3, 10  } },
+    { ROLES_TANK,   { 1, -15 } },
+    { ROLES_HEALER, { 0, 30  } },
 };
 
-Position const g_TitanicCorruption           = {777.48f, 974.323f, 356.340f, 4.895750f};
-
-Position const g_GreaterCorruption           = { 777.48f, 974.323f, 356.340f, 4.895750f};
-
-#define NpcGossipInfo 600
-#define FactionFriendly 35
-#define FactionHostile 16
-
-uint32 l_GobjectEntries[6] = { GobjectLightContainmentFront, GobjectLightContainmentRight, GobjectLightContainmentTop, GobjectLightContainmentLeft, GobjectLightContainmentBack, GobjectLightContainentBottom };
-
-static void DespawnCreaturesInArea(Creature* p_Me, uint32 p_Entry, bool p_GameObject) /// True - deleting gobjects, false - deleting creatures
-{
-    if (p_Entry <= 0)
-        return;
-
-    if (!p_Me)
-        return;
-
-    if (p_GameObject == true)
-    {
-        if (GameObject* l_GameObject = p_Me->FindNearestGameObject(p_Entry, 300.0f))
-        {
-            l_GameObject->SetLootState(LootState::GO_READY);
-            l_GameObject->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, p_Me);
-        }
-    }
-    else
-    {
-        std::list<Creature*> l_CreatureList;
-        GetCreatureListWithEntryInGrid(l_CreatureList, p_Me, p_Entry, 400.0f);
-        if (l_CreatureList.empty())
-            return;
-
-        for (std::list<Creature*>::iterator iter = l_CreatureList.begin(); iter != l_CreatureList.end(); ++iter)
-            (*iter)->DespawnOrUnsummon();
-    }
-}
-
-/// Pre Norushen Basic Event
-class basicevent_norushen_player_cosmetic : public BasicEvent
-{
-public:
-
-    explicit basicevent_norushen_player_cosmetic(Unit* p_Unit, int p_Value) : m_Obj(p_Unit), m_Modifier(p_Value) { }
-
-    bool Execute(uint64 p_CurrTime, uint32 p_Diff)
-    {
-        if (InstanceScript* l_Instance = m_Obj->GetInstanceScript())
-        {
-            if (Creature* i_Norushen = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_BOSS)))
-            {
-                if (Creature* i_Trigger = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_TRIGGER))) ///< Controller, responsible for the boss summoning.
-                {
-                    if (i_Norushen->IsAIEnabled)
-                    {
-                        //< Calls the visuals
-                        std::list<Player*> l_ListPlayers;
-                        i_Norushen->GetPlayerListInGrid(l_ListPlayers, 200.0f);
-                        if (!l_ListPlayers.empty())
-                        {
-                            for (auto itr : l_ListPlayers)
-                            {
-                                if (itr->IsInWorld() && itr->isAlive())
-                                {
-                                    itr->CastSpell(i_Trigger, eSpells::SPELL_NORUSHEN_COLOR, true);
-                                }
-                            }
-                        }
-
-                        i_Trigger->m_Events.AddEvent(new basicevent_norushen_player_cosmetic(i_Trigger, 0), i_Trigger->m_Events.CalculateTime(2 * TimeConstants::IN_MILLISECONDS));
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-
-private:
-
-    Unit* m_Obj;
-    int m_Modifier;
-};
-
-/// Phase players back autoamtically
-class basicevent_norushen_player_phase_back : public BasicEvent
-{
-public:
-
-    explicit basicevent_norushen_player_phase_back(uint32 p_Guid, int p_Value) : m_Obj(p_Guid), m_Modifier(p_Value) { }
-
-    bool Execute(uint64 p_CurrTime, uint32 p_Diff)
-    {
-        if (Player* l_Player = sObjectMgr->GetPlayerByLowGUID(m_Obj))
-        {
-            l_Player->SetPhaseMask(1, true);
-        }
-        return true;
-    }
-
-private:
-
-    uint32 m_Obj;
-    int m_Modifier;
-};
-
-/// Phase players back autoamtically
-class basicevent_norushen_despawnall : public BasicEvent
-{
-public:
-
-    explicit basicevent_norushen_despawnall(Creature* me, int p_Value) : m_Obj(me), m_Modifier(p_Value) { }
-
-    bool Execute(uint64 p_CurrTime, uint32 p_Diff)
-    {
-        uint32 l_Entries[9] = { eCreatures::CREATURE_GREATER_CORRUPTION,
-            eCreatures::CREATURE_ESSENCE_OF_CORRUPTION,
-            eCreatures::CREATURE_UNLEASHED_ESSENCE_OF_CORRUPTION,
-            eCreatures::CREATURE_TITANIC_CORRUPTION,
-            eCreatures::CREATURE_MANIFESTATION_OF_CORRUPTION,
-            eCreatures::CREATURE_UNLEASHED_MANIFESTATION_OF_CORRUPTION,
-            eCreatures::CREATURE_ROOK_STONE_TOE,
-            eCreatures::CREATURE_SUN_TENDER_HEART,
-            eCreatures::CREATURE_LEVEN_DAWN
-        };
-
-        for (uint32 l_I = 0; l_I < 10; l_I++)
-            DespawnCreaturesInArea(m_Obj, l_Entries[l_I], false);
-        return true;
-    }
-
-private:
-
-    Creature* m_Obj;
-    int m_Modifier;
-};
-
-/// Pre Norushen Basic Event
-class pre_norushen_rp : public BasicEvent
-{
-public:
-
-    explicit pre_norushen_rp(Unit* p_Unit, int p_Value) : m_Obj(p_Unit), m_Modifier(p_Value) { }
-
-    bool Execute(uint64 p_CurrTime, uint32 p_Diff)
-    {
-        if (InstanceScript* l_Instance = m_Obj->GetInstanceScript())
-        {
-            if (Creature* i_Norushen = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_BOSS)))
-            {
-                if (Creature* i_Cho = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_CHO)))
-                {
-                    if (Creature* i_Trigger = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_TRIGGER))) ///< Controller, responsible for the boss summoning.
-                    {
-                        if (i_Cho->IsAIEnabled && i_Norushen->IsAIEnabled)
-                        {
-                            switch (m_Modifier)
-                            {
-                                // Pre Gossip
-                            case 0:
-                                i_Trigger->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-                                i_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_PRE_WIN01);
-
-                                // Summons a controller
-                                i_Norushen->SummonCreature(CREATURE_TRIGGER, g_NorushenResetPoint.GetPositionX(), g_NorushenResetPoint.GetPositionY(), g_NorushenResetPoint.GetPositionZ(), g_NorushenResetPoint.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 1), i_Norushen->m_Events.CalculateTime(8 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 1:
-                                i_Cho->AI()->Talk(eTalks::TALK_LORE_WALKER_CHO_PRE_FIGHT_INTRO01);
-                                i_Cho->GetMotionMaster()->MovePoint(0, 797.451f, 882.302f, 371.114f);
-                                i_Cho->m_Events.AddEvent(new pre_norushen_rp(i_Cho, 2), i_Cho->m_Events.CalculateTime(10 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 2:
-                                i_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_PRE_WIN02);
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 3), i_Norushen->m_Events.CalculateTime(8 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 3:
-                                i_Cho->AI()->Talk(eTalks::TALK_LORE_WALKER_CHO_PRE_FIGHT_INTRO02);
-                                i_Cho->m_Events.AddEvent(new pre_norushen_rp(i_Cho, 4), i_Cho->m_Events.CalculateTime(10 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 4:
-                                i_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_PRE_WIN03);
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 5), i_Norushen->m_Events.CalculateTime(8 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 5:
-                                i_Cho->AI()->Talk(eTalks::TALK_LORE_WALKER_CHO_PRE_FIGHT_INTRO03);
-                                i_Cho->m_Events.AddEvent(new pre_norushen_rp(i_Cho, 6), i_Cho->m_Events.CalculateTime(10 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 6:
-                                i_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_PRE_WIN04);
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 7), i_Norushen->m_Events.CalculateTime(32 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 7:
-                                i_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_PRE_WIN05);
-                                i_Norushen->AI()->DoAction(eActions::ACTION_BOOLEANS_BASIC_EVENT);
-                             
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 8), i_Norushen->m_Events.CalculateTime(8 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 8:
-                                i_Cho->NearTeleportTo(g_ChoMovementPostConversation.GetPositionX(), g_ChoMovementPostConversation.GetPositionY(), g_ChoMovementPostConversation.GetPositionZ(), g_ChoMovementPostConversation.GetOrientation());                     
-                                break;
-                                // Post Gossip
-                            case 10:       
-                                i_Norushen->AI()->DoAction(eActions::ACTION_BOOLEANS_BASIC_EVENT01);
-                                i_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_PRE_WIN06);
-                                i_Norushen->CastSpell(i_Norushen, eSpells::SPELL_NORUSHEN_LIGHT_TELEPORT, false);
-                              
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 11), i_Norushen->m_Events.CalculateTime(5 * TimeConstants::IN_MILLISECONDS));
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 9), i_Norushen->m_Events.CalculateTime(3 * TimeConstants::IN_MILLISECONDS));
-                                i_Trigger->m_Events.AddEvent(new basicevent_norushen_player_cosmetic(i_Trigger, 0), i_Trigger->m_Events.CalculateTime(1 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 9:
-                                i_Norushen->NearTeleportTo(795.910f, 886.482f, 371.125f, 1.810931f);
-                                break;
-                            case 11:
-                                i_Norushen->CastSpell(g_AmagalamOfCorruptionSpawn.GetPositionX(), g_AmagalamOfCorruptionSpawn.GetPositionY(), g_AmagalamOfCorruptionSpawn.GetPositionZ(), eSpells::SPELL_NORUSHEN_FULL_PRE_BOSS_VISUAL, false);
-
-                                for (uint32 l_I = 0; l_I < 6; l_I++)
-                                {
-                                    DespawnCreaturesInArea(i_Norushen, l_GobjectEntries[l_I], true); // Activates the doors. (Should be prespawned). [Light containment]
-                                }
-
-                                i_Cho->SetFacingToObject(i_Trigger);
-                                //i_Norushen->SetFacingToObject(i_Trigger);
-                                i_Norushen->m_Events.AddEvent(new pre_norushen_rp(i_Norushen, 12), i_Norushen->m_Events.CalculateTime(15 * TimeConstants::IN_MILLISECONDS));
-                                break;
-                            case 12:
-                                i_Trigger->CastSpell(i_Trigger, eSpells::SPELL_NORUSHEN_SUMMON_BOSS);
-                                i_Trigger->m_Events.KillAllEvents(true);
-                                break;
-
-                                // Post Boss Kill
-                            case 20:
-                                //   i_Norushen->AI()->Talk(eTalks::TalkKoramar06);
-                                break;
-                            case 21:
-                                //  i_Norushen->AI()->Talk(eTalks::TalkKoramar06);
-                                break;
-                            default:
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-
-private:
-
-    Unit* m_Obj;
-    int m_Modifier;
-};
-
-/// Lorewalker Cho - 72872
-class creature_lorewalker_cho_pre_norushen : public CreatureScript
-{
-public:
-
-    creature_lorewalker_cho_pre_norushen() : CreatureScript("creature_lorewalker_cho_pre_norushen") { }
-
-    struct creature_lorewalker_cho_pre_norushenAI : public ScriptedAI
-    {
-        creature_lorewalker_cho_pre_norushenAI(Creature* p_Creature) : ScriptedAI(p_Creature)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-            m_Intro = false;
-        }
-
-        InstanceScript* m_Instance;
-        bool m_Intro;
-
-        void Reset() override
-        {
-            me->SetSpeed(UnitMoveType::MOVE_RUN, 0.8f, true);
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!m_Intro)
-            {
-                if (Player* l_Player = me->FindNearestPlayer(30.0f, true))
-                {
-                    m_Intro = true;
-                    me->m_Events.AddEvent(new pre_norushen_rp(me, 0), me->m_Events.CalculateTime(4 * TimeConstants::IN_MILLISECONDS)); // post gossip
-                }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* p_Creature) const override
-    {
-        return new creature_lorewalker_cho_pre_norushenAI(p_Creature);
-    }
-};
-
-/// Norushen - 719600
+// Norushen 71965.
 class boss_norushen : public CreatureScript
 {
-public:
+    public:
+        boss_norushen() : CreatureScript("boss_norushen") { }
 
-    boss_norushen() : CreatureScript("boss_norushen") { }
-
-    bool OnGossipHello(Player * p_Player, Creature * p_Creature) override
-    {
-        if (boss_norushenAI* l_LinkAI = CAST_AI(boss_norushenAI, p_Creature->GetAI()))
+        struct boss_norushenAI : public BossAI
         {
-            if (l_LinkAI->m_Gossip)
+            boss_norushenAI(Creature* creature) : BossAI(creature, DATA_NORUSHEN)
             {
-                p_Player->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Debugging text - start the fight (Summon Almegalem of Corruption)", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-                p_Player->SEND_GOSSIP_MENU(1, p_Creature->GetGUID());
+                choSummoned      = false;
+                introStarted     = false;
+                introDone        = false;
             }
-        }
 
-        return true;
-    }
+            bool choSummoned;
+            bool introStarted;
+            bool introDone;
+            bool eventStarted;
 
-    bool OnGossipSelect(Player * p_Player, Creature * p_Creature, uint32 p_Sender, uint32 p_Actions) override
-    {
-        p_Player->PlayerTalkClass->ClearMenus();
-
-        if (p_Sender == GOSSIP_SENDER_MAIN)
-        {
-            switch (p_Actions)
+            void Reset() override
             {
-                case GOSSIP_ACTION_INFO_DEF + 1: // Mall
-                    p_Creature->m_Events.AddEvent(new pre_norushen_rp(p_Creature, 10), p_Creature->m_Events.CalculateTime(4 * TimeConstants::IN_MILLISECONDS));
-                    break;
+                _Reset();
+
+                events.Reset();
+                summons.DespawnAll();
+
+                eventStarted = false; // Actual event.
+
+                if (instance && instance->GetData(DATA_NORUSHEN_PRE_EVENT_2) == DONE)
+                    me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
             }
-        }
 
-        return true;
-    }
-
-    struct boss_norushenAI : public ScriptedAI
-    {
-        boss_norushenAI(Creature* p_Creature) : ScriptedAI(p_Creature)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-
-            m_Intro = false;
-            m_Gossip = false;
-        }
-
-        InstanceScript* m_Instance;
-        std::list<uint64> m_WallList;
-        bool m_Intro;
-        bool m_Gossip;
-        bool m_Battle;
-
-        void Reset() override
-        {
-            events.Reset();
-            summons.DespawnAll();
-
-            if (me->isDead())
-                me->Respawn(true);
-         
-            m_Battle = false;          
-            me->setFaction(FactionFriendly);
-            me->SetReactState(ReactStates::REACT_PASSIVE);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC);
-            me->m_Events.AddEvent(new basicevent_norushen_despawnall(me, 0), me->m_Events.CalculateTime(6 * TimeConstants::IN_MILLISECONDS));
-        }   
-
-        void JustReachedHome() override
-        {
-            summons.DespawnAll();
-
-            if (m_Instance != nullptr)
+            void EnterCombat(Unit* /*who*/) override
             {
-                // Reset handling - encounter.
-                if (Creature * l_Amagalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
+                _EnterCombat();
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+                summon->setActive(true);
+
+                // Boss goes to combat aprox. 2 seconds later.
+                if (summon->GetEntry() != NPC_AMALGAM_OF_CORRUPTION && summon->GetEntry() != NPC_LOREWALKER_CHO_NORUSHEN && summon->GetEntry() != NPC_NORUSHEN_2)
+                    summon->SetInCombatWithZone();
+            }
+
+            void DoAction(int32 actionId) override
+            {
+                switch (actionId)
                 {
-                    l_Amagalem->DespawnOrUnsummon();
-                }
-       
-                for (uint32 l_I = 0; l_I < 6; l_I++)
-                {
-                     DespawnCreaturesInArea(me, l_GobjectEntries[l_I], true); // Deactivates the doors. (Should be prespawned). [Light containment]
-                }
+                    case ACTION_START_NORUSHEN_INTRO:
+                        events.ScheduleEvent(EVENT_INTRO_1, 100);
+                        break;
+                    case ACTION_START_EVENT:
+                        me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                        events.ScheduleEvent(EVENT_ENCOUNTER_1, 100);
+                        break;
+                    case ACTION_RESET_EVENT:
+                        EnterEvadeMode();
+                        break;
+                    case ACTION_FINISHED_EVENT:
+                        events.Reset();
+                        scheduler.CancelAll();
+                        me->DeleteThreatList();
+                        me->CombatStop(true);
 
-                me->NearTeleportTo(779.308f, 969.727f, 356.339f, 4.920256f);
-                me->SetFacingTo(4.920256f);
-                m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_DISENGAGE, me);;
-            }
-        }
-
-        void DoAction(const int32 p_Action) override
-        {
-            switch (p_Action)
-            {
-                case eActions::ACTION_BOOLEANS_BASIC_EVENT:
-                    m_Gossip = true;
-                    break;
-                case eActions::ACTION_BOOLEANS_BASIC_EVENT01:
-                {
-                    if (!m_Battle)
-                        m_Battle = true;
-
-                    if (m_Gossip)
-                        m_Gossip = false;
-                    break;
-                }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* p_Creature) const override
-    {
-        return new boss_norushenAI(p_Creature);
-    }
-};
-
-/// Amalgam of Corruption - 72276
-class boss_amagalad_of_corruption : public CreatureScript
-{
-public:
-
-    boss_amagalad_of_corruption() : CreatureScript("boss_amagalad_of_corruption") { }
-
-    struct boss_amagalad_of_corruptionAI : public BossAI
-    {
-        boss_amagalad_of_corruptionAI(Creature* p_Creature) : BossAI(p_Creature, eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-            m_Intro = false;  
-            m_EmergeCosmetic = false;
-
-            EntranceDoorActivation();
-        }
-
-        InstanceScript* m_Instance;
-        uint32 m_LookWithinPhaseCount;
-        uint32 m_FrayedPct;
-        uint32 m_FrayedDiff;
-        bool m_Intro;
-        bool m_EmergeCosmetic;
-        bool m_FirstFrayed;
-
-        void Reset() override
-        {
-            _Reset();
-            events.Reset();
-            summons.DespawnAll();
-   
-            m_FirstFrayed = false;
-            m_FrayedPct = 30;
-            m_FrayedDiff = 3 * TimeConstants::IN_MILLISECONDS;
-            m_LookWithinPhaseCount = 2;
-            me->setFaction(16);
-
-            me->NearTeleportTo(778.164f, 973.895f, 356.340f, 4.999618f);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE);  
-
-            if (!m_EmergeCosmetic) // Emerge visual
-            {
-                m_EmergeCosmetic = true;
-                me->CastSpell(me, 145571);
-                me->CastSpell(me, eSpells::SPELL_AMAGALAM_EMERGE);
-            }
-
-            /// Disable all orbs
-            std::list<Player*> l_PlayerList;
-            me->GetPlayerListInGrid(l_PlayerList, 300.0f);
-            if (l_PlayerList.empty())
-                return;
-
-            for (auto itr : l_PlayerList)
-            {
-                if (m_Instance != nullptr)
-                {
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_PURIFIED);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_SERENITY);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_RELIANCE);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_CONFIDENCE);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_CORRUPTION);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_LOOK_WITHIN_PHASEDPS);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_LOOK_WITHIN_PHASEHEAL);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_LOOK_WITHIN_PHASETANK);
-                    m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_SELF_DOUBT);
-                }
-            }
-        }
-
-        void MoveInLineOfSight(Unit* p_Who) override
-        {
-            if (p_Who && p_Who->IsInWorld() && p_Who->GetTypeId() == TypeID::TYPEID_PLAYER && me->IsWithinDistInMap(p_Who, 60.0f) && !m_Intro)
-            {
-                m_Intro = true;
-            }
-        }
-
-        void EntranceDoorActivation() ///< Upon wipe
-        {
-            if (m_Instance != nullptr)
-            {
-                // Reset handling - encounter.
-                if (GameObject * l_NorushenEntrance = m_Instance->instance->GetGameObject(m_Instance->GetData64(eData::DATA_NORUSHEN_ENTRANCE)))
-                {
-                    l_NorushenEntrance->SetLootState(LootState::GO_READY);
-                    l_NorushenEntrance->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                }
-            }
-        }
-
-        void ExitDoorActivation() ///< After boss defeat
-        {
-            if (m_Instance != nullptr)
-            {
-                // Reset handling - encounter.
-                if (GameObject * l_PrideEntrance = m_Instance->instance->GetGameObject(m_Instance->GetData64(eData::DATA_PRIDE_ENTRANCE)))
-                {
-                    l_PrideEntrance->SetLootState(LootState::GO_READY);
-                    l_PrideEntrance->UseDoorOrButton(10 * TimeConstants::IN_MILLISECONDS, false, me);
-                }
-            }
-        }
-
-        void SealAlemgalem() // Handles the light containment activation
-        {
-            for (uint32 l_I = 0; l_I < 6; l_I++)
-            {
-                DespawnCreaturesInArea(me, l_GobjectEntries[l_I], true); // Activates the doors. (Should be prespawned). [Light containment]
-            }
-        }
-
-        void ActivateLookWithinTriggers()
-        {
-            /// Disable all orbs
-            std::list<Creature*> l_OrbsList;
-            me->GetCreatureListWithEntryInGrid(l_OrbsList, eCreatures::CREATURE_LOOK_WITHIN_TEST_TRIGGER, 200.0f);
-            if (l_OrbsList.empty())
-                return;
-
-            for (uint8 l_I = 0; l_I < 2; l_I++)
-            {
-                Creature* l_Trigger = l_OrbsList.back();
-
-                if (l_Trigger && l_Trigger->IsAIEnabled)
-                    l_Trigger->GetAI()->DoAction(eActions::ACTION_LOOK_WITHIN_ACTIVATE);
-
-                l_OrbsList.remove(l_Trigger);
-            }
-        }
-
-        void DeactivateLookWithinTriggers()
-        {
-            /// Disable all orbs
-            std::list<Creature*> l_OrbsList;
-            me->GetCreatureListWithEntryInGrid(l_OrbsList, eCreatures::CREATURE_LOOK_WITHIN_TEST_TRIGGER, 200.0f);
-            if (l_OrbsList.empty())
-                return;
-
-            for (auto itr : l_OrbsList)
-            {
-                if (itr->IsAIEnabled)
-                    itr->AI()->DoAction(eActions::ACTION_LOOK_WITHIN_DEACTIVATE);
-            }
-        }
-
-        void JustReachedHome() override
-        {
-            _JustReachedHome();
-            summons.DespawnAll();
-
-            DeactivateLookWithinTriggers();
-            EntranceDoorActivation();
-
-            if (m_Instance != nullptr)
-            {
-                // Reset handling - encounter.
-                if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_BOSS)))
-                {
-                    if (l_Norushen->IsAIEnabled)
-                    {
-                        if (boss_norushen::boss_norushenAI* l_LinkAI = CAST_AI(boss_norushen::boss_norushenAI, l_Norushen->GetAI()))
+                        if (instance)
                         {
-                            if (l_LinkAI->m_Battle)
-                                l_LinkAI->m_Battle = false;
-
-                            if (!l_LinkAI->m_Gossip)
-                                l_LinkAI->m_Gossip = true;
+                            instance->SetBossState(DATA_NORUSHEN, DONE);
+                            instance->SaveToDB();
                         }
+                        events.ScheduleEvent(EVENT_START_OUTRO, 100);
+                        break;
+                    case ACTION_START_INTRO:
+                        if (instance && instance->GetData(DATA_NORUSHEN_PRE_EVENT_2) == DONE)
+                            break;
 
-                        l_Norushen->CastStop();
-                        l_Norushen->AI()->JustReachedHome(); // Forces it.
-                    }
+                        if (instance)
+                            instance->SetData(DATA_NORUSHEN_PRE_EVENT_2, DONE);
+
+                        me->SummonCreature(NPC_LOREWALKER_CHO_NORUSHEN, choPreNorushenEvent[0], TEMPSUMMON_MANUAL_DESPAWN);
+                        break;
                 }
-
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_PURIFIED);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_SERENITY);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_RELIANCE);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_CONFIDENCE);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_CORRUPTION);
-                m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_DISENGAGE, me);;
-                m_Instance->SetBossState(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION, EncounterState::FAIL);
             }
 
-            // Sets phase back to the value of 1
-            std::list<Player*> l_ListPlayers;
-            me->GetPlayerListInGrid(l_ListPlayers, 200.0f);
-            if (!l_ListPlayers.empty())
+            void EnterEvadeMode() override
             {
-                for (auto itr : l_ListPlayers)
+                Talk(SAY_NORUSHEN_WIPE);
+
+                me->RemoveAllAuras();
+
+                Reset();
+                me->DeleteThreatList();
+                me->CombatStop(true);
+
+                me->GetMotionMaster()->MovementExpired();
+
+                Movement::MoveSplineInit init(me);
+                for (auto itr : norushenHomePath)
+                    init.Path().push_back(G3D::Vector3(itr.GetPositionX(), itr.GetPositionY(), itr.GetPositionZ()));
+
+                init.SetUncompressed();
+                init.Launch();
+
+                scheduler
+                    .Schedule(Milliseconds(me->GetSplineDuration()), [this](TaskContext context)
                 {
-                    itr->SetPhaseMask(1, true);
-                }
-            }
-        
-            uint32 l_Entries[9] = { eCreatures::CREATURE_GREATER_CORRUPTION,
-                eCreatures::CREATURE_ESSENCE_OF_CORRUPTION,
-                eCreatures::CREATURE_UNLEASHED_ESSENCE_OF_CORRUPTION, 
-                eCreatures::CREATURE_TITANIC_CORRUPTION,
-                eCreatures::CREATURE_MANIFESTATION_OF_CORRUPTION,
-                eCreatures::CREATURE_UNLEASHED_MANIFESTATION_OF_CORRUPTION,
-                eCreatures::CREATURE_ROOK_STONE_TOE,
-                eCreatures::CREATURE_SUN_TENDER_HEART,
-                eCreatures::CREATURE_LEVEN_DAWN
-            };
+                    me->SetFacingTo(Position::NormalizeOrientation(me->GetOrientation() - M_PI));
+                    me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                });
 
-            for (uint32 l_I = 0; l_I < 10; l_I++)
-                DespawnCreaturesInArea(me, l_Entries[l_I], false);
-
-            me->DespawnOrUnsummon(500);
-        }
-
-        void KilledUnit(Unit* p_Who) override
-        {
-            if (m_Instance != nullptr)
-            {
-                if (p_Who->GetTypeId() == TypeID::TYPEID_PLAYER)
+                if (instance)
                 {
-                    if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_BOSS)))
-                    {
-                        if (l_Norushen->IsAIEnabled)
-                        {
-                            switch (urand(0, 1))
-                            {
-                                case 0:
-                                    l_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_KILL01);
-                                    break;
-                                case 1:
-                                    l_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_KILL02);
-                                    break;
-                            }
-                        }
-                    }
+                    instance->SetBossState(DATA_NORUSHEN, FAIL);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CORRUPTION_BAR);
                 }
             }
-        }
 
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            if (m_Instance != nullptr)
+            void MovementInform(uint32 type, uint32 pointId) override
             {
-                DoZoneInCombat();
-                m_Instance->SendEncounterUnit(EncounterFrameType::ENCOUNTER_FRAME_ENGAGE, me);
-                m_Instance->SetBossState(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION, IN_PROGRESS);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_CORRUPTION);
-
-                EntranceDoorActivation();
-                ActivateLookWithinTriggers();
-
-                if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_BOSS)))
-                    l_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_AGGRO);
-                  
-                // Corruption
-                std::list<Player*> l_PlayerList;
-                me->GetPlayerListInGrid(l_PlayerList, 250.0f);
-                if (l_PlayerList.empty())
+                if (type != POINT_MOTION_TYPE)
                     return;
 
-                for (auto itr : l_PlayerList)
+                switch (pointId)
                 {
-                    itr->CastSpell(itr, eSpells::SPELL_CORRUPTION);
-                }            
+                    case POINT_NORUSHEN_OUTRO_MID: // Middle reached.
+                        events.ScheduleEvent(EVENT_SPAWN_NORUSHEN_PRIDE, 100);
+                        break;
+                }
             }
 
-            events.ScheduleEvent(eEvents::EVENT_QUARNTINE_MEASURES, 420000); ///< Wipe - 8 minutes
-            events.ScheduleEvent(eEvents::EVENT_BLIND_HATRED_FULL, 8 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(eEvents::EVENT_UNLEASHED_ANGER, 10 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            // Handles Frayed mechanism
-            if (me->GetHealthPct() <= 50)
+            void UpdateAI(uint32 diff) override
             {
-                if (!m_FirstFrayed)
+                events.Update(diff);
+                scheduler.Update(diff);
+
+                while (uint32 eventId = events.ExecuteEvent())
                 {
-                    if (m_Instance != nullptr)
+                    switch (eventId)
                     {
-                        if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN)))
-                        {
-                            if (l_Norushen->IsAIEnabled)
-                                l_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_SPELL03);
-                        }
-                    }
+                        case EVENT_INTRO_DONE:
+                            me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            introDone = true;
+                            break;
+                        // Gossip selected, actual event starts.
+                        case EVENT_ENCOUNTER_1:
+                            Talk(SAY_NORUSHEN_AGGRO_1);
+                            me->NearTeleportTo(choPreNorushenEvent[1].GetPositionX(), choPreNorushenEvent[1].GetPositionY(), choPreNorushenEvent[1].GetPositionZ(), choPreNorushenEvent[1].GetOrientation());
+                            eventStarted = true;
 
-                    m_FirstFrayed = true;
-                    me->AddAura(eSpells::SPELL_FRAYED, me);
+                            if (instance)
+                                instance->DoCastSpellOnPlayers(SPELL_TELEPORT_PLAYERS); // Teleport the players to the middle.
 
-                    Position l_Pos;
-                    me->GetRandomNearPosition(l_Pos, 15.0f);
-                    l_Pos.m_positionZ = me->GetPositionZ();
-                    me->SummonCreature(eCreatures::CREATURE_UNLEASHED_MANIFESTATION_OF_CORRUPTION, l_Pos.GetPositionX(), l_Pos.GetPositionY(), l_Pos.GetPositionZ(), l_Pos.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-                }
-                else
-                { 
-                    if (me->HealthBelowPctDamaged(m_FrayedPct, p_Damage))
-                    {
-                        if (m_Instance != nullptr)
-                        {
-                            if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN)))
+                            events.ScheduleEvent(EVENT_ENCOUNTER_2, 8000);
+                            break;
+                        case EVENT_ENCOUNTER_2:
+                            Talk(SAY_NORUSHEN_AGGRO_2);
+
+                            if (instance)
+                                instance->SetBossState(DATA_NORUSHEN, IN_PROGRESS);
+
+                            DoCast(me, SPELL_SHA_PRESUMMON);
+                            events.ScheduleEvent(EVENT_ENCOUNTER_3, 10200);
+                            break;
+                        case EVENT_ENCOUNTER_3:
+                            Talk(SAY_NORUSHEN_AGGRO_3);
+                            DoCast(me, SPELL_SHA_SUMMON);
+                            events.ScheduleEvent(EVENT_START_COMBAT, 6000);
+                            break;
+                        case EVENT_START_COMBAT:
+                            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
                             {
-                                if (l_Norushen->IsAIEnabled)
-                                    l_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_SPELL02);
+                                amalgam->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
+                                amalgam->SetReactState(REACT_AGGRESSIVE);
+                                amalgam->SetInCombatWithZone();
                             }
-                        }
-
-                        if (AuraPtr l_Aura = me->GetAura(eSpells::SPELL_FRAYED))
-                        {
-                            l_Aura->SetStackAmount(l_Aura->GetStackAmount() + 1);
-                        }
-
-                        Position l_Pos;
-                        me->GetRandomNearPosition(l_Pos, 15.0f);
-                        l_Pos.m_positionZ = me->GetPositionZ();
-                        me->SummonCreature(eCreatures::CREATURE_UNLEASHED_MANIFESTATION_OF_CORRUPTION, l_Pos.GetPositionX(), l_Pos.GetPositionY(), l_Pos.GetPositionZ(), l_Pos.GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
-
-                        m_FrayedPct -= 10;
+                            break;
+                        // Outro.
+                        case EVENT_START_OUTRO:
+                            if (Creature* quarantinMeasure = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QUARANTINE_MEASURES) : 0))
+                                me->GetMotionMaster()->MovePoint(POINT_NORUSHEN_OUTRO_MID, *quarantinMeasure); // Move mid and talk.
+                            break;
+                        case EVENT_SPAWN_NORUSHEN_PRIDE:
+                            me->SummonCreature(NPC_NORUSHEN_2, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TEMPSUMMON_MANUAL_DESPAWN);
+                            me->DespawnOrUnsummon();
+                            break;
+                        default:
+                            break;
                     }
                 }
-            }   
+            }
+        };
+
+        bool OnGossipHello(Player* player, Creature* creature) override
+        {
+            if (creature->IsQuestGiver())
+                player->PrepareQuestMenu(creature->GetGUID());
+
+            player->ADD_GOSSIP_ITEM_DB(15762, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+
+            player->SEND_GOSSIP_MENU(player->GetGossipTextId(creature), creature->GetGUID());
+            return true;
         }
 
-        void JustDied(Unit* p_Killer) override
+        bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
         {
-            summons.DespawnAll();
+            player->PlayerTalkClass->ClearMenus();
+            player->CLOSE_GOSSIP_MENU();
 
-            if (me->GetMap())
+            switch (action)
             {
-                /// Loot
-                switch (me->GetMap()->GetDifficulty())
+                case GOSSIP_ACTION_INFO_DEF + 1:
+                    creature->AI()->DoAction(ACTION_START_EVENT);
+                    creature->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                    break;
+                default:
+                    break;
+            }
+
+            return true;
+        }
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_norushenAI(creature);
+        }
+};
+
+// Amalgam of Corruption 72276.
+class boss_amalgam_of_corruption : public CreatureScript
+{
+    public:
+        boss_amalgam_of_corruption() : CreatureScript("boss_amalgam_of_corruption") { }
+
+        struct boss_amalgam_of_corruptionAI : public ScriptedAI
+        {
+            boss_amalgam_of_corruptionAI(Creature* creature) : ScriptedAI(creature), summons(me)
+            {
+                instance = me->GetInstanceScript();
+            }
+
+            EventMap events, berserkerEvents;
+            InstanceScript* instance;
+            SummonList summons;
+            std::map<uint8, uint8> invOrbPosType;
+            std::map <uint32, std::array<uint32, 2>> orbDictionary;
+            float x, y;
+            int32 lastReceive;
+            uint32 hasAchieved;
+
+            uint8 GetLookWithinRealmsCount()
+            {
+                return Is25ManRaid() ? LW_REALM_COUNT_25MAN : LW_REALM_COUNT_10MAN;
+            }
+
+            void Reset() override
+            {
+                SetCombatMovement(false);
+                events.Reset();
+                berserkerEvents.Reset();
+                summons.DespawnAll();
+                x = 0.0f; y = 0.0f;
+                lastReceive = 40;
+                hasAchieved = 1;
+
+                invOrbPosType.clear();
+                orbDictionary.clear();
+
+                for (uint8 i = 0; i < 16; i++)
+                    invOrbPosType.insert(std::pair<uint8, uint8>(i + 1, 0));
+
+                uint32 phaseExp = 1;
+                for (auto&& itr : realthWithin)
                 {
-                    case Difficulty::MAN10_DIFFICULTY:
-                        me->SummonGameObject(eObjects::GobjectNorushenLoot10, g_AmagalamOfCorruptionSpawn.GetPositionX(), g_AmagalamOfCorruptionSpawn.GetPositionY(), g_AmagalamOfCorruptionSpawn.GetPositionZ(), g_AmagalamOfCorruptionSpawn.GetOrientation(), 0, 0, 0, 0, 0);
+                    orbDictionary.insert(std::pair<uint32, std::array<uint32, 2>>(itr, { uint32(1 << phaseExp), 0 }));
+                    phaseExp++;
+                }
+            }
+
+            void IsSummonedBy(Unit* /*summoner*/) override
+            {
+                Reset();
+                DoCast(me, SPELL_AMALGAM); // Emerge + aura.
+
+                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_PACIFIED);
+                me->SetReactState(REACT_PASSIVE);
+            }
+
+            void EnterCombat(Unit* /*who*/) override
+            {
+                if (Creature* quarantinMeasure = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QUARANTINE_MEASURES) : 0))
+                    quarantinMeasure->SetInCombatWithZone();
+
+                if (Creature* norushen = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_NORUSHEN) : 0))
+                    norushen->SetInCombatWithZone();
+
+                DoCast(me, SPELL_ICY_FEAR_AURA, true);
+                me->AddAura(SPELL_AMALGAM, me);
+
+                uint8 orbSummonCount = GetLookWithinRealmsCount();
+
+                if (instance && instance->GetData(DATA_FLEX))
+                {
+                    uint32 totalPlayersCount = instance->instance->GetPlayersCountExceptGMs();
+
+                    if (totalPlayersCount > 14)
+                        orbSummonCount++;
+
+                    if (totalPlayersCount > 19)
+                        orbSummonCount++;
+
+                    if (totalPlayersCount > 24)
+                        orbSummonCount++;
+                }
+
+                if (IsHeroic())
+                    orbSummonCount += Is25ManRaid() ? 5 : 3;
+
+                HandleSummonPurifyingOrbs(orbSummonCount);
+
+                if (instance)
+                {
+                    instance->DoAddAuraOnPlayers(SPELL_CORRUPTION_BAR);
+                    instance->DoSetAlternatePowerOnPlayers(CORRUPTION_LEVEL_HIGH);
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_ENGAGE, me); // Add.
+                }
+
+                events.ScheduleEvent(EVENT_UNLEASHED_ANGER, 11000);
+                events.ScheduleEvent(EVENT_BLIND_HATRED, 25000);
+                events.ScheduleEvent(EVENT_CHECK_UNCHECKED_CORRUPTION, 6000);
+
+                berserkerEvents.ScheduleEvent(EVENT_SPAWN_PURIF_LIGHT_ORB, 30 * IN_MILLISECONDS);
+                berserkerEvents.ScheduleEvent(EVENT_SAFETY_MEASURES, 7 * MINUTE * IN_MILLISECONDS); // 7 minute berserk.
+                berserkerEvents.ScheduleEvent(EVENT_CHECK_EVADE, 1 * IN_MILLISECONDS);
+
+                me->setActive(true, ActiveFlags::InCombat);
+                DoZoneInCombat();
+            }
+
+            void JustSummoned(Creature* summon) override
+            {
+                summons.Summon(summon);
+                summon->setActive(true);
+
+                summon->SetInCombatWithZone();
+            }
+
+            void SetData(uint32 type, uint32 data) override
+            {
+                switch (type)
+                {
+                    case TYPE_ORB_POS:
+                        invOrbPosType.find(data)->second = 0;
                         break;
-                    case Difficulty::MAN10_HEROIC_DIFFICULTY:
-                        me->SummonGameObject(eObjects::GobjectNorushenLoot10Hc, g_AmagalamOfCorruptionSpawn.GetPositionX(), g_AmagalamOfCorruptionSpawn.GetPositionY(), g_AmagalamOfCorruptionSpawn.GetPositionZ(), g_AmagalamOfCorruptionSpawn.GetOrientation(), 0, 0, 0, 0, 0);
+                    case TYPE_LIGHT_ORB:
+                        orbDictionary.find(data)->second[1] = 1;
                         break;
-                    case Difficulty::MAN25_DIFFICULTY:
-                        me->SummonGameObject(eObjects::GobjectNorushenLoot25, g_AmagalamOfCorruptionSpawn.GetPositionX(), g_AmagalamOfCorruptionSpawn.GetPositionY(), g_AmagalamOfCorruptionSpawn.GetPositionZ(), g_AmagalamOfCorruptionSpawn.GetOrientation(), 0, 0, 0, 0, 0);
+                    case TYPE_LIGHT_ORB_SLOT:
+                        orbDictionary.find(data)->second[1] = 0;
                         break;
-                    case Difficulty::MAN25_HEROIC_DIFFICULTY:
-                        me->SummonGameObject(eObjects::GobjectNorushenLoot25Hc, g_AmagalamOfCorruptionSpawn.GetPositionX(), g_AmagalamOfCorruptionSpawn.GetPositionY(), g_AmagalamOfCorruptionSpawn.GetPositionZ(), g_AmagalamOfCorruptionSpawn.GetOrientation(), 0, 0, 0, 0, 0);
+                    case TYPE_NONE_SHALL_PASS:
+                        hasAchieved = data;
                         break;
                 }
             }
 
-            if (m_Instance != nullptr)
+            uint32 GetData(uint32 type) const override
             {
-                SealAlemgalem(); // Despawns the boses
-                ExitDoorActivation();
-                EntranceDoorActivation();
-                DeactivateLookWithinTriggers();
-
-                m_Instance->SetBossState(eData::DATA_NORUSHEN_BOSS, DONE);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_PURIFIED);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_SERENITY);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_RELIANCE);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_TEST_OF_CONFIDENCE);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(eSpells::SPELL_CORRUPTION);
-                m_Instance->DoRemoveAurasDueToSpellOnPlayers(144724);
-                /// Execute RP event pre sha of pride
-                me->m_Events.AddEvent(new pre_norushen_rp(me, 20), me->m_Events.CalculateTime(15 * TimeConstants::IN_MILLISECONDS));
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (m_FrayedDiff <= p_Diff)
-            {
-                std::list<Player*> l_ListPlayers;
-                me->GetPlayerListInGrid(l_ListPlayers, 250.0f);
-                if (!l_ListPlayers.empty())
+                switch (type)
                 {
-                    me->CastSpell(me, eSpells::SPELL_ICY_FEAR_AURA, true);
-
-                    for (auto itr : l_ListPlayers)
-                    {        
-                        itr->CastSpell(itr, eSpells::SPELL_ICY_FEAR_DAMAGE, true);
-                    }
-                }
-
-                m_FrayedDiff = 3 * TimeConstants::IN_MILLISECONDS;
-            }
-            else
-                m_FrayedDiff -= p_Diff;       
-
-            if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
-                return;
-
-            if (Unit* l_Victim = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_QUARNTINE_MEASURES:
+                    case TYPE_LIGHT_ORB:
                     {
-                        if (m_Instance != nullptr)
-                        {
-                            if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_BOSS)))
-                                l_Norushen->CastSpell(me, eSpells::SPELL_QUARNTINE_SAFETY_MEASURES);
-                        }
-                        break;
+                        for (auto&& itr : orbDictionary)
+                            if (!itr.second[1])
+                                return itr.first;
                     }
-                   case eEvents::EVENT_BLIND_HATRED_FULL:
-                       if (m_Instance != nullptr)
-                       {
-                           if (Creature * l_Norushen = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN)))
-                           {
-                               if (l_Norushen->IsAIEnabled)
-                                   l_Norushen->AI()->Talk(eTalks::TALK_NORUSHEN_SPELL04);
-                           }
-                       }
+                    case TYPE_NONE_SHALL_PASS:
+                        return hasAchieved;
+                    default:
+                        return orbDictionary.find(type)->second[0];
+                }
+                return 0;
+            }
 
-                        me->CastSpell(me, eSpells::SPELL_BLIND_HATRED_FULL);
-                        events.ScheduleEvent(eEvents::EVENT_BLIND_HATRED_FULL, 60 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                   case eEvents::EVENT_UNLEASHED_ANGER:
-                       me->CastSpell(l_Victim, eSpells::SPELL_UNLEASHED_ANGER);
-                       events.ScheduleEvent(eEvents::EVENT_UNLEASHED_ANGER, 10 * TimeConstants::IN_MILLISECONDS);
-                       break;
+            void KilledUnit(Unit* victim) override { }
+
+            void EnterEvadeMode() override
+            {
+                me->RemoveAllAuras();
+                me->RemoveAllAreasTrigger();
+
+                berserkerEvents.Reset();
+                me->DeleteThreatList();
+                me->CombatStop(true);
+                summons.DespawnAll();
+
+                _EnterEvadeMode();
+
+                if (instance)
+                {
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CORRUPTION_BAR);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_PURIFIED_DMG_INCREASE);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SELF_DOUBT);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TEST_OF_SERENITY_DPS);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TEST_OF_RELIANCE_HEAL);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TEST_OF_CONFIDENCE_TK);
+
+                    for (auto&& itr : realthWithin)
+                        instance->DoRemoveAurasDueToSpellOnPlayers(itr);
+
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+
+                    if (Creature* quarantinMeasure = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_QUARANTINE_MEASURES)))
+                    {
+                        quarantinMeasure->DeleteThreatList();
+                        quarantinMeasure->CombatStop(true);
+                    }
+
+                    // Restore Phase Mask
+                    for (auto&& itr : instance->instance->GetPlayers())
+                        if (Player* player = itr.GetSource())
+                            player->SetPhaseMask(1, true);
+
+                    instance->DoSetAlternatePowerOnPlayers(0);
+                }
+
+                if (Creature* norushen = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_NORUSHEN) : 0))
+                    norushen->AI()->DoAction(ACTION_RESET_EVENT);
+            }
+
+            void JustDied(Unit* /*killer*/) override
+            {
+                me->RemoveAllAreasTrigger();
+
+                if (instance)
+                {
+                    if (GetData(TYPE_NONE_SHALL_PASS))
+                        instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET2, SPELL_NONE_SHALL_PASS_ACHIEV);
+
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_CORRUPTION_BAR);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_PURIFIED_DMG_INCREASE);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_SELF_DOUBT);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TEST_OF_SERENITY_DPS);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TEST_OF_RELIANCE_HEAL);
+                    instance->DoRemoveAurasDueToSpellOnPlayers(SPELL_TEST_OF_CONFIDENCE_TK);
+                    instance->DoRemoveBloodLustDebuffSpellOnPlayers();
+
+                    for (auto&& itr : realthWithin)
+                        instance->DoRemoveAurasDueToSpellOnPlayers(itr);
+
+                    instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me); // Remove.
+
+                    if (Creature* quarantinMeasure = ObjectAccessor::GetCreature(*me, instance->GetData64(NPC_QUARANTINE_MEASURES)))
+                    {
+                        quarantinMeasure->DeleteThreatList();
+                        quarantinMeasure->CombatStop(true);
+                    }
+
+                    // Restore Phase Mask
+                    for (auto&& itr : instance->instance->GetPlayers())
+                        if (Player* player = itr.GetSource())
+                            player->SetPhaseMask(1, true);
+
+                    instance->DoSetAlternatePowerOnPlayers(0);
+                }
+
+                summons.DespawnAll();
+                events.Reset();
+                berserkerEvents.Reset();
+
+                if (Creature* norushen = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_NORUSHEN) : 0))
+                    norushen->AI()->DoAction(ACTION_FINISHED_EVENT);
+            }
+
+            void DamageTaken(Unit* attacker, uint32& damage) override
+            {
+                // Handle Frayed aura addition and mechanic.
+                if (me->HealthBelowPct(50) && !me->HasAura(SPELL_FRAYED))
+                {
+                    me->AddAura(SPELL_FRAYED, me);
+                    DoCast(me, SPELL_UNLEASH_CORRUPTION_MIS, true);
+                }
+
+                if (me->HasAura(SPELL_FRAYED) && me->HealthBelowPct(lastReceive) && lastReceive > 9)
+                {
+                    lastReceive -= 10;
+                    DoCast(me, SPELL_UNLEASH_CORRUPTION_MIS, true);
+                }
+            }
+
+            void UpdateAI(uint32 diff) override
+            {
+                if (!UpdateVictim())
+                    return;
+
+                events.Update(diff);
+                berserkerEvents.Update(diff);
+
+                while (uint32 eventId = berserkerEvents.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_SAFETY_MEASURES: // berserk
+                            if (Creature* quarantinMeasure = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QUARANTINE_MEASURES) : 0))
+                                quarantinMeasure->AI()->DoAction(ACTION_QUARANTINE_MEASURES);
+                            break;
+                            // Purifying Light orbs spawning.
+                        case EVENT_SPAWN_PURIF_LIGHT_ORB:
+                        {
+                            uint8 orbCount = Is25ManRaid() ? 2 : 1;
+
+                            if (instance && instance->GetData(DATA_FLEX) && instance->instance->GetPlayersCountExceptGMs() > 17)
+                                orbCount++;
+
+                            HandleSummonPurifyingOrbs(orbCount);
+                            berserkerEvents.ScheduleEvent(EVENT_SPAWN_PURIF_LIGHT_ORB, 24 * IN_MILLISECONDS);
+                            break;
+                        }
+                        case EVENT_CHECK_EVADE:
+                            if (instance && instance->IsWipe(58.5f, me))
+                            {
+                                EnterEvadeMode();
+                                break;
+                            }
+
+                            berserkerEvents.ScheduleEvent(EVENT_CHECK_EVADE, 1 * IN_MILLISECONDS);
+                            break;
+                    }
+                }
+
+                if (me->HasAura(SPELL_BLIND_HATRED_PERIODIC))
+                {
+                    DoMeleeAttackIfReady();
+                    return;
+                }
+
+                if (me->HasUnitState(UNIT_STATE_CASTING))
+                    return;
+
+                while (uint32 eventId = events.ExecuteEvent())
+                {
+                    switch (eventId)
+                    {
+                        case EVENT_UNLEASHED_ANGER:
+                            if (Unit* target = me->GetVictim())
+                                DoCast(target, SPELL_UNLEASHED_ANGER);
+
+                            events.ScheduleEvent(EVENT_UNLEASHED_ANGER, 11000);
+                            break;
+
+                        case EVENT_BLIND_HATRED:
+                        {
+                            float x, y;
+                            GetPositionWithDistInOrientation(me, 40.0f, frand(0.0f, 2 * M_PI), x, y);
+                            me->SummonCreature(NPC_BLIND_HATRED, x, y, me->GetPositionZ(), TEMPSUMMON_MANUAL_DESPAWN);
+                            DoCast(me, SPELL_BLIND_HATRED, true);
+
+                            if (Creature* quarantinMeasure = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_QUARANTINE_MEASURES) : 0))
+                                quarantinMeasure->CastSpell(quarantinMeasure, SPELL_BLIND_HATRED, true);
+
+                            events.ScheduleEvent(EVENT_BLIND_HATRED, 60000);
+                            break;
+                        }
+                        case EVENT_CHECK_UNCHECKED_CORRUPTION:
+                            if (me->GetVictim() && !me->IsWithinMeleeRange(me->GetVictim()))
+                                DoCast(me, SPELL_UNCHECKED_CORRUPTION);
+
+                            events.ScheduleEvent(EVENT_CHECK_UNCHECKED_CORRUPTION, 4000);
+                            break;
+                    }
                 }
 
                 DoMeleeAttackIfReady();
             }
-        }
-    };
 
-    CreatureAI* GetAI(Creature* p_Creature) const override
-    {
-        return new boss_amagalad_of_corruptionAI(p_Creature);
-    }
+            private:
+                void HandleSummonPurifyingOrbs(uint8 count = 1)
+                {
+                    // Set the Look Within realms count and spawn the NPC's.
+                    std::vector<uint32> choisePos = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+
+                    for (auto&& itr : choisePos)
+                        if (invOrbPosType.find(itr)->second != 0 && std::find(choisePos.begin(), choisePos.end(), itr) != choisePos.end())
+                            choisePos.erase(std::find(choisePos.begin(), choisePos.end(), itr));
+
+                    std::random_shuffle(choisePos.begin(), choisePos.end());
+
+                    if (choisePos.size() > count)
+                        choisePos.resize(count);
+
+                    for (auto&& itr : choisePos)
+                    {
+                        invOrbPosType.find(itr)->second++;
+                        GetPositionWithDistInOrientation(me, 32.5f, Position::NormalizeOrientation(((itr - 1) * M_PI / 8)), x, y);
+
+                        if (Creature* orb = me->SummonCreature(NPC_PURIFYING_LIGHT, x, y, 356.339f, TEMPSUMMON_MANUAL_DESPAWN))
+                            orb->AI()->SetData(TYPE_ORB_POS, itr);
+                    }
+                }
+        };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return new boss_amalgam_of_corruptionAI(creature);
+        }
 };
 
-/// Blind Hatred - 145227 
-class BlindingHatredSelector
+// Manifestation of Corruption 72264 71977.
+struct npc_manifestation_of_corruption : public ScriptedAI
 {
-public:
+    npc_manifestation_of_corruption(Creature* creature) : ScriptedAI(creature) { }
 
-    BlindingHatredSelector(Unit* p_Caster, Unit* p_CutterCaster) : _p_Caster(p_Caster), _p_CutterCaster(p_CutterCaster) {}
+    TaskScheduler scheduler;
+    uint64 targetGUID;
 
-    bool operator()(WorldObject* p_Unit) const
+    void IsSummonedBy(Unit* summoner) override
     {
-        return !p_Unit->IsInBetween(_p_Caster, _p_CutterCaster, 1.0f);
-    }
+        targetGUID = summoner->GetGUID();
 
-private:
+        me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
 
-    Unit* _p_Caster;
-    Unit* _p_CutterCaster;
-};
-
-/// Blind Hatred Trigger - 72595
-class creature_blind_hatred_trigger : public CreatureScript
-{
-public:
-
-    creature_blind_hatred_trigger() : CreatureScript("creature_blind_hatred_trigger") { }
-
-    struct creature_blind_hatred_triggerAI : public ScriptedAI
-    {
-        creature_blind_hatred_triggerAI(Creature* creature) : ScriptedAI(creature)
+        if (me->GetEntry() == NPC_MANIFEST_OF_CORRUPTION_L)
         {
-            m_Instance = me->GetInstanceScript();        
-        }
+            me->SetPhaseMask(summoner->GetPhaseMask(), true);
 
-        InstanceScript* m_Instance;
-        uint32 m_DamageDiff;
-        bool m_Clockwise;
-
-        void Reset() override
-        {
-            events.Reset();
-            m_Clockwise = true;
-            m_DamageDiff = 2 * TimeConstants::IN_MILLISECONDS;
-
-            switch (urand(0, 1))
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
             {
-                case 0: // Clock wise
-                    m_Clockwise = true;
-                    me->NearTeleportTo(g_BlindRayTrigger[0].GetPositionX(), g_BlindRayTrigger[0].GetPositionY(), g_BlindRayTrigger[0].GetPositionZ(), g_BlindRayTrigger[0].GetOrientation(), true);
-                    break;
-                case 1: // Counter Clock Wise
-                    m_Clockwise = false;
-                    me->NearTeleportTo(g_BlindRayTrigger[1].GetPositionX(), g_BlindRayTrigger[1].GetPositionY(), g_BlindRayTrigger[1].GetPositionZ(), g_BlindRayTrigger[1].GetOrientation(), true);
-                    break;
+                amalgam->AI()->JustSummoned(me);
+                amalgam->CastSpell(me, SPELL_FOUL_LINK_ADDS, true);
             }
 
-            me->SetDisplayId(11686);
-            me->setFaction(FactionHostile);
-            me->SetCanFly(true);
-            me->SetDisableGravity(true);
-            me->SetSpeed(UnitMoveType::MOVE_RUN, 2.0f, true);
+            DoCast(me, SPELL_MANIFEST_SPAWN_VIS); // Emerge.
+            DoCast(me, SPELL_FOUL_LINK_TRIGGER, true);
 
-            Movement::MoveSplineInit init(*me);
-            FillCirclePath(g_AmagalamOfCorruptionSpawn, me->GetDistance2d(g_AmagalamOfCorruptionSpawn.GetPositionX(), g_AmagalamOfCorruptionSpawn.GetPositionY()), me->GetPositionZ(), init.Path(), m_Clockwise);
-            init.SetWalk(true);
-            init.SetCyclic();
-            init.Launch();     
+            scheduler
+                .Schedule(Milliseconds(1000), [this](TaskContext context)
+            {
+                me->RemoveAurasDueToSpell(SPELL_MANIFEST_SPAWN_VIS);
+            });
 
-            me->SetReactState(ReactStates::REACT_PASSIVE);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE | UnitFlags::UNIT_FLAG_NOT_SELECTABLE);
+            // Cone Eff to Summoner
+            scheduler
+                .Schedule(Seconds(4), [this](TaskContext context)
+            {
+                if (Unit* target = ObjectAccessor::GetUnit(*me, targetGUID))
+                {
+                    me->PrepareChanneledCast(me->GetAngle(target), SPELL_TEAR_REALITY);
+
+                    scheduler
+                        .Schedule(Milliseconds(3500), [this](TaskContext context)
+                    {
+                        me->RemoveChanneledCast(targetGUID);
+                    });
+                }
+
+                context.Repeat(Seconds(6), Seconds(9));
+            });
         }
-
-        void UpdateAI(uint32 const p_Diff) override
+        else // Foul Link handling.
         {
-            if (m_Instance == nullptr)
+            DoCast(me, SPELL_FOUL_LINK_TRIGGER, true);
+
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                amalgam->CastSpell(me, SPELL_FOUL_LINK_ADDS, true);
+
+            me->ClearUnitState(UNIT_STATE_CASTING);
+            DoZoneInCombat(me, 200.0f);
+
+            scheduler
+                .Schedule(Seconds(3), Seconds(6), [this](TaskContext context)
+            {
+                DoCast(me, SPELL_BURST_OF_ANGER, true);
+                context.Repeat(Seconds(9), Seconds(12));
+            });
+        }
+    }
+
+    uint64 GetGUID(int32 /*type*/) const override
+    {
+        return targetGUID;
+    }
+
+    void EnterEvadeMode() override
+    {
+        // fake death, vanish etc.
+        if (Unit* target = ObjectAccessor::GetUnit(*me, targetGUID))
+            if (target->IsAlive())
                 return;
 
-            if (m_DamageDiff <= p_Diff)
-            {
-                std::list<Player*> l_ListPlayers;
-                me->GetPlayerListInGrid(l_ListPlayers, 100.0f);
+        me->DeleteThreatList();
+        me->CombatStop(true);
+    }
 
-                if (l_ListPlayers.empty())
-                    return;
-
-                for (auto itr : l_ListPlayers)
-                {
-                    // Reset handling - encounter.
-                    if (Creature* l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                    {
-                        if (itr->IsInBetween(l_Almegalem, me, 4.0f))
-                            itr->CastSpell(itr, eSpells::SPELL_BLIND_HATRED_DAMAGE, true);
-                    }
-                }
-
-                m_DamageDiff = 500;
-            }
-            else
-                m_DamageDiff -= p_Diff;
-        }
-
-        void FillCirclePath(Position const& p_CenterPos, float p_Radius, float p_Z, Movement::PointsArray& p_Path, bool p_Clockwise)
-        {
-            float step = p_Clockwise ? -M_PI / 8.0f : M_PI / 8.0f;
-            float angle = p_CenterPos.GetAngle(me->GetPositionX(), me->GetPositionY());
-            float radius = p_Radius * 1.4142;
-
-            for (uint8 i = 0; i < 16; angle += step, ++i)
-            {
-                G3D::Vector3 l_Point;
-                l_Point.x = p_CenterPos.GetPositionX() + radius * cosf(angle);
-                l_Point.y = p_CenterPos.GetPositionY() + radius * sinf(angle);
-                l_Point.z = 356.340f;
-                p_Path.push_back(l_Point);
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void DamageTaken(Unit* attacker, uint32& damage) override
     {
-        return new creature_blind_hatred_triggerAI(creature);
+        if (me->GetEntry() != NPC_MANIFEST_OF_CORRUPTION_L)
+            return;
+
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            if (damage < amalgam->GetHealth())
+                amalgam->ModifyHealth(-int32(damage));
+    }
+
+    void JustDied(Unit* killer) override
+    {
+        if (me->GetEntry() == NPC_MANIFEST_OF_CORRUPTION_L)
+        {
+            if (killer)
+                killer->CastSpell(killer, SPELL_CLEANSE_MANIF_L, true);
+
+            // Have the Amalgam Unleash it when killed.
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                amalgam->CastSpell(amalgam, SPELL_MIS_SPAWN_MANIF_N, true);
+        }
+        else // Summon Residual Corruption.
+            me->SummonCreature(NPC_RESIDUAL_CORRUPTION, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f, TEMPSUMMON_MANUAL_DESPAWN);
+
+        me->DespawnOrUnsummon(3 * IN_MILLISECONDS); // corpse
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+
+        if (!UpdateVictim())
+            return;
+
+        if (me->GetEntry() != NPC_MANIFEST_OF_CORRUPTION_L)
+            DoMeleeAttackIfReady();
     }
 };
 
-/// Look Within - 765321
-class creature_look_within_trigger : public CreatureScript
+// Essence of Corruption 72263 71976.
+struct npc_essence_of_corruption : public ScriptedAI
 {
-public:
+    npc_essence_of_corruption(Creature* creature) : ScriptedAI(creature) { }
 
-    creature_look_within_trigger() : CreatureScript("creature_look_within_trigger") { }
+    TaskScheduler scheduler;
+    uint64 targetGUID;
 
-    bool OnGossipHello(Player* p_Player, Creature * p_Creature)
+    void IsSummonedBy(Unit* summoner) override
     {
-        if (InstanceScript* l_Instance = p_Creature->GetInstanceScript())
+        targetGUID = summoner->GetGUID();
+        me->SetReactState(REACT_PASSIVE);
+
+        me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
+
+        if (me->GetEntry() == NPC_ESSENCE_OF_CORRUPTION_L)
         {
-            if (p_Player->HasAura(eSpells::SPELL_PURIFIED)) // Doesn't work on purified targets
-                return false;
+            me->SetPhaseMask(summoner->GetPhaseMask(), true);
 
-            // Reset handling - encounter.
-            if (Creature* l_Almegalem = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
             {
-                if (creature_look_within_triggerAI* l_MelinkAI = CAST_AI(creature_look_within_triggerAI, p_Creature->GetAI())) // Look Within AI link
-                {
-                    if (boss_amagalad_of_corruption::boss_amagalad_of_corruptionAI* l_AlmaglemlinkAI = CAST_AI(boss_amagalad_of_corruption::boss_amagalad_of_corruptionAI, l_Almegalem->GetAI())) // Look Within AI link
-                    {
-                        if (l_MelinkAI->m_PlayerGUID == 0)
-                        {
-                            if (p_Creature->IsAIEnabled)
-                            {
-                                l_MelinkAI->m_PlayerGUID = p_Player->GetGUID();
-                                l_MelinkAI->m_OriginalPhasemask = p_Player->GetPhaseMask();
-                                p_Player->SetPhaseMask(l_AlmaglemlinkAI->m_LookWithinPhaseCount, true);
+                amalgam->AI()->JustSummoned(me);
+                amalgam->CastSpell(me, SPELL_FOUL_LINK_ADDS, true);
+            }
 
-                                if (p_Player->GetRoleForGroup(p_Player->GetSpecializationId(p_Player->GetActiveSpec())) == ROLES_TANK)
-                                {
-                                    p_Creature->GetAI()->DoAction(eActions::ACTION_SUMMON_LOOK_WITHIN_TANK);
-                                }
-                                else if (p_Player->GetRoleForGroup(p_Player->GetSpecializationId(p_Player->GetActiveSpec())) == ROLES_HEALER)
-                                {
-                                    p_Creature->GetAI()->DoAction(eActions::ACTION_SUMMON_LOOK_WITHIN_HEAL);
-                                }
-                                else
-                                {
-                                    p_Creature->GetAI()->DoAction(eActions::ACTION_SUMMON_LOOK_WITHIN_DPS);
-                                }
+            DoCast(me, SPELL_ESSENCE_OF_CORRUPTION); // Emerge + Bulwark aura.
+            DoCast(me, SPELL_FOUL_LINK_TRIGGER, true);
 
-                                                         
-                                l_AlmaglemlinkAI->m_LookWithinPhaseCount += 2;
-                                printf("m_PhaseCount  = %u", l_AlmaglemlinkAI->m_LookWithinPhaseCount);
-                                p_Player->m_Events.AddEvent(new basicevent_norushen_player_phase_back(p_Player->GetGUIDLow(), 0), p_Player->m_Events.CalculateTime(61 * TimeConstants::IN_MILLISECONDS));
-                                printf("works");
-                                return true;
-                            }
-                        }
-                        else
-                            return false;
-                    }
-                }
+            // Expel Corruption to Summoner
+            scheduler
+                .Schedule(Seconds(2), [this](TaskContext context)
+            {
+                if (Unit* target = ObjectAccessor::GetUnit(*me, targetGUID))
+                    me->PrepareChanneledCast(me->GetAngle(target), SPELL_EXPEL_CORRUPTION_REALM);
+
+                context.Repeat(Seconds(6), Seconds(7));
+            });
+        }
+        else // Foul Link handling.
+        {
+            DoCast(me, SPELL_FOUL_LINK_TRIGGER, true);
+
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                amalgam->CastSpell(me, SPELL_FOUL_LINK_ADDS, true);
+
+            // Expel Corruption to Summoner
+            scheduler
+                .Schedule(Seconds(2), [this](TaskContext context)
+            {
+                if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                    me->PrepareChanneledCast(me->GetAngle(amalgam), SPELL_EXPEL_CORRUPTION);
+
+                context.Repeat(Seconds(6), Seconds(7));
+            });
+        }
+
+        DoZoneInCombat(me, 100.0f);
+    }
+
+    uint64 GetGUID(int32 /*type*/) const override
+    {
+        return targetGUID;
+    }
+
+    void EnterEvadeMode() override
+    {
+        // fake death, vanish etc.
+        if (Unit* target = ObjectAccessor::GetUnit(*me, targetGUID))
+            if (target->IsAlive())
+                return;
+
+        me->DeleteThreatList();
+        me->CombatStop(true);
+    }
+
+    void DamageTaken(Unit* attacker, uint32& damage) override
+    {
+        if (me->GetEntry() != NPC_ESSENCE_OF_CORRUPTION_L)
+            return;
+
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            if (damage < amalgam->GetHealth())
+                amalgam->ModifyHealth(-int32(damage));
+    }
+
+    void JustDied(Unit* killer) override
+    {
+        if (me->GetEntry() == NPC_ESSENCE_OF_CORRUPTION_L)
+        {
+            if (killer)
+                killer->CastSpell(killer, SPELL_CLEANSE_ESSENCE_L, true);
+
+            // Have the Amalgam Unleash it when killed.
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                amalgam->CastSpell(amalgam, SPELL_MIS_SPAWN_ESSENCE_N, true);
+        }
+
+        me->DespawnOrUnsummon(3 * IN_MILLISECONDS); // corpse
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
+};
+
+// Greater Corruption 72001.
+struct npc_greater_corruption : public ScriptedAI
+{
+    npc_greater_corruption(Creature* creature) : ScriptedAI(creature), summons(me) { }
+
+    SummonList summons;
+    EventMap events;
+    uint32 summonsDead;
+    uint64 targetGUID;
+    bool hasFail;
+
+    void Reset() override
+    {
+        events.Reset();
+        summons.DespawnAll();
+
+        summonsDead = 0;
+        hasFail = false;
+    }
+
+    uint64 GetGUID(int32 /*type*/) const override
+    {
+        return targetGUID;
+    }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        targetGUID = summoner->GetGUID();
+        me->SetPhaseMask(summoner->GetPhaseMask(), true);
+        Reset();
+        DoCast(me, SPELL_MANIFEST_SPAWN_VIS); // Emerge.
+        me->SetHealth((uint32)(me->GetMaxHealth() * 0.5f));
+
+        if (Creature* sunGC = me->SummonCreature(NPC_SUN_TENDERHEART_GC, 781.99f, 953.02f, 356.33f, 1.79f, TEMPSUMMON_MANUAL_DESPAWN))
+        {
+            sunGC->SetPhaseMask(me->GetPhaseMask(), true);
+            sunGC->SetHealth(sunGC->GetMaxHealth() * 0.5);
+            sunGC->AI()->AttackStart(me);
+        }
+        if (Creature* rookGC = me->SummonCreature(NPC_ROOK_STONETOE_GC, me->GetPositionX() - 3.0f, me->GetPositionY() + 3.0f, me->GetPositionZ(), 0.0f, TEMPSUMMON_MANUAL_DESPAWN))
+        {
+            rookGC->SetPhaseMask(me->GetPhaseMask(), true);
+            rookGC->SetHealth(rookGC->GetMaxHealth() * 0.5);
+            rookGC->AI()->AttackStart(me);
+            SetGazeOn(rookGC);
+        }
+        if (Creature* levenGC = me->SummonCreature(NPC_LEVEN_DAWNBLADE_GC, me->GetPositionX() - 3.0f, me->GetPositionY() - 3.0f, me->GetPositionZ(), 0.0f, TEMPSUMMON_MANUAL_DESPAWN))
+        {
+            levenGC->SetPhaseMask(me->GetPhaseMask(), true);
+            levenGC->SetHealth(levenGC->GetMaxHealth() * 0.5);
+            levenGC->AI()->AttackStart(me);
+        }
+
+        DoZoneInCombat(me, 100.0f);
+    }
+
+    void JustSummoned(Creature* summon) override
+    {
+        summons.Summon(summon);
+        summon->setActive(true);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        me->RemoveAurasDueToSpell(SPELL_MANIFEST_SPAWN_VIS);
+
+        events.ScheduleEvent(EVENT_DISHEARTENING_LAUGH, 12000);
+        events.ScheduleEvent(EVENT_LINGERING_CORRUPTION, 16000);
+        events.ScheduleEvent(EVENT_BOTTOMLESS_PIT, 20000);
+    }
+
+    void EnterEvadeMode() override
+    {
+        // fake death, vanish etc.
+        if (Unit* target = ObjectAccessor::GetUnit(*me, targetGUID))
+            if (target->IsAlive())
+                return;
+
+        Reset();
+        me->RemoveAllAreasTrigger();
+        me->DeleteThreatList();
+        me->CombatStop(true);
+    }
+
+    void DoAction(int32 actionId) override
+    {
+        if (actionId == ACTION_HEAL_CHALLENGE_FAIL && !hasFail)
+        {
+            hasFail = true;
+
+            if (Player* target = ObjectAccessor::GetPlayer(*me, targetGUID))
+            {
+                std::list<TempSummon*> manifestations;
+                target->GetSummons(manifestations, NPC_MANIFEST_OF_CORRUPTION_L);
+                target->GetSummons(manifestations, NPC_ESSENCE_OF_CORRUPTION_L);
+                target->GetSummons(manifestations, NPC_TITANIC_CORRUPTION);
+                summons.DespawnAll();
+
+                for (auto&& itr : manifestations)
+                    itr->DespawnOrUnsummon();
+
+                // Remove the realm auras and put the player in the basic phase, Corruption level is kept.
+                for (auto&& itr : realthWithin)
+                    target->RemoveAurasDueToSpell(itr);
+
+                target->RemoveAurasDueToSpell(SPELL_TEST_OF_RELIANCE_HEAL);
+                me->DespawnOrUnsummon(1 * IN_MILLISECONDS);
+
+                if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                    amalgam->CastSpell(amalgam, SPELL_MIS_SPAWN_MANIF_N, true);
             }
         }
+    }
+
+    void DamageTaken(Unit* attacker, uint32& damage) override
+    {
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            if (damage < amalgam->GetHealth())
+                amalgam->ModifyHealth(-int32(damage));
+    }
+
+    void JustDied(Unit* killer) override
+    {
+        me->RemoveAllAreasTrigger();
+
+        if (killer)
+            killer->CastSpell(killer, SPELL_CLEANSE_TRIAL, true);
+
+        summons.DespawnAll();
+        me->DespawnOrUnsummon(3 * IN_MILLISECONDS); // corpse
+    }
+
+    void SummonedCreatureDies(Creature* summon, Unit* killer) override
+    {
+        if (summon->GetEntry() == NPC_SUN_TENDERHEART_GC || summon->GetEntry() == NPC_ROOK_STONETOE_GC || summon->GetEntry() == NPC_LEVEN_DAWNBLADE_GC)
+            summonsDead++;
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim() || me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        // If all 3 mobs are dead evade and despawn.
+        if (summonsDead == 3)
+            EnterEvadeMode();
+
+        events.Update(diff);
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_DISHEARTENING_LAUGH:
+                    DoCast(me, SPELL_DISHEARTENING_LAUGH);
+                    events.ScheduleEvent(EVENT_DISHEARTENING_LAUGH, urand(12000, 14000));
+                    break;         
+                case EVENT_LINGERING_CORRUPTION:
+                    DoCast(me, SPELL_LINGERING_CORRUPTION);
+                    events.ScheduleEvent(EVENT_LINGERING_CORRUPTION, urand(16500, 18500));
+                    break;           
+                case EVENT_BOTTOMLESS_PIT:
+                    DoCast(me, SPELL_BOTTOMLESS_PIT_DUMMY);
+                    events.ScheduleEvent(EVENT_LINGERING_CORRUPTION, urand(25000, 30000));
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+// Titanic Corruption 72051.
+struct npc_titanic_corruption : public ScriptedAI
+{
+    npc_titanic_corruption(Creature* creature) : ScriptedAI(creature)
+    {
+        instance = creature->GetInstanceScript();
+    }
+
+    InstanceScript* instance;
+    EventMap events;
+    TaskScheduler scheduler;
+    uint64 targetGUID;
+
+    void Reset() override
+    {
+        events.Reset();
+    }
+
+    uint64 GetGUID(int32 /*type*/) const override
+    {
+        return targetGUID;
+    }
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        targetGUID = summoner->GetGUID();
+
+        // for warrior reflection @TODO
+        /*if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            me->SetOwnerGUID(amalgam->GetGUID());*/
+
+        me->SetPhaseMask(summoner->GetPhaseMask(), true);
+        DoCast(me, SPELL_MANIFEST_SPAWN_VIS); // Emerge.
+
+        DoZoneInCombat(me, 100.0f);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        me->RemoveAurasDueToSpell(SPELL_MANIFEST_SPAWN_VIS);
+
+        events.ScheduleEvent(EVENT_BURST_OF_CORRUPTION, 21000);
+        events.ScheduleEvent(EVENT_HURL_CORRUPTION, 12000);
+        events.ScheduleEvent(EVENT_PIERCING_CORRUPTION, 17000);
+        events.ScheduleEvent(EVENT_TITANIC_SMASH, 7000);
+    }
+
+    void EnterEvadeMode() override
+    {
+        // fake death, vanish etc.
+        if (Unit* target = ObjectAccessor::GetUnit(*me, targetGUID))
+            if (target->IsAlive())
+                return;
+
+        Reset();
+        me->DeleteThreatList();
+        me->CombatStop(true);
+    }
+
+    void DamageTaken(Unit* attacker, uint32& damage) override
+    {
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            if (damage < amalgam->GetHealth())
+                amalgam->ModifyHealth(-int32(damage));
+    }
+
+    void JustDied(Unit* killer) override
+    {
+        if (killer)
+            killer->CastSpell(killer, SPELL_CLEANSE_TRIAL, true);
+
+        me->DespawnOrUnsummon(3 * IN_MILLISECONDS); // corpse
+    }
+
+    // Not used currently, blizzard forgot delete it from atlas...
+    void DamageDealt(Unit* victim, uint32& /*damage*/, DamageEffectType damageType) override
+    {
+        /*if (victim && damageType == DIRECT_DAMAGE)
+            DoCast(victim, SPELL_CORRUPTION);*/
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_HURL_CORRUPTION:
+                    if (Unit* target = me->GetVictim())
+                        DoCast(target, SPELL_HURL_CORRUPTION);
+
+                    events.ScheduleEvent(EVENT_HURL_CORRUPTION, urand(20000, 23000));
+                    break;
+                case EVENT_BURST_OF_CORRUPTION:
+                    DoCast(me, SPELL_BURST_OF_CORRUPTION);
+                    events.ScheduleEvent(EVENT_BURST_OF_CORRUPTION, urand(20000, 23000));
+                    break;
+                case EVENT_PIERCING_CORRUPTION:
+                    if (Unit* target = me->GetVictim())
+                        DoCast(target, SPELL_PIERCING_CORRUPTION);
+
+                    events.ScheduleEvent(EVENT_PIERCING_CORRUPTION, urand(17000, 20000));
+                    break;
+                case EVENT_TITANIC_SMASH:
+                    if (Unit* target = me->GetVictim())
+                        me->PrepareChanneledCast(me->GetAngle(target), SPELL_TITANIC_SMASH);
+
+                    scheduler
+                        .Schedule(Milliseconds(2500), [this](TaskContext context)
+                    {
+                        me->RemoveChanneledCast(targetGUID);
+                    });
+
+                    events.ScheduleEvent(EVENT_TITANIC_SMASH, urand(14000, 17000));
+                    break;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+// Blind Hatred 72565.
+struct npc_blind_hatred : public ScriptedAI
+{
+    npc_blind_hatred(Creature* creature) : ScriptedAI(creature)
+    {
+        instance = creature->GetInstanceScript();
+    }
+
+    InstanceScript* instance;
+    TaskScheduler scheduler;
+    float x, y, dist;
+    uint32 hasMoving;
+    bool clockWise;
+
+    void Reset() override
+    {
+        me->SetDisplayId(me->GetCreatureTemplate()->Modelid1);
+        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE);
+        me->SetReactState(REACT_PASSIVE);
+        DoCast(me, SPELL_BLIND_HATRED_NPC_VIS, true);
+        clockWise = urand(0, 1);
+
+        me->DespawnOrUnsummon(33200);
+        hasMoving = 0;
+
+        me->SetSpeed(MOVE_RUN, 0.72f);
+        me->SetSpeed(MOVE_WALK, 0.72f);
+
+        scheduler
+            .Schedule(Seconds(3), [this](TaskContext context)
+        {
+            hasMoving = 1;
+
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*me, instance ? instance->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            {
+                dist = me->GetExactDist2d(amalgam);
+
+                Movement::MoveSplineInit init(me);
+                for (uint8 i = 1; i < 25; ++i)
+                {
+                    float step = clockWise ? -(i * M_PI / 12) : (i * M_PI / 12);
+                    x = amalgam->GetPositionX() + dist * cos(Position::NormalizeOrientation(me->GetAngle(amalgam->GetPositionX(), amalgam->GetPositionY()) + step - M_PI));
+                    y = amalgam->GetPositionY() + dist * sin(Position::NormalizeOrientation(me->GetAngle(amalgam->GetPositionX(), amalgam->GetPositionY()) + step - M_PI));
+                    init.Path().push_back(G3D::Vector3(x, y, me->GetPositionZ()));
+                }
+
+                init.SetUncompressed();
+                init.SetCyclic();
+                init.Launch();
+            }
+        });
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        if (type == TYPE_BLIND_HATRED)
+            return hasMoving;
+
+        return 0;
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
+};
+
+// Residual Corruption 72550.
+struct npc_residual_corruption : public ScriptedAI
+{
+    npc_residual_corruption(Creature* creature) : ScriptedAI(creature) { }
+
+    void IsSummonedBy(Unit* /*summoner*/) override
+    {
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            amalgam->AI()->JustSummoned(me);
+
+        DoCast(me, SPELL_RESIDUAL_CORRUPTION_A);
+    }
+
+    void UpdateAI(uint32 /*diff*/) override { }
+};
+
+// Quarantine Measures 72669.
+struct npc_quarantine_measures : public ScriptedAI
+{
+    npc_quarantine_measures(Creature* creature) : ScriptedAI(creature) { }
+
+    void DoAction(int32 actionId) override
+    {
+        if (actionId == ACTION_QUARANTINE_MEASURES && me->GetInstanceScript())
+        {
+            for (auto&& itr : me->GetInstanceScript()->instance->GetPlayers())
+                if (Player* player = itr.GetSource())
+                    player->CastSpell(player, SPELL_QUARANTINE_MEASURES, true);
+        }
+    }
+
+    void DamageTaken(Unit* attacker, uint32& damage) override
+    {
+        // In case
+        damage = 0;
+    }
+};
+
+// Purifying Light 72065.
+struct npc_purifying_light_orb : public ScriptedAI
+{
+    npc_purifying_light_orb(Creature* creature) : ScriptedAI(creature) { }
+
+    uint32 orbValue;
+    bool hasClick;
+
+    void Reset() override
+    {
+        hasClick = false;
+        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+        me->setFaction(35);
+        me->SetReactState(REACT_PASSIVE);
+
+        me->AddAura(SPELL_LOOK_WITHIN_PERIODIC, me);
+        me->SetFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+    }
+
+    uint32 GetData(uint32 type) const override
+    {
+        if (type == TYPE_ORB_POS)
+            return orbValue;
+
+        return 0;
+    }
+
+    void SetData(uint32 type, uint32 data) override
+    {
+        if (type == TYPE_ORB_POS)
+            orbValue = data;
+    }
+
+    void OnSpellClick(Unit* clicker, bool& /*result*/) override
+    {
+        // Prevent Multy Clicking
+        if (hasClick)
+            return;
+
+        hasClick = true;
+
+        // Check spec and choose what spells to use.
+        uint32 specSpell = 0;
+        uint32 specRealm = 0;
+        uint32 specPhase = 0;
+
+        Player* clickerPlayer = clicker->ToPlayer();
+
+        if (!clickerPlayer)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        uint32 playerRole = clickerPlayer->GetRoleForGroup(clickerPlayer->GetTalentSpecialization());
+
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            specRealm = amalgam->AI()->GetData(TYPE_LIGHT_ORB);
+
+        // not one phase is available
+        if (!specRealm)
+        {
+            me->DespawnOrUnsummon();
+            return;
+        }
+
+        // Remove spellclick flag.
+        me->RemoveFlag(UNIT_FIELD_NPC_FLAGS, UNIT_NPC_FLAG_SPELLCLICK);
+
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+        {
+            amalgam->AI()->SetData(TYPE_LIGHT_ORB, specRealm);
+            specPhase = amalgam->AI()->GetData(specRealm);
+        }
+
+        switch (playerRole)
+        {
+            case ROLES_DPS:
+                specSpell = SPELL_TEST_OF_SERENITY_DPS;
+                break;
+            case ROLES_HEALER:
+                specSpell = SPELL_TEST_OF_RELIANCE_HEAL;
+                break;
+            case ROLES_TANK:
+                specSpell = SPELL_TEST_OF_CONFIDENCE_TK;
+                break;
+            default:
+                break;
+        }
+
+        // Remove orb slot
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            amalgam->AI()->SetData(TYPE_ORB_POS, GetData(TYPE_ORB_POS));
+
+        if (clicker->ToPlayer())
+            clicker->ToPlayer()->UnsummonPetTemporaryIfAny();
+
+        // Add Look Within and spec-specific Test aura to the player.
+        clicker->SetPhaseMask(specPhase, true);
+        clicker->CastSpell(clicker, specRealm, true);
+        clicker->CastSpell(clicker, specSpell, true);
+
+        // Despawn.
+        me->DespawnOrUnsummon(500);
+    }
+
+    void UpdateAI(uint32 diff) override { };
+};
+
+// Test of Reliance Helpers 72000, 71996, 71995
+struct npc_test_of_reliance_helpers : public customCreatureAI
+{
+    npc_test_of_reliance_helpers(Creature* creature) : customCreatureAI(creature) 
+    {
+        if (me->GetEntry() == NPC_SUN_TENDERHEART_GC)
+            SetCombatMovement(false);
+    }
+
+    uint64 summonerGUID;
+
+    void IsSummonedBy(Unit* summoner) override
+    {
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*me, me->GetInstanceScript() ? me->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+            amalgam->AI()->JustSummoned(me);
+
+        summonerGUID = summoner->GetGUID();
+    }
+
+    void Reset() override
+    {
+        events.Reset();
+
+        if (me->GetEntry() == NPC_SUN_TENDERHEART_GC || me->GetEntry() == NPC_LEVEN_DAWNBLADE_GC)
+            DoCast(me, SPELL_DAMAGE_DEALER, true);
+    }
+
+    void EnterCombat(Unit* /*who*/) override
+    {
+        if (me->GetEntry() == NPC_SUN_TENDERHEART_GC)
+            events.ScheduleEvent(EVENT_FIRE_BALL, 2 * IN_MILLISECONDS);
+        else if (me->GetEntry() == NPC_LEVEN_DAWNBLADE_GC)
+            events.ScheduleEvent(EVENT_THREATING_STRIKE, 3 * IN_MILLISECONDS);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        if (Creature* greaterCorruption = ObjectAccessor::GetCreature(*me, summonerGUID))
+            greaterCorruption->AI()->DoAction(ACTION_HEAL_CHALLENGE_FAIL);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        events.Update(diff);
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            ExecuteTargetEvent(SPELL_FIRE_BALL, urand(2.6 * IN_MILLISECONDS, 3 * IN_MILLISECONDS), EVENT_FIRE_BALL, eventId);
+            ExecuteTargetEvent(SPELL_THREATING_STRIKE, urand(5 * IN_MILLISECONDS, 7 * IN_MILLISECONDS), EVENT_THREATING_STRIKE, eventId);
+            break;
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+// Corruption (Player bar) 144421.
+class spell_amalgam_corruption_bar : public AuraScript
+{
+    PrepareAuraScript(spell_amalgam_corruption_bar);
+
+    int32 basePoints;
+
+    bool Load() override
+    {
+        basePoints = 0;
         return true;
     }
 
-    struct creature_look_within_triggerAI : public ScriptedAI
+    void OnTick(AuraEffect const* aurEff)
     {
-        creature_look_within_triggerAI(Creature* p_Creature) : ScriptedAI(p_Creature)
+        Unit* target = GetTarget();
+
+        if (!target || !GetAura())
+            return;
+
+        // Handle Tooltip display.
+        basePoints = -target->GetPower(POWER_ALTERNATE_POWER);
+
+        if (basePoints < -99) // not set -100% dmg cuz ability doesn`t affect on hit (only AA hit by 1 i.e.). this cause ignore effects from ability hit (for example - monk tank cannot use his def spell).
+            basePoints = -99;
+
+        if (AuraEffect* percent = target->GetAuraEffect(SPELL_CORRUPTION_BAR, EFFECT_1))
+            percent->SetAmount(basePoints);
+
+        // Handle Purified aura increase (127% damage dealt 0 - 25% Corruption).
+        if (target->GetPower(POWER_ALTERNATE_POWER) < CORRUPTION_LEVEL_LOW && target->ToPlayer())
         {
-            m_Instance = p_Creature->GetInstanceScript();  
-        }
-
-        InstanceScript* m_Instance;
-        uint64 m_PlayerGUID;
-        uint32 m_OriginalPhasemask;
-        uint8 m_SerenityPhaseDeath;
-
-        void Reset() override
-        {
-            events.Reset();
-
-            m_PlayerGUID = 0;
-            m_OriginalPhasemask = 2;
-            m_SerenityPhaseDeath = 0;
-
-            me->setFaction(FactionFriendly);
-            me->SetReactState(ReactStates::REACT_PASSIVE);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE | UnitFlags::UNIT_FLAG_DISABLE_MOVE);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS_2, UnitFlags2::UNIT_FLAG2_DISABLE_TURN);
-        }
-
-        void JustSummoned(Creature* p_Summon) override
-        {
-            summons.Summon(p_Summon);
-        }
-
-        void DoAction(const int32 p_Action) override
-        {
-            switch (p_Action)
+            if (Aura* purification = target->GetAura(SPELL_PURIFIED_DMG_INCREASE))
             {
-                case eActions::ACTION_COUNT_SERENITY_PHASE_KILLS:
-                    m_SerenityPhaseDeath = m_SerenityPhaseDeath - 1;
+                auto key = invPurificationType.find(target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()));
 
-                    if (m_SerenityPhaseDeath <= 0)
+                if (AuraEffect* purificationPct = target->GetAuraEffect(SPELL_PURIFIED_DMG_INCREASE, key->second[0]))
+                    purificationPct->SetAmount(key->second[1]);
+            }
+            else if (Aura* purification = target->AddAura(SPELL_PURIFIED_DMG_INCREASE, target))
+            {
+                auto key = invPurificationType.find(target->ToPlayer()->GetRoleForGroup(target->ToPlayer()->GetTalentSpecialization()));
+
+                if (AuraEffect* purificationPct = target->GetAuraEffect(SPELL_PURIFIED_DMG_INCREASE, key->second[0]))
+                    purificationPct->SetAmount(key->second[1]);
+            }
+        }
+        else
+        {
+            if (target->HasAura(SPELL_PURIFIED_DMG_INCREASE))
+                target->RemoveAurasDueToSpell(SPELL_PURIFIED_DMG_INCREASE);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_amalgam_corruption_bar::OnTick, EFFECT_2, SPELL_AURA_PERIODIC_DUMMY);
+    }
+};
+
+// Unleashed Anger (Boss cast) 145216.
+class spell_amalgam_unleashed_anger : public SpellScript
+{
+    PrepareSpellScript(spell_amalgam_unleashed_anger);
+
+    void HandleDummy(SpellEffIndex /*effIndex*/)
+    {
+        if (Unit* caster = GetCaster())
+        {
+            if (Unit* target = GetHitUnit())
+            {
+                caster->CastSpell(target, SPELL_UNLEASHED_ANGER_DAMAGE, true);
+                caster->CastSpell(target, SPELL_SELF_DOUBT, true);
+            }
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_amalgam_unleashed_anger::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+// Icy Fear (Damage spell) 145735.
+class spell_amalgam_icy_fear : public SpellScript
+{
+    PrepareSpellScript(spell_amalgam_icy_fear);
+
+    void CalculateDamage(SpellEffIndex /*effIndex*/)
+    {
+        float mod = (100.0f - GetCaster()->GetHealthPct()) / 100.0f;
+        int32 recalculatedDamage = GetHitDamage() + (int32)(GetHitDamage() * mod); // Increases by 1% for each 1% boss HP lost.
+        SetHitDamage(recalculatedDamage);
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([=](WorldObject* target) { return target && target->GetTypeId() != TYPEID_PLAYER; });
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_amalgam_icy_fear::CalculateDamage, EFFECT_0, SPELL_EFFECT_SCHOOL_DAMAGE);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_amalgam_icy_fear::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Test of Serenity 144849, Test of Reliance 144850, Test of Confidence 144851.
+class spell_test_realm_amalgam : public AuraScript
+{
+    PrepareAuraScript(spell_test_realm_amalgam);
+
+    void OnRemove(AuraEffect const* aurEff, AuraEffectHandleModes mode)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+        {
+            // Full clear of phase
+            std::list<TempSummon*> manifestations, tempManifestations;
+            owner->GetSummons(manifestations, NPC_MANIFEST_OF_CORRUPTION_L);
+            owner->GetSummons(manifestations, NPC_ESSENCE_OF_CORRUPTION_L);
+            owner->GetSummons(manifestations, NPC_GREATER_CORRUPTION);
+            owner->GetSummons(manifestations, NPC_TITANIC_CORRUPTION);
+            owner->GetSummons(manifestations, NPC_ROOK_STONETOE_GC);
+            owner->GetSummons(manifestations, NPC_LEVEN_DAWNBLADE_GC);
+            owner->GetSummons(manifestations, NPC_SUN_TENDERHEART_GC);
+            tempManifestations = manifestations;
+
+                // duration has end - fail or die (only for dps)
+            if (owner->GetRoleForGroup(owner->GetTalentSpecialization()) == ROLES_DPS)
+            {
+                tempManifestations.remove_if([=](TempSummon* target) { return target && !target->IsAlive(); });
+
+                if (Creature* amalgam = ObjectAccessor::GetCreature(*owner, owner->GetInstanceScript() ? owner->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                    for (auto&& itr : tempManifestations)
+                        amalgam->CastSpell(amalgam, invTestAmalgamType.find(itr->GetEntry())->second, true);
+
+                // Clear dps cuz it require only Manifestation
+                if (!std::any_of(tempManifestations.begin(), tempManifestations.end(), [](TempSummon* target) { return target->GetEntry() == NPC_MANIFEST_OF_CORRUPTION_L; }))
+                {
+                    owner->SetPower(POWER_ALTERNATE_POWER, 0);
+
+                    // Purified aura addition.
+                    owner->CastSpell(owner, SPELL_PURIFIED_DMG_INCREASE, true);
+                    owner->CastSpell(owner, SPELL_PURIFIED_DMG_IMMUNE, true);
+                }
+            }
+
+            // Heal spec should Kill OR stay alive for purification
+            if ((owner->GetRoleForGroup(owner->GetTalentSpecialization()) == ROLES_HEALER || owner->GetRoleForGroup(owner->GetTalentSpecialization()) == ROLES_TANK) && aurEff->GetBase()->GetDuration() == 0)
+            {
+                owner->SetPower(POWER_ALTERNATE_POWER, 0);
+
+                // Purified aura addition.
+                owner->CastSpell(owner, SPELL_PURIFIED_DMG_INCREASE, true);
+                owner->CastSpell(owner, SPELL_PURIFIED_DMG_IMMUNE, true);
+            }
+
+            // Remove npc from phase
+            for (auto&& itr : manifestations)
+                itr->DespawnOrUnsummon();
+
+            // Remove the realm auras and put the player in the basic phase, Corruption level is kept.
+            for (auto&& itr : realthWithin)
+                owner->RemoveAurasDueToSpell(itr);
+
+            owner->RemoveAurasDueToSpell(GetAura()->GetId());
+        }
+    }
+
+    void OnTick(AuraEffect const* aurEff)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+        {
+            // Not in phase yet
+            if (owner->GetPhaseMask() < 2)
+                return;
+
+            std::list<TempSummon*> manifestations;
+            owner->GetSummons(manifestations, NPC_MANIFEST_OF_CORRUPTION_L);
+            owner->GetSummons(manifestations, NPC_ESSENCE_OF_CORRUPTION_L);
+            owner->GetSummons(manifestations, NPC_GREATER_CORRUPTION);
+            owner->GetSummons(manifestations, NPC_TITANIC_CORRUPTION);
+
+            manifestations.remove_if([=](TempSummon* target) { return target && !target->IsAlive(); });
+
+            // Challenge is complete
+            if (manifestations.empty())
+            {
+                owner->UnsummonPetTemporaryIfAny();
+
+                for (auto&& itr : realthWithin)
+                    owner->RemoveAurasDueToSpell(itr);
+
+                owner->RemoveAurasDueToSpell(GetAura()->GetId());
+                owner->SetPower(POWER_ALTERNATE_POWER, 0);
+
+                // Purified aura addition.
+                owner->CastSpell(owner, SPELL_PURIFIED_DMG_INCREASE, true);
+                owner->CastSpell(owner, SPELL_PURIFIED_DMG_IMMUNE, true);
+            }
+        }
+    }
+
+    void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes mode)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+            SpawnLookWithinMobs(owner);
+    }
+
+    private:
+        void SpawnLookWithinMobs(Player* target)
+        {
+            if (!target)
+                return;
+
+            uint32 playerRole = target->GetRoleForGroup(target->GetTalentSpecialization());
+            switch (playerRole)
+            {
+                case ROLES_DPS: // Manifestation + Essence.
+                case ROLES_DEFAULT:
+                {
+                    target->CastSpell(target, SPELL_SPAWN_MANIF_L, true);
+                
+                    uint32 altPower = target->GetPower(POWER_ALTERNATE_POWER);
+                    // Calculate and spawn Essences of Corruption.
+
+                    uint8 EssencesToSpawn = 1;
+
+                    if (altPower > 55)
+                        EssencesToSpawn += 1;
+                    if (altPower > 70)
+                        EssencesToSpawn += 1;
+                    if (altPower > 85)
+                        EssencesToSpawn += 1;
+
+                    if (Creature* amalgam = ObjectAccessor::GetCreature(*target, target->GetInstanceScript() ? target->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
                     {
-                        if (m_PlayerGUID != 0)
+                        for (uint8 i = 0; i < EssencesToSpawn; i++)
                         {
-                            if (Player* l_Player = sObjectAccessor->GetPlayer(*me, m_PlayerGUID))
-                            {
-                                l_Player->AddAura(eSpells::SPELL_PURIFIED, l_Player);
-                                l_Player->SetPhaseMask(1, true);
-                                l_Player->RemoveAura(eSpells::SPELL_TEST_OF_SERENITY);
-                                l_Player->RemoveAura(eSpells::SPELL_LOOK_WITHIN_PHASEDPS);
-                                DoAction(ACTION_LOOK_WITHIN_ACTIVATE);
-                            }
+                            GetPositionWithDistInOrientation(amalgam, 23.5f, frand(0.0f, 2 * M_PI), x, y);
+                            target->CastSpell(x, y, 356.339f, SPELL_SPAWN_ESSENCE_L, true);
                         }
                     }
                     break;
-                // Upon gossip with trigger, it'll remove all visuals and apply temporary flags - and it'll be reactivated once again through an event. Instead of despawning them and spawning them like a mongos.
-                case eActions::ACTION_LOOK_WITHIN_DEACTIVATE:
-                    me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NOT_SELECTABLE);
-                    me->RemoveAura(eSpells::SPELL_LOOK_WITHIN_VISUAL_BALL);
-
-                    if (m_PlayerGUID != 0)
-                    {
-                        if (Player* l_Player = sObjectAccessor->GetPlayer(*me, m_PlayerGUID))
-                        {
-                            me->SetPhaseMask(l_Player->GetPhaseMask(), true);
-                        }
-                    }
-
-                    events.ScheduleEvent(eEvents::EVENT_REACTIVATE_LOOK_WITHIN_TRIGGERS, 100 * TimeConstants::IN_MILLISECONDS);
+                }
+                case ROLES_HEALER: // Greater Corruption.
+                    target->CastSpell(target, SPELL_SPAWN_GREATER_CORR, true);
                     break;
-                case eActions::ACTION_LOOK_WITHIN_ACTIVATE:
-                    m_PlayerGUID = 0;
-                    m_SerenityPhaseDeath = 0;
-                    m_OriginalPhasemask = 1;
-                    me->SetPhaseMask(1, true);
-
-                    me->RemoveFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NOT_SELECTABLE);
-                    me->AddAura(eSpells::SPELL_LOOK_WITHIN_VISUAL_BALL, me);            
+                case ROLES_TANK: // Titanic Corruption.
+                    target->CastSpell(target, SPELL_SPAWN_TITANIC_CORR, true);
                     break;
-                case eActions::ACTION_SUMMON_LOOK_WITHIN_TANK:
-                {           
-                    if (m_PlayerGUID != 0)
-                    {
-                        if (Player* l_Player = sObjectAccessor->GetPlayer(*me, m_PlayerGUID))
-                        {
-                            if (Creature* Titanic = l_Player->SummonCreature(eCreatures::CREATURE_TITANIC_CORRUPTION, g_AmagalamOfCorruptionSpawn, TEMPSUMMON_TIMED_DESPAWN, 60 * TimeConstants::IN_MILLISECONDS))
-                            {
-                                if (Titanic->IsAIEnabled)
-                                    Titanic->AI()->SetGUID(me->GetGUID());
-
-                                l_Player->AddAura(eSpells::SPELL_LOOK_WITHIN_PHASETANK, l_Player);
-                                l_Player->AddAura(eSpells::SPELL_TEST_OF_CONFIDENCE, l_Player);
-                                Titanic->SetPhaseMask(l_Player->GetPhaseMask(), true);
-                            }
-                        }
-                    }
-
-                    DoAction(eActions::ACTION_LOOK_WITHIN_DEACTIVATE);
+                default:
                     break;
-                }
-                case eActions::ACTION_SUMMON_LOOK_WITHIN_HEAL:
-                {
-                    if (m_PlayerGUID != 0)
-                    {
-                        if (Player* l_Player = sObjectAccessor->GetPlayer(*me, m_PlayerGUID))
-                        {
-                            uint32 l_Entries[3] = { CREATURE_SUN_TENDER_HEART, CREATURE_ROOK_STONE_TOE, CREATURE_LEVEN_DAWN };
-
-                            for (uint8 l_I = 0; l_I < 4; l_I++)
-                                DespawnCreaturesInArea(me, l_Entries[l_I], false);
-
-                            if (Creature* l_GreaterCorruption = l_Player->SummonCreature(eCreatures::CREATURE_GREATER_CORRUPTION, g_AmagalamOfCorruptionSpawn, TempSummonType::TEMPSUMMON_TIMED_DESPAWN, 60 * TimeConstants::IN_MILLISECONDS))
-                            {
-                                if (l_GreaterCorruption->IsAIEnabled)
-                                    l_GreaterCorruption->AI()->SetGUID(me->GetGUID());
-
-                                for (uint32 l_I = 0; l_I < 3; l_I++)
-                                {
-                                    if (Creature * l_Pandaren = l_Player->SummonCreature(l_Entries[l_I], l_Player->GetPositionX(), l_Player->GetPositionY(), l_Player->GetPositionZ(), l_Player->GetOrientation(), TempSummonType::TEMPSUMMON_TIMED_DESPAWN, 60 * TimeConstants::IN_MILLISECONDS))
-                                    {
-                                        l_Pandaren->Attack(l_GreaterCorruption, true);
-                                        l_Pandaren->SetPhaseMask(l_Player->GetPhaseMask(), true);
-                                    }
-                                }
-
-                                l_GreaterCorruption->SetPhaseMask(l_Player->GetPhaseMask(), true);
-                            }
-
-                            l_Player->AddAura(eSpells::SPELL_TEST_OF_RELIANCE, l_Player);
-                            l_Player->AddAura(eSpells::SPELL_LOOK_WITHIN_PHASEHEAL, l_Player);
-                        }
-                    }
-
-                    DoAction(eActions::ACTION_LOOK_WITHIN_DEACTIVATE);
-                    break;
-                }
-                case eActions::ACTION_SUMMON_LOOK_WITHIN_DPS:
-                {
-                    if (m_PlayerGUID != 0)
-                    {
-                        if (Player* l_Player = sObjectAccessor->GetPlayer(*me, m_PlayerGUID))
-                        {
-                            if (l_Player->HasAura(eSpells::SPELL_CORRUPTION))
-                            {
-                                /*
-                                if (AuraPtr l_Aura = l_Player->GetAura(eSpells::SPELL_CORRUPTION))
-                                {
-                                    int32 bp = l_Aura->GetEffect(0)->GetBaseAmount();
-                                    int32 l_ArtificalPower = bp;
-
-                                    printf("1bp = %u", l_ArtificalPower);
-
-                                    if (l_ArtificalPower > 100)
-                                        l_ArtificalPower = 100;
-
-                                    while (l_ArtificalPower > 40)
-                                    {
-                                        m_SerenityPhaseDeath++;
-                                        l_ArtificalPower -= 40;
-
-                                        printf("2bp = %u", l_ArtificalPower);
-
-                                        Position l_Pos = *me;
-                                        me->SummonCreature(eCreatures::CREATURE_MANIFESTATION_OF_CORRUPTION, g_AmagalamOfCorruptionSpawn, TEMPSUMMON_TIMED_DESPAWN, 58 * TimeConstants::IN_MILLISECONDS);
-                                    }
-
-                                    printf("3bp = %u", l_ArtificalPower);
-
-                                    while (l_ArtificalPower > 15)
-                                    {
-                                        m_SerenityPhaseDeath++;
-                                        l_ArtificalPower -= 15;
-
-                                        printf("4bp = %u", l_ArtificalPower);
-
-                                        Position l_Pos = *me;
-                                        me->SummonCreature(eCreatures::CREATURE_ESSENCE_OF_CORRUPTION, g_AmagalamOfCorruptionSpawn, TEMPSUMMON_TIMED_DESPAWN, 58 * TimeConstants::IN_MILLISECONDS);
-                                    }
-
-                                    printf("5bp = %u", l_ArtificalPower);
-                                    }
-                                    */
-                                // Stupid loop, i know, not my fault.. while doesn't really work.
-                                if (AuraPtr l_Aura = l_Player->GetAura(eSpells::SPELL_CORRUPTION))
-                                {
-                                    int32 bp = l_Aura->GetEffect(0)->GetBaseAmount();
-                                    int32 l_ArtificalPower = bp;
-
-                                    for (uint8 i = 0; i <= 3; i++)
-                                    {
-                                        if (l_ArtificalPower > 40)
-                                        {
-                                            l_ArtificalPower -= 40;
-                                            m_SerenityPhaseDeath++;
-                                            Position l_Pos = *me;
-
-                                            if (Creature* l_Manifestation = me->SummonCreature(eCreatures::CREATURE_MANIFESTATION_OF_CORRUPTION, g_AmagalamOfCorruptionSpawn, TEMPSUMMON_TIMED_DESPAWN, 58 * TimeConstants::IN_MILLISECONDS))
-                                            {
-                                                l_Manifestation->SetPhaseMask(l_Player->GetPhaseMask(), true);
-
-                                                if (l_Manifestation->IsAIEnabled)
-                                                    l_Manifestation->AI()->SetGUID(me->GetGUID());
-                                            }
-                                        }
-                                        else if (l_ArtificalPower > 14)
-                                        {
-                                            l_ArtificalPower -= 15;
-                                            m_SerenityPhaseDeath++;
-                                            Position l_Pos = *me;
-
-                                            if (Creature* Essence = me->SummonCreature(eCreatures::CREATURE_ESSENCE_OF_CORRUPTION, g_AmagalamOfCorruptionSpawn, TEMPSUMMON_TIMED_DESPAWN, 58 * TimeConstants::IN_MILLISECONDS))
-                                            {
-                                                Essence->SetPhaseMask(l_Player->GetPhaseMask(), true);
-
-                                                if (Essence->IsAIEnabled)
-                                                    Essence->AI()->SetGUID(me->GetGUID());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    DoAction(eActions::ACTION_LOOK_WITHIN_DEACTIVATE);
-                    break;
-                }
             }
         }
 
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (m_Instance == nullptr)
-                return;
+        float x, y;
 
-            /// Unleahsed Corruption - Hardcoded, summons the same npc on the normal realm whenever it's being killed in the test of serenity (dps only)
-            if (Creature * l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-            {
-                if (!l_Almegalem->isInCombat())
-                    return;
-
-                events.Update(p_Diff);
-
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_REACTIVATE_LOOK_WITHIN_TRIGGERS:
-                        m_PlayerGUID = 0;
-                        m_OriginalPhasemask = 1;
-                        m_SerenityPhaseDeath = 0;
-
-                        me->RemoveFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NOT_SELECTABLE);
-                        me->AddAura(eSpells::SPELL_LOOK_WITHIN_VISUAL_BALL, me);
-                        break;
-                }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void Register() override
     {
-        return new creature_look_within_triggerAI(creature);
+        OnEffectRemove += AuraEffectRemoveFn(spell_test_realm_amalgam::OnRemove, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_test_realm_amalgam::OnTick, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+        OnEffectApply += AuraEffectApplyFn(spell_test_realm_amalgam::OnApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
-/// Test of Confidence - 72051 (Tank)
-class creature_titanic_corruption : public CreatureScript
+// Blind Hatred Periodic 145573
+class spell_blind_hatred_periodic : public AuraScript
 {
-public:
+    PrepareAuraScript(spell_blind_hatred_periodic);
 
-    creature_titanic_corruption() : CreatureScript("creature_titanic_corruption") { }
-
-    struct creature_look_within_triggerAI : public Scripted_NoMovementAI
+    void OnTrigger(AuraEffect const* /*aurEff*/)
     {
-        creature_look_within_triggerAI(Creature* p_Creature) : Scripted_NoMovementAI(p_Creature), m_Guid(0)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
+        if (Unit* owner = GetOwner()->ToUnit())
+            if (owner->GetEntry() == NPC_AMALGAM_OF_CORRUPTION)
+                owner->CastSpell(owner, SPELL_BLIND_HATRED_DMG, true);
+    }
 
-        InstanceScript* m_Instance;
-        uint32 m_SucceedDiff;
-        uint64 m_Guid;
-        bool m_Succeed;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(FactionHostile);
-            me->SetInCombatWithZone();
-            me->AddUnitMovementFlag(MovementFlags::MOVEMENTFLAG_ROOT);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE);
-
-            m_Succeed = false;
-            m_SucceedDiff = 59 * TimeConstants::IN_MILLISECONDS;
-        }
-
-        void SetGUID(uint64 guid, int32 /*param*/) override
-        {
-            m_Guid = guid;
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            events.ScheduleEvent(eEvents::EVENT_CORRUPTION, 2 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(eEvents::EVENT_TITANIC_SMASH, urand(8 * TimeConstants::IN_MILLISECONDS, 12 * TimeConstants::IN_MILLISECONDS));
-            events.ScheduleEvent(eEvents::EVENT_HURL_CORRUPTION, 20 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(eEvents::EVENT_BURST_OF_CORRUPTION, 30 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(eEvents::EVENT_PIERCING_CORRUPTION, 17 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void JustDied(Unit* p_Killer) override
-        {
-            if (!m_Succeed)
-            {
-                if (m_Instance != nullptr)
-                {
-                    if (TempSummon* l_Tempo = me->ToTempSummon())
-                    {
-                        if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                        {
-                            if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                            {
-                                if (l_SummonerPlayer->HasAura(eSpells::SPELL_TITANIC_CORRUPTION))
-                                {
-                                    if (AuraPtr l_Aura = l_SummonerPlayer->GetAura(eSpells::SPELL_TITANIC_CORRUPTION))
-                                    {
-                                        l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), 0);
-                                    }
-
-                                        l_SummonerPlayer->RemoveAura(eSpells::SPELL_LOOK_WITHIN_PHASETANK);
-                                        l_SummonerPlayer->RemoveAura(eSpells::SPELL_TEST_OF_CONFIDENCE);
-                                        l_SummonerPlayer->SetPhaseMask(1, true);
-                                        l_SummonerPlayer->m_Events.KillAllEvents(true); /// stops set original phase from overlapping on other phases
-                                        l_SummonerPlayer->AddAura(eSpells::SPELL_PURIFIED, l_SummonerPlayer);
-
-                                        m_Succeed = true;
-
-                                        if (Creature* l_LookWithin = Creature::GetCreature(*me, m_Guid))
-                                        {
-                                            if (l_LookWithin->IsAIEnabled)
-                                                l_LookWithin->GetAI()->DoAction(eActions::ACTION_LOOK_WITHIN_ACTIVATE);
-                                        }                                  
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            me->DespawnOrUnsummon(1000);
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (p_Damage && p_Damage > 0)
-            {
-                if (m_Instance != nullptr)
-                {
-                    if (Creature * l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                        p_Attacker->DealDamage(l_Almegalem, p_Damage);
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);    
-
-            // Test of Confidence wining conditions is to survive.
-            if (!m_Succeed)
-            {
-                if (m_SucceedDiff <= p_Diff)
-                {
-                    if (m_Instance != nullptr)
-                    {
-                        /// Test succeed only if tank survives
-                        if (TempSummon* l_Tempo = me->ToTempSummon())
-                        {
-                            if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                            {
-                                if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                                {
-                                    l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), 0);
-
-                                    l_SummonerPlayer->RemoveAura(eSpells::SPELL_TEST_OF_CONFIDENCE);
-                                    l_SummonerPlayer->RemoveAura(eSpells::SPELL_LOOK_WITHIN_PHASETANK);
-                                    l_SummonerPlayer->m_Events.KillAllEvents(true); /// stops set original phase from overlapping on other phases
-                                    l_SummonerPlayer->SetPhaseMask(1, true);
-
-                                    m_Succeed = true;
-                             
-                                    if (Creature* l_LookWithin = Creature::GetCreature(*me, m_Guid))
-                                    {
-                                        if (l_LookWithin->IsAIEnabled)
-                                            l_LookWithin->GetAI()->DoAction(eActions::ACTION_LOOK_WITHIN_ACTIVATE);
-                                    }
-                               }
-                            }
-                        }
-                    }   
-
-                    me->DespawnOrUnsummon(1000);
-                }
-                else
-                    m_SucceedDiff -= p_Diff;
-            }
-
-            if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
-                return;
-
-            if (Unit* l_Target = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_TITANIC_SMASH:
-                        me->CastSpell(l_Target, eSpells::SPELL_TITANIC_SMASH);
-                        events.ScheduleEvent(EVENT_TITANIC_SMASH, urand(8 * TimeConstants::IN_MILLISECONDS, 12 * TimeConstants::IN_MILLISECONDS));
-                        break;
-                    case eEvents::EVENT_HURL_CORRUPTION:
-                        me->CastSpell(l_Target, eSpells::SPELL_HURL_CORRUPTION);
-                        events.ScheduleEvent(EVENT_HURL_CORRUPTION, 45 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                    case eEvents::EVENT_BURST_OF_CORRUPTION:
-                        me->CastSpell(me, eSpells::SPELL_BURST_OF_CORRUPTION);
-                        events.ScheduleEvent(EVENT_BURST_OF_CORRUPTION, 20 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                    case eEvents::EVENT_PIERCING_CORRUPTION:
-                        me->CastSpell(l_Target, eSpells::SPELL_PIERCING_CORRUPTION);
-                        events.ScheduleEvent(EVENT_PIERCING_CORRUPTION, 28 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                    case eEvents::EVENT_CORRUPTION:
-                        me->CastSpell(l_Target, eSpells::SPELL_TITANIC_CORRUPTION);
-                        events.ScheduleEvent(EVENT_CORRUPTION, 28 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* p_Creature) const override
+    void HandleOnApply(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
     {
-        return new creature_look_within_triggerAI(p_Creature);
+        if (Unit* owner = GetOwner()->ToUnit())
+            owner->ClearUnitState(UNIT_STATE_CASTING);
+    }
+
+    void Register() override
+    {
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_blind_hatred_periodic::OnTrigger, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
+        OnEffectApply += AuraEffectApplyFn(spell_blind_hatred_periodic::HandleOnApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
-/// Test of Reliance - 72001 (Healer)
-class creature_greater_corruption : public CreatureScript
+class BlindHatredPredicate : public std::unary_function<Unit*, bool>
 {
-public:
+    public:
+        BlindHatredPredicate(Unit* const m_caster) : _caster(m_caster) { }
+    
+        bool operator()(WorldObject* object)
+        {
+            if (Creature* blindHatred = _caster->FindNearestCreature(NPC_BLIND_HATRED, 100.0f, true))
+                return object && object->ToPlayer() && (!object->ToPlayer()->IsInBetween(_caster, blindHatred, 2.5f) || object->ToPlayer()->HasAura(SPELL_PURIFIED_DMG_IMMUNE) || !blindHatred->AI()->GetData(TYPE_BLIND_HATRED));
+    
+            return false;
+        }
+    
+    private:
+        Unit const* _caster;
+};
 
-    creature_greater_corruption() : CreatureScript("creature_greater_corruption") { }
+// Blind Hatred Eff 145227
+class spell_blind_hatred_eff : public SpellScript
+{
+    PrepareSpellScript(spell_blind_hatred_eff);
 
-    struct creature_look_within_triggerAI : public Scripted_NoMovementAI
+    std::list<WorldObject*> m_targets;
+
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        creature_look_within_triggerAI(Creature* p_Creature) : Scripted_NoMovementAI(p_Creature), m_Guid(0)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
+        targets.remove_if(BlindHatredPredicate(GetCaster()));
+        m_targets = targets;
+    }
 
-        InstanceScript* m_Instance;
-        uint32 m_SucceedDiff;
-        uint64 m_Guid;
-        bool m_Succeed;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(FactionHostile);
-            me->SetInCombatWithZone();     
-            me->AddUnitMovementFlag(MovementFlags::MOVEMENTFLAG_ROOT);
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE);
-            m_SucceedDiff = 59 * TimeConstants::IN_MILLISECONDS;
-            m_Succeed = false;
-        }
-
-        void SetGUID(uint64 guid, int32 /*param*/) override
-        {
-            m_Guid = guid;
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            events.ScheduleEvent(eEvents::EVENT_DISHEARTNING_LAUGH, 8 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(eEvents::EVENT_LINGERING_CORRUPTION, 20 * TimeConstants::IN_MILLISECONDS);
-            events.ScheduleEvent(eEvents::EVENT_BOTTOMLESS_PIT, 30 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void JustDied(Unit* p_Killer) override
-        {
-            if (!m_Succeed)
-            {
-                if (m_Instance != nullptr)
-                {
-                    if (TempSummon* l_Tempo = me->ToTempSummon())
-                    {
-                        if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                        {
-                            if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                            {
-                                l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), 0);
-
-                                l_SummonerPlayer->RemoveAura(eSpells::SPELL_LOOK_WITHIN_PHASEHEAL);
-                                l_SummonerPlayer->RemoveAura(eSpells::SPELL_TEST_OF_RELIANCE);
-                                l_SummonerPlayer->SetPhaseMask(1, true);
-                                l_SummonerPlayer->m_Events.KillAllEvents(true); /// stops set original phase from overlapping on other phases
-                                l_SummonerPlayer->AddAura(eSpells::SPELL_PURIFIED, l_SummonerPlayer);
-
-                                m_Succeed = true;
-
-
-                                if (Creature* l_LookWithin = Creature::GetCreature(*me, m_Guid))
-                                {
-                                    if (l_LookWithin->IsAIEnabled)
-                                        l_LookWithin->GetAI()->DoAction(eActions::ACTION_LOOK_WITHIN_ACTIVATE);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            me->DespawnOrUnsummon(500);
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (p_Damage && p_Damage > 0)
-            {
-                if (m_Instance != nullptr)
-                {
-                    if (Creature * l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                        p_Attacker->DealDamage(l_Almegalem, p_Damage);
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            // Test of Reliance wining conditions is to survive.
-            if (!m_Succeed)
-            {
-                if (m_SucceedDiff <= p_Diff)
-                {
-                    if (m_Instance != nullptr)
-                    {
-                        /// Test succeed only if tank survives
-                        if (TempSummon* l_Tempo = me->ToTempSummon())
-                        {
-                            if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                            {
-                                if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                                {
-                                    l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), 0);
-
-                                    l_SummonerPlayer->RemoveAura(eSpells::SPELL_TEST_OF_RELIANCE);
-                                    l_SummonerPlayer->RemoveAura(eSpells::SPELL_LOOK_WITHIN_PHASEHEAL);
-                                    l_SummonerPlayer->SetPhaseMask(1, true);
-                                    l_SummonerPlayer->m_Events.KillAllEvents(true); /// stops set original phase from overlapping on other phases
-
-                                    m_Succeed = true;
-                                    
-                                    uint32 l_Entries[3] = { CREATURE_SUN_TENDER_HEART, CREATURE_ROOK_STONE_TOE, CREATURE_LEVEN_DAWN };
-
-                                    for (uint32 l_I = 0; l_I <= 3; l_I++)
-                                    {
-                                        DespawnCreaturesInArea(me, l_Entries[l_I], false);
-                                    }
-
-                                    me->DespawnOrUnsummon(500);
-
-                                    if (Creature* l_LookWithin = Creature::GetCreature(*me, m_Guid))
-                                    {
-                                        if (l_LookWithin->IsAIEnabled)
-                                            l_LookWithin->GetAI()->DoAction(eActions::ACTION_LOOK_WITHIN_ACTIVATE);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else
-                    m_SucceedDiff -= p_Diff;
-            }
-
-            if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
-                return;
-
-            if (Unit* l_Target = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_DISHEARTNING_LAUGH:
-                        DoCast(eSpells::SPELL_DISHEARTENING_LAUGH);
-                        events.ScheduleEvent(eEvents::EVENT_DISHEARTNING_LAUGH, 20 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                    case eEvents::EVENT_LINGERING_CORRUPTION:
-                        if (Unit* l_RandomTarget = SelectTarget(SelectAggroTarget::SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                            me->CastSpell(l_RandomTarget, eSpells::SPELL_LINGERING_CORRUPTION);
-
-                        events.ScheduleEvent(eEvents::EVENT_LINGERING_CORRUPTION, 15 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                    case eEvents::EVENT_BOTTOMLESS_PIT:
-                        events.ScheduleEvent(eEvents::EVENT_BOTTOMLESS_PIT, 50 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void CopyTargets(std::list<WorldObject*>& targets)
     {
-        return new creature_look_within_triggerAI(creature);
+        targets = m_targets;
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_blind_hatred_eff::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_blind_hatred_eff::CopyTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
     }
 };
 
-/// Manifestation of Corruption - 72264 [Look Within]
-class creature_norushen_manifestation_of_corruption : public CreatureScript
+// Norushen Teleport 145188
+class spell_norushen_teleport : public SpellScript
 {
-public:
+    PrepareSpellScript(spell_norushen_teleport);
 
-    creature_norushen_manifestation_of_corruption() : CreatureScript("creature_norushen_manifestation_of_corruption") { }
-
-    struct creature_norushen_manifestation_of_corruptionAI : public Scripted_NoMovementAI
+    void HandleDummy(SpellEffIndex effIndex)
     {
-        creature_norushen_manifestation_of_corruptionAI(Creature* p_Creature) : Scripted_NoMovementAI(p_Creature), m_Guid(0)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
+        if (Creature* quarantinZone = ObjectAccessor::GetCreature(*GetCaster(), GetCaster()->GetInstanceScript() ? GetCaster()->GetInstanceScript()->GetData64(NPC_QUARANTINE_MEASURES) : 0))
+            if (GetHitUnit() && GetHitUnit()->GetExactDist2d(quarantinZone) <= 35.0f)
+                PreventHitEffect(effIndex);
+    }
 
-        InstanceScript* m_Instance;
-        uint64 m_Guid;
- 
-        void Reset() override
-        {
-            events.Reset();          
-            me->setFaction(FactionHostile);
-        }
-
-        void SetGUID(uint64 guid, int32 /*param*/) override
-        {
-            m_Guid = guid;
-        }
-
-        void JustDied(Unit* p_Killer) override
-        {
-            if (m_Instance != nullptr)
-            {
-                if (Creature* l_Manifestation = p_Killer->SummonCreature(eCreatures::CREATURE_UNLEASHED_MANIFESTATION_OF_CORRUPTION, *p_Killer, TEMPSUMMON_MANUAL_DESPAWN))
-                    l_Manifestation->SetPhaseMask(1, true);
-
-                if (Creature* l_LookWithinTrigger = Creature::GetCreature(*me, m_Guid))
-                {
-                    if (l_LookWithinTrigger->IsAIEnabled)
-                        l_LookWithinTrigger->GetAI()->DoAction(eActions::ACTION_COUNT_SERENITY_PHASE_KILLS);
-                }
-
-                /// If time passes, summons a manifestation of corruption
-                if (TempSummon* l_Tempo = me->ToTempSummon())
-                {
-                    if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                    {
-                        if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                        {
-                            if (AuraPtr l_Aura = l_SummonerPlayer->GetAura(eSpells::SPELL_CORRUPTION))
-                            {
-                                int32 bp = l_Aura->GetEffect(0)->GetBaseAmount();
-                                uint32 m_calc = bp - 40;
-
-                                l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), m_calc);
-
-                                if (bp < 0)
-                                    l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), 0);
-                            }
-                        }
-                    }
-                }
-            }
-
-            me->DespawnOrUnsummon(500);
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {          
-            events.ScheduleEvent(eEvents::EVENT_TEAR_REALITY, urand(8 * TimeConstants::IN_MILLISECONDS, 15 * TimeConstants::IN_MILLISECONDS));
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (p_Attacker)
-            {
-                if (p_Damage && p_Damage > 0)
-                {
-                    if (m_Instance != nullptr)
-                    {
-                        if (Creature * l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                            p_Attacker->DealDamage(l_Almegalem, p_Damage);
-                    }
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (Unit* l_Target = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_TEAR_REALITY:
-                            me->CastSpell(l_Target, eSpells::SPELL_TEAR_REALITY);
-                            events.ScheduleEvent(eEvents::EVENT_TEAR_REALITY, urand(8 * TimeConstants::IN_MILLISECONDS, 12 * TimeConstants::IN_MILLISECONDS));
-                            break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void Register() override
     {
-        return new creature_norushen_manifestation_of_corruptionAI(creature);
+        OnEffectHitTarget += SpellEffectFn(spell_norushen_teleport::HandleDummy, EFFECT_0, SPELL_EFFECT_TELEPORT_UNITS);
     }
 };
 
-/// Essence of Corruption - 71976 [Look Within] 
-class creature_norushen_essnece_of_corruption : public CreatureScript
+// Unleash Corruption 145768
+class spell_essence_unleash_corruption : public SpellScript
 {
-public:
+    PrepareSpellScript(spell_essence_unleash_corruption);
 
-    creature_norushen_essnece_of_corruption() : CreatureScript("creature_norushen_essnece_of_corruption") { }
-
-    struct creature_norushen_essnece_of_corruptionAI : public ScriptedAI
+    void SelectTargets(SpellDestination& dest)
     {
-        creature_norushen_essnece_of_corruptionAI(Creature* p_Creature) : ScriptedAI(p_Creature), m_Guid(0)
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*GetCaster(), GetCaster()->GetInstanceScript() ? GetCaster()->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
         {
-            m_Instance = p_Creature->GetInstanceScript();
+            GetPositionWithDistInOrientation(amalgam, 23.5f, frand(0.0f, 2 * M_PI), x, y);
+            Position newPos = { x, y, 356.339f, 0.0f };
+            dest.Relocate(newPos);
         }
+    }
 
-        InstanceScript* m_Instance;
-        uint64 m_Guid;
+    private:
+        float x, y;
 
-        void Reset() override
-        {
-            events.Reset();
-
-            me->setFaction(FactionHostile);
-            me->CastSpell(me, eSpells::SPELL_SERENITY_PHASE_MOBS_COSMETIC);
-        }
-
-        void SetGUID(uint64 guid, int32 /*param*/) override
-        {
-            m_Guid = guid;
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            events.ScheduleEvent(eEvents::EVENT_EXPEL_CORRUPTION, urand(6 * TimeConstants::IN_MILLISECONDS, 8 * TimeConstants::IN_MILLISECONDS));
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (p_Attacker)
-            {
-                if (p_Damage && p_Damage > 0)
-                {
-                    if (m_Instance != nullptr)
-                    {
-                        if (Creature * l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                            p_Attacker->DealDamage(l_Almegalem, p_Damage);
-                    }
-                }
-            }
-        }
-
-        void JustDied(Unit* p_Killer) override
-        {
-            if (m_Instance != nullptr)
-            {
-                if (TempSummon* l_Tempo = me->ToTempSummon())
-                {
-                    if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                    {
-                        if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                        {
-                            if (AuraPtr l_Aura = l_SummonerPlayer->GetAura(eSpells::SPELL_CORRUPTION))
-                            {
-                                int32 bp = l_Aura->GetEffect(0)->GetBaseAmount();
-                                uint32 m_calc = bp - 15;
-
-                                l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), m_calc);
-
-                                if (bp < 0)
-                                    l_SummonerPlayer->SetPower(Powers(POWER_ALTERNATE_POWER), 0);
-
-                                if (Creature* l_LookWithinTrigger = Creature::GetCreature(*me, m_Guid))
-                                {
-                                    if (l_LookWithinTrigger->IsAIEnabled)
-                                        l_LookWithinTrigger->GetAI()->DoAction(eActions::ACTION_COUNT_SERENITY_PHASE_KILLS);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (Creature* l_Essence = p_Killer->SummonCreature(eCreatures::CREATURE_UNLEASHED_ESSENCE_OF_CORRUPTION, *p_Killer, TEMPSUMMON_MANUAL_DESPAWN))
-                    l_Essence->SetPhaseMask(1, true);
-            }
-                me->DespawnOrUnsummon(500);          
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-        
-            if (Unit* l_Target = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_EXPEL_CORRUPTION:
-                        me->CastSpell(l_Target, eSpells::SPELL_EXPELLED_CORRUPTION);
-                        events.ScheduleEvent(eEvents::EVENT_EXPEL_CORRUPTION, urand(6 * TimeConstants::IN_MILLISECONDS, 8 * TimeConstants::IN_MILLISECONDS));
-                        break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* p_Creature) const override
+    void Register() override
     {
-        return new creature_norushen_essnece_of_corruptionAI(p_Creature);
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_essence_unleash_corruption::SelectTargets, EFFECT_0, TARGET_DEST_DEST_RADIUS);
     }
 };
 
-/// Manifestation of Corruption - 71977 [Normal]
-class creature_norushen_manifestation_of_corruption_non_test : public CreatureScript
+// Unleash Corruption 145769
+class spell_manifestation_unleash_corruption : public SpellScript
 {
-public:
+    PrepareSpellScript(spell_manifestation_unleash_corruption);
 
-    creature_norushen_manifestation_of_corruption_non_test() : CreatureScript("creature_norushen_manifestation_of_corruption_non_test") { }
-
-    struct creature_norushen_manifestation_of_corruptionAI : public ScriptedAI
+    void SelectTargets(SpellDestination& dest)
     {
-        creature_norushen_manifestation_of_corruptionAI(Creature* p_Creature) : ScriptedAI(p_Creature)
+        if (Creature* amalgam = ObjectAccessor::GetCreature(*GetCaster(), GetCaster()->GetInstanceScript() ? GetCaster()->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
         {
-            m_Instance = p_Creature->GetInstanceScript();
+            GetPositionWithDistInOrientation(amalgam, 37.5f, frand(0.0f, 2 * M_PI), x, y);
+            Position newPos = { x, y, 356.339f, 0.0f };
+            dest.Relocate(newPos);
         }
+    }
 
-        InstanceScript* m_Instance;
-        uint32 m_DiffVisual;
-        uint32 m_OriginalDisplayId;
-        bool m_VisualHappen;
+    private:
+        float x, y;
 
-        void Reset() override
-        {
-            events.Reset();
-            DoZoneInCombat();
-            me->setFaction(FactionHostile);
-
-            /*
-            m_OriginalDisplayId = me->GetDisplayId();  
-            me->SetReactState(ReactStates::REACT_PASSIVE);        
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-            me->CastSpell(me, eSpells::SPELL_SERENITY_PHASE_MOBS_COSMETIC, true);
-            m_VisualHappen = false;
-            me->SetDisplayId(11686);
-            if (m_Instance != nullptr)
-            {
-                if (Creature * l_Trigger = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                {
-                    l_Trigger->CastSpell(me, eSpells::SPELL_NORUSHEN_COLOR, true);
-
-                    m_VisualHappen = true;
-                    m_DiffVisual = 6 * TimeConstants::IN_MILLISECONDS;
-                }
-            }
-            */
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            events.ScheduleEvent(eEvents::EVENT_BURST_ANGER, 2 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void JustDied(Unit* p_Killer) override
-        {
-            if (Creature* l_Residual = p_Killer->SummonCreature(eCreatures::CREATURE_RESIDUAL_CORRUPTION, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation(), TempSummonType::TEMPSUMMON_MANUAL_DESPAWN))
-                l_Residual->SetPhaseMask(1, true);
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            /*
-            if (m_VisualHappen)
-            {
-                if (m_DiffVisual <= p_Diff)
-                {
-                    m_VisualHappen = true;
-
-                    me->SetDisplayId(m_OriginalDisplayId);
-                    me->SetReactState(ReactStates::REACT_AGGRESSIVE);                  
-                    me->RemoveFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-                }
-                else
-                    m_DiffVisual -= p_Diff;
-            }
-            */
-
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
-                return;
-
-            if (Unit* l_Target = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_BURST_ANGER:
-                        me->CastSpell(l_Target, eSpells::SPELL_BURST_OF_ANGER, false);
-                        events.ScheduleEvent(eEvents::EVENT_BURST_ANGER, 2 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void Register() override
     {
-        return new creature_norushen_manifestation_of_corruptionAI(creature);
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_manifestation_unleash_corruption::SelectTargets, EFFECT_0, TARGET_DEST_DEST_RADIUS);
     }
 };
 
-/// Essence of Corruption - 71976 [Normal] 
-class creature_norushen_essnece_of_corruption_non_test : public CreatureScript
+// we should hit only our owner in same phase with another challengers
+class TrialPhasePredicate : public std::unary_function<Unit*, bool>
 {
-public:
+    public:
+        TrialPhasePredicate(Creature* const m_caster) : _caster(m_caster) { }
+    
+        bool operator()(WorldObject* object)
+        {
+            if (object && object->ToPlayer() && _caster->AI()->GetGUID() == object->ToPlayer()->GetGUID())
+                return false;
 
-    creature_norushen_essnece_of_corruption_non_test() : CreatureScript("creature_norushen_essnece_of_corruption_non_test") { }
+            return true;
+        }
+    
+    private:
+        Creature const* _caster;
+};
 
-    struct creature_norushen_essnece_of_corruptionAI : public ScriptedAI
+// Bottomless Pit Selector 146701
+class spell_bottomless_pit : public SpellScript
+{
+    PrepareSpellScript(spell_bottomless_pit);
+
+    void HandleDummy(SpellEffIndex effIndex)
     {
-        creature_norushen_essnece_of_corruptionAI(Creature* p_Creature) : ScriptedAI(p_Creature)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
+        if (Unit* caster = GetCaster())
+            if (Unit* target = GetHitUnit())
+                caster->CastSpell(target, GetSpellInfo()->Effects[EFFECT_0].BasePoints, true);
+    }
 
-        InstanceScript* m_Instance;
-
-        void Reset() override
-        {
-            events.Reset();
-            me->setFaction(FactionHostile);
-            me->SetInCombatWithZone();    
-            me->CastSpell(me, eSpells::SPELL_SERENITY_PHASE_MOBS_COSMETIC);
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            if (m_Instance != nullptr)
-            {
-                if (Creature * l_Almegalem = m_Instance->instance->GetCreature(m_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                {
-                    me->CastSpell(l_Almegalem, eSpells::SPELL_FOUL_LINK_AURA);
-                }
-            }
-
-            events.ScheduleEvent(eEvents::EVENT_EXPEL_CORRUPTION, urand(6 * TimeConstants::IN_MILLISECONDS, 8 * TimeConstants::IN_MILLISECONDS));
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (Unit* l_Target = me->getVictim())
-            {
-                switch (events.ExecuteEvent())
-                {
-                    case eEvents::EVENT_EXPEL_CORRUPTION:
-                        me->CastSpell(l_Target, 145134); // Expelled Corruption
-                        events.ScheduleEvent(eEvents::EVENT_EXPEL_CORRUPTION, urand(6 * TimeConstants::IN_MILLISECONDS, 8 * TimeConstants::IN_MILLISECONDS));
-                        break;
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        return new creature_norushen_essnece_of_corruptionAI(creature);
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_SUN_TENDERHEART_GC && target->GetEntry() != NPC_LEVEN_DAWNBLADE_GC && target->GetEntry()!=NPC_ROOK_STONETOE_GC; });
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_bottomless_pit::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_bottomless_pit::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
-/// Leven Dawnblade - 71995
-class creature_norushen_leven : public CreatureScript
+// Bottomless Pit Selector 146705
+class spell_bottomless_pit_player_selector : public SpellScript
 {
-public:
+    PrepareSpellScript(spell_bottomless_pit_player_selector);
 
-    creature_norushen_leven() : CreatureScript("creature_norushen_leven") { }
-
-    struct creature_norushen_levenAI : public ScriptedAI
+    void HandleDummy(SpellEffIndex effIndex)
     {
-        creature_norushen_levenAI(Creature* p_Creature) : ScriptedAI(p_Creature)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
+        if (Unit* caster = GetCaster())
+            if (Unit* target = GetHitUnit())
+                caster->CastSpell(target, GetSpellInfo()->Effects[EFFECT_0].BasePoints, true);
+    }
 
-        InstanceScript* m_Instance;
-        uint64 m_BottomLessPitGUID;
-        bool m_Moved;
-        bool m_Exhausted;
-
-        void Reset() override
-        {
-            events.Reset();
-            m_Moved = false;
-            m_Exhausted = true;
-            m_BottomLessPitGUID = 0;
-
-            if (Creature* l_GreaterCorruption = me->FindNearestCreature(eCreatures::CREATURE_GREATER_CORRUPTION, 100.0f, true))
-            {
-                if (me->IsAIEnabled)
-                    me->AI()->AttackStart(l_GreaterCorruption);
-
-                ///< Initial threat upon reset
-                me->AddThreat(l_GreaterCorruption, 2000.0f);
-            }
-
-            // Sets to player's faction
-            if (TempSummon* l_Tempo = me->ToTempSummon())
-            {
-                if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                {
-                    if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                    {
-                        me->setFaction(l_SummonerPlayer->getFaction());
-                    }
-                }
-            }
-
-            me->ClearUnitState(UnitState::UNIT_STATE_CANNOT_AUTOATTACK);
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC);
-            me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
-            me->AddAura(eSpells::SPELL_DAMAGE_DEALER, me);
-            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
-            ///< Pandas starts with 0.25% of their health
-            me->SetMaxHealth(me->GetMaxHealth() * 0.35f);
-            me->SetHealth(me->GetHealth() * 0.35f);
-        }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            events.ScheduleEvent(eEvents::EVENT_THREATENING_STRIKES, 2 * TimeConstants::IN_MILLISECONDS);
-        }
-
-        void MovementInform(uint32 p_Type, uint32 p_Id)
-        {
-            if (p_Id == eMovementInformed::MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT)
-            {
-                if (m_BottomLessPitGUID != 0)
-                {
-                    if (Creature* l_NearestBottomLessPit = Creature::GetCreature(*me, m_BottomLessPitGUID))
-                    {
-                        if (me->IsWithinDistInMap(l_NearestBottomLessPit, 1.2f))
-                        {
-                            m_Moved = true;
-                        }
-                        else
-                        {
-                            m_Moved = true;
-                            m_BottomLessPitGUID = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (m_Exhausted)
-            {
-                if (me->GetHealthPct() <= 10)
-                {
-                    m_Exhausted = false;
-                   
-                    me->AddAura(eSpells::SPELL_EXHAUSTED, me);
-                    me->getHostileRefManager().clearReferences();         
-                    me->SetReactState(ReactStates::REACT_PASSIVE);
-                    me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (!m_Moved)
-            {
-                if (Creature* l_NearestBottomLessPit = me->FindNearestCreature(eCreatures::CREATURE_BOTTOMLESS_PIT, 1.5f, true))
-                {
-                    m_Moved = true;
-
-                    Position l_Position;
-                    l_NearestBottomLessPit->GetPosition(&l_Position);
-                    me->GetRandomNearPosition(l_Position, 2.0f);
-
-                    m_BottomLessPitGUID = l_NearestBottomLessPit->GetGUID();
-
-                    me->GetMotionMaster()->MovePoint(eMovementInformed::MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT, l_Position);
-                }
-            }
-
-            if (Creature* l_GreaterCorruption = me->FindNearestCreature(eCreatures::CREATURE_GREATER_CORRUPTION, 100.0f, true))
-            {
-                ///< Applies threats
-                me->AddThreat(l_GreaterCorruption, 2000.0f);
-            }
-
-            switch (events.ExecuteEvent())
-            {
-                case eEvents::EVENT_THREATENING_STRIKES:
-                {
-                    if (Creature* l_GreaterCorruption = me->FindNearestCreature(eCreatures::CREATURE_GREATER_CORRUPTION, 100.0f, true))
-                    {
-                        me->CastSpell(l_GreaterCorruption, eSpells::SPELL_THREATENING_STRIKES);
-                        events.ScheduleEvent(eEvents::EVENT_THREATENING_STRIKES, 2 * TimeConstants::IN_MILLISECONDS);
-                        break;
-                    }
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        return new creature_norushen_levenAI(creature);
+        if (Creature* caster = GetCaster()->ToCreature())
+            targets.remove_if(TrialPhasePredicate(caster));
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_bottomless_pit_player_selector::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_bottomless_pit_player_selector::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
-/// Rook Stonetoe - 71995
-class creature_norushen_rook : public CreatureScript
+// Lingering Corruption 144514
+class spell_norushen_lingering_corruption : public SpellScript
 {
-public:
+    PrepareSpellScript(spell_norushen_lingering_corruption);
 
-    creature_norushen_rook() : CreatureScript("creature_norushen_rook") { }
-
-    struct creature_norushen_rookAI : public ScriptedAI
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        creature_norushen_rookAI(Creature* p_Creature) : ScriptedAI(p_Creature)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
+        targets.remove_if([=](WorldObject* target) { return target->GetEntry() != NPC_SUN_TENDERHEART_GC && target->GetEntry() != NPC_LEVEN_DAWNBLADE_GC && target->GetEntry() != NPC_ROOK_STONETOE_GC 
+            || GetCaster() && GetCaster()->ToCreature() && target && target->ToPlayer() && GetCaster()->ToCreature()->AI()->GetGUID() != target->ToPlayer()->GetGUID(); });
 
-        InstanceScript* m_Instance;
-        uint64 m_BottomLessPitGUID;
-        bool m_Moved;
-        bool m_Exhausted;
+        if (targets.size() > 1)
+            Trinity::Containers::RandomResizeList(targets, 1);
+    }
 
-        void Reset() override
-        {
-            events.Reset();
-            m_Moved = false;
-            m_Exhausted = true;
-            m_BottomLessPitGUID = 0;
-
-            if (Creature* l_GreaterCorruption = me->FindNearestCreature(eCreatures::CREATURE_GREATER_CORRUPTION, 100.0f, true))
-            {
-                if (me->IsAIEnabled)
-                    me->AI()->AttackStart(l_GreaterCorruption);
-            }
-
-            // Sets to player's faction
-            if (TempSummon* l_Tempo = me->ToTempSummon())
-            {
-                if (Unit* l_Summoner = l_Tempo->GetSummoner())
-                {
-                    if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
-                    {
-                        me->setFaction(l_SummonerPlayer->getFaction());
-                    }
-                }
-            }
-
-            me->ClearUnitState(UnitState::UNIT_STATE_CANNOT_AUTOATTACK);
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC);
-            me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
-            me->AddAura(eSpells::SPELL_DAMAGE_DEALER, me);
-            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
-            ///< Pandas starts with 0.25% of their health
-            me->SetMaxHealth(me->GetMaxHealth() * 0.25f);
-            me->SetHealth(me->GetHealth() * 0.25f);
-        }
-
-        void MovementInform(uint32 type, uint32 id)
-        {
-            if (id == eMovementInformed::MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT)
-            {
-                if (m_BottomLessPitGUID != 0)
-                {
-                    if (Creature* l_NearestBottomLessPit = Creature::GetCreature(*me, m_BottomLessPitGUID))
-                    {
-                        if (me->IsWithinDistInMap(l_NearestBottomLessPit, 1.2f))
-                        {
-                            m_Moved = true;
-                        }
-                        else
-                        {
-                            m_Moved = true;
-                            m_BottomLessPitGUID = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (m_Exhausted)
-            {
-                if (me->GetHealthPct() <= 8)
-                {
-                    m_Exhausted = false;
-
-                    me->AddAura(eSpells::SPELL_EXHAUSTED, me);
-                    me->getHostileRefManager().clearReferences();
-                    me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (!m_Moved)
-            {
-                if (Creature* l_NearestBottomLessPit = me->FindNearestCreature(eCreatures::CREATURE_BOTTOMLESS_PIT, 1.5f, true))
-                {
-                    m_Moved = true;
-
-                    Position l_Position;
-                    l_NearestBottomLessPit->GetPosition(&l_Position);
-                    me->GetRandomNearPosition(l_Position, 2.0f);
-
-                    m_BottomLessPitGUID = l_NearestBottomLessPit->GetGUID();
-
-                    me->GetMotionMaster()->MovePoint(eMovementInformed::MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT, l_Position);
-                }
-            }
-
-            DoMeleeAttackIfReady();
-        }
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
+    void Register() override
     {
-        return new creature_norushen_rookAI(creature);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_lingering_corruption::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
     }
 };
 
-/// Sun Tenderheart - 72000
-class creature_norushen_sun : public CreatureScript
+// Tear Reality 144482
+class spell_tear_reality : public SpellScript
 {
-public:
+    PrepareSpellScript(spell_tear_reality);
 
-    creature_norushen_sun() : CreatureScript("creature_norushen_sun") { }
-
-    struct creature_norushen_sunAI : public ScriptedAI
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        creature_norushen_sunAI(Creature* p_Creature) : ScriptedAI(p_Creature)
+        if (Creature* caster = GetCaster()->ToCreature())
+            targets.remove_if(TrialPhasePredicate(caster));
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_tear_reality::FilterTargets, EFFECT_1, TARGET_UNIT_CONE_ENEMY_104);
+    }
+};
+
+// Burst of Corruption 144654
+class spell_titanic_burst_of_corruption : public SpellScript
+{
+    PrepareSpellScript(spell_titanic_burst_of_corruption);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+            targets.remove_if(TrialPhasePredicate(caster));
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_titanic_burst_of_corruption::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
+};
+
+// Titanic Smash 144628
+class spell_titanic_titanic_smash : public SpellScript
+{
+    PrepareSpellScript(spell_titanic_titanic_smash);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+            targets.remove_if(TrialPhasePredicate(caster));
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_titanic_titanic_smash::FilterTargets, EFFECT_1, TARGET_UNIT_CONE_ENEMY_24);
+    }
+};
+
+// Look Within 146827, 144724, 144725, 144726, 144727, 146826, 146828, 146829, 146830, 146831, 146832, 146833, 146834, 146835, 146836, 146837
+class spell_look_within : public AuraScript
+{
+    PrepareAuraScript(spell_look_within);
+
+    void HandleOnRemove(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Unit* owner = GetOwner()->ToUnit())
         {
-            m_Instance = p_Creature->GetInstanceScript();
+            if (Creature* amalgam = ObjectAccessor::GetCreature(*owner, owner->GetInstanceScript() ? owner->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
+                amalgam->AI()->SetData(TYPE_LIGHT_ORB_SLOT, GetSpellInfo()->Id);
+
+            owner->SetPhaseMask(1, true);
         }
+    }
 
-        InstanceScript* m_Instance;
-        uint64 m_BottomLessPitGUID;
-        bool m_Exhausted;
-        bool m_Moved;
+    void HandleRessumon(AuraEffect const* /*aureff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Player* owner = GetOwner()->ToPlayer())
+            owner->ResummonPetTemporaryUnSummonedIfAny();
+    }
 
-        void Reset() override
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_look_within::HandleOnRemove, EFFECT_0, SPELL_AURA_PHASE, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_look_within::HandleRessumon, EFFECT_0, SPELL_AURA_PHASE, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectApply += AuraEffectApplyFn(spell_look_within::HandleRessumon, EFFECT_0, SPELL_AURA_PHASE, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// Unleash Corruption 145006 (Essence), 145007 (Manifest)
+class spell_unleash_corruption_summ : public SpellScript
+{
+    PrepareSpellScript(spell_unleash_corruption_summ);
+
+    void HandleEffectHitTarget(SpellEffIndex eff_idx)
+    {
+        if (GetCaster() && GetCaster()->GetInstanceScript() && GetCaster()->GetInstanceScript()->GetBossState(DATA_NORUSHEN) != IN_PROGRESS)
+            PreventHitEffect(eff_idx);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_unleash_corruption_summ::HandleEffectHitTarget, EFFECT_0, SPELL_EFFECT_SUMMON);
+    }
+};
+
+// Purified 144452
+class spell_norushen_purified : public AuraScript
+{
+    PrepareAuraScript(spell_norushen_purified);
+
+    void OnUpdate(uint32 /*diff*/, AuraEffect* aurEff)
+    {
+        if (GetOwner() && GetOwner()->ToUnit() && GetOwner()->ToUnit()->GetInstanceScript() && GetOwner()->ToUnit()->GetInstanceScript()->GetBossState(DATA_NORUSHEN) != IN_PROGRESS)
+            GetOwner()->ToUnit()->RemoveAurasDueToSpell(GetSpellInfo()->Id);
+    }
+
+    void Register() override
+    {
+        OnEffectUpdate += AuraEffectUpdateFn(spell_norushen_purified::OnUpdate, EFFECT_0, SPELL_AURA_MOD_HEALING_DONE_PERCENT);
+    }
+};
+
+// 1084. Summoned by 144548 - Expel Corruption
+class sat_expel_corruption : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* object) override
+    {
+        return object && (object->ToPlayer() || object->ToCreature() && object->ToCreature()->GetEntry() == NPC_AMALGAM_OF_CORRUPTION && GetAreaTrigger()->GetExactDist2d(object->ToCreature()) < 1.0f);
+    }
+
+    void OnInit() override
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
         {
-            events.Reset();
-            m_Moved = false;
-            m_Exhausted = true;
-            m_BottomLessPitGUID = 0;
-
-            if (Creature* l_GreaterCorruption = me->FindNearestCreature(eCreatures::CREATURE_GREATER_CORRUPTION, 100.0f, true))
+            if (Unit* target = ObjectAccessor::GetUnit(*caster, caster->GetInstanceScript() ? caster->GetInstanceScript()->GetData64(NPC_AMALGAM_OF_CORRUPTION) : 0))
             {
-                if (me->IsAIEnabled)
-                    me->AI()->AttackStart(l_GreaterCorruption);
+                AreaTrigger* at = GetAreaTrigger();
+                float dist = at->GetExactDist2d(target) + 5.0f;
+                float x, y;
+
+                std::vector<Position> path;
+
+                for (uint32 i = 0; i < 16; ++i)
+                {
+                    x = at->GetPositionX() + ((dist / 16.0f) * i * cos(at->GetAngle(target)));
+                    y = at->GetPositionY() + ((dist / 16.0f) * i * sin(at->GetAngle(target)));
+                    path.push_back({ x, y, at->GetPositionZ() });
+                }
+
+                GetAreaTrigger()->InitSpline(path, at->GetDuration());
+            }
+        }
+    }
+
+    void OnTrigger(WorldObject* target) override
+    {
+        if (Player* itr = target->ToPlayer())
+        {
+            if (Unit* caster = GetCaster())
+                caster->CastSpell(itr, SPELL_EXPELLED_CORRUPTION_EFF, true);
+        }
+        else if (Creature* itr = target->ToCreature())
+        {
+            itr->CastSpell(itr, SPELL_FUSION, true);
+
+            if (itr->AI())
+                itr->AI()->SetData(TYPE_NONE_SHALL_PASS, 0);
+        }
+    }
+};
+
+// 1106. Summoned by 145064 - Expel Corruption 145064
+class sat_expel_corruption_realm : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* object) override
+    {
+        return object && object->ToPlayer() && GetCaster() && GetCaster()->ToCreature() && GetCaster()->ToCreature()->AI()->GetGUID() == object->ToPlayer()->GetGUID() && GetAreaTrigger()->GetExactDist2d(object->ToPlayer()) < 1.0f;
+    }
+
+    void OnInit() override
+    {
+        if (Creature* caster = GetCaster()->ToCreature())
+        {
+            AreaTrigger* at = GetAreaTrigger();
+            float dist = 80.0f;
+            float x, y;
+
+            std::vector<Position> path;
+
+            for (uint32 i = 0; i < 20; ++i)
+            {
+                x = at->GetPositionX() + ((dist / 16.0f) * i * cos(caster->GetOrientation()));
+                y = at->GetPositionY() + ((dist / 16.0f) * i * sin(caster->GetOrientation()));
+                path.push_back({ x, y, at->GetPositionZ() });
             }
 
-            // Sets to player's faction
-            if (TempSummon* l_Tempo = me->ToTempSummon())
+            GetAreaTrigger()->InitSpline(path, at->GetDuration());
+        }
+    }
+
+    void OnTrigger(WorldObject* target) override
+    {
+        if (Player* itr = target->ToPlayer())
+            if (Unit* caster = GetCaster())
+                caster->CastSpell(itr, SPELL_EXPELLED_CORRUPTION_EFF, true);
+    }
+};
+
+// 1107. Summoned by 145074 - Residual Corruption
+class sat_residual_corruption : public IAreaTriggerOnce
+{
+    bool CheckTriggering(WorldObject* object) override
+    {
+        return object && object->ToPlayer() && object->ToPlayer()->GetPower(POWER_ALTERNATE_POWER) <= 75;
+    }
+
+    void OnTrigger(WorldObject* target) override
+    {
+        if (Player* itr = target->ToPlayer())
+            itr->SetPower(POWER_ALTERNATE_POWER, itr->GetPower(POWER_ALTERNATE_POWER) + 25);
+    }
+};
+
+// 1257. Summoned by 146793 - Bottomless Pit
+class sat_bottomless_pit : public IAreaTriggerAura
+{
+    bool CheckTriggering(WorldObject* triggering) override
+    {
+        return triggering && triggering->ToPlayer() || triggering->ToCreature() && (triggering->ToCreature()->GetEntry() == NPC_SUN_TENDERHEART_GC || triggering->ToCreature()->GetEntry() == NPC_LEVEN_DAWNBLADE_GC || triggering->ToCreature()->GetEntry() == NPC_ROOK_STONETOE_GC);
+    }
+
+    void OnTriggeringApply(WorldObject* triggering) override
+    {
+        if (Player* itr = triggering->ToPlayer())
+            if (Unit* caster = GetCaster())
+                caster->CastSpell(itr, SPELL_BOTTOMLESS_PIT_DMG, true);
+    }
+
+    void OnTriggeringRemove(WorldObject* triggering) override
+    {
+        if (Player* itr = triggering->ToPlayer())
+            itr->RemoveAurasDueToSpell(SPELL_BOTTOMLESS_PIT_DMG);
+    }
+};
+
+class cond_blind_hatred : public ConditionScript
+{
+    public:
+        cond_blind_hatred() : ConditionScript("cond_blind_hatred") { }
+
+        bool OnConditionCheck(Condition* cond, ConditionSourceInfo& source) override
+        {
+            if (source.mConditionTargets[0] && source.mConditionTargets[1])
             {
-                if (Unit* l_Summoner = l_Tempo->GetSummoner())
+                if (Creature* caster = source.mConditionTargets[1]->ToCreature())
                 {
-                    if (Player* l_SummonerPlayer = sObjectAccessor->GetPlayer(*me, l_Summoner->GetGUID()))
+                    if (Creature* target = source.mConditionTargets[0]->ToCreature())
                     {
-                        me->setFaction(l_SummonerPlayer->getFaction());
+                        if (caster->GetEntry() == NPC_QUARANTINE_MEASURES && target->GetEntry() == NPC_BLIND_HATRED)
+                            return true;
+
+                        if (caster->GetEntry() == NPC_AMALGAM_OF_CORRUPTION && target->GetEntry() == NPC_AMALGAM_OF_CORRUPTION) // should have only visual channeled for self
+                            return true;
                     }
                 }
             }
 
-            me->ClearUnitState(UnitState::UNIT_STATE_CANNOT_AUTOATTACK);
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC);
-            me->RemoveFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
-            me->AddAura(eSpells::SPELL_DAMAGE_DEALER, me);
-            me->SetReactState(ReactStates::REACT_AGGRESSIVE);
-            ///< Pandas starts with 0.25% of their health
-            me->SetMaxHealth(me->GetMaxHealth() * 0.25f);
-            me->SetHealth(me->GetHealth() * 0.25f);
+            return false;
         }
-
-        void EnterCombat(Unit* p_Attacker) override
-        {
-            events.ScheduleEvent(eEvents::EVENT_FIRE_BOLT, 500);
-        }
-
-        void MovementInform(uint32 type, uint32 id)
-        {
-            if (id == eMovementInformed::MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT)
-            {
-                if (m_BottomLessPitGUID != 0)
-                {
-                    if (Creature* l_NearestBottomLessPit = Creature::GetCreature(*me, m_BottomLessPitGUID))
-                    {
-                        if (me->IsWithinDistInMap(l_NearestBottomLessPit, 1.2f))
-                        {
-                            m_Moved = true;
-                        }
-                        else
-                        {
-                            m_Moved = true;
-                            m_BottomLessPitGUID = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        void DamageTaken(Unit* p_Attacker, uint32& p_Damage) override
-        {
-            if (m_Exhausted)
-            {
-                if (me->GetHealthPct() <= 10)
-                {
-                    m_Exhausted = false;
-
-                    me->AddAura(eSpells::SPELL_EXHAUSTED, me);
-                    me->getHostileRefManager().clearReferences();
-                    me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_PC | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-                }
-            }
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            if (!UpdateVictim())
-                return;
-
-            events.Update(p_Diff);
-
-            if (!m_Moved)
-            {
-                if (Creature* l_NearestBottomLessPit = me->FindNearestCreature(eCreatures::CREATURE_BOTTOMLESS_PIT, 1.5f, true))
-                {
-                    m_Moved = true;
-                    
-                    Position l_Position;
-                    l_NearestBottomLessPit->GetPosition(&l_Position);
-                    me->GetRandomNearPosition(l_Position, 2.0f);
-
-                    m_BottomLessPitGUID = l_NearestBottomLessPit->GetGUID();
-
-                    me->GetMotionMaster()->MovePoint(eMovementInformed::MOVEMENT_INFORM_LEAVING_BOTTOMLESS_PIT, l_Position);
-                }
-            }
-
-            if (me->HasUnitState(UnitState::UNIT_STATE_CASTING))
-                return;
-
-            switch (events.ExecuteEvent())
-            {
-                case eEvents::EVENT_FIRE_BOLT:
-                {
-                    if (Creature* l_GreaterCorruption = me->FindNearestCreature(eCreatures::CREATURE_GREATER_CORRUPTION, 100.0f, true))
-                    {
-                        me->CastSpell(l_GreaterCorruption, eSpells::SPELL_FIRE_BOLT);
-                        events.ScheduleEvent(eEvents::EVENT_FIRE_BOLT, 2700);
-                        break;
-                    }
-                }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* p_Creature) const override
-    {
-        return new creature_norushen_sunAI(p_Creature);
-    }
-};
-
-/// Residual Corruption - 72550
-class creature_residual_corruption : public CreatureScript
-{
-public:
-
-    creature_residual_corruption() : CreatureScript("creature_residual_corruption") { }
-
-    struct creature_residual_corruptionAI : public ScriptedAI
-    {
-        creature_residual_corruptionAI(Creature* p_Creature) : ScriptedAI(p_Creature)
-        {
-            m_Instance = p_Creature->GetInstanceScript();
-        }
-
-        InstanceScript* m_Instance;
-        uint32 m_IntervalDiff;
-        bool m_Used;
-
-        void Reset() override
-        {
-            events.Reset();
-
-            m_Used = false;
-            me->setFaction(FactionHostile);
-            me->SetReactState(ReactStates::REACT_PASSIVE);
-            m_IntervalDiff = 2 * TimeConstants::IN_MILLISECONDS;      
-            me->AddAura(eSpells::SPELL_RESIDUAL_CORRUPTION_AURA, me); 
-            me->SetFlag(EUnitFields::UNIT_FIELD_FLAGS, UnitFlags::UNIT_FLAG_DISABLE_MOVE | UnitFlags::UNIT_FLAG_IMMUNE_TO_NPC | UnitFlags::UNIT_FLAG_NOT_SELECTABLE | UnitFlags::UNIT_FLAG_NON_ATTACKABLE);
-        }
-
-        void UpdateAI(const uint32 p_Diff) override
-        {
-            // Hack visual
-            if (m_IntervalDiff <= p_Diff)
-            {
-                me->CastSpell(me, 144479, true); // Visual
-                m_IntervalDiff = 2 * TimeConstants::IN_MILLISECONDS;
-            }
-            else
-                m_IntervalDiff -= p_Diff;
-
-            if (m_Instance != nullptr)
-            {
-                if (!m_Used)
-                {
-                    if (Player* l_Nearest = me->FindNearestPlayer(1.12f, true))
-                    {
-                        if (AuraPtr l_Aura = l_Nearest->GetAura(eSpells::SPELL_CORRUPTION))
-                        {
-                            if (me->GetMap())
-                            {
-                                m_Used = true;
-
-                                if (me->GetMap()->GetDifficulty() == MAN10_DIFFICULTY || me->GetMap()->GetDifficulty() == DYNAMIC_DIFFICULTY)
-                                {
-                                    int32 bp = l_Aura->GetEffect(0)->GetBaseAmount();
-                                    bp += 40;
-
-                                    l_Nearest->SetPower(Powers(POWER_ALTERNATE_POWER), bp);
-                                    l_Nearest->RemoveAura(eSpells::SPELL_PURIFIED);
-
-                                    if (bp > 100)
-                                        l_Nearest->SetPower(Powers(POWER_ALTERNATE_POWER), 100);
-                                }
-
-                                me->DespawnOrUnsummon(500);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    CreatureAI* GetAI(Creature* p_Creature) const override
-    {
-        return new creature_residual_corruptionAI(p_Creature);
-    }
-};
-
-/// Icy Fear - 145735  
-class spell_norushen_icy_fear : public SpellScriptLoader
-{
-public:
-    spell_norushen_icy_fear() : SpellScriptLoader("spell_norushen_icy_fear") { }
-
-    class spell_norushen_icy_fear_AuraScript : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_icy_fear_AuraScript);
-
-        void HandleOnHit()
-        {
-            if (!GetHitUnit())
-                return;
-
-            if (GetHitUnit()->HasAura(eSpells::SPELL_CORRUPTION))
-            {
-                if (AuraPtr l_Aura = GetHitUnit()->GetAura(eSpells::SPELL_CORRUPTION))
-                {
-                    if (InstanceScript* l_Instance = GetHitUnit()->GetInstanceScript())
-                    {
-                        if (Creature* l_Amagalem = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION))) ///< Controller, responsible for the boss summoning.
-                        {
-                            int32 bp = l_Amagalem->GetHealthPct();
-
-                            if (SpellInfo const* l_Info = sSpellMgr->GetSpellInfo(eSpells::SPELL_ICY_FEAR_DAMAGE))
-                            {
-                                if (bp <= 0)
-                                    return;
-
-                                int l_Damage = 100000;
-                                int l_Calc = l_Damage * (2-bp/100.0f);
-
-                                SetHitDamage(l_Calc);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        void Register()
-        {
-            OnHit += SpellHitFn(spell_norushen_icy_fear_AuraScript::HandleOnHit);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
-    {
-        return new spell_norushen_icy_fear_AuraScript();
-    }
-};
-
-/// Unleashed Anger - 145212 
-class spell_norushen_unleahsed_anger : public SpellScriptLoader
-{
-public:
-    spell_norushen_unleahsed_anger() : SpellScriptLoader("spell_norushen_unleahsed_anger") { }
-
-    class spell_norushen_unleahsed_anger_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_unleahsed_anger_SpellScript);
-
-        void OnHitSetDamage()
-        {
-            if (GetHitUnit())
-            {
-                // Self Doubt
-                if (GetHitUnit()->HasAura(eSpells::SPELL_SELF_DOUBT))
-                {
-                    AuraPtr l_Aura = GetHitUnit()->GetAura(eSpells::SPELL_SELF_DOUBT);
-
-                    if (l_Aura)
-                    {
-                        // Damage Calculation
-                        int l_Damage = GetHitDamage() + (0.4f * l_Aura->GetStackAmount());
-                        SetHitDamage(l_Damage);
-
-                        l_Aura->SetStackAmount(l_Aura->GetStackAmount() + 1);
-                    }
-                }
-                else
-                    GetHitUnit()->AddAura(eSpells::SPELL_SELF_DOUBT, GetHitUnit());
-            }
-        }
-
-        void Register()
-        {
-            OnHit += SpellHitFn(spell_norushen_unleahsed_anger_SpellScript::OnHitSetDamage/*, SpellEffIndex::EFFECT_0, Targets::TARGET_UNIT_SRC_AREA_ENEMY*/);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
-    {
-        return new spell_norushen_unleahsed_anger_SpellScript();
-    }
-};
-
-/// Blind Hatred - 145227  
-class spell_norushen_blind_hatred_target : public SpellScriptLoader
-{
-public:
-    spell_norushen_blind_hatred_target() : SpellScriptLoader("spell_norushen_blind_hatred_target") { }
-
-    class spell_norushen_blind_hatred_target_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_blind_hatred_target_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& p_Targets)
-        {
-            if (!GetCaster())
-                return;
-
-            p_Targets.clear();
-
-            InstanceScript* l_Instance = GetCaster()->GetInstanceScript();
-
-            if (l_Instance == nullptr)
-                return;
-
-            std::list<Player*> l_ListPlayers;
-            GetCaster()->GetPlayerListInGrid(l_ListPlayers, 200.0f);
-            if (l_ListPlayers.empty())
-                return;
-
-            for (auto itr : l_ListPlayers)
-            {
-                if (Creature* l_Amagalem = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION))) ///< Controller, responsible for the boss summoning.
-                {
-                    if (Creature* l_BlindHatredTrigger = l_Amagalem->FindNearestCreature(eCreatures::CREATURE_BLIND_HATRED_TRIGGER, 200.0f, true))
-                    {
-                        if (itr->IsInBetween(l_BlindHatredTrigger, l_Amagalem, 2.0f))
-                            p_Targets.push_back(itr);
-                    }
-                }
-            }
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_blind_hatred_target_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_blind_hatred_target_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const
-    {
-        return new spell_norushen_blind_hatred_target_SpellScript();
-    }
-};
-
-/// Extract Corruption - 145140
-class spell_norushen_extract_corruption : public SpellScriptLoader
-{
-public:
-    spell_norushen_extract_corruption() : SpellScriptLoader("spell_norushen_extract_corruption") { }
-
-    class spell_norushen_extract_corruption_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_extract_corruption_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& p_Targets)
-        {
-            if (!GetCaster())
-                return;
-
-            p_Targets.clear();
-
-            InstanceScript* l_Instance = GetCaster()->GetInstanceScript();
-
-            if (l_Instance == nullptr)
-                return;
-
-            if (Creature* l_Trigger = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_TRIGGER))) ///< Controller, responsible for the boss summoning.
-            {
-                p_Targets.push_back(l_Trigger->ToUnit()); // Searches for the trigger and loads it as the main target for all parallel effects.
-            }
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_extract_corruption_SpellScript::FilterTargets, EFFECT_1, TARGET_UNIT_TARGET_ANY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
-    {
-        return new spell_norushen_extract_corruption_SpellScript();
-    }
-};
-
-// Residual Corruption - 145073 
-/// Burst of Anger - 147082   
-class spell_norushen_src_spells_aoe_filter : public SpellScriptLoader
-{
-public:
-    spell_norushen_src_spells_aoe_filter() : SpellScriptLoader("spell_norushen_src_spells_aoe_filter") { }
-
-    class spell_norushen_src_spells_aoe_filter_spell_Script : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_src_spells_aoe_filter_spell_Script);
-
-        void FilterTargets(std::list<WorldObject*>& p_Targets)
-        {
-            if (!GetCaster())
-                return;
-
-            p_Targets.clear();
-
-            InstanceScript* l_Instance = GetCaster()->GetInstanceScript();
-
-            if (l_Instance == nullptr)
-                return;
-
-            std::list<Player*> l_ListPlayers;
-            GetCaster()->GetPlayerListInGrid(l_ListPlayers, 200.0f);
-            if (l_ListPlayers.empty())
-                return;
-
-            for (auto itr : l_ListPlayers)
-            {
-                p_Targets.push_back(itr->ToUnit());
-            }
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_src_spells_aoe_filter_spell_Script::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENTRY);
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_src_spells_aoe_filter_spell_Script::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
-    {
-        return new spell_norushen_src_spells_aoe_filter_spell_Script();
-    }
-};
-
-/// Blind Hatred - 145613 
-class spell_norushen_blind_hatred_beam_filter : public SpellScriptLoader
-{
-public:
-    spell_norushen_blind_hatred_beam_filter() : SpellScriptLoader("spell_norushen_blind_hatred_beam_filter") { }
-
-    class spell_norushen_blind_hatred_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_blind_hatred_SpellScript);
-
-        void FilterTargets(std::list<WorldObject*>& p_Targets)
-        {
-            if (!GetCaster())
-                return;
-
-            if (GetCaster()->GetEntry() == 72776)
-                return;
-
-            p_Targets.clear();
-        }
-
-        void Register()
-        {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_norushen_blind_hatred_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_NEARBY_ENTRY);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
-    {
-        return new spell_norushen_blind_hatred_SpellScript();
-    }
-};
-
-/// Blind Hatred - 145226 
-class spell_norushen_blind_hatred_beam : public SpellScriptLoader
-{
-public:
-    spell_norushen_blind_hatred_beam() : SpellScriptLoader("spell_norushen_blind_hatred_beam") { }
-
-    class spell_norushen_blind_hatred_SpellScript : public SpellScript
-    {
-        PrepareSpellScript(spell_norushen_blind_hatred_SpellScript);
-
-        void OnAfterCast()
-        {
-            if (!GetCaster())
-                return;
-
-            if (InstanceScript* l_Instance = GetCaster()->GetInstanceScript())
-            {
-                if (Creature * l_Almegalem = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_ALMAGLEM_OF_CORRUPTION)))
-                {
-                    if (Creature* l_Trigger = l_Instance->instance->GetCreature(l_Instance->GetData64(eData::DATA_NORUSHEN_TRIGGER)))
-                    {
-                        if (l_Almegalem != GetCaster())
-                            return;
-
-                        l_Almegalem->CastStop();
-
-                        if (Creature* l_BlindHatred = l_Almegalem->SummonCreature(eCreatures::CREATURE_BLIND_HATRED_TRIGGER, l_Almegalem->GetPositionX(), l_Almegalem->GetPositionY(), l_Almegalem->GetPositionZ(), l_Almegalem->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN, 29 * TimeConstants::IN_MILLISECONDS))
-                            l_Trigger->CastSpell(l_BlindHatred, eSpells::SPELL_BLIND_HATRED_FULL, true);
-                    }
-                }
-            }
-        }
-
-        void Register()
-        {
-            AfterCast += SpellCastFn(spell_norushen_blind_hatred_SpellScript::OnAfterCast);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
-    {
-        return new spell_norushen_blind_hatred_SpellScript();
-    }
 };
 
 void AddSC_norushen()
 {
     new boss_norushen();
-    new boss_amagalad_of_corruption();
-    new creature_lorewalker_cho_pre_norushen();
-    new creature_norushen_manifestation_of_corruption();
-    new creature_norushen_manifestation_of_corruption_non_test();
-    new creature_norushen_essnece_of_corruption_non_test();
-    new creature_norushen_essnece_of_corruption();
-    new creature_residual_corruption();
-    new creature_blind_hatred_trigger();
-    new creature_look_within_trigger();
-    new creature_titanic_corruption();
-    new creature_greater_corruption();
-    new creature_norushen_sun();
-    new creature_norushen_rook();
-    new creature_norushen_leven();
-    new spell_norushen_icy_fear();
-    new spell_norushen_unleahsed_anger();
-    new spell_norushen_extract_corruption();
-    new spell_norushen_blind_hatred_beam();
-    new spell_norushen_src_spells_aoe_filter();
-    new spell_norushen_blind_hatred_beam_filter();
+    new boss_amalgam_of_corruption();
+
+    new creature_script<npc_manifestation_of_corruption>("npc_manifestation_of_corruption");
+    new creature_script<npc_essence_of_corruption>("npc_essence_of_corruption");
+    new creature_script<npc_greater_corruption>("npc_greater_corruption");
+    new creature_script<npc_titanic_corruption>("npc_titanic_corruption");
+    new creature_script<npc_blind_hatred>("npc_blind_hatred");
+    new creature_script<npc_residual_corruption>("npc_residual_corruption");
+    new creature_script<npc_quarantine_measures>("npc_quarantine_measures");
+    new creature_script<npc_purifying_light_orb>("npc_purifying_light_orb");
+    new creature_script<npc_test_of_reliance_helpers>("npc_test_of_reliance_helpers");
+
+    new aura_script<spell_amalgam_corruption_bar>("spell_amalgam_corruption_bar");
+    new spell_script<spell_amalgam_unleashed_anger>("spell_amalgam_unleashed_anger");
+    new spell_script<spell_amalgam_icy_fear>("spell_amalgam_icy_fear");
+    new aura_script<spell_test_realm_amalgam>("spell_test_realm_amalgam");
+    new aura_script<spell_blind_hatred_periodic>("spell_blind_hatred_periodic");
+    new spell_script<spell_blind_hatred_eff>("spell_blind_hatred_eff");
+    new spell_script<spell_norushen_teleport>("spell_norushen_teleport");
+    new spell_script<spell_essence_unleash_corruption>("spell_essence_unleash_corruption");
+    new spell_script<spell_manifestation_unleash_corruption>("spell_manifestation_unleash_corruption");
+    new spell_script<spell_bottomless_pit>("spell_bottomless_pit");
+    new spell_script<spell_bottomless_pit_player_selector>("spell_bottomless_pit_player_selector");
+    new spell_script<spell_norushen_lingering_corruption>("spell_norushen_lingering_corruption");
+    new spell_script<spell_tear_reality>("spell_tear_reality");
+    new spell_script<spell_titanic_burst_of_corruption>("spell_titanic_burst_of_corruption");
+    new spell_script<spell_titanic_titanic_smash>("spell_titanic_titanic_smash");
+    new aura_script<spell_look_within>("spell_look_within");
+    new spell_script<spell_unleash_corruption_summ>("spell_unleash_corruption_summ");
+    new aura_script<spell_norushen_purified>("spell_norushen_purified");
+    new atrigger_script<sat_expel_corruption>("sat_expel_corruption");
+    new atrigger_script<sat_residual_corruption>("sat_residual_corruption");
+    new atrigger_script<sat_expel_corruption_realm>("sat_expel_corruption_realm");
+    new atrigger_script<sat_bottomless_pit>("sat_bottomless_pit");
+    new cond_blind_hatred();
 }

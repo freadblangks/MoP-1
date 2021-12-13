@@ -6,7 +6,7 @@ enum Yells
     SAY_AGGRO   = 0,
     SAY_DEATH   = 1,
     SAY_INTRO   = 2,
-	SAY_KILL    = 3,   
+    SAY_KILL    = 3,   
     SAY_SPELL   = 4,
 };
 
@@ -17,6 +17,7 @@ enum Spells
     SPELL_UNSTABLE_FLARE        = 101980,
     SPELL_TIME_EXPIRE_FLARE     = 101587, 
     SPELL_CHECK_PLAYER_DIST     = 101588,
+    SPELL_FLARE_UP              = 101589,
 
     SPELL_FROSTBOLT_VOLLEY      = 101810,
     SPELL_PYROBLAST             = 101809,
@@ -33,13 +34,13 @@ enum Events
     EVENT_FROST_BLADES      = 5, 
     EVENT_CHECK_PLAYER      = 6,
     EVENT_EXPLODE           = 7,
+    EVENT_FLARE_UP          = 8,
 };
 
 enum Creatures
 {
     NPC_FLARECORE       = 54446,
     NPC_FROSTBLADES     = 54494,
-    NPC_BLINK_TARGET    = 54542,
     NPC_ARCANE_CIRCLE   = 54639,
     NPC_JAINA           = 54641,
 };
@@ -59,14 +60,9 @@ class boss_echo_of_jaina : public CreatureScript
     public:
         boss_echo_of_jaina() : CreatureScript("boss_echo_of_jaina") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
-        {
-            return new boss_echo_of_jainaAI(pCreature);
-        }
-
         struct boss_echo_of_jainaAI : public BossAI
         {
-            boss_echo_of_jainaAI(Creature* pCreature) : BossAI(pCreature, DATA_ECHO_OF_JAINA)
+            boss_echo_of_jainaAI(Creature* creature) : BossAI(creature, DATA_ECHO_OF_JAINA)
             {
                 me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_GRIP, true);
@@ -92,15 +88,7 @@ class boss_echo_of_jaina : public CreatureScript
             uint8 uiFragments;
             bool bIntro;
 
-            void InitializeAI()
-            {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(ETScriptName))
-                    me->IsAIEnabled = false;
-                else if (!me->isDead())
-                    Reset();
-            }
-
-            void Reset()
+            void Reset() override
             {
                 _Reset();
                 uiVolleyCount = 0;
@@ -114,7 +102,7 @@ class boss_echo_of_jaina : public CreatureScript
                     me->SummonCreature(NPC_ARCANE_CIRCLE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f);
             }
 
-            void DoAction(const int32 action)
+            void DoAction(int32 action) override
             {
                 if (action == ACTION_FRAGMENTS)
                 {
@@ -142,7 +130,7 @@ class boss_echo_of_jaina : public CreatureScript
                 }
             }
 
-            void JustDied(Unit* killer)
+            void JustDied(Unit* /*killer*/) override
             {
                 _JustDied();
                 Talk(SAY_DEATH);
@@ -151,27 +139,27 @@ class boss_echo_of_jaina : public CreatureScript
                 Map::PlayerList const &PlayerList = instance->instance->GetPlayers();
                 if (!PlayerList.isEmpty())
                     for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
-                        if (Player* pPlayer = i->getSource())
-                            if (me->GetDistance2d(pPlayer) <= 50.0f && pPlayer->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
-                                DoCast(pPlayer, SPELL_ARCHIVED_JAINA, true);
+                        if (Player* player = i->GetSource())
+                            if (me->GetDistance2d(player) <= 150.0f && player->GetQuestStatus(30097) == QUEST_STATUS_INCOMPLETE)
+                                DoCast(player, SPELL_ARCHIVED_JAINA, true);
             }
 
-            void KilledUnit(Unit * /*victim*/)
+            void KilledUnit(Unit* /*victim*/) override
             {
                 Talk(SAY_KILL);
             }
 
-		    void JustSummoned(Creature* summon)
-		    {
+            void JustSummoned(Creature* summon) override
+            {
                 BossAI::JustSummoned(summon);
 
-                switch(summon->GetEntry())
+                switch (summon->GetEntry())
                 {
                     case NPC_FROSTBLADES:
                     {
                         summon->SetReactState(REACT_PASSIVE);
                         float x, y, z;
-                        summon->GetClosePoint(x, y, z, me->GetObjectSize() / 3, 100.0f);
+                        summon->GetClosePoint(x, y, z, me->GetObjectSize() / 3, 75.0f);
                         summon->GetMotionMaster()->MovePoint(1, x, y, z);
                         summon->DespawnOrUnsummon(10000);
                         break;
@@ -179,9 +167,9 @@ class boss_echo_of_jaina : public CreatureScript
                     default:
                         break;
                 }
-		    }
+            }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 Talk(SAY_AGGRO);
 
@@ -193,13 +181,13 @@ class boss_echo_of_jaina : public CreatureScript
                 DoZoneInCombat();
             }
 
-            void AttackStart(Unit* who)
+            void AttackStart(Unit* target) override
             {
-                if (who)
-                    me->Attack(who, false);
+                if (target)
+                    me->Attack(target, false);
             }
 
-            void UpdateAI(const uint32 diff)
+            void UpdateAI(uint32 diff) override
             {
                 if (!UpdateVictim())
                     return;
@@ -214,12 +202,12 @@ class boss_echo_of_jaina : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_PYROBLAST:
-                            DoCast(me->getVictim(), SPELL_PYROBLAST);
+                            DoCast(me->GetVictim(), SPELL_PYROBLAST);
                             events.ScheduleEvent(EVENT_PYROBLAST, urand(3500, 4500));
                             break;
                         case EVENT_FLARECORE:
-                            if (Unit* pTarget = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
-                                DoCast(pTarget, SPELL_FLARECORE_MISSILE);
+                            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 100.0f, true))
+                                DoCast(target, SPELL_FLARECORE_MISSILE);
                             events.ScheduleEvent(EVENT_FLARECORE, urand(19000, 21000));
                             break;
                         case EVENT_BLINK:
@@ -228,10 +216,10 @@ class boss_echo_of_jaina : public CreatureScript
                             me->GetCreatureListWithEntryInGrid(creatures, NPC_BLINK_TARGET, 40.0f);
                             if (!creatures.empty())
                             {
-                                JadeCore::Containers::RandomResizeList(creatures, 1);
+                                Trinity::Containers::RandomResizeList(creatures, 1);
                                 DoCast(me, SPELL_BLINK, true);
-                                if (Creature* pTarget = creatures.front())
-                                    me->NearTeleportTo(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ(), 0.0f, true);
+                                if (Creature* target = creatures.front())
+                                    me->NearTeleportTo(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), 0.0f, true);
                             }
                             me->UpdateObjectVisibility();
                             events.CancelEvent(EVENT_PYROBLAST);
@@ -242,7 +230,7 @@ class boss_echo_of_jaina : public CreatureScript
                             break;
                         }
                         case EVENT_FROSTBOLT_VOLLEY:
-                            if(uiVolleyCount < 3)
+                            if (uiVolleyCount < 3)
                             {
                                 DoCast(me, SPELL_FROSTBOLT_VOLLEY);
                                 events.ScheduleEvent(EVENT_FROSTBOLT_VOLLEY, 2200);
@@ -266,26 +254,31 @@ class boss_echo_of_jaina : public CreatureScript
                 }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<boss_echo_of_jainaAI>(creature);
+        }
 };
 
 class npc_echo_of_jaina_blink_target : public CreatureScript
 {
     public:
-
         npc_echo_of_jaina_blink_target() : CreatureScript("npc_echo_of_jaina_blink_target") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_echo_of_jaina_blink_targetAI : public ScriptedAI
         {
-            return new npc_echo_of_jaina_blink_targetAI(pCreature);
-        }
-
-        struct npc_echo_of_jaina_blink_targetAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_jaina_blink_targetAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature)
+            npc_echo_of_jaina_blink_targetAI(Creature* creature) : ScriptedAI(creature)
             {
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_echo_of_jaina_blink_targetAI>(creature);
+        }
 };
 
 class npc_echo_of_jaina_flarecore : public CreatureScript
@@ -293,33 +286,30 @@ class npc_echo_of_jaina_flarecore : public CreatureScript
     public:
         npc_echo_of_jaina_flarecore() : CreatureScript("npc_echo_of_jaina_flarecore") { }
 
-        CreatureAI* GetAI(Creature* pCreature) const
+        struct npc_echo_of_jaina_flarecoreAI : public ScriptedAI
         {
-            return new npc_echo_of_jaina_flarecoreAI(pCreature);
-        }
-
-        struct npc_echo_of_jaina_flarecoreAI : public Scripted_NoMovementAI
-        {
-            npc_echo_of_jaina_flarecoreAI(Creature* pCreature) : Scripted_NoMovementAI(pCreature) 
+            npc_echo_of_jaina_flarecoreAI(Creature* creature) : ScriptedAI(creature) 
             {
                 me->SetReactState(REACT_PASSIVE);
+                SetCombatMovement(false);
             }
 
             EventMap events;
 
-            void Reset()
+            void Reset() override
             {
                 if (!me->HasAura(SPELL_CHECK_PLAYER_DIST))
                     me->AddAura(SPELL_CHECK_PLAYER_DIST, me);
             }
 
-            void EnterCombat(Unit* /*who*/)
+            void EnterCombat(Unit* /*who*/) override
             {
                 events.ScheduleEvent(EVENT_CHECK_PLAYER, 500);
                 events.ScheduleEvent(EVENT_EXPLODE, 10000);
+                events.ScheduleEvent(EVENT_FLARE_UP, 1000);
             }
 
-            void UpdateAI(uint32 const diff)
+            void UpdateAI(uint32 diff) override
             {
                 events.Update(diff);
 
@@ -328,7 +318,7 @@ class npc_echo_of_jaina_flarecore : public CreatureScript
                     switch (eventId)
                     {
                         case EVENT_CHECK_PLAYER:
-                            if(me->SelectNearestPlayer(3.0f))
+                            if (me->SelectNearestPlayer(3.0f))
                             {
                                 DoCast(me, SPELL_UNSTABLE_FLARE);
                                 me->DespawnOrUnsummon(100);
@@ -337,13 +327,25 @@ class npc_echo_of_jaina_flarecore : public CreatureScript
                                 events.ScheduleEvent(EVENT_CHECK_PLAYER, 500);
                             break;
                         case EVENT_EXPLODE:
+                            me->RemoveAurasDueToSpell(SPELL_CHECK_PLAYER_DIST);
                             DoCast(me, SPELL_TIME_EXPIRE_FLARE);
-                            me->DespawnOrUnsummon(100);
+                            me->DespawnOrUnsummon(10000);
+                            events.CancelEvent(EVENT_CHECK_PLAYER);
+                            events.CancelEvent(EVENT_FLARE_UP);
                             break;
-					}
-				}
+                        case EVENT_FLARE_UP:
+                            DoCast(me, SPELL_FLARE_UP, true);
+                            events.ScheduleEvent(EVENT_FLARE_UP, 1000);
+                            break;
+                    }
+                }
             }
         };
+
+        CreatureAI* GetAI(Creature* creature) const override
+        {
+            return GetInstanceAI<npc_echo_of_jaina_flarecoreAI>(creature);
+        }
 };
 
 class go_echo_of_jaina_jaina_staff_fragment : public GameObjectScript
@@ -351,18 +353,66 @@ class go_echo_of_jaina_jaina_staff_fragment : public GameObjectScript
     public:
         go_echo_of_jaina_jaina_staff_fragment() : GameObjectScript("go_echo_of_jaina_jaina_staff_fragment") { }
 
-        bool OnGossipHello(Player* pPlayer, GameObject* pGo)
+        bool OnGossipHello(Player* /*player*/, GameObject* go) override
         {
-            InstanceScript* pInstance = pGo->GetInstanceScript();
-            if (!pInstance)
+            if (go->HasFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_IN_USE))
                 return true;
 
-            if (Creature* pJaina = ObjectAccessor::GetCreature(*pGo, pInstance->GetData64(DATA_ECHO_OF_JAINA)))
+            InstanceScript* instance = go->GetInstanceScript();
+            if (!instance)
+                return true;
+
+            if (Creature* pJaina = ObjectAccessor::GetCreature(*go, instance->GetData64(DATA_ECHO_OF_JAINA)))
                 pJaina->AI()->DoAction(ACTION_FRAGMENTS);
  
-            pGo->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE);
-            pGo->SetGoState(GO_STATE_ACTIVE);
+            go->SetFlag(GAMEOBJECT_FIELD_FLAGS, GO_FLAG_IN_USE);
+            go->SetPhaseMask(256, true);
+            go->SetGoState(GO_STATE_ACTIVE);
             return true;
+        }
+};
+
+class spell_echo_of_jaina_frost_blades : public SpellScriptLoader
+{
+    public:
+        spell_echo_of_jaina_frost_blades() : SpellScriptLoader("spell_echo_of_jaina_frost_blades") { }
+
+        class spell_echo_of_jaina_frost_blades_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_echo_of_jaina_frost_blades_SpellScript);
+
+            void FilterTargets(std::list<WorldObject*>& targets)
+            {
+                if (GetCaster())
+                    targets.remove_if(DistanceCheck(GetCaster()));
+            }
+
+            void Register() override
+            {
+                OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_echo_of_jaina_frost_blades_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+            }
+
+        private:
+            struct DistanceCheck
+            {
+                DistanceCheck(Unit* caster) : _caster(caster) { }
+
+                bool operator()(WorldObject* target)
+                {
+                    float dist = _caster->GetExactDist2d(target);
+                    if (dist > 4)
+                        return true;
+
+                    return dist > 4 * (fabs(fabs(Position::NormalizePitch(_caster->GetRelativeAngle(target))) / M_PI - 0.5f) + 0.5f);
+                }
+
+                Unit* _caster;
+            };
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_echo_of_jaina_frost_blades_SpellScript();
         }
 };
 
@@ -372,4 +422,5 @@ void AddSC_boss_echo_of_jaina()
     new npc_echo_of_jaina_flarecore();
     new npc_echo_of_jaina_blink_target();
     new go_echo_of_jaina_jaina_staff_fragment();
+    new spell_echo_of_jaina_frost_blades();
 }

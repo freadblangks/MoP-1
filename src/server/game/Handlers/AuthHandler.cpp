@@ -1,9 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -15,106 +17,126 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "BattlePayMgr.h"
 #include "Opcodes.h"
 #include "WorldSession.h"
 #include "WorldPacket.h"
+#include "Config.h"
+#include "BattlePayMgr.h"
+
+#define PLAYABLE_RACES_COUNT 15
+#define PLAYABLE_CLASSES_COUNT 11
+
+uint8 raceExpansion[PLAYABLE_RACES_COUNT][2] =
+{
+    { RACE_TAUREN,            EXPANSION_CLASSIC             },
+    { RACE_UNDEAD_PLAYER,     EXPANSION_CLASSIC             },
+    { RACE_ORC,               EXPANSION_CLASSIC             },
+    { RACE_GNOME,             EXPANSION_CLASSIC             },
+    { RACE_GOBLIN,            EXPANSION_THE_BURNING_CRUSADE },
+    { RACE_HUMAN,             EXPANSION_CLASSIC             },
+    { RACE_TROLL,             EXPANSION_CLASSIC             },
+    { RACE_PANDAREN_NEUTRAL,  EXPANSION_THE_BURNING_CRUSADE },
+    { RACE_DRAENEI,           EXPANSION_THE_BURNING_CRUSADE },
+    { RACE_WORGEN,            EXPANSION_THE_BURNING_CRUSADE },
+    { RACE_BLOODELF,          EXPANSION_THE_BURNING_CRUSADE },
+    { RACE_NIGHTELF,          EXPANSION_CLASSIC             },
+    { RACE_DWARF,             EXPANSION_CLASSIC             },
+    { RACE_PANDAREN_ALLIANCE, EXPANSION_THE_BURNING_CRUSADE },
+    { RACE_PANDAREN_HORDE,    EXPANSION_THE_BURNING_CRUSADE },
+};
+
+uint8 classExpansion[PLAYABLE_CLASSES_COUNT][2] =
+{
+    { CLASS_MONK,         EXPANSION_MISTS_OF_PANDARIA      },
+    { CLASS_WARRIOR,      EXPANSION_CLASSIC                },
+    { CLASS_PALADIN,      EXPANSION_CLASSIC                },
+    { CLASS_HUNTER,       EXPANSION_CLASSIC                },
+    { CLASS_ROGUE,        EXPANSION_CLASSIC                },
+    { CLASS_PRIEST,       EXPANSION_CLASSIC                },
+    { CLASS_SHAMAN,       EXPANSION_CLASSIC                },
+    { CLASS_MAGE,         EXPANSION_CLASSIC                },
+    { CLASS_WARLOCK,      EXPANSION_CLASSIC                },
+    { CLASS_DRUID,        EXPANSION_CLASSIC                },
+    { CLASS_DEATH_KNIGHT, EXPANSION_WRATH_OF_THE_LICH_KING },
+};
 
 void WorldSession::SendAuthResponse(uint8 code, bool queued, uint32 queuePos)
 {
-    const static uint8 ClassExpensions[MAX_CLASSES] = 
+    std::map<uint32, std::string> realmNamesToSend;
+
+    RealmNameMap::const_iterator iter = realmNameStore.find(realmID);
+    if (iter != realmNameStore.end()) // Add local realm
+        realmNamesToSend[realmID] = iter->second;
+
+    TC_LOG_DEBUG("network", "SMSG_AUTH_RESPONSE");
+    WorldPacket packet(SMSG_AUTH_RESPONSE, 113);
+
+    packet.WriteBit(code == AUTH_OK);
+
+    if (code == AUTH_OK)
     {
-        0, // CLASS_NONE
-        0, // CLASS_WARRIOR
-        0, // CLASS_PALADIN
-        0, // CLASS_HUNTER
-        0, // CLASS_ROGUE
-        0, // CLASS_PRIEST
-        0, // CLASS_DEATH_KNIGHT
-        0, // CLASS_SHAMAN
-        0, // CLASS_MAGE
-        0, // CLASS_WARLOCK
-        4, // CLASS_MONK
-        0  // CLASS_DRUID
-    };
+        packet.WriteBits(realmNamesToSend.size(), 21); // Send current realmId
 
-    WorldPacket packet(SMSG_AUTH_RESPONSE, 80);
+        for (std::map<uint32, std::string>::const_iterator itr = realmNamesToSend.begin(); itr != realmNamesToSend.end(); itr++)
+        {
+            packet.WriteBits(itr->second.size(), 8);
+            std::string normalized = itr->second;
+            normalized.erase(std::remove_if(normalized.begin(), normalized.end(), ::isspace), normalized.end());
+            packet.WriteBits(normalized.size(), 8);
+            packet.WriteBit(itr->first == realmID); // Home realm
+        }
 
-    bool hasAccountData = code == AUTH_OK;
-    const uint32 realmRaceCount = 15;
-
-    packet.WriteBit(hasAccountData);
-
-    if (hasAccountData)
-    {
+        packet.WriteBits(PLAYABLE_CLASSES_COUNT, 23);
         packet.WriteBits(0, 21);
         packet.WriteBit(0);
-        packet.WriteBits(realmRaceCount, 23);
-        packet.WriteBits(0, 21);
-        packet.WriteBit(0);
-        packet.WriteBits(MAX_CLASSES - 1, 23);
         packet.WriteBit(0);
         packet.WriteBit(0);
+        packet.WriteBit(0);
+        packet.WriteBits(PLAYABLE_RACES_COUNT, 23);
         packet.WriteBit(0);
     }
 
     packet.WriteBit(queued);
+
     if (queued)
-        packet.WriteBit(false);
+        packet.WriteBit(1);
 
     packet.FlushBits();
-    
-    if (queued)
-        packet << uint32(queuePos);                            // Unknown
 
-    if (hasAccountData)
+    if (queued)
+        packet << uint32(queuePos);
+
+    if (code == AUTH_OK)
     {
-        for (uint32 i = 1; i < MAX_CLASSES; ++i)
+        for (std::map<uint32, std::string>::const_iterator itr = realmNamesToSend.begin(); itr != realmNamesToSend.end(); itr++)
         {
-            packet << uint8(ClassExpensions[i]); // expension
-            packet << uint8(i);                  // class
+            packet << uint32(itr->first);
+            packet.WriteString(itr->second);
+            std::string normalized = itr->second;
+            normalized.erase(std::remove_if(normalized.begin(), normalized.end(), ::isspace), normalized.end());
+            packet.WriteString(normalized);
         }
 
-        packet << uint8(Expansion());
+        for (int i = 0; i < PLAYABLE_RACES_COUNT; i++)
+        {
+            packet << uint8(raceExpansion[i][1]);
+            packet << uint8(raceExpansion[i][0]);
+        }
 
-        packet << uint8(0);
-        packet << uint8(RACE_HUMAN);
-        packet << uint8(0);
-        packet << uint8(RACE_ORC);
-        packet << uint8(0);
-        packet << uint8(RACE_DWARF);
-        packet << uint8(0);
-        packet << uint8(RACE_NIGHTELF);
-        packet << uint8(0);
-        packet << uint8(RACE_UNDEAD_PLAYER);
-        packet << uint8(0);
-        packet << uint8(RACE_TAUREN);
-        packet << uint8(0);
-        packet << uint8(RACE_GNOME);
-        packet << uint8(0);
-        packet << uint8(RACE_TROLL);
-        packet << uint8(1);
-        packet << uint8(RACE_GOBLIN);
-        packet << uint8(1);
-        packet << uint8(RACE_BLOODELF);
-        packet << uint8(1);
-        packet << uint8(RACE_DRAENEI);
-        packet << uint8(1);
-        packet << uint8(RACE_WORGEN);
-        packet << uint8(1);
-        packet << uint8(RACE_PANDAREN_NEUTRAL);
-        packet << uint8(1);
-        packet << uint8(RACE_PANDAREN_ALLI);
-        packet << uint8(1);
-        packet << uint8(RACE_PANDAREN_HORDE);
+        for (int i = 0; i < PLAYABLE_CLASSES_COUNT; i++)
+        {
+            packet << uint8(classExpansion[i][1]);
+            packet << uint8(classExpansion[i][0]);
+        }
 
-        packet << uint32(Expansion());
-        
         packet << uint32(0);
+        packet << uint8(Expansion()); // Active Expansion
         packet << uint32(0);
+        packet << uint32(0); // unk time in ms
+        packet << uint8(Expansion()); // Server Expansion
+        packet << uint32(sBattlePayMgr->GetStoreCurrency());
         packet << uint32(0);
-        packet << uint32(0);
-
-        packet << uint8(Expansion());
         packet << uint32(0);
     }
 
@@ -125,7 +147,38 @@ void WorldSession::SendAuthResponse(uint8 code, bool queued, uint32 queuePos)
 
 void WorldSession::SendClientCacheVersion(uint32 version)
 {
-    WorldPacket data(SMSG_CLIENT_CACHE_VERSION, 4);
+    WorldPacket data(SMSG_CLIENTCACHE_VERSION, 4);
     data << uint32(version);
+    SendPacket(&data);
+}
+
+void WorldSession::SendFeatureSystemStatusGlueScreen()
+{
+    WorldPacket data(SMSG_FEATURE_SYSTEM_STATUS_GLUE_SCREEN);
+    data.WriteBit(true);                            // show ingame shop icon
+    data.WriteBit(false);                           // ingame shop parental control (1 - "Feature has been disabled by Parental Controls.")
+    data.WriteBit(sBattlePayMgr->IsStoreEnabled()); // ingame shop status (0 - "The Shop is temporarily unavailable.")
+    data.FlushBits();
+
+    SendPacket(&data);
+}
+
+void WorldSession::SendDanceStudioCreateResult()
+{
+    WorldPacket data(SMSG_DANCE_STUDIO_CREATE_RESULT, 17);
+    data << uint32(4665878);
+    data << uint32(795877);
+    data << uint32(10848087);
+    data << uint32(1084761);
+    data.WriteBit(true);
+    data.FlushBits();
+
+    SendPacket(&data);
+}
+
+void WorldSession::SendDispalyPromotionOpcode()
+{
+    WorldPacket data(SMSG_DISPLAY_PROMOTION, 4);
+    data << uint32(0);
     SendPacket(&data);
 }

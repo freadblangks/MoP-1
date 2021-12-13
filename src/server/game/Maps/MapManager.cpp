@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2012 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -33,6 +34,9 @@
 #include "Language.h"
 #include "WorldPacket.h"
 #include "Group.h"
+#include "Player.h"
+#include "WorldSession.h"
+#include "Opcodes.h"
 
 extern GridState* si_GridStates[];                          // debugging code, should be deleted some day
 
@@ -42,9 +46,7 @@ MapManager::MapManager()
     i_timer.SetInterval(sWorld->getIntConfig(CONFIG_INTERVAL_MAPUPDATE));
 }
 
-MapManager::~MapManager()
-{
-}
+MapManager::~MapManager() { }
 
 void MapManager::Initialize()
 {
@@ -77,7 +79,7 @@ void MapManager::checkAndCorrectGridStatesArray()
     {
         if (i_GridStates[i] != si_GridStates[i])
         {
-            sLog->outError(LOG_FILTER_MAPS, "MapManager::checkGridStates(), GridState: si_GridStates is currupt !!!");
+            TC_LOG_ERROR("maps", "MapManager::checkGridStates(), GridState: si_GridStates is currupt !!!");
             ok = false;
             si_GridStates[i] = i_GridStates[i];
         }
@@ -109,11 +111,14 @@ Map* MapManager::CreateBaseMap(uint32 id)
             map = new MapInstanced(id, i_gridCleanUpDelay);
         else
         {
-            map = new Map(id, i_gridCleanUpDelay, 0, NONE_DIFFICULTY);
+            map = new Map(id, i_gridCleanUpDelay, 0, REGULAR_DIFFICULTY);
             map->LoadRespawnTimes();
         }
 
         i_maps[id] = map;
+
+        if (!entry->Instanceable())
+            sTransportMgr->SpawnLocalTransports(map);
     }
 
     ASSERT(map);
@@ -150,17 +155,93 @@ Map* MapManager::FindMap(uint32 mapid, uint32 instanceId) const
     return ((MapInstanced*)map)->FindInstanceMap(instanceId);
 }
 
+// Terrace of Endless Spring achievements requirement
+enum ToES_achi_check
+{
+    // Heart of Fear (6 bosses)
+    // For Normal
+    ACH_THE_DREAD_APPROACH = 6718,
+    ACH_NIGHTMARE_OF_SHEKZEER = 6845,
+    // For Heroic
+    ACH_ZORLOK_H = 6725,
+    ACH_TAYAK_H = 6726,
+    ACH_GARALON_H = 6727,
+    ACH_MELJARAK_H = 6728,
+    ACH_UNSOK_H = 6729,
+    ACH_SHEKZEER_H = 6730,
+    // Mogushan Vaults
+    // For Normal
+    ACH_GUARDIANS_OF_MOGUSHAN = 6458,
+    ACH_THE_VAULT_OF_MYSTERIES = 6844,
+    // For Heroic
+    ACH_STONE_GUARD_H = 6719,
+    ACH_FENG_H = 6720,
+    ACH_GARAJAL_H = 6721,
+    ACH_FOUR_KINGS_H = 6722,
+    ACH_ELEGON_H = 6723,
+    ACH_WILL_OF_THE_EMPEROR_H = 6724,
+    // Terrace of Endless Spring
+    ACH_TOES_NORMAL = 6689,
+};
+
+bool HasCompletedMogushan(Player* p, Difficulty mapDiff)
+{
+    if (mapDiff == RAID_DIFFICULTY_10MAN_HEROIC || mapDiff == RAID_DIFFICULTY_25MAN_HEROIC)
+    {
+        if (p->HasAchieved(ACH_STONE_GUARD_H) && p->HasAchieved(ACH_FENG_H) && p->HasAchieved(ACH_GARAJAL_H) && p->HasAchieved(ACH_FOUR_KINGS_H) && p->HasAchieved(ACH_ELEGON_H) && p->HasAchieved(ACH_WILL_OF_THE_EMPEROR_H))
+            return true;
+        else
+        {
+            if (p->GetSession())
+                p->GetSession()->SendNotification(15004);
+            return false;
+        }
+    }
+    else
+    {
+        if (p->HasAchieved(ACH_GUARDIANS_OF_MOGUSHAN) && p->HasAchieved(ACH_THE_VAULT_OF_MYSTERIES))
+            return true;
+        else
+        {
+            if (p->GetSession())
+                p->GetSession()->SendNotification(15003);
+            return false;
+        }
+    }
+}
+
+bool HasCompletedHoF(Player* p, Difficulty mapDiff)
+{
+    if (mapDiff == RAID_DIFFICULTY_10MAN_HEROIC || mapDiff == RAID_DIFFICULTY_25MAN_HEROIC)
+    {
+        if (p->HasAchieved(ACH_ZORLOK_H) && p->HasAchieved(ACH_TAYAK_H) && p->HasAchieved(ACH_GARALON_H) && p->HasAchieved(ACH_MELJARAK_H) && p->HasAchieved(ACH_UNSOK_H) && p->HasAchieved(ACH_SHEKZEER_H))
+            return true;
+        else
+        {
+            if (p->GetSession())
+                p->GetSession()->SendNotification(15002);
+            return false;
+        }
+
+    }
+    else
+    {
+        if (p->HasAchieved(ACH_THE_DREAD_APPROACH) && p->HasAchieved(ACH_NIGHTMARE_OF_SHEKZEER))
+            return true;
+        else
+        {
+            if (p->GetSession())
+                p->GetSession()->SendNotification(15001);
+            return false;
+        }
+    }
+}
+
 bool MapManager::CanPlayerEnter(uint32 mapid, Player* player, bool loginCheck)
 {
     MapEntry const* entry = sMapStore.LookupEntry(mapid);
     if (!entry)
        return false;
-
-    // Molten Front
-    // That's not an instance, so check it here
-    if (entry->MapID == 861)
-        if (player->getLevel() < 85)
-            return false;
 
     if (!entry->IsDungeon())
         return true;
@@ -170,27 +251,36 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player, bool loginCheck)
         return false;
 
     Difficulty targetDifficulty = player->GetDifficulty(entry->IsRaid());
+
     //The player has a heroic mode and tries to enter into instance which has no a heroic mode
-    MapDifficulty const* mapDiff = GetMapDifficultyData(entry->MapID, targetDifficulty);
-    if (!mapDiff)
+    MapDifficulty const* mapDiff = GetDownscaledMapDifficultyData(entry->MapID, targetDifficulty);
+    if (!mapDiff && mapid != 1112) // something wrong with this solo scenario
     {
-        // Send aborted message for dungeons
-        if (entry->IsNonRaidDungeon())
-        {
-            player->SendTransferAborted(mapid, TRANSFER_ABORT_DIFFICULTY, player->GetDungeonDifficulty());
-            return false;
-        }
-        else    // attempt to downscale
-            mapDiff = GetDownscaledMapDifficultyData(entry->MapID, targetDifficulty);
+        player->SendTransferAborted(mapid, TRANSFER_ABORT_DIFFICULTY_NOT_FOUND);
+        return false;
     }
+    // FIXME: mapDiff is never used
 
     //Bypass checks for GMs
-    if (player->isGameMaster())
+    if (player->IsGameMaster())
         return true;
 
-    char const* mapName = entry->name;
+    char const* mapName = entry->name[sObjectMgr->GetDBCLocaleIndex()];
 
-    if (!player->isAlive())
+    Group* group = player->GetGroup();
+    if (entry->IsRaid() && entry->Expansion() >= EXPANSION_MISTS_OF_PANDARIA)
+    {
+        // can only enter in a raid group
+        if ((!group || !group->isRaidGroup()) && !sWorld->getBoolConfig(CONFIG_INSTANCE_IGNORE_RAID))
+        {
+            /// @todo this is not a good place to send the message
+            player->SendGameError(GameError::ERR_RAID_GROUP_ONLY);
+            TC_LOG_DEBUG("maps", "MAP: Player '%s' must be in a raid group to enter instance '%s'", player->GetName().c_str(), mapName);
+            return false;
+        }
+    }
+
+    if (!player->IsAlive())
     {
         if (Corpse* corpse = player->GetCorpse())
         {
@@ -203,36 +293,21 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player, bool loginCheck)
 
                 InstanceTemplate const* corpseInstance = sObjectMgr->GetInstanceTemplate(corpseMap);
                 corpseMap = corpseInstance ? corpseInstance->Parent : 0;
-            }
-            while (corpseMap);
+            } while (corpseMap);
 
             if (!corpseMap)
             {
                 WorldPacket data(SMSG_CORPSE_NOT_IN_INSTANCE);
                 player->GetSession()->SendPacket(&data);
-                sLog->outDebug(LOG_FILTER_MAPS, "MAP: Player '%s' does not have a corpse in instance '%s' and cannot enter.", player->GetName(), mapName);
+                TC_LOG_DEBUG("maps", "MAP: Player '%s' does not have a corpse in instance '%s' and cannot enter.", player->GetName().c_str(), mapName);
                 return false;
             }
-            sLog->outDebug(LOG_FILTER_MAPS, "MAP: Player '%s' has corpse in instance '%s' and can enter.", player->GetName(), mapName);
+            TC_LOG_DEBUG("maps", "MAP: Player '%s' has corpse in instance '%s' and can enter.", player->GetName().c_str(), mapName);
             player->ResurrectPlayer(0.5f, false);
             player->SpawnCorpseBones();
         }
         else
-            sLog->outDebug(LOG_FILTER_MAPS, "Map::CanPlayerEnter - player '%s' is dead but does not have a corpse!", player->GetName());
-    }
-    
-    Group* group = player->GetGroup();
-    if (entry->IsRaid())
-    {
-        // can only enter in a raid group
-        if ((!group || !group->isRaidGroup()) && !sWorld->getBoolConfig(CONFIG_INSTANCE_IGNORE_RAID))
-        {
-            // probably there must be special opcode, because client has this string constant in GlobalStrings.lua
-            // TODO: this is not a good place to send the message
-            player->GetSession()->SendAreaTriggerMessage(player->GetSession()->GetTrinityString(LANG_INSTANCE_RAID_GROUP_ONLY), mapName);
-            sLog->outDebug(LOG_FILTER_MAPS, "MAP: Player '%s' must be in a raid group to enter instance '%s'", player->GetName(), mapName);
-            return false;
-        }
+            TC_LOG_DEBUG("maps", "Map::CanPlayerEnter - player '%s' is dead but does not have a corpse!", player->GetName().c_str());
     }
 
     //Get instance where player's group is bound & its map
@@ -250,12 +325,9 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player, bool loginCheck)
                 if (playerBoundedInstance && playerBoundedInstance->perm && playerBoundedInstance->save &&
                     boundedInstance->save->GetInstanceId() != playerBoundedInstance->save->GetInstanceId())
                 {
-                    //TODO: send some kind of error message to the player
+                    /// @todo send some kind of error message to the player
                     return false;
                 }*/
-
-        if (!group->CanEnterInInstance())
-            return false;
     }
 
     // players are only allowed to enter 5 instances per hour
@@ -266,10 +338,26 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player, bool loginCheck)
             instaceIdToCheck = save->GetInstanceId();
 
         // instanceId can never be 0 - will not be found
-        if (!player->CheckInstanceCount(instaceIdToCheck) && !player->isDead())
+        if (!player->CheckInstanceCount(instaceIdToCheck) && !player->isDead() && targetDifficulty != DUNGEON_DIFFICULTY_CHALLENGE)
         {
             player->SendTransferAborted(mapid, TRANSFER_ABORT_TOO_MANY_INSTANCES);
             return false;
+        }
+    }
+
+    // Terrace of Endless Spring additional checks
+    if (mapid == 996)
+    {
+        if (!HasCompletedHoF(player, targetDifficulty) || !HasCompletedMogushan(player, targetDifficulty))
+            return false;
+        if (targetDifficulty == RAID_DIFFICULTY_10MAN_HEROIC || targetDifficulty == RAID_DIFFICULTY_25MAN_HEROIC)
+        {
+            if (!player->HasAchieved(ACH_TOES_NORMAL))
+            {
+                if (player->GetSession())
+                    player->GetSession()->SendNotification(15000);
+                return false;
+            }
         }
     }
 
@@ -282,7 +370,7 @@ void MapManager::Update(uint32 diff)
     i_timer.Update(diff);
     if (!i_timer.Passed())
         return;
-
+    sWorld->RecordTimeDiff(nullptr);
     MapMapType::iterator iter = i_maps.begin();
     for (; iter != i_maps.end(); ++iter)
     {
@@ -296,21 +384,16 @@ void MapManager::Update(uint32 diff)
 
     for (iter = i_maps.begin(); iter != i_maps.end(); ++iter)
         iter->second->DelayedUpdate(uint32(i_timer.GetCurrent()));
-
-    sObjectAccessor->Update(uint32(i_timer.GetCurrent()));
-    for (TransportSet::iterator itr = m_Transports.begin(); itr != m_Transports.end(); ++itr)
-        (*itr)->Update(uint32(i_timer.GetCurrent()));
+    sWorld->RecordTimeDiff("MapUpdate");
 
     i_timer.SetCurrent(0);
 }
 
-void MapManager::DoDelayedMovesAndRemoves()
-{
-}
+void MapManager::DoDelayedMovesAndRemoves() { }
 
 bool MapManager::ExistMapAndVMap(uint32 mapid, float x, float y)
 {
-    GridCoord p = JadeCore::ComputeGridCoord(x, y);
+    GridCoord p = Trinity::ComputeGridCoord(x, y);
 
     int gx=63-p.x_coord;
     int gy=63-p.y_coord;
@@ -327,18 +410,11 @@ bool MapManager::IsValidMAP(uint32 mapid, bool startUp)
     else
         return mEntry && (!mEntry->IsDungeon() || sObjectMgr->GetInstanceTemplate(mapid));
 
-    // TODO: add check for battleground template
+    /// @todo add check for battleground template
 }
 
 void MapManager::UnloadAll()
 {
-    for (TransportSet::iterator i = m_Transports.begin(); i != m_Transports.end(); ++i)
-    {
-        if ((*i))
-            (*i)->RemoveFromWorld();
-        delete *i;
-    }
-
     for (MapMapType::iterator iter = i_maps.begin(); iter != i_maps.end();)
     {
         iter->second->UnloadAll();
@@ -423,7 +499,7 @@ uint32 MapManager::GenerateInstanceId()
 
     if (newInstanceId == _nextInstanceId)
     {
-        sLog->outError(LOG_FILTER_MAPS, "Instance ID overflow!! Can't continue, shutting down server. ");
+        TC_LOG_ERROR("maps", "Instance ID overflow!! Can't continue, shutting down server. ");
         World::StopNow(ERROR_EXIT_CODE);
     }
 
@@ -447,8 +523,8 @@ uint32 MapManager::GenerateInstanceId()
 void MapManager::FreeInstanceId(uint32 instanceId)
 {
     // If freed instance id is lower than the next id available for new instances, use the freed one instead
-    if (instanceId < _nextInstanceId)
-        SetNextInstanceId(instanceId);
+    //if (instanceId < _nextInstanceId)
+    //    SetNextInstanceId(instanceId);
 
     _instanceIds[instanceId] = false;
 }

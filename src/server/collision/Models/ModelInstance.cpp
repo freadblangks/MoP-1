@@ -1,10 +1,11 @@
 /*
- * Copyright (C) 2008-2013 TrinityCore <http://www.trinitycore.org/>
- * Copyright (C) 2005-2010 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2011-2016 Project SkyFire <http://www.projectskyfire.org/>
+ * Copyright (C) 2008-2016 TrinityCore <http://www.trinitycore.org/>
+ * Copyright (C) 2005-2016 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
+ * Free Software Foundation; either version 3 of the License, or (at your
  * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
@@ -26,14 +27,17 @@ using G3D::Ray;
 
 namespace VMAP
 {
-    ModelInstance::ModelInstance(const ModelSpawn &spawn, WorldModel* model): ModelSpawn(spawn), iModel(model)
+    ModelInstance::ModelInstance(const ModelSpawn &spawn, WorldModel* model, bool ignoreInLOSTest) : ModelSpawn(spawn), iModel(model), iIgnoreInLOSTest(ignoreInLOSTest)
     {
+        iRotMatrix = G3D::Matrix3::fromEulerAnglesZYX(G3D::pi()*iRot.y / -180.f, G3D::pi()*iRot.x / -180.f, G3D::pi()*iRot.z / -180.f);
         iInvRot = G3D::Matrix3::fromEulerAnglesZYX(G3D::pi()*iRot.y/180.f, G3D::pi()*iRot.x/180.f, G3D::pi()*iRot.z/180.f).inverse();
         iInvScale = 1.f/iScale;
     }
 
     bool ModelInstance::intersectRay(const G3D::Ray& pRay, float& pMaxDist, bool pStopAtFirstHit) const
     {
+        if (iIgnoreInLOSTest)
+            return false;
         if (!iModel)
         {
             //std::cout << "<object not loaded>\n";
@@ -137,14 +141,37 @@ namespace VMAP
 
     bool ModelInstance::GetLiquidLevel(const G3D::Vector3& p, LocationInfo &info, float &liqHeight) const
     {
+        float zDist;
+        if (iRot.x || iRot.z)
+        {
+#define MAX_HEIGHT 100000.0f
+            // Tilted! Raycast! Performance be damned!
+            Vector3 origin = p - iPos;
+            origin.x = -origin.x; // Don't question this...
+            origin.y = -origin.y;
+            origin.z = MAX_HEIGHT - iPos.z; // Search from high up, otherwise we might end up underneath the triangles and find nothing
+            Vector3 pModel = iInvRot * origin * iInvScale;
+            Vector3 zDirModel = iInvRot * Vector3(0.f, 0.f, -1.f);
+            Ray modRay(pModel, zDirModel);
+            zDist = MAX_HEIGHT * 2 * iInvScale;
+            if (info.hitModel->GetLiquidLevel(modRay, zDist))
+            {
+                Vector3 modelGround = pModel + zDist * zDirModel;
+                liqHeight = (modelGround * iRotMatrix).z * iScale + iPos.z;
+                return true;
+            }
+            return false;
+#undef MAX_HEIGHT
+        }
         // child bounds are defined in object space:
         Vector3 pModel = iInvRot * (p - iPos) * iInvScale;
         //Vector3 zDirModel = iInvRot * Vector3(0.f, 0.f, -1.f);
-        float zDist;
+
         if (info.hitModel->GetLiquidLevel(pModel, zDist))
         {
             // calculate world height (zDist in model coords):
             // assume WMO not tilted (wouldn't make much sense anyway)
+            // WRONG ASSUMPTION!
             liqHeight = zDist * iScale + iPos.z;
             return true;
         }
@@ -167,7 +194,7 @@ namespace VMAP
         check += fread(&spawn.iPos, sizeof(float), 3, rf);
         check += fread(&spawn.iRot, sizeof(float), 3, rf);
         check += fread(&spawn.iScale, sizeof(float), 1, rf);
-        bool has_bound = (spawn.flags & MOD_HAS_BOUND);
+        bool has_bound = (spawn.flags & MOD_HAS_BOUND) != 0;
         if (has_bound) // only WMOs have bound in MPQ, only available after computation
         {
             Vector3 bLow, bHigh;
@@ -206,7 +233,7 @@ namespace VMAP
         check += fwrite(&spawn.iPos, sizeof(float), 3, wf);
         check += fwrite(&spawn.iRot, sizeof(float), 3, wf);
         check += fwrite(&spawn.iScale, sizeof(float), 1, wf);
-        bool has_bound = (spawn.flags & MOD_HAS_BOUND);
+        bool has_bound = (spawn.flags & MOD_HAS_BOUND) != 0;
         if (has_bound) // only WMOs have bound in MPQ, only available after computation
         {
             check += fwrite(&spawn.iBound.low(), sizeof(float), 3, wf);
